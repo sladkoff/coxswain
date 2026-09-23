@@ -1,8 +1,16 @@
-// Empty shell of the main screen from docs/UX.md: L0 project menu, L1 sessions, L2 diff, L3 main area, L4 agents.
+import { useEffect, useState } from 'react'
+import { Settings } from './Settings'
+
 const pane = 'border-neutral-200 dark:border-neutral-800'
 const muted = 'text-xs text-neutral-500'
 
+// Empty shell of the main screen from docs/UX.md: L0 project menu, L1 sessions, L2 diff, L3 main area, L4 agents.
 export function App() {
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  useEffect(() => window.coxswain.onOpenSettings(() => setSettingsOpen(true)), [])
+
+  if (settingsOpen) return <Settings onClose={() => setSettingsOpen(false)} />
+
   return (
     <div className="flex h-full select-none text-sm">
       <div className={`flex w-72 shrink-0 flex-col border-r ${pane}`}>
