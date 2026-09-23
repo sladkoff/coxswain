@@ -25,11 +25,13 @@ listed at the end.
 | **Review comment** | A GitHub comment attached to a line or range of a file diff in a PR. | *Imported comment*. |
 | **Conversation** | The PR's discussion thread (GitHub's "Conversation" tab): comments on the PR as a whole, not tied to a line. | *Review comment*; GitHub Discussions, which coxswain doesn't use. |
 | **Ask** | Giving a set of comments (or a prompt) to an agent, with what you want back. Two kinds so far: *change* (implement it, producing file diffs) and *explain* (answer, without changing code). Starts an agent session. | *Prompt*: the prompt is the text an ask turns into. |
-| **Session** | A unit of work in a project, as shown in the sidebar: either a PR being reviewed or a local iteration. Has one worktree, and its diff, open tabs, comments and agent sessions. Name not final ([UX](../UX.md)). | *Agent session*: one run of an agent; a session can have many. |
+| **Workspace** | A unit of work in a project, as shown in the sidebar: either a PR being reviewed or a local iteration. Has one worktree, and its diff, open tabs, comments and agent sessions. | *Agent session*: one run of an agent; a workspace can have many. *Project*: a project has many workspaces. |
+| **Navigator** | The pane next to the workspace icons ([UX](../UX.md) L2). A toggle at its top switches between *Diffs*, the workspace's changed files, and *Files*, the whole file tree of the workspace. | *Viewer*: the navigator lists files; the viewer shows the one you open. |
+| **Viewer** | The main pane ([UX](../UX.md) L3). Shows what was opened from the navigator: the file diff of a changed file (from *Diffs*), or a whole file at the workspace's head (from *Files*). | *Navigator*. |
 | **Worktree** | One checkout of a repository at a branch, where code can be changed. Every agent session works in exactly one worktree. | *Branch*: several worktrees can't share a branch; a branch exists without a worktree. |
 | **PR worktree** | A worktree checked out on a PR's head branch. Changes made there become new commits on the PR once pushed. | |
 | **User** | A GitHub account. Authors PRs and comments, reviews PRs. The *current user* is whoever is signed in to coxswain. | *Agent*: agent changes are made by a user's agent, but commits and comments show a user. |
-| **Agent session** | One run of a local coding agent (Claude Code or Codex) in one worktree: the ask that started it, its transcript and its resulting changes or answer. | *Agent*: the tool (Claude Code, Codex); a session is one use of it. |
+| **Agent session** | One run of a local coding agent (Claude Code or Codex) in one worktree: the ask that started it, its transcript and its resulting changes or answer. | *Agent*: the tool (Claude Code, Codex); an agent session is one use of it. |
 
 ## How they relate
 
@@ -59,11 +61,11 @@ listed at the end.
   result, repeat; at the end, publish the local comments that a collaborator should see.
 - An **agent session** runs in one worktree and starts from one ask. For a *change* ask, where the
   result goes depends on the worktree:
-  - when reviewing a PR, the session works in the PR worktree, so its changes land on the PR's
+  - when reviewing a PR, the agent session works in the PR worktree, so its changes land on the PR's
     branch;
-  - for feature work, the session works in its own worktree on a new branch.
-- A worktree can have several agent sessions over time. Several sessions at once in one worktree
-  would conflict, so parallel agents mean parallel worktrees, and so parallel sessions.
+  - for feature work, the agent session works in its own worktree on a new branch.
+- A worktree can have several agent sessions over time. Several agent sessions at once in one
+  worktree would conflict, so parallel agents mean parallel worktrees, and so parallel workspaces.
 
 ## Out of scope for now
 
@@ -73,7 +75,7 @@ listed at the end.
 
 ## Open questions
 
-1. **One PR, several sessions?** Each session has its own worktree. E.g. two agents trying different fixes for the same comments.
+1. **One PR, several workspaces?** Each workspace has its own worktree. E.g. two agents trying different fixes for the same comments.
    If so, only one of them can be the PR worktree; the others need a way to bring their result
    onto the PR branch.
 2. **When does a comment become outdated?** When any line in its range changes, when the agent's

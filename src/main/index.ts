@@ -1,6 +1,17 @@
 import { app, BrowserWindow, ipcMain, Menu } from 'electron'
 import { join } from 'node:path'
-import { getCurrentUser } from '../core/github'
+import { openDatabase } from '../core/db'
+import {
+  getCurrentUser,
+  getPullRequestCommits,
+  listChangedFiles,
+  listFilesAt,
+  listPullRequests,
+  listRepos,
+  readFileAt,
+} from '../core/github'
+import { listProjects, openProject } from '../core/projects'
+import { listWorkspaces, openPullRequestWorkspace } from '../core/workspaces'
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -49,7 +60,28 @@ const menu = Menu.buildFromTemplate([
 
 app.whenReady().then(() => {
   Menu.setApplicationMenu(menu)
+  const db = openDatabase(join(app.getPath('userData'), 'coxswain.db'))
+  ipcMain.handle('projects:list', () => listProjects(db))
+  ipcMain.handle('projects:open', (_, fullName: string) => openProject(db, fullName))
   ipcMain.handle('github:current-user', () => getCurrentUser())
+  ipcMain.handle('github:list-repos', (_, page: number) => listRepos(page))
+  ipcMain.handle('github:list-pulls', (_, owner: string, name: string) => listPullRequests(owner, name))
+  ipcMain.handle('github:changed-files', (_, owner: string, name: string, prNumber: number) =>
+    listChangedFiles(owner, name, prNumber),
+  )
+  ipcMain.handle('github:pr-commits', (_, owner: string, name: string, prNumber: number) =>
+    getPullRequestCommits(owner, name, prNumber),
+  )
+  ipcMain.handle('github:files-at', (_, owner: string, name: string, commit: string) =>
+    listFilesAt(owner, name, commit),
+  )
+  ipcMain.handle('github:read-file', (_, owner: string, name: string, commit: string, path: string) =>
+    readFileAt(owner, name, commit, path),
+  )
+  ipcMain.handle('workspaces:list', (_, projectId: number) => listWorkspaces(db, projectId))
+  ipcMain.handle('workspaces:open-pr', (_, projectId: number, prNumber: number) =>
+    openPullRequestWorkspace(db, projectId, prNumber),
+  )
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
