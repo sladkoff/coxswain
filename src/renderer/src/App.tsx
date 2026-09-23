@@ -87,20 +87,27 @@ export function App() {
             </button>
             <div className="h-px w-5 bg-neutral-200 dark:bg-neutral-800" />
             {/* The project's workspaces; the pill on the left marks the current one. */}
-            {workspaces.map((w) => (
-              <div key={w.id} className="relative">
-                {w.id === currentWorkspace?.id && (
-                  <span className="absolute top-1 -left-2.5 h-5 w-1 rounded-r bg-neutral-900 dark:bg-neutral-100" />
-                )}
-                <button
-                  title={`PR #${w.prNumber}`}
-                  onClick={() => selectWorkspace(w.prNumber)}
-                  className="flex h-7 w-10 items-center justify-center rounded-md bg-neutral-200 text-[10px] font-medium dark:bg-neutral-800"
-                >
-                  #{w.prNumber}
-                </button>
-              </div>
-            ))}
+            {workspaces.map((w) => {
+              const selected = w.id === currentWorkspace?.id
+              return (
+                <div key={w.id} className="relative flex w-full justify-center">
+                  {selected && (
+                    <span className="absolute top-1 left-0 h-5 w-1 rounded-r bg-neutral-900 dark:bg-neutral-100" />
+                  )}
+                  <button
+                    title={`PR #${w.prNumber}`}
+                    onClick={() => selectWorkspace(w.prNumber)}
+                    className={`flex h-7 w-10 items-center justify-center rounded-md text-[10px] font-medium ${
+                      selected
+                        ? 'bg-neutral-300 text-neutral-900 dark:bg-neutral-600 dark:text-white'
+                        : 'bg-neutral-100 text-neutral-500 hover:bg-neutral-200 dark:bg-neutral-800/60 dark:hover:bg-neutral-800'
+                    }`}
+                  >
+                    #{w.prNumber}
+                  </button>
+                </div>
+              )
+            })}
             <button
               title="New workspace"
               onClick={() => setScreen('new-workspace')}
