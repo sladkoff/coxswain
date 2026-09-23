@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import type { Comment } from '../../core/comments'
 import type { Project } from '../../core/projects'
 import type { Workspace } from '../../core/workspaces'
 import { Agents } from './Agents'
@@ -55,6 +56,18 @@ export function App() {
   // Bumped when an agent turn ends, so the Navigator and Viewer show what the agent changed.
   const [version, setVersion] = useState(0)
   const pr = usePullRequest(currentWorkspace, version)
+
+  // The workspace's local comments, and those waiting in the L4 message box.
+  const [comments, setComments] = useState<Comment[]>([])
+  const [attached, setAttached] = useState<Comment[]>([])
+  const loadComments = () => currentWorkspace && window.coxswain.listComments(currentWorkspace.id).then(setComments)
+  useEffect(() => {
+    setComments([])
+    setAttached([])
+  }, [currentWorkspace?.id])
+  useEffect(() => void loadComments(), [currentWorkspace?.id, version])
+  // A deleted comment leaves the message box too.
+  useEffect(() => setAttached((a) => a.filter((c) => comments.some((k) => k.id === c.id))), [comments])
   const [opened, setOpened] = useState<Opened | null>(null)
   useEffect(() => setOpened(null), [currentWorkspace?.id])
   const open = (path: string) => {
@@ -140,7 +153,16 @@ export function App() {
       <div className="flex min-w-0 flex-1 flex-col">
         <div className={`h-10 shrink-0 border-b [-webkit-app-region:drag] ${pane}`} />
         {opened && pr.commits && currentWorkspace ? (
-          <Viewer workspace={currentWorkspace} mergeBase={pr.commits.mergeBase} opened={opened} version={version} />
+          <Viewer
+            workspace={currentWorkspace}
+            mergeBase={pr.commits.mergeBase}
+            opened={opened}
+            version={version}
+            comments={comments}
+            onCommentsChanged={loadComments}
+            attachedIds={attached.map((c) => c.id)}
+            onAttach={(c) => setAttached((a) => [...a, c])}
+          />
         ) : (
           <div className={`flex flex-1 items-center justify-center ${muted}`}>
             {currentWorkspace ? 'Select a file' : 'No workspace. Start one with +'}
@@ -150,7 +172,17 @@ export function App() {
 
       <div className={`flex w-80 shrink-0 flex-col border-l ${pane}`}>
         {currentWorkspace ? (
-          <Agents key={currentWorkspace.id} workspace={currentWorkspace} onTurnEnd={() => setVersion((v) => v + 1)} />
+          <Agents
+            key={currentWorkspace.id}
+            workspace={currentWorkspace}
+            attached={attached}
+            onDetach={(id) => setAttached((a) => a.filter((c) => c.id !== id))}
+            onSent={() => {
+              setAttached([])
+              loadComments()
+            }}
+            onTurnEnd={() => setVersion((v) => v + 1)}
+          />
         ) : (
           <>
             <div className={`h-10 shrink-0 border-b [-webkit-app-region:drag] ${pane}`} />

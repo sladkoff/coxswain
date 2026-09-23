@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, Menu } from 'electron'
 import { join } from 'node:path'
 import { listAgentSessions, readTranscript, runTurn, startAgentSession, stopAllTurns, stopTurn } from '../core/agents'
+import { addComment, deleteComment, listComments, type NewComment } from '../core/comments'
 import { openDatabase } from '../core/db'
 import {
   cloneProject,
@@ -88,8 +89,11 @@ app.whenReady().then(() => {
   ipcMain.handle('agents:list', (_, workspaceId: number) => listAgentSessions(db, workspaceId))
   ipcMain.handle('agents:start', (_, workspaceId: number) => startAgentSession(db, workspaceId))
   ipcMain.handle('agents:transcript', (_, agentSessionId: string) => readTranscript(agentSessionId))
-  ipcMain.handle('agents:run-turn', (e, agentSessionId: string, message: string) =>
-    runTurn(db, agentSessionId, message, (entry) => {
+  ipcMain.handle('comments:list', (_, workspaceId: number) => listComments(db, workspaceId))
+  ipcMain.handle('comments:add', (_, comment: NewComment) => addComment(db, comment))
+  ipcMain.handle('comments:delete', (_, id: number) => deleteComment(db, id))
+  ipcMain.handle('agents:run-turn', (e, agentSessionId: string, message: string, commentIds: number[]) =>
+    runTurn(db, agentSessionId, message, commentIds, (entry) => {
       if (!e.sender.isDestroyed()) e.sender.send('agents:entry', agentSessionId, entry)
     }),
   )

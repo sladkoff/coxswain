@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { AgentSession, ChatEntry, TurnResult } from '../core/agents'
+import type { Comment, NewComment } from '../core/comments'
 import type { ChangedFileList, CloneResult, FileText, FileTreeResult, WorktreeResult } from '../core/git'
 import type { CurrentUser, PullRequestList, RepoPage } from '../core/github'
 import type { Project } from '../core/projects'
@@ -30,8 +31,11 @@ const api = {
   listAgentSessions: (workspaceId: number): Promise<AgentSession[]> => ipcRenderer.invoke('agents:list', workspaceId),
   startAgentSession: (workspaceId: number): Promise<AgentSession> => ipcRenderer.invoke('agents:start', workspaceId),
   readTranscript: (agentSessionId: string): Promise<ChatEntry[]> => ipcRenderer.invoke('agents:transcript', agentSessionId),
-  runTurn: (agentSessionId: string, message: string): Promise<TurnResult> =>
-    ipcRenderer.invoke('agents:run-turn', agentSessionId, message),
+  runTurn: (agentSessionId: string, message: string, commentIds: number[]): Promise<TurnResult> =>
+    ipcRenderer.invoke('agents:run-turn', agentSessionId, message, commentIds),
+  listComments: (workspaceId: number): Promise<Comment[]> => ipcRenderer.invoke('comments:list', workspaceId),
+  addComment: (comment: NewComment): Promise<Comment> => ipcRenderer.invoke('comments:add', comment),
+  deleteComment: (id: number): Promise<void> => ipcRenderer.invoke('comments:delete', id),
   stopTurn: (agentSessionId: string): Promise<void> => ipcRenderer.invoke('agents:stop-turn', agentSessionId),
   onChatEntry: (callback: (agentSessionId: string, entry: ChatEntry) => void) => {
     const listener = (_: unknown, id: string, entry: ChatEntry) => callback(id, entry)

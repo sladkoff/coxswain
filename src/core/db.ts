@@ -23,6 +23,18 @@ const migrations = [
     agent_session_id text not null unique,
     created_at text not null
   )`,
+  `create table comments (
+    id integer primary key,
+    workspace_id integer not null references workspaces (id) on delete cascade,
+    path text not null,
+    side text not null check (side in ('old', 'new')),
+    start_line integer not null,
+    end_line integer not null,
+    code text not null,
+    body text not null,
+    created_at text not null,
+    sent_at text
+  )`,
 ]
 
 export function openDatabase(path: string): DatabaseSync {

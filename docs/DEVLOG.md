@@ -3,6 +3,39 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-24 — Local comments and asks
+
+Comments on code, handed to the agent: the first version of the main selling point (G4) from inside
+coxswain, before importing any GitHub comments.
+
+### What works
+
+- **Commenting.** In the Viewer, the gutter `+` (from `@pierre/diffs`) starts a comment on one line,
+  or on a range by dragging it. Works on both sides of a diff and on whole files. ⌘Enter saves, Esc
+  cancels.
+- **Local comments are stored** (`comments` table, migration 4) with path, side (`old` = merge base,
+  `new` = worktree), line range, the code as it was, and the text. They show inline and survive
+  restarts. They can be deleted.
+- **Asks.** *Send to agent* puts a comment in the L4 message box as a chip; several can be collected.
+  On send, the core puts each comment in front of the message (file, lines, side, the code in a
+  fence, the comment) and marks them sent; they then show *Sent to agent* inline.
+- Checked in the app on a private repo #5291: comment on lines 3–5, send with an instruction,
+  the agent read the file and answered about those lines.
+
+### Tech debt
+
+- **Comments drift.** They're anchored by line numbers only, so an agent's edits move them off their
+  lines; the stored code snippet keeps the ask right, the inline position doesn't. Outdated tracking
+  is glossary open question 2 (`ponytail:` in `comments.ts`).
+- A range dragged across both sides of a diff is taken as the side it ends on (`ponytail:` in
+  `Viewer.tsx`).
+- Comments can't be edited, only deleted, and deleting doesn't ask first.
+- **No way to see pending comments or send them in bulk.** Comments not yet sent are only visible
+  inline in the file they're on, and each one has to be added to the message box by hand; there's no
+  list of a workspace's unsent comments and no "send all" ([UX](UX.md) open question 3).
+- No threads, no resolving.
+- Asks are sent as one plain-text prompt; the chat shows it in full.
+
 ## 2026-09-24 — Clones and PR worktrees
 
 Each project now has its own clone and each workspace a PR worktree, per

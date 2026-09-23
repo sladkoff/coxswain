@@ -5,6 +5,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import type { DatabaseSync } from 'node:sqlite'
+import { formatAsk } from './comments'
 import { worktreePath } from './git'
 import { getWorkspaceRepo } from './workspaces'
 
@@ -98,7 +99,8 @@ export function readTranscript(agentSessionId: string): ChatEntry[] {
 
 const running = new Map<string, ChildProcess>()
 
-// Sends one message and streams the agent's reply as chat entries until the turn ends.
+// Sends one message, with any comments put in front of it (an ask), and streams the agent's reply as chat
+// entries until the turn ends.
 // ponytail: relies on PATH to find `claude`, like `gh`; and permission prompts aren't surfaced, so
 // only file edits in the worktree are pre-approved (ADR 0008); other tools that need approval, like most Bash
 // commands, are refused. Add --permission-prompt-tool to ask the user.
@@ -106,18 +108,20 @@ export function runTurn(
   db: DatabaseSync,
   agentSessionId: string,
   message: string,
+  commentIds: number[],
   onEntry: (entry: ChatEntry) => void,
 ): Promise<TurnResult> {
   if (running.has(agentSessionId)) return Promise.resolve({ status: 'error', message: 'A turn is already running' })
   const cwd = agentWorktree(db, agentSessionId)
   if (!existsSync(join(cwd, '.git'))) return Promise.resolve({ status: 'error', message: 'The worktree is not ready yet' })
+  const prompt = formatAsk(db, commentIds, message)
   const session = transcriptPath(agentSessionId) ? ['--resume', agentSessionId] : ['--session-id', agentSessionId]
-  const child = spawn('claude', ['-p', message, '--output-format', 'stream-json', '--verbose', '--permission-mode', 'acceptEdits', ...session], {
+  const child = spawn('claude', ['-p', prompt, '--output-format', 'stream-json', '--verbose', '--permission-mode', 'acceptEdits', ...session], {
     cwd,
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   running.set(agentSessionId, child)
-  onEntry({ kind: 'user', text: message })
+  onEntry({ kind: 'user', text: prompt })
 
   let error: string | undefined
   let stderr = ''
