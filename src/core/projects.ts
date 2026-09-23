@@ -1,6 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite'
 
-// A project is a GitHub repository added to coxswain. ponytail: no local clone yet; add repo_path when cloning lands.
+// A project is a GitHub repository added to coxswain. Its clone's path follows from owner/name (git.ts), so it isn't stored.
 export type Project = { id: number; owner: string; name: string; lastOpenedAt: string }
 
 // Most recently opened first; the first one is the current project.
@@ -21,4 +21,12 @@ export function openProject(db: DatabaseSync, fullName: string): Project {
        returning id, owner, name, last_opened_at as lastOpenedAt`,
     )
     .get(owner, name, new Date().toISOString()) as Project
+}
+
+export function getProject(db: DatabaseSync, id: number): Project {
+  const project = db
+    .prepare('select id, owner, name, last_opened_at as lastOpenedAt from projects where id = ?')
+    .get(id) as Project | undefined
+  if (!project) throw new Error(`No project ${id}`)
+  return project
 }

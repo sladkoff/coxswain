@@ -7,7 +7,7 @@ const pane = 'border-neutral-200 dark:border-neutral-800'
 
 // L4: a chat with the workspace's current agent session. The session starts with its first message.
 // ponytail: shows only the latest agent session; the others stay in the database until L4 gets tabs (UX open question 4).
-export function Agents({ workspace }: { workspace: Workspace }) {
+export function Agents({ workspace, onTurnEnd }: { workspace: Workspace; onTurnEnd: () => void }) {
   const [session, setSession] = useState<AgentSession | null>(null)
   const [entries, setEntries] = useState<ChatEntry[]>([])
   const [running, setRunning] = useState(false)
@@ -49,6 +49,7 @@ export function Agents({ workspace }: { workspace: Workspace }) {
     setRunning(true)
     const result = await window.coxswain.runTurn(current.agentSessionId, message)
     setRunning(false)
+    onTurnEnd()
     if (result.status === 'error') setError(result.message)
   }
 

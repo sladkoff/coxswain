@@ -37,7 +37,9 @@ then the workspace's files, the work in the middle and the agents on the right.
   one worktree. For now `+` only offers the repository's open PRs.
 - **L2 — Navigator.** A toggle at the top switches between *Diffs*, the current workspace's changed
   files as a tree with their status and +/− lines, and *Files*, the whole file tree of the
-  workspace, with folders that contain changes marked.
+  workspace, with folders that contain changes marked. Both come from the worktree, so *Diffs* shows
+  the PR's file diffs and local changes (e.g. an agent's) together, and reloads after each turn.
+  While the project is being cloned, its icon pulses and the Navigator says so.
 - **L3 — Viewer.** Shows what was opened in the navigator: selecting a file in *Diffs* shows its
   file diff side by side, selecting one in *Files* shows the whole file. Comments will go between the
   lines. A workspace can have several open tabs along the top (details to be decided).
@@ -64,3 +66,6 @@ then the workspace's files, the work in the middle and the agents on the right.
    agent about? To be explored.
 4. **Agents in L4:** tabs, a list, or split panes, and how running and finished agent sessions look.
    Only the latest agent session is reachable so far; earlier ones need a way back.
+5. **PR changes vs local changes:** *Diffs* mixes the PR's file diffs with local changes (uncommitted,
+   untracked, unpushed), so an agent's work isn't told apart from the PR's. Options: a marker per
+   file, a third toggle (*Local*), or showing local changes on top of the PR's head separately.

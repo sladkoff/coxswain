@@ -44,7 +44,17 @@ export function App() {
     close()
   }
 
-  const pr = usePullRequest(current, currentWorkspace)
+  // ADR 0008: clone as soon as a project is current; opening a workspace waits for it.
+  const [cloning, setCloning] = useState(false)
+  useEffect(() => {
+    if (!current) return
+    setCloning(true)
+    window.coxswain.cloneProject(current.id).finally(() => setCloning(false))
+  }, [current?.id])
+
+  // Bumped when an agent turn ends, so the Navigator and Viewer show what the agent changed.
+  const [version, setVersion] = useState(0)
+  const pr = usePullRequest(currentWorkspace, version)
   const [opened, setOpened] = useState<Opened | null>(null)
   useEffect(() => setOpened(null), [currentWorkspace?.id])
   const open = (path: string) => {
@@ -80,9 +90,9 @@ export function App() {
           <div className={`flex w-12 flex-col items-center gap-2 border-r py-2 ${pane}`}>
             {/* The current project, like a Discord server icon. Opens the list to switch or add projects. */}
             <button
-              title={`${current.owner}/${current.name}: switch or add project`}
+              title={`${current.owner}/${current.name}${cloning ? ' (cloning…)' : ''}: switch or add project`}
               onClick={() => setScreen('projects')}
-              className="flex size-7 items-center justify-center rounded-md bg-neutral-800 text-xs font-semibold text-white dark:bg-neutral-200 dark:text-neutral-900"
+              className={`${cloning ? 'animate-pulse' : ''} flex size-7 items-center justify-center rounded-md bg-neutral-800 text-xs font-semibold text-white dark:bg-neutral-200 dark:text-neutral-900`}
             >
               {current.name[0].toUpperCase()}
             </button>
@@ -119,7 +129,7 @@ export function App() {
           </div>
           <div className="flex min-w-0 flex-1 flex-col">
             {currentWorkspace ? (
-              <Navigator key={currentWorkspace.id} project={current} pr={pr} view={view} onOpen={open} />
+              <Navigator key={currentWorkspace.id} workspace={currentWorkspace} pr={pr} view={view} onOpen={open} />
             ) : (
               <div className={`p-2 ${muted}`}>No workspace</div>
             )}
@@ -129,8 +139,8 @@ export function App() {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <div className={`h-10 shrink-0 border-b [-webkit-app-region:drag] ${pane}`} />
-        {opened && pr.commits ? (
-          <Viewer project={current} commits={pr.commits} opened={opened} />
+        {opened && pr.commits && currentWorkspace ? (
+          <Viewer workspace={currentWorkspace} mergeBase={pr.commits.mergeBase} opened={opened} version={version} />
         ) : (
           <div className={`flex flex-1 items-center justify-center ${muted}`}>
             {currentWorkspace ? 'Select a file' : 'No workspace. Start one with +'}
@@ -140,7 +150,7 @@ export function App() {
 
       <div className={`flex w-80 shrink-0 flex-col border-l ${pane}`}>
         {currentWorkspace ? (
-          <Agents key={currentWorkspace.id} workspace={currentWorkspace} />
+          <Agents key={currentWorkspace.id} workspace={currentWorkspace} onTurnEnd={() => setVersion((v) => v + 1)} />
         ) : (
           <>
             <div className={`h-10 shrink-0 border-b [-webkit-app-region:drag] ${pane}`} />

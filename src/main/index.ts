@@ -3,14 +3,15 @@ import { join } from 'node:path'
 import { listAgentSessions, readTranscript, runTurn, startAgentSession, stopAllTurns, stopTurn } from '../core/agents'
 import { openDatabase } from '../core/db'
 import {
-  getCurrentUser,
-  getPullRequestCommits,
+  cloneProject,
   listChangedFiles,
-  listFilesAt,
-  listPullRequests,
-  listRepos,
+  listWorktreeFiles,
+  openedBefore,
+  openWorktree,
   readFileAt,
-} from '../core/github'
+  readWorktreeFile,
+} from '../core/git'
+import { getCurrentUser, listPullRequests, listRepos } from '../core/github'
 import { listProjects, openProject } from '../core/projects'
 import { listWorkspaces, openPullRequestWorkspace } from '../core/workspaces'
 
@@ -67,21 +68,22 @@ app.whenReady().then(() => {
   ipcMain.handle('github:current-user', () => getCurrentUser())
   ipcMain.handle('github:list-repos', (_, page: number) => listRepos(page))
   ipcMain.handle('github:list-pulls', (_, owner: string, name: string) => listPullRequests(owner, name))
-  ipcMain.handle('github:changed-files', (_, owner: string, name: string, prNumber: number) =>
-    listChangedFiles(owner, name, prNumber),
-  )
-  ipcMain.handle('github:pr-commits', (_, owner: string, name: string, prNumber: number) =>
-    getPullRequestCommits(owner, name, prNumber),
-  )
-  ipcMain.handle('github:files-at', (_, owner: string, name: string, commit: string) =>
-    listFilesAt(owner, name, commit),
-  )
-  ipcMain.handle('github:read-file', (_, owner: string, name: string, commit: string, path: string) =>
-    readFileAt(owner, name, commit, path),
-  )
   ipcMain.handle('workspaces:list', (_, projectId: number) => listWorkspaces(db, projectId))
   ipcMain.handle('workspaces:open-pr', (_, projectId: number, prNumber: number) =>
     openPullRequestWorkspace(db, projectId, prNumber),
+  )
+  ipcMain.handle('git:clone', (_, projectId: number) => cloneProject(db, projectId))
+  ipcMain.handle('git:opened-before', (_, workspaceId: number) => openedBefore(db, workspaceId))
+  ipcMain.handle('git:open-worktree', (_, workspaceId: number) => openWorktree(db, workspaceId))
+  ipcMain.handle('git:changed-files', (_, workspaceId: number, mergeBase: string) =>
+    listChangedFiles(db, workspaceId, mergeBase),
+  )
+  ipcMain.handle('git:worktree-files', (_, workspaceId: number) => listWorktreeFiles(db, workspaceId))
+  ipcMain.handle('git:read-worktree-file', (_, workspaceId: number, path: string) =>
+    readWorktreeFile(db, workspaceId, path),
+  )
+  ipcMain.handle('git:read-file-at', (_, workspaceId: number, commit: string, path: string) =>
+    readFileAt(db, workspaceId, commit, path),
   )
   ipcMain.handle('agents:list', (_, workspaceId: number) => listAgentSessions(db, workspaceId))
   ipcMain.handle('agents:start', (_, workspaceId: number) => startAgentSession(db, workspaceId))

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { GitHubProblem, PullRequest } from '../../core/github'
 import type { Project } from '../../core/projects'
-import { button, GitHubProblemMessage, muted, ScreenHeader } from './ui'
+import { button, ProblemMessage, muted, ScreenHeader } from './ui'
 
 type Props = {
   project: Project
@@ -45,7 +45,7 @@ export function NewWorkspace({ project, openPrNumbers, onSelect, onClose }: Prop
 
         {problem && (
           <div className="flex items-center gap-3 rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
-            <GitHubProblemMessage problem={problem} />
+            <ProblemMessage problem={problem} />
             <button className={`${button} ml-auto shrink-0`} onClick={load}>
               Try again
             </button>

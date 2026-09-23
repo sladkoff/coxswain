@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { CurrentUser } from '../../core/github'
-import { button, GitHubProblemMessage, muted, ScreenHeader } from './ui'
+import { button, ProblemMessage, muted, ScreenHeader } from './ui'
 
 export function Settings({ onClose }: { onClose: () => void }) {
   const [user, setUser] = useState<CurrentUser | null>(null)
@@ -29,7 +29,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
             </>
           ) : (
             <>
-              <GitHubProblemMessage problem={user} />
+              <ProblemMessage problem={user} />
               <button className={`${button} ml-auto shrink-0`} onClick={check}>
                 Check again
               </button>

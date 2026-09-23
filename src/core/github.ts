@@ -114,48 +114,13 @@ export function listPullRequests(owner: string, name: string): Promise<PullReque
   })
 }
 
-export type ChangedFile = {
-  path: string
-  previousPath: string | null // set for renames
-  status: 'added' | 'deleted' | 'modified' | 'renamed'
-  additions: number
-  deletions: number
-}
+export type PullRequestHead =
+  | { status: 'ok'; head: string; mergeBase: string; headRef: string; fromFork: boolean }
+  | GitHubProblem
 
-export type ChangedFileList = { status: 'ok'; files: ChangedFile[] } | GitHubProblem
-
-// The PR's file diffs (GitHub lists at most 3000).
-export function listChangedFiles(owner: string, name: string, prNumber: number): Promise<ChangedFileList> {
-  return withGitHub(async (octokit) => {
-    const files: ChangedFile[] = []
-    for (let page = 1; ; page++) {
-      const { data } = await octokit.request('GET /repos/{owner}/{repo}/pulls/{pull_number}/files', {
-        owner,
-        repo: name,
-        pull_number: prNumber,
-        per_page: 100,
-        page,
-      })
-      for (const f of data) {
-        const status =
-          f.status === 'added' || f.status === 'renamed' ? f.status : f.status === 'removed' ? 'deleted' : 'modified'
-        files.push({
-          path: f.filename,
-          previousPath: f.previous_filename ?? null,
-          status,
-          additions: f.additions,
-          deletions: f.deletions,
-        })
-      }
-      if (data.length < 100) return { status: 'ok', files }
-    }
-  })
-}
-
-export type PullRequestCommits = { status: 'ok'; head: string; mergeBase: string } | GitHubProblem
-
-// The commits a PR's diff is between: GitHub diffs the head against the merge base, not the base branch's tip.
-export function getPullRequestCommits(owner: string, name: string, prNumber: number): Promise<PullRequestCommits> {
+// Where a PR's head is, and the commits its diff is between: GitHub diffs the head against the merge base,
+// not the base branch's tip.
+export function getPullRequestHead(owner: string, name: string, prNumber: number): Promise<PullRequestHead> {
   return withGitHub(async (octokit) => {
     const { data: pr } = await octokit.request('GET /repos/{owner}/{repo}/pulls/{pull_number}', {
       owner,
@@ -169,55 +134,12 @@ export function getPullRequestCommits(owner: string, name: string, prNumber: num
       basehead: `${pr.base.sha}...${pr.head.sha}`,
       per_page: 1,
     })
-    return { status: 'ok', head: pr.head.sha, mergeBase: compare.merge_base_commit.sha }
-  })
-}
-
-export type FileTreeResult = { status: 'ok'; paths: string[]; truncated: boolean } | GitHubProblem
-
-// Every file at a commit.
-// ponytail: read from GitHub until we clone; switch to the workspace's worktree then.
-export function listFilesAt(owner: string, name: string, commit: string): Promise<FileTreeResult> {
-  return withGitHub(async (octokit) => {
-    const { data } = await octokit.request('GET /repos/{owner}/{repo}/git/trees/{tree_sha}', {
-      owner,
-      repo: name,
-      tree_sha: commit,
-      recursive: 'true',
-    })
     return {
       status: 'ok',
-      paths: data.tree.flatMap((e) => (e.type === 'blob' && e.path ? [e.path] : [])),
-      truncated: data.truncated,
+      head: pr.head.sha,
+      mergeBase: compare.merge_base_commit.sha,
+      headRef: pr.head.ref,
+      fromFork: pr.head.repo?.full_name !== pr.base.repo.full_name,
     }
-  })
-}
-
-// text is null when the file doesn't exist at that commit (added or deleted in the diff) or is binary.
-export type FileText = { status: 'ok'; text: string | null; binary: boolean } | GitHubProblem
-
-export function readFileAt(owner: string, name: string, commit: string, path: string): Promise<FileText> {
-  return withGitHub(async (octokit) => {
-    let data
-    try {
-      ;({ data } = await octokit.request('GET /repos/{owner}/{repo}/contents/{path}', {
-        owner,
-        repo: name,
-        path,
-        ref: commit,
-      }))
-    } catch (e) {
-      if ((e as { status?: number }).status === 404) return { status: 'ok', text: null, binary: false }
-      throw e
-    }
-    if (Array.isArray(data) || data.type !== 'file') return { status: 'ok', text: null, binary: false }
-    // The contents API leaves out files over 1 MB; the blob API has them.
-    const base64 =
-      data.content ||
-      (await octokit.request('GET /repos/{owner}/{repo}/git/blobs/{file_sha}', { owner, repo: name, file_sha: data.sha }))
-        .data.content
-    const bytes = Buffer.from(base64, 'base64')
-    const binary = bytes.includes(0)
-    return { status: 'ok', text: binary ? null : bytes.toString('utf8'), binary }
   })
 }

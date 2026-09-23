@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import type { GitProblem } from '../../core/git'
 import type { GitHubProblem } from '../../core/github'
 
 export const muted = 'text-neutral-500'
@@ -26,8 +27,10 @@ export function ScreenHeader({ title, onClose }: { title: string; onClose: () =>
   )
 }
 
-export function GitHubProblemMessage({ problem }: { problem: GitHubProblem }) {
+export function ProblemMessage({ problem }: { problem: GitHubProblem | GitProblem }) {
   switch (problem.status) {
+    case 'git-error':
+      return <span className="select-text">Git: {problem.message}</span>
     case 'signed-out':
       return (
         <span>

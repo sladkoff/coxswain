@@ -3,6 +3,58 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-24 — Clones and PR worktrees
+
+Each project now has its own clone and each workspace a PR worktree, per
+[ADR 0008](adr/0008-clones-and-pr-worktrees.md). Agent sessions work in the worktree and may edit
+files there, and *Diffs* shows what they changed. That's the first full loop for G4: ask the agent,
+see its diff. G1 is ticked.
+
+### What works
+
+- **Clone on add.** Making a project current starts a blobless clone into
+  `~/coxswain/repos/<owner>/<name>/` in the background; the project icon pulses meanwhile. Clones
+  are written to `<name>.cloning` and renamed when done.
+- **PR worktree on open.** Opening a workspace fetches the PR's head branch and creates
+  `~/coxswain/worktrees/<owner>/<name>/<workspace id>/` on a local branch tracking it. Later opens
+  fast-forward it when the PR moved and nothing is changed locally; otherwise the Navigator says so.
+- **Switching is local.** A worktree opened before shows at once (150–400 ms, measured) from what the
+  core remembers; the GitHub check and fetch (~2.5 s) run in the background and only redraw if the PR
+  moved. Offline, the worktree still shows, with a notice.
+- **Navigator and Viewer read the worktree.** *Diffs* is `git diff <merge base>` against the
+  worktree plus untracked files (renames detected); *Files* is `git ls-files`; the Viewer's old side
+  is `git show <merge base>:<path>`, its new side the file on disk. Both reload after every agent
+  turn.
+- **Agents edit files** in their worktree (`--permission-mode acceptEdits`). Checked in the app: a
+  33-second first open of a private repo #5284, then an agent-written file showed up in *Diffs*
+  next to the PR's 12 files.
+- The core resolves every path and ref itself from workspace and project IDs; file paths from the
+  UI can't leave the worktree, and commits must be full SHAs.
+
+### Tech debt
+
+Paid off from the proof of concept: per-file GitHub API reads for trees and files, GitHub's
+truncated trees and 3000-file limit on *Diffs*, the missing clone and worktree paths, and the empty
+agent folder.
+
+- **PR and local changes look the same** in *Diffs* ([UX](UX.md) open question 5).
+- **Fork PRs** show an error; they need a fork remote (`ponytail:` in `git.ts`).
+- **No cleanup.** Worktrees, their branches and clones stay on disk forever; removing workspaces and
+  projects isn't built.
+- **No undo** for agent edits beyond git itself; no commit or push from coxswain yet.
+- The remembered head and merge base live in memory, so the first open of each workspace after a
+  restart still waits ~2.5 s (`ponytail:` in `git.ts`).
+- Reloads only happen on workspace open and after agent turns; edits made outside coxswain show on
+  the next turn or reopen. A file watcher would fix it.
+- The opened file keeps the status it had when opened; if a turn deletes it, the Viewer shows it
+  empty rather than deleted.
+- A PR whose head branch is the repository's default branch can't get a worktree, because the clone
+  itself has that branch checked out.
+- HTTPS clones rely on `gh auth setup-git` (or another credential helper); without one they fail
+  with git's message. `git` and `gh` are found through `PATH`.
+- `parseChanges` was checked against a real repository (renames, binary, deletes, untracked) with a
+  throwaway script; still no test setup in the repo.
+
 ## 2026-09-24 — First agent sessions: chat with Claude Code
 
 L4 is now a chat with a local Claude Code, per [ADR 0007](adr/0007-running-claude-code.md). It
@@ -30,11 +82,10 @@ PR's code yet, because there is still no clone.
 
 ### Tech debt
 
-- **The worktree is an empty folder** (`~/coxswain/worktrees/<owner>/<name>/<workspace id>/`). Once
-  cloning lands, `git worktree add` the PR's head there and the agent gets the code. `ponytail:` in
-  `agents.ts`.
-- **No tool approval.** Print mode refuses tools that need permission, so the agent can't edit files
-  or run most commands yet. Next step: `--permission-prompt-tool` or the Agent SDK (ADR 0007).
+- **The worktree is an empty folder** until cloning lands (paid off in the entry above).
+- **No tool approval.** Print mode refuses tools that need permission, so the agent can't run most
+  commands (file edits were allowed in the entry above). Next step: `--permission-prompt-tool` or the
+  Agent SDK (ADR 0007).
 - Only the latest agent session per workspace is shown; earlier ones stay in the database
   (`ponytail:` in `Agents.tsx`, UX open question 4).
 - Tool results aren't shown, only the call; replies are plain text, not Markdown (`ponytail:` in

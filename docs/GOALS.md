@@ -9,7 +9,7 @@ Requirements reference goals by ID (e.g. "serves G3"). Tick a goal when it is me
 
 ## Goals
 
-- [ ] **G1 — Runs locally.** coxswain is a local app working on local checkouts. Code stays on
+- [x] **G1 — Runs locally.** coxswain is a local app working on local checkouts. Code stays on
       your machine.
 - [ ] **G2 — GitHub pull requests.** Connect to GitHub, open PRs and navigate them: files,
       diffs and comment threads.

@@ -1,10 +1,12 @@
 import { type ChildProcess, spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { mkdirSync, readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import type { DatabaseSync } from 'node:sqlite'
+import { worktreePath } from './git'
+import { getWorkspaceRepo } from './workspaces'
 
 // ADR 0007: an agent session is Claude Code run as `claude -p`, one process per turn, resumed by its session ID.
 export type AgentSession = { id: number; workspaceId: number; agentSessionId: string; createdAt: string }
@@ -32,20 +34,14 @@ export function startAgentSession(db: DatabaseSync, workspaceId: number): AgentS
     .get(workspaceId, randomUUID(), new Date().toISOString()) as AgentSession
 }
 
-// ADR 0005: worktrees go in ~/coxswain/worktrees/<project>/<workspace>/.
-// ponytail: no clone yet, so this folder is empty and the agent can't see the PR's code; `git worktree add` it here when cloning lands.
-function worktreePath(db: DatabaseSync, agentSessionId: string): string {
-  const row = db
-    .prepare(
-      `select p.owner, p.name, w.id from agent_sessions a
-       join workspaces w on w.id = a.workspace_id join projects p on p.id = w.project_id
-       where a.agent_session_id = ?`,
-    )
-    .get(agentSessionId) as { owner: string; name: string; id: number } | undefined
+// Agent sessions run in their workspace's worktree, which opening the workspace creates (ADR 0008).
+function agentWorktree(db: DatabaseSync, agentSessionId: string): string {
+  const row = db.prepare('select workspace_id as id from agent_sessions where agent_session_id = ?').get(agentSessionId) as
+    | { id: number }
+    | undefined
   if (!row) throw new Error(`No agent session ${agentSessionId}`)
-  const path = join(homedir(), 'coxswain', 'worktrees', row.owner, row.name, String(row.id))
-  mkdirSync(path, { recursive: true })
-  return path
+  const { owner, name } = getWorkspaceRepo(db, row.id)
+  return worktreePath(owner, name, row.id)
 }
 
 // Claude Code keeps each transcript at ~/.claude/projects/<cwd, flattened>/<session ID>.jsonl.
@@ -104,7 +100,8 @@ const running = new Map<string, ChildProcess>()
 
 // Sends one message and streams the agent's reply as chat entries until the turn ends.
 // ponytail: relies on PATH to find `claude`, like `gh`; and permission prompts aren't surfaced, so
-// tools that need approval are refused (claude -p default). Add --permission-prompt-tool when agents change code.
+// only file edits in the worktree are pre-approved (ADR 0008); other tools that need approval, like most Bash
+// commands, are refused. Add --permission-prompt-tool to ask the user.
 export function runTurn(
   db: DatabaseSync,
   agentSessionId: string,
@@ -112,9 +109,10 @@ export function runTurn(
   onEntry: (entry: ChatEntry) => void,
 ): Promise<TurnResult> {
   if (running.has(agentSessionId)) return Promise.resolve({ status: 'error', message: 'A turn is already running' })
-  const cwd = worktreePath(db, agentSessionId)
+  const cwd = agentWorktree(db, agentSessionId)
+  if (!existsSync(join(cwd, '.git'))) return Promise.resolve({ status: 'error', message: 'The worktree is not ready yet' })
   const session = transcriptPath(agentSessionId) ? ['--resume', agentSessionId] : ['--session-id', agentSessionId]
-  const child = spawn('claude', ['-p', message, '--output-format', 'stream-json', '--verbose', ...session], {
+  const child = spawn('claude', ['-p', message, '--output-format', 'stream-json', '--verbose', '--permission-mode', 'acceptEdits', ...session], {
     cwd,
     stdio: ['ignore', 'pipe', 'pipe'],
   })

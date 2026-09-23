@@ -1,7 +1,8 @@
 import type { DatabaseSync } from 'node:sqlite'
 
 // A workspace is a unit of work in a project; for now always a PR being reviewed.
-// ponytail: no worktree yet; add worktree_path when cloning lands, and a kind column for local iterations.
+// Its worktree's path follows from its IDs (git.ts worktreePath), so it isn't stored.
+// ponytail: add a kind column when local iterations arrive.
 export type Workspace = { id: number; projectId: number; prNumber: number; lastOpenedAt: string }
 
 const columns = 'id, project_id as projectId, pr_number as prNumber, last_opened_at as lastOpenedAt'
@@ -22,4 +23,16 @@ export function openPullRequestWorkspace(db: DatabaseSync, projectId: number, pr
        returning ${columns}`,
     )
     .get(projectId, prNumber, new Date().toISOString()) as Workspace
+}
+
+// The repository and PR a workspace is about.
+export function getWorkspaceRepo(db: DatabaseSync, workspaceId: number) {
+  const row = db
+    .prepare(
+      `select p.owner, p.name, w.pr_number as prNumber from workspaces w
+       join projects p on p.id = w.project_id where w.id = ?`,
+    )
+    .get(workspaceId) as { owner: string; name: string; prNumber: number } | undefined
+  if (!row) throw new Error(`No workspace ${workspaceId}`)
+  return row
 }

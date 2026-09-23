@@ -1,14 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { AgentSession, ChatEntry, TurnResult } from '../core/agents'
-import type {
-  ChangedFileList,
-  CurrentUser,
-  FileText,
-  FileTreeResult,
-  PullRequestCommits,
-  PullRequestList,
-  RepoPage,
-} from '../core/github'
+import type { ChangedFileList, CloneResult, FileText, FileTreeResult, WorktreeResult } from '../core/git'
+import type { CurrentUser, PullRequestList, RepoPage } from '../core/github'
 import type { Project } from '../core/projects'
 import type { Workspace } from '../core/workspaces'
 
@@ -20,14 +13,17 @@ const api = {
   openProject: (fullName: string): Promise<Project> => ipcRenderer.invoke('projects:open', fullName),
   listPullRequests: (owner: string, name: string): Promise<PullRequestList> =>
     ipcRenderer.invoke('github:list-pulls', owner, name),
-  listChangedFiles: (owner: string, name: string, prNumber: number): Promise<ChangedFileList> =>
-    ipcRenderer.invoke('github:changed-files', owner, name, prNumber),
-  getPullRequestCommits: (owner: string, name: string, prNumber: number): Promise<PullRequestCommits> =>
-    ipcRenderer.invoke('github:pr-commits', owner, name, prNumber),
-  listFilesAt: (owner: string, name: string, commit: string): Promise<FileTreeResult> =>
-    ipcRenderer.invoke('github:files-at', owner, name, commit),
-  readFileAt: (owner: string, name: string, commit: string, path: string): Promise<FileText> =>
-    ipcRenderer.invoke('github:read-file', owner, name, commit, path),
+  cloneProject: (projectId: number): Promise<CloneResult> => ipcRenderer.invoke('git:clone', projectId),
+  openedBefore: (workspaceId: number): Promise<WorktreeResult | null> =>
+    ipcRenderer.invoke('git:opened-before', workspaceId),
+  openWorktree: (workspaceId: number): Promise<WorktreeResult> => ipcRenderer.invoke('git:open-worktree', workspaceId),
+  listChangedFiles: (workspaceId: number, mergeBase: string): Promise<ChangedFileList> =>
+    ipcRenderer.invoke('git:changed-files', workspaceId, mergeBase),
+  listWorktreeFiles: (workspaceId: number): Promise<FileTreeResult> => ipcRenderer.invoke('git:worktree-files', workspaceId),
+  readWorktreeFile: (workspaceId: number, path: string): Promise<FileText> =>
+    ipcRenderer.invoke('git:read-worktree-file', workspaceId, path),
+  readFileAt: (workspaceId: number, commit: string, path: string): Promise<FileText> =>
+    ipcRenderer.invoke('git:read-file-at', workspaceId, commit, path),
   listWorkspaces: (projectId: number): Promise<Workspace[]> => ipcRenderer.invoke('workspaces:list', projectId),
   openPullRequestWorkspace: (projectId: number, prNumber: number): Promise<Workspace> =>
     ipcRenderer.invoke('workspaces:open-pr', projectId, prNumber),
