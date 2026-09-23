@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, Menu } from 'electron'
 import { join } from 'node:path'
+import { listAgentSessions, readTranscript, runTurn, startAgentSession, stopAllTurns, stopTurn } from '../core/agents'
 import { openDatabase } from '../core/db'
 import {
   getCurrentUser,
@@ -82,11 +83,22 @@ app.whenReady().then(() => {
   ipcMain.handle('workspaces:open-pr', (_, projectId: number, prNumber: number) =>
     openPullRequestWorkspace(db, projectId, prNumber),
   )
+  ipcMain.handle('agents:list', (_, workspaceId: number) => listAgentSessions(db, workspaceId))
+  ipcMain.handle('agents:start', (_, workspaceId: number) => startAgentSession(db, workspaceId))
+  ipcMain.handle('agents:transcript', (_, agentSessionId: string) => readTranscript(agentSessionId))
+  ipcMain.handle('agents:run-turn', (e, agentSessionId: string, message: string) =>
+    runTurn(db, agentSessionId, message, (entry) => {
+      if (!e.sender.isDestroyed()) e.sender.send('agents:entry', agentSessionId, entry)
+    }),
+  )
+  ipcMain.handle('agents:stop-turn', (_, agentSessionId: string) => stopTurn(agentSessionId))
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
 })
+
+app.on('will-quit', stopAllTurns)
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()

@@ -16,6 +16,13 @@ const migrations = [
     last_opened_at text not null,
     unique (project_id, pr_number)
   )`,
+  `create table agent_sessions (
+    id integer primary key,
+    workspace_id integer not null references workspaces (id) on delete cascade,
+    agent text not null,
+    agent_session_id text not null unique,
+    created_at text not null
+  )`,
 ]
 
 export function openDatabase(path: string): DatabaseSync {

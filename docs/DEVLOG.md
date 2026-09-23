@@ -3,6 +3,49 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-24 — First agent sessions: chat with Claude Code
+
+L4 is now a chat with a local Claude Code, per [ADR 0007](adr/0007-running-claude-code.md). It
+proves the loop of sending a turn, streaming the reply and resuming later. The agent can't see the
+PR's code yet, because there is still no clone.
+
+### What works
+
+- **Chat in L4.** Type a message, press Enter; the agent's text and each tool it uses (one line,
+  e.g. `⏺ Bash pwd`) appear as they arrive. *Stop* kills a running turn.
+- **Agent sessions per workspace.** The first message creates one (`agent_sessions` table, migration
+  3). *New session* starts another with the next message. Switching workspaces shows that
+  workspace's latest agent session.
+- **Resume after restart.** The transcript is read back from Claude Code's own
+  `~/.claude/projects/*/<session ID>.jsonl`, and the next turn resumes with `--resume`.
+- **Running turns are killed** when the app quits.
+
+### How it's put together
+
+| Where | What |
+|-------|------|
+| `src/core/agents.ts` | Agent sessions in SQLite, `runTurn` (spawns `claude -p … --output-format stream-json`), `readTranscript`, `stopTurn`. One parser for stream and transcript lines. |
+| `src/main/index.ts` | `agents:*` handlers; chat entries go to the window as `agents:entry` events. |
+| `src/renderer/src/Agents.tsx` | The L4 chat pane. |
+
+### Tech debt
+
+- **The worktree is an empty folder** (`~/coxswain/worktrees/<owner>/<name>/<workspace id>/`). Once
+  cloning lands, `git worktree add` the PR's head there and the agent gets the code. `ponytail:` in
+  `agents.ts`.
+- **No tool approval.** Print mode refuses tools that need permission, so the agent can't edit files
+  or run most commands yet. Next step: `--permission-prompt-tool` or the Agent SDK (ADR 0007).
+- Only the latest agent session per workspace is shown; earlier ones stay in the database
+  (`ponytail:` in `Agents.tsx`, UX open question 4).
+- Tool results aren't shown, only the call; replies are plain text, not Markdown (`ponytail:` in
+  `agents.ts`, `Agents.tsx`).
+- No partial streaming (`--include-partial-messages`): text appears a message block at a time.
+- A turn keeps running if you switch workspaces, but coming back doesn't show it as running, and its
+  entries arriving meanwhile are only visible after reopening.
+- `claude` is found through `PATH`, like `gh`.
+- The `agents.ts` logic is checked by a throwaway script (two real turns, resume, transcript), not a
+  committed test; still no test setup in the repo.
+
 ## 2026-09-24 — Proof of concept
 
 The first vertical slice: open a GitHub repository, pick one of its PRs, and read its diffs and
@@ -37,7 +80,7 @@ GitHub features need the GitHub CLI signed in (`gh auth login`), per
   as GitHub shows it); selecting one in *Files* shows the whole file.
 - **Storage.** Projects and workspaces persist in SQLite, with migrations from the start.
 
-L4 (agents) is an empty placeholder.
+L4 (agents) is an empty placeholder (since filled; see the entry above).
 
 ### How it's put together
 

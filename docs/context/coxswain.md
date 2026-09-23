@@ -32,6 +32,7 @@ listed at the end.
 | **PR worktree** | A worktree checked out on a PR's head branch. Changes made there become new commits on the PR once pushed. | |
 | **User** | A GitHub account. Authors PRs and comments, reviews PRs. The *current user* is whoever is signed in to coxswain. | *Agent*: agent changes are made by a user's agent, but commits and comments show a user. |
 | **Agent session** | One run of a local coding agent (Claude Code or Codex) in one worktree: the ask that started it, its transcript and its resulting changes or answer. | *Agent*: the tool (Claude Code, Codex); an agent session is one use of it. |
+| **Turn** | One message from the user to an agent session and the agent's reply to it, including the tools the agent used on the way. | *Ask*: an ask starts an agent session; later messages in it are further turns. |
 
 ## How they relate
 

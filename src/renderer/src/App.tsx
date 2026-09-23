@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { Project } from '../../core/projects'
 import type { Workspace } from '../../core/workspaces'
+import { Agents } from './Agents'
 import { Navigator, type NavigatorView } from './Navigator'
 import { NewWorkspace } from './NewWorkspace'
 import { Onboarding } from './Onboarding'
@@ -138,8 +139,14 @@ export function App() {
       </div>
 
       <div className={`flex w-80 shrink-0 flex-col border-l ${pane}`}>
-        <div className={`h-10 shrink-0 border-b [-webkit-app-region:drag] ${pane}`} />
-        <div className={`flex flex-1 items-center justify-center ${muted}`}>No agent sessions</div>
+        {currentWorkspace ? (
+          <Agents key={currentWorkspace.id} workspace={currentWorkspace} />
+        ) : (
+          <>
+            <div className={`h-10 shrink-0 border-b [-webkit-app-region:drag] ${pane}`} />
+            <div className={`flex flex-1 items-center justify-center ${muted}`}>No agent sessions</div>
+          </>
+        )}
       </div>
     </div>
   )

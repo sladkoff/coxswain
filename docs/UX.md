@@ -42,7 +42,10 @@ then the workspace's files, the work in the middle and the agents on the right.
   file diff side by side, selecting one in *Files* shows the whole file. Comments will go between the
   lines. A workspace can have several open tabs along the top (details to be decided).
 - **L4 — Agents** on the right: the agent sessions of the current workspace. Several can be open at
-  once, e.g. as tabs in the pane.
+  once, e.g. as tabs in the pane. For now L4 is a chat with the workspace's latest agent session:
+  its turns, with each tool the agent used as one line, and a message box at the bottom (Enter
+  sends, Shift+Enter adds a line). *New session* in the header starts another agent session with
+  the next message; a running turn can be stopped.
 
 ## Across all levels
 
@@ -60,3 +63,4 @@ then the workspace's files, the work in the middle and the agents on the right.
 3. **Comments list:** where do you see all comments of a workspace, to pick which ones to ask the
    agent about? To be explored.
 4. **Agents in L4:** tabs, a list, or split panes, and how running and finished agent sessions look.
+   Only the latest agent session is reachable so far; earlier ones need a way back.

@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type { AgentSession, ChatEntry, TurnResult } from '../core/agents'
 import type {
   ChangedFileList,
   CurrentUser,
@@ -30,6 +31,17 @@ const api = {
   listWorkspaces: (projectId: number): Promise<Workspace[]> => ipcRenderer.invoke('workspaces:list', projectId),
   openPullRequestWorkspace: (projectId: number, prNumber: number): Promise<Workspace> =>
     ipcRenderer.invoke('workspaces:open-pr', projectId, prNumber),
+  listAgentSessions: (workspaceId: number): Promise<AgentSession[]> => ipcRenderer.invoke('agents:list', workspaceId),
+  startAgentSession: (workspaceId: number): Promise<AgentSession> => ipcRenderer.invoke('agents:start', workspaceId),
+  readTranscript: (agentSessionId: string): Promise<ChatEntry[]> => ipcRenderer.invoke('agents:transcript', agentSessionId),
+  runTurn: (agentSessionId: string, message: string): Promise<TurnResult> =>
+    ipcRenderer.invoke('agents:run-turn', agentSessionId, message),
+  stopTurn: (agentSessionId: string): Promise<void> => ipcRenderer.invoke('agents:stop-turn', agentSessionId),
+  onChatEntry: (callback: (agentSessionId: string, entry: ChatEntry) => void) => {
+    const listener = (_: unknown, id: string, entry: ChatEntry) => callback(id, entry)
+    ipcRenderer.on('agents:entry', listener)
+    return () => void ipcRenderer.off('agents:entry', listener)
+  },
   onOpenSettings: (callback: () => void) => {
     const listener = () => callback()
     ipcRenderer.on('open-settings', listener)
