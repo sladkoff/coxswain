@@ -33,6 +33,9 @@ Not checked in the app yet: the user runs the first guide with it.
   in the background over a diff of 1000+ files. `usePullRequest` now only returns data for the current
   workspace.
 - **Notes don't mention file numbers**: one said "file 106"; the prompts now say to name files by path.
+- **Scrolling file diffs no longer freezes** (Diff and Guide tabs): `@pierre/diffs` highlighted each
+  file diff on the main thread as it scrolled into range. It now runs in the library's worker pool
+  (`WorkerPoolContextProvider` in `main.tsx`, ES module workers in `electron.vite.config.ts`).
 
 ### Tech debt
 
@@ -43,6 +46,8 @@ Not checked in the app yet: the user runs the first guide with it.
   in the guide prompt.
 - **An unfinished guide** (the app quit while describing) stays so until regenerated.
 - **The progress bar's split** between summarising and grouping (50/50) and its pace are new guesses.
+- **Placeholder heights of file diffs not yet loaded are guesses** (20 px a changed line, capped at
+  200 lines), so the page shifts a little when one loads.
 
 ## 2026-09-24 — Guide
 
