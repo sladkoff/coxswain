@@ -1,4 +1,5 @@
-import { type ReactNode, useEffect, useMemo, useState } from 'react'
+import { Virtualizer } from '@pierre/diffs/react'
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
 import type { Comment } from '../../core/comments'
 import type { Project } from '../../core/projects'
 import type { Workspace } from '../../core/workspaces'
@@ -71,7 +72,11 @@ export function App() {
   // The workspace's local comments, and those waiting in the L4 message box.
   const [comments, setComments] = useState<Comment[]>([])
   const [attached, setAttached] = useState<Comment[]>([])
-  const loadComments = () => currentWorkspace && window.coxswain.listComments(currentWorkspace.id).then(setComments)
+  // Callbacks handed to the Viewers are stable (useCallback), so a memoised Viewer doesn't redraw its file diff.
+  const loadComments = useCallback(
+    () => void (currentWorkspace && window.coxswain.listComments(currentWorkspace.id).then(setComments)),
+    [currentWorkspace?.id],
+  )
   useEffect(() => {
     setComments([])
     setAttached([])
@@ -86,21 +91,25 @@ export function App() {
     if (currentWorkspace && pr.commits && pr.changed)
       window.coxswain.listViewed(currentWorkspace.id, pr.commits.mergeBase).then(setViewed)
   }, [currentWorkspace?.id, pr.changed])
-  const markViewed = (path: string, on: boolean) => {
-    if (!currentWorkspace || !pr.commits) return
-    setViewed((v) => (on ? [...v, path] : v.filter((p) => p !== path)))
-    window.coxswain.setViewed(currentWorkspace.id, pr.commits.mergeBase, path, on)
-  }
+  const mergeBase = pr.commits?.mergeBase
+  const markViewed = useCallback(
+    (path: string, on: boolean) => {
+      if (!currentWorkspace || !mergeBase) return
+      setViewed((v) => (on ? [...v, path] : v.filter((p) => p !== path)))
+      window.coxswain.setViewed(currentWorkspace.id, mergeBase, path, on)
+    },
+    [currentWorkspace?.id, mergeBase],
+  )
   // Turns of the agent sessions in comment threads, kept here so they outlive the Viewer showing them.
   const [turns, setTurns] = useState<Record<string, Turn>>({})
-  const runThreadTurn = async (agentSessionId: string, message: string, commentIds: number[]) => {
+  const runThreadTurn = useCallback(async (agentSessionId: string, message: string, commentIds: number[]) => {
     setTurns((t) => ({ ...t, [agentSessionId]: { running: true, error: null } }))
     const turn = window.coxswain.runTurn(agentSessionId, message, commentIds)
     loadComments() // the core marks the comments sent as the turn starts
     const result = await turn
     setTurns((t) => ({ ...t, [agentSessionId]: { running: false, error: result.status === 'error' ? result.message : null } }))
     setVersion((v) => v + 1)
-  }
+  }, [loadComments])
   // L3's tabs. `opened` is a whole file picked in Files, shown in the Diff tab in place of the file diffs.
   const [tab, setTab] = useState<Tab>('overview')
   const [opened, setOpened] = useState<Opened | null>(null)
@@ -117,17 +126,19 @@ export function App() {
   }
   const showFile = view === 'files' && opened
 
+  const attachedIds = useMemo(() => attached.map((c) => c.id), [attached])
+  const attach = useCallback((c: Comment) => {
+    setAttached((a) => [...a, c])
+    setAgentsOpen(true) // the comment goes in L4's message box, so show it
+  }, [])
   const viewerProps = (workspace: Workspace, mergeBase: string) => ({
     workspace,
     mergeBase,
     version,
     comments,
     onCommentsChanged: loadComments,
-    attachedIds: attached.map((c) => c.id),
-    onAttach: (c: Comment) => {
-      setAttached((a) => [...a, c])
-      setAgentsOpen(true) // the comment goes in L4's message box, so show it
-    },
+    attachedIds,
+    onAttach: attach,
     viewed,
     onViewedChange: markViewed,
     turns,
@@ -246,15 +257,15 @@ export function App() {
               ) : showFile ? (
                 <Viewer opened={opened} {...viewerProps(currentWorkspace, pr.commits.mergeBase)} />
               ) : (
-                // ponytail: renders every file diff at once; load them as they scroll into view if big PRs get slow.
-                <div className="min-h-0 flex-1 overflow-auto">
+                // Only the lines on screen are drawn. ponytail: every file is still read from disk up front.
+                <Virtualizer className="min-h-0 flex-1 overflow-auto">
                   {diffs.length === 0 && <div className={`p-4 text-xs ${muted}`}>No changes</div>}
                   {diffs.map((d) => (
                     <div key={d.file.path} id={`diff:${d.file.path}`}>
                       <Viewer stacked opened={d} {...viewerProps(currentWorkspace, pr.commits!.mergeBase)} />
                     </div>
                   ))}
-                </div>
+                </Virtualizer>
               )}
             </div>
           </div>

@@ -5,12 +5,20 @@ import type { PullRequestOverview } from '../../core/github'
 import type { Workspace } from '../../core/workspaces'
 import { muted, ProblemMessage } from './ui'
 
+// The last overview fetched per workspace, shown at once when the tab opens again while a fresh one loads.
+// In memory only: GitHub has it (ADR 0005).
+const cache = new Map<number, PullRequestOverview>()
+
 // The Overview tab: the PR's title and description.
 export function Overview({ workspace }: { workspace: Workspace }) {
-  const [pr, setPr] = useState<PullRequestOverview | null>(null)
+  const [pr, setPr] = useState<PullRequestOverview | null>(() => cache.get(workspace.id) ?? null)
   useEffect(() => {
     let stale = false
-    window.coxswain.getPullRequestOverview(workspace.id).then((p) => !stale && setPr(p))
+    window.coxswain.getPullRequestOverview(workspace.id).then((p) => {
+      // Offline or signed out: keep what was fetched before.
+      if (p.status === 'ok' || !cache.has(workspace.id)) cache.set(workspace.id, p)
+      if (!stale) setPr(cache.get(workspace.id)!)
+    })
     return () => void (stale = true)
   }, [workspace.id])
 

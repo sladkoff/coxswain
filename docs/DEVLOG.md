@@ -8,7 +8,8 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 ### What works
 
 - **Tabs in L3:** *Overview*, *Guide* and *Diff*. A workspace opens on *Overview*: the PR's title
-  and its description as Markdown (`getPullRequestOverview`, fetched each time, not stored).
+  and its description as Markdown (`getPullRequestOverview`). Cached in memory per workspace, so the
+  tab shows at once and refreshes in the background.
   *Guide* says "Coming soon". *Diff* shows every changed file's diff one after another in one
   scroll, with the Navigator on its left, shown with the *Files N* toggle in the tab's bar; picking a changed file there scrolls to
   it, and a file picked in *Files* shows in place of the file diffs. The Diff tab stays mounted
@@ -18,8 +19,11 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 
 ### Tech debt
 
-- **The Diff tab renders every file diff at once** (`ponytail:` in `App.tsx`); load them as they
-  scroll into view if big PRs get slow.
+- **Switching tabs or panes was slow**: every click re-diffed and redrew every file diff, since the
+  Viewers re-rendered with new file objects and `@pierre/diffs` redraws on each render. Paid off: the
+  Viewer is memoised with stable props, and the Diff tab uses the library's `Virtualizer`, which
+  draws only the lines on screen. Still, **every changed file is read from disk up front**
+  (`ponytail:` in `App.tsx`); read them as they scroll into view if big PRs load slowly.
 - **Scrolling to a file diff can land short** while file diffs above it are still loading
   (`ponytail:` in `App.tsx`).
 

@@ -1,6 +1,6 @@
 import type { DiffLineAnnotation, LineAnnotation, SelectedLineRange } from '@pierre/diffs'
 import { File, MultiFileDiff } from '@pierre/diffs/react'
-import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChatEntry } from '../../core/agents'
 import type { Comment } from '../../core/comments'
 import type { ChangedFile, FileText } from '../../core/git'
@@ -42,7 +42,9 @@ const baseOptions = { preferredHighlighter: 'shiki-js', overflow: 'scroll', stic
 // L3: shows the diff or file opened from the Navigator.
 // The old side is the merge base (git show), the new side the worktree now.
 // The + in the gutter (click, or drag for a range) starts a local comment on those lines.
-export function Viewer(props: Props) {
+// Memoised, and so are the files and annotations it hands the library: @pierre/diffs re-diffs on a new file
+// object and redraws on every render, so the Diff tab's many Viewers must only render when their props change.
+export const Viewer = memo(function Viewer(props: Props) {
   const { workspace, mergeBase, opened, version, comments, onCommentsChanged, attachedIds, onAttach } = props
   const [sides, setSides] = useState<{ old: FileText; new: FileText } | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
@@ -87,7 +89,28 @@ export function Viewer(props: Props) {
     [],
   )
 
-  if (!sides) return <Centered>Loading…</Centered>
+  const files = useMemo(() => {
+    const text = (f: FileText) => (f.status === 'ok' ? (f.text ?? '') : '')
+    const oldName = opened.kind === 'diff' ? (opened.file.previousPath ?? path) : path
+    return sides && { old: { name: oldName, contents: text(sides.old) }, new: { name: path, contents: text(sides.new) } }
+  }, [sides])
+  const annotations = useMemo(() => {
+    // A whole file only shows the worktree, so only comments on the new side belong in it.
+    const notes: { side: 'old' | 'new'; line: number; note: Note }[] = [
+      ...comments
+        .filter((c) => c.path === path && (opened.kind === 'diff' || c.side === 'new'))
+        .map((c) => ({ side: c.side, line: c.endLine, note: { comment: c } })),
+      ...(draft ? [{ side: draft.side, line: Math.max(draft.startLine, draft.endLine), note: { draft } }] : []),
+    ]
+    return {
+      file: notes.map((a): LineAnnotation<Note> => ({ lineNumber: a.line, metadata: a.note })),
+      diff: notes.map(
+        (a): DiffLineAnnotation<Note> => ({ side: a.side === 'old' ? 'deletions' : 'additions', lineNumber: a.line, metadata: a.note }),
+      ),
+    }
+  }, [comments, draft, opened])
+
+  if (!sides || !files) return <Centered>Loading…</Centered>
   const { old: o, new: n } = sides
   if (o.status !== 'ok' || n.status !== 'ok')
     return (
@@ -96,14 +119,6 @@ export function Viewer(props: Props) {
       </Centered>
     )
   if (o.binary || n.binary) return <Centered>Binary file, not shown</Centered>
-
-  // A whole file only shows the worktree, so only comments on the new side belong in it.
-  const notes: { side: 'old' | 'new'; line: number; note: Note }[] = [
-    ...comments
-      .filter((c) => c.path === path && (opened.kind === 'diff' || c.side === 'new'))
-      .map((c) => ({ side: c.side, line: c.endLine, note: { comment: c } })),
-    ...(draft ? [{ side: draft.side, line: Math.max(draft.startLine, draft.endLine), note: { draft } }] : []),
-  ]
 
   const save = async (d: Draft, body: string) => {
     const [start, end] = [d.startLine, d.endLine].sort((a, b) => a - b)
@@ -142,25 +157,19 @@ export function Viewer(props: Props) {
     <div className={props.stacked ? 'select-text' : 'min-h-0 flex-1 overflow-auto select-text'}>
       {opened.kind === 'file' ? (
         <File<Note>
-          file={{ name: path, contents: n.text ?? '' }}
+          file={files.new}
           options={options}
           selectedLines={selection}
-          lineAnnotations={notes.map((a): LineAnnotation<Note> => ({ lineNumber: a.line, metadata: a.note }))}
+          lineAnnotations={annotations.file}
           renderAnnotation={(a) => render(a.metadata)}
         />
       ) : (
         <MultiFileDiff<Note>
-          oldFile={{ name: opened.file.previousPath ?? path, contents: o.text ?? '' }}
-          newFile={{ name: path, contents: n.text ?? '' }}
+          oldFile={files.old}
+          newFile={files.new}
           options={options}
           selectedLines={selection}
-          lineAnnotations={notes.map(
-            (a): DiffLineAnnotation<Note> => ({
-              side: a.side === 'old' ? 'deletions' : 'additions',
-              lineNumber: a.line,
-              metadata: a.note,
-            }),
-          )}
+          lineAnnotations={annotations.diff}
           renderAnnotation={(a) => render(a.metadata)}
           renderHeaderMetadata={() => (
             <label className="flex items-center gap-1 font-sans text-xs select-none">
@@ -176,7 +185,7 @@ export function Viewer(props: Props) {
       )}
     </div>
   )
-}
+})
 
 const lines = (start: number, end: number) => (start === end ? `Line ${start}` : `Lines ${start}–${end}`)
 const box = 'm-2 flex flex-col gap-1.5 rounded-md border border-neutral-300 bg-white p-2 font-sans text-sm dark:border-neutral-700 dark:bg-neutral-900'
