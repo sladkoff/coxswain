@@ -14,6 +14,8 @@ import {
 } from '../core/git'
 import { getCurrentUser, listPullRequests, listRepos } from '../core/github'
 import { listProjects, openProject } from '../core/projects'
+import { listViewed, setViewed } from '../core/viewed'
+import type { NavigatorSettings } from '../preload'
 import { listWorkspaces, openPullRequestWorkspace } from '../core/workspaces'
 
 function createWindow() {
@@ -64,7 +66,26 @@ const menu = Menu.buildFromTemplate([
   },
   { role: 'fileMenu' },
   { role: 'editMenu' },
-  { role: 'viewMenu' },
+  {
+    label: 'View',
+    submenu: [
+      {
+        label: 'Toggle Agents',
+        accelerator: 'CmdOrCtrl+Alt+B',
+        // ponytail: one window for now, so no focused window (e.g. the app isn't frontmost) means that one.
+        click: () => (BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0])?.webContents.send('toggle-agents'),
+      },
+      { type: 'separator' },
+      { role: 'reload' },
+      { role: 'toggleDevTools' },
+      { type: 'separator' },
+      { role: 'resetZoom' },
+      { role: 'zoomIn' },
+      { role: 'zoomOut' },
+      { type: 'separator' },
+      { role: 'togglefullscreen' },
+    ],
+  },
   { role: 'windowMenu' },
 ])
 
@@ -99,10 +120,33 @@ app.whenReady().then(() => {
   ipcMain.handle('comments:list', (_, workspaceId: number) => listComments(db, workspaceId))
   ipcMain.handle('comments:add', (_, comment: NewComment) => addComment(db, comment))
   ipcMain.handle('comments:delete', (_, id: number) => deleteComment(db, id))
+  ipcMain.handle('viewed:list', (_, workspaceId: number, mergeBase: string) => listViewed(db, workspaceId, mergeBase))
+  ipcMain.handle('viewed:set', (_, workspaceId: number, mergeBase: string, path: string, viewed: boolean) =>
+    setViewed(db, workspaceId, mergeBase, path, viewed),
+  )
   ipcMain.handle('agents:run-turn', (e, agentSessionId: string, message: string, commentIds: number[]) =>
     runTurn(db, agentSessionId, message, commentIds, (entry) => {
       if (!e.sender.isDestroyed()) e.sender.send('agents:entry', agentSessionId, entry)
     }),
+  )
+  // Resolves only on a click: the menu's close callback can run before the click, so it can't tell a dismissal
+  // from a pick. A dismissed menu leaves the promise pending; nothing else waits on it.
+  ipcMain.handle(
+    'menus:navigator',
+    (e, s: NavigatorSettings) =>
+      new Promise<NavigatorSettings>((resolve) =>
+        Menu.buildFromTemplate([
+          { label: 'As Tree', type: 'radio', checked: s.layout === 'tree', click: () => resolve({ ...s, layout: 'tree' }) },
+          { label: 'As List', type: 'radio', checked: s.layout === 'list', click: () => resolve({ ...s, layout: 'list' }) },
+          { type: 'separator' },
+          {
+            label: 'Show Viewed Files',
+            type: 'checkbox',
+            checked: s.showViewed,
+            click: () => resolve({ ...s, showViewed: !s.showViewed }),
+          },
+        ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
+      ),
   )
   ipcMain.handle('agents:stop-turn', (_, agentSessionId: string) => stopTurn(agentSessionId))
   createWindow()

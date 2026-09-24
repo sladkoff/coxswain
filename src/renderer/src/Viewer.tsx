@@ -24,6 +24,8 @@ type Props = {
   onCommentsChanged: () => void
   attachedIds: number[]
   onAttach: (comment: Comment) => void
+  viewed: string[]
+  onViewedChange: (path: string, viewed: boolean) => void
 }
 
 const baseOptions = { preferredHighlighter: 'shiki-js', overflow: 'scroll', stickyHeader: true } as const
@@ -31,7 +33,8 @@ const baseOptions = { preferredHighlighter: 'shiki-js', overflow: 'scroll', stic
 // L3: shows the diff or file opened from the Navigator.
 // The old side is the merge base (git show), the new side the worktree now.
 // The + in the gutter (click, or drag for a range) starts a local comment on those lines.
-export function Viewer({ workspace, mergeBase, opened, version, comments, onCommentsChanged, attachedIds, onAttach }: Props) {
+export function Viewer(props: Props) {
+  const { workspace, mergeBase, opened, version, comments, onCommentsChanged, attachedIds, onAttach } = props
   const [sides, setSides] = useState<{ old: FileText; new: FileText } | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
   // The highlighted lines. Controlled, so they can be cleared when a draft is cancelled or saved: left to
@@ -140,6 +143,16 @@ export function Viewer({ workspace, mergeBase, opened, version, comments, onComm
             }),
           )}
           renderAnnotation={(a) => render(a.metadata)}
+          renderHeaderMetadata={() => (
+            <label className="flex items-center gap-1 font-sans text-xs select-none">
+              <input
+                type="checkbox"
+                checked={props.viewed.includes(path)}
+                onChange={(e) => props.onViewedChange(path, e.target.checked)}
+              />
+              Viewed
+            </label>
+          )}
         />
       )}
     </div>

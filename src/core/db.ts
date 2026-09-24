@@ -35,6 +35,12 @@ const migrations = [
     created_at text not null,
     sent_at text
   )`,
+  `create table viewed_files (
+    workspace_id integer not null references workspaces (id) on delete cascade,
+    path text not null,
+    fingerprint text not null,
+    primary key (workspace_id, path)
+  )`,
 ]
 
 export function openDatabase(path: string): DatabaseSync {

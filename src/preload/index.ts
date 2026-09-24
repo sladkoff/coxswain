@@ -6,6 +6,9 @@ import type { CurrentUser, PullRequestList, RepoPage } from '../core/github'
 import type { Project } from '../core/projects'
 import type { Workspace } from '../core/workspaces'
 
+// The Navigator's settings in its cog menu. layout: changed files as a tree or as a flat list.
+export type NavigatorSettings = { showViewed: boolean; layout: 'tree' | 'list' }
+
 // The one interface between the UI and the core (ADR 0002).
 const api = {
   currentUser: (): Promise<CurrentUser> => ipcRenderer.invoke('github:current-user'),
@@ -36,11 +39,23 @@ const api = {
   listComments: (workspaceId: number): Promise<Comment[]> => ipcRenderer.invoke('comments:list', workspaceId),
   addComment: (comment: NewComment): Promise<Comment> => ipcRenderer.invoke('comments:add', comment),
   deleteComment: (id: number): Promise<void> => ipcRenderer.invoke('comments:delete', id),
+  listViewed: (workspaceId: number, mergeBase: string): Promise<string[]> =>
+    ipcRenderer.invoke('viewed:list', workspaceId, mergeBase),
+  setViewed: (workspaceId: number, mergeBase: string, path: string, viewed: boolean): Promise<void> =>
+    ipcRenderer.invoke('viewed:set', workspaceId, mergeBase, path, viewed),
   stopTurn: (agentSessionId: string): Promise<void> => ipcRenderer.invoke('agents:stop-turn', agentSessionId),
   onChatEntry: (callback: (agentSessionId: string, entry: ChatEntry) => void) => {
     const listener = (_: unknown, id: string, entry: ChatEntry) => callback(id, entry)
     ipcRenderer.on('agents:entry', listener)
     return () => void ipcRenderer.off('agents:entry', listener)
+  },
+  // Native menu (ADR 0004). Resolves with the new settings when an item is picked; stays pending if dismissed.
+  showNavigatorMenu: (settings: NavigatorSettings): Promise<NavigatorSettings> =>
+    ipcRenderer.invoke('menus:navigator', settings),
+  onToggleAgents: (callback: () => void) => {
+    const listener = () => callback()
+    ipcRenderer.on('toggle-agents', listener)
+    return () => void ipcRenderer.off('toggle-agents', listener)
   },
   onOpenSettings: (callback: () => void) => {
     const listener = () => callback()

@@ -39,13 +39,19 @@ then the workspace's files, the work in the middle and the agents on the right.
   files as a tree with their status and +/− lines, and *Files*, the whole file tree of the
   workspace, with folders that contain changes marked. Both come from the worktree, so *Diffs* shows
   the PR's file diffs and local changes (e.g. an agent's) together, and reloads after each turn.
-  While the project is being cloned, its icon pulses and the Navigator says so.
+  While the project is being cloned, its icon pulses and the Navigator says so. In *Diffs*, viewed
+  files are hidden; the top says how many of the files are viewed, and a cog button opens a native
+  menu: *As Tree* or *As List* (a flat list of the changed files, each with its folder dimmed
+  next to its +/− lines), and *Show Viewed Files*, which shows viewed files again with a ✓.
 - **L3 — Viewer.** Shows what was opened in the navigator: selecting a file in *Diffs* shows its
-  file diff side by side, selecting one in *Files* shows the whole file. Local comments go between
+  file diff side by side, selecting one in *Files* shows the whole file. A file diff's header has a
+  *Viewed* checkbox. Local comments go between
   the lines: hovering a line shows a `+` in the gutter; clicking it (or dragging it over a range)
   opens a box to write the comment. A saved comment has *Send to agent*, which puts it in the L4
   message box, and shows *Sent to agent* once an ask included it. A workspace can have several open tabs along the top (details to be decided).
-- **L4 — Agents** on the right: the agent sessions of the current workspace. Several can be open at
+- **L4 — Agents** on the right: the agent sessions of the current workspace. It can be hidden with
+  the button in its header, *View > Toggle Agents* or ⌥⌘B, and shown again with the button that
+  then appears at the right of L3's top bar. *Send to agent* shows it. Several can be open at
   once, e.g. as tabs in the pane. For now L4 is a chat with the workspace's latest agent session:
   its turns, with each tool the agent used as one line, and a message box at the bottom (Enter
   sends, Shift+Enter adds a line). Comments sent from L3 sit above the message box as chips, can be

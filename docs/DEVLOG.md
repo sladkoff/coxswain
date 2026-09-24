@@ -21,6 +21,14 @@ coxswain, before importing any GitHub comments.
   fence, the comment) and marks them sent; they then show *Sent to agent* inline.
 - **Agent replies render as Markdown** in L4 (`react-markdown` + `remark-gfm`: lists, tables,
   code, links). Links open in the browser; the app window never navigates.
+- **Viewed files.** A *Viewed* checkbox in a file diff's header; the Navigator hides viewed files, says
+  "N of M viewed", and has a cog button with a native menu: *Show Viewed Files* (then shown with a
+  ✓), and *As Tree* / *As List* for the changed files. Stored per workspace (`viewed_files`, migration 5) with a fingerprint of the
+  file diff (merge base + worktree file), so a file becomes unviewed when an agent or new PR commits
+  change it. Checked in the app on #5284.
+- **The Agents pane can be hidden**: a button in its header, *View > Toggle Agents* (⌥⌘B), and a
+  button in L3's top bar to show it again. It stays mounted while hidden, so a running turn keeps
+  going and still reloads the diff. *Send to agent* shows it.
 - **Resizable panes.** Drag the border between L2 and L3, or L3 and L4, to resize. L3 takes the
   rest.
 - Checked in the app on a private repo #5291: comment on lines 3–5, send with an instruction,
@@ -28,6 +36,16 @@ coxswain, before importing any GitHub comments.
 
 ### Tech debt
 
+- **Viewed isn't synced with GitHub's** *Viewed* checkbox; it's local only, and also covers local
+  changes, which GitHub doesn't see.
+- **The ✓ in the Navigator is redrawn by resetting the rows' git status** (`ponytail:` in
+  `Navigator.tsx`), since `@pierre/trees` has no call to refresh decorations.
+- **The Navigator's cog settings reset** per workspace and on restart (`ponytail:` in
+  `Navigator.tsx`), like the pane widths.
+- **The list is a tree without folders:** `@pierre/trees` has no list mode, so rows are named after
+  the file and the folder goes in the row decoration. Two files with the same name show their whole
+  path instead. A long file name squeezes out its folder and can clip the +/− lines.
+- **Whether the Agents pane is shown resets on restart**, like the pane widths.
 - **Pane widths reset on restart** (`ponytail:` in `App.tsx`); persist them once there's a settings
   table.
 - **Comments drift.** They're anchored by line numbers only, so an agent's edits move them off their

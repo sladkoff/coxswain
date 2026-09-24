@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
@@ -244,6 +245,16 @@ export function readWorktreeFile(db: DatabaseSync, workspaceId: number, file: st
     if (relative(path, full).startsWith('..')) throw new GitError(`Outside the worktree: ${file}`)
     return existsSync(full) ? asText(readFileSync(full)) : { status: 'ok' as const, text: null, binary: false }
   })
+}
+
+// Identifies a file diff as it is now: the merge base (the old side) and the worktree file (the new side).
+// Changes when either does, e.g. after an agent's edit or new commits on the PR.
+export function diffFingerprint(db: DatabaseSync, workspaceId: number, mergeBase: string, file: string): string {
+  const path = openedWorktree(db, workspaceId)
+  const full = resolve(path, file)
+  if (relative(path, full).startsWith('..')) throw new Error(`Outside the worktree: ${file}`)
+  const hash = createHash('sha1').update(mergeBase).update('\0')
+  return (existsSync(full) ? hash.update(readFileSync(full)) : hash.update('deleted')).digest('hex')
 }
 
 // A file at a commit, e.g. the merge base. May fetch its contents from GitHub the first time (blobless clone).

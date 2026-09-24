@@ -78,3 +78,20 @@ export function Splitter(props: { min: number; max: number; fromRight?: boolean;
     />
   )
 }
+
+// Hides or shows the Agents pane (L4); also View > Toggle Agents. Icons from Lucide (ISC licence).
+export function AgentsToggle({ open, onClick }: { open: boolean; onClick: () => void }) {
+  return (
+    <button
+      title={`${open ? 'Hide' : 'Show'} agents (⌥⌘B)`}
+      onClick={onClick}
+      className="rounded p-1 text-neutral-500 hover:bg-neutral-200 [-webkit-app-region:no-drag] dark:hover:bg-neutral-800"
+    >
+      <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+        <rect width="18" height="18" x="3" y="3" rx="2" />
+        <path d="M15 3v18" />
+        <path d={open ? 'm8 9 3 3-3 3' : 'm10 15-3-3 3-3'} />
+      </svg>
+    </button>
+  )
+}

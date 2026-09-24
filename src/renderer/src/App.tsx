@@ -9,7 +9,7 @@ import { Onboarding } from './Onboarding'
 import { Projects } from './Projects'
 import { Settings } from './Settings'
 import { usePullRequest } from './usePullRequest'
-import { Splitter, viewerMin } from './ui'
+import { AgentsToggle, Splitter, viewerMin } from './ui'
 import { type Opened, Viewer } from './Viewer'
 
 const pane = 'border-neutral-200 dark:border-neutral-800'
@@ -32,6 +32,8 @@ export function App() {
   // ponytail: pane widths reset on restart; persist them in SQLite once a settings table exists.
   const [leftWidth, setLeftWidth] = useState(416)
   const [agentsWidth, setAgentsWidth] = useState(320)
+  const [agentsOpen, setAgentsOpen] = useState(true)
+  useEffect(() => window.coxswain.onToggleAgents(() => setAgentsOpen((o) => !o)), [])
 
   const [view, setView] = useState<NavigatorView>('diffs')
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
@@ -73,6 +75,18 @@ export function App() {
   useEffect(() => void loadComments(), [currentWorkspace?.id, version])
   // A deleted comment leaves the message box too.
   useEffect(() => setAttached((a) => a.filter((c) => comments.some((k) => k.id === c.id))), [comments])
+  // Paths of the viewed file diffs. Reloaded with the changes, since a file diff that changed is no longer viewed.
+  const [viewed, setViewed] = useState<string[]>([])
+  useEffect(() => {
+    setViewed([])
+    if (currentWorkspace && pr.commits && pr.changed)
+      window.coxswain.listViewed(currentWorkspace.id, pr.commits.mergeBase).then(setViewed)
+  }, [currentWorkspace?.id, pr.changed])
+  const markViewed = (path: string, on: boolean) => {
+    if (!currentWorkspace || !pr.commits) return
+    setViewed((v) => (on ? [...v, path] : v.filter((p) => p !== path)))
+    window.coxswain.setViewed(currentWorkspace.id, pr.commits.mergeBase, path, on)
+  }
   const [opened, setOpened] = useState<Opened | null>(null)
   useEffect(() => setOpened(null), [currentWorkspace?.id])
   const open = (path: string) => {
@@ -148,7 +162,14 @@ export function App() {
           </div>
           <div className="flex min-w-0 flex-1 flex-col">
             {currentWorkspace ? (
-              <Navigator key={currentWorkspace.id} workspace={currentWorkspace} pr={pr} view={view} onOpen={open} />
+              <Navigator
+                key={currentWorkspace.id}
+                workspace={currentWorkspace}
+                pr={pr}
+                view={view}
+                viewed={viewed}
+                onOpen={open}
+              />
             ) : (
               <div className={`p-2 ${muted}`}>No workspace</div>
             )}
@@ -158,7 +179,9 @@ export function App() {
 
       <Splitter min={240} max={720} onResize={setLeftWidth} />
       <div style={{ minWidth: viewerMin }} className="flex flex-1 flex-col">
-        <div className={`h-10 shrink-0 border-b [-webkit-app-region:drag] ${pane}`} />
+        <div className={`flex h-10 shrink-0 items-center justify-end border-b px-2 [-webkit-app-region:drag] ${pane}`}>
+          {!agentsOpen && <AgentsToggle open={false} onClick={() => setAgentsOpen(true)} />}
+        </div>
         {opened && pr.commits && currentWorkspace ? (
           <Viewer
             workspace={currentWorkspace}
@@ -168,7 +191,12 @@ export function App() {
             comments={comments}
             onCommentsChanged={loadComments}
             attachedIds={attached.map((c) => c.id)}
-            onAttach={(c) => setAttached((a) => [...a, c])}
+            onAttach={(c) => {
+              setAttached((a) => [...a, c])
+              setAgentsOpen(true) // the comment goes in L4's message box, so show it
+            }}
+            viewed={viewed}
+            onViewedChange={markViewed}
           />
         ) : (
           <div className={`flex flex-1 items-center justify-center ${muted}`}>
@@ -177,8 +205,9 @@ export function App() {
         )}
       </div>
 
-      <Splitter min={240} max={800} fromRight onResize={setAgentsWidth} />
-      <div style={{ width: agentsWidth }} className={`flex min-w-60 flex-col border-l ${pane}`}>
+      {agentsOpen && <Splitter min={240} max={800} fromRight onResize={setAgentsWidth} />}
+      {/* Hidden, not unmounted: a running turn keeps streaming and still reloads the diff when it ends. */}
+      <div style={{ width: agentsWidth }} className={`${agentsOpen ? 'flex' : 'hidden'} min-w-60 flex-col border-l ${pane}`}>
         {currentWorkspace ? (
           <Agents
             key={currentWorkspace.id}
@@ -190,10 +219,13 @@ export function App() {
               loadComments()
             }}
             onTurnEnd={() => setVersion((v) => v + 1)}
+            onHide={() => setAgentsOpen(false)}
           />
         ) : (
           <>
-            <div className={`h-10 shrink-0 border-b [-webkit-app-region:drag] ${pane}`} />
+            <div className={`flex h-10 shrink-0 items-center justify-end border-b px-2 [-webkit-app-region:drag] ${pane}`}>
+              <AgentsToggle open onClick={() => setAgentsOpen(false)} />
+            </div>
             <div className={`flex flex-1 items-center justify-center ${muted}`}>No agent sessions</div>
           </>
         )}

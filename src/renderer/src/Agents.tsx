@@ -4,7 +4,7 @@ import remarkGfm from 'remark-gfm'
 import type { AgentSession, ChatEntry } from '../../core/agents'
 import type { Comment } from '../../core/comments'
 import type { Workspace } from '../../core/workspaces'
-import { button, muted } from './ui'
+import { AgentsToggle, button, muted } from './ui'
 
 const pane = 'border-neutral-200 dark:border-neutral-800'
 
@@ -17,9 +17,10 @@ type Props = {
   onDetach: (id: number) => void
   onSent: () => void
   onTurnEnd: () => void
+  onHide: () => void
 }
 
-export function Agents({ workspace, attached, onDetach, onSent, onTurnEnd }: Props) {
+export function Agents({ workspace, attached, onDetach, onSent, onTurnEnd, onHide }: Props) {
   const [session, setSession] = useState<AgentSession | null>(null)
   const [entries, setEntries] = useState<ChatEntry[]>([])
   const [running, setRunning] = useState(false)
@@ -78,9 +79,12 @@ export function Agents({ workspace, attached, onDetach, onSent, onTurnEnd }: Pro
     <>
       <div className={`flex h-10 shrink-0 items-center justify-between border-b px-2 [-webkit-app-region:drag] ${pane}`}>
         <span className="text-xs font-medium">Claude Code</span>
-        <button className={`${button} text-xs [-webkit-app-region:no-drag]`} disabled={running} onClick={newSession}>
-          New session
-        </button>
+        <div className="flex items-center gap-1">
+          <button className={`${button} text-xs [-webkit-app-region:no-drag]`} disabled={running} onClick={newSession}>
+            New session
+          </button>
+          <AgentsToggle open onClick={onHide} />
+        </div>
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2">
         {entries.length === 0 && !running && (
