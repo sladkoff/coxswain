@@ -166,10 +166,10 @@ export function App() {
   return (
     // Side panes keep their dragged width but shrink with the window before the Viewer goes below viewerMin.
     <div className="flex h-full select-none overflow-hidden text-sm">
-      <div className={`flex flex-col border-r ${pane}`}>
-        {/* The bar drags the window; the macOS window buttons reach past it into L3's. */}
+      <div className={`flex flex-col ${pane}`}>
+        {/* The bar drags the window; the macOS window buttons reach past it into L3's, so the border starts below it. */}
         <div className={`h-10 shrink-0 border-b [-webkit-app-region:drag] ${pane}`} />
-        <div className="flex min-h-0 flex-1">
+        <div className={`flex min-h-0 flex-1 border-r ${pane}`}>
           <div className="flex w-12 flex-col items-center gap-2 py-2">
             {/* The current project, like a Discord server icon. Opens the list to switch or add projects. */}
             <button
