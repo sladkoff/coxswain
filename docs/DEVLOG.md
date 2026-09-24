@@ -33,6 +33,9 @@ Not checked in the app yet: the user runs the first guide with it.
   in the background over a diff of 1000+ files. `usePullRequest` now only returns data for the current
   workspace.
 - **Notes don't mention file numbers**: one said "file 106"; the prompts now say to name files by path.
+- **Guide tags**: grouping may tag a group *generated* (glossary); the default prompt asks for
+  lockfiles, generated clients, snapshots and build output to go in such groups. They're sorted last
+  (in the core, and in the tab after *Not in the guide*) and low-lighted. Old guides have no tags.
 - **Scrolling file diffs no longer freezes** (Diff and Guide tabs): `@pierre/diffs` highlighted each
   file diff on the main thread as it scrolled into range. It now runs in the library's worker pool
   (`WorkerPoolContextProvider` in `main.tsx`, ES module workers in `electron.vite.config.ts`).
@@ -42,8 +45,8 @@ Not checked in the app yet: the user runs the first guide with it.
 - Paid off: summaries weren't cached.
 - **Batch sizes, cut-offs and parallelism are fixed guesses** (`ponytail:` in `guides.ts`): 300 lines
   per diff, 25 files or 1200 lines per batch, 3000 lines per group, 16 calls at once.
-- **Rules for generated files** (lockfiles, OpenAPI clients, ORM models) are deferred; meant to live
-  in the guide prompt.
+- Paid off: rules for generated files, now the *generated* guide tag. A saved custom guide prompt
+  doesn't get the new sentence; the schema's description of the tag still tells the agent.
 - **An unfinished guide** (the app quit while describing) stays so until regenerated.
 - **The progress bar's split** between summarising and grouping (50/50) and its pace are new guesses.
 - **Placeholder heights of file diffs not yet loaded are guesses** (20 px a changed line, capped at

@@ -4,8 +4,12 @@ import { type ChangedFile, diffFingerprint, listChangedFiles, openedWorktree, re
 
 // A guide (glossary): the workspace's file diffs in groups, each about one theme, with a title, a short description
 // of what the reviewer is looking at, and a note on each file diff. Made by Claude Code; stored, since nobody else has it.
-// notes: by path. Missing on guides made before notes, and on a group not described yet.
-export type GuideGroup = { title: string; description: string; paths: string[]; notes?: Record<string, string> }
+// notes: by path. Missing on guides made before notes, and on a group not described yet. tags: see guideTags.
+export type GuideGroup = { title: string; description: string; paths: string[]; notes?: Record<string, string>; tags?: GuideTag[] }
+// Tags the agent can put on a group (glossary). generated: files made by a tool, not written by hand; the group is
+// low-lighted and comes last.
+export const guideTags = ['generated'] as const
+export type GuideTag = (typeof guideTags)[number]
 // model: the models that made it, as Claude Code reported them. mergeBase: the diff it was made from.
 // createdAt: when it was grouped and first stored. finishedAt: null while its groups are still being described, or
 // if that was cut off (the app quit).
@@ -38,7 +42,9 @@ const defaultPrompt = `You are helping a reviewer read a pull request. Sort its 
 (a feature, a refactor, tests, configuration, ...), in the order a reviewer should read them: the core change
 first, supporting changes after. Give each group a short title and a description of one to three sentences
 saying what the reviewer is looking at and what to check, and each file a note of one sentence saying what
-to look at in it. Every changed file goes in exactly one group.`
+to look at in it. Every changed file goes in exactly one group. Put files made by a tool rather than written
+by hand (lockfiles, generated API clients or models, snapshots, build output, migrations dumped by a tool) in
+groups of their own, tagged "generated".`
 
 // Claude Code's own system prompt is for coding; replaced, since everything these calls need is in the message.
 const systemPrompt =
@@ -71,6 +77,11 @@ const groupSchema = {
         properties: {
           title: { type: 'string' },
           files: { type: 'array', items: { type: 'integer' }, description: 'The numbers of its files' },
+          tags: {
+            type: 'array',
+            items: { enum: guideTags },
+            description: '"generated": its files are made by a tool, not written by hand',
+          },
         },
         required: ['title', 'files'],
       },
@@ -263,7 +274,7 @@ async function make(
     groupSchema,
     settings.model,
   )
-  const answer = (grouped.structured as { groups?: { title: string; files: number[] }[] } | undefined)?.groups
+  const answer = (grouped.structured as { groups?: { title: string; files: number[]; tags?: string[] }[] } | undefined)?.groups
   if (!answer) return { status: 'error', message: 'Claude Code gave no guide' }
   // Keep only numbers of changed files, each in its first group, and drop groups left empty. Files the agent left
   // out go in a last group of their own.
@@ -273,10 +284,12 @@ async function make(
       title: String(g.title),
       description: '',
       paths: g.files.filter((n) => n >= 1 && n <= files.length && !seen.has(n) && seen.add(n)).map((n) => files[n - 1].path),
+      tags: guideTags.filter((t) => g.tags?.includes(t)),
     }))
     .filter((g) => g.paths.length)
   const rest = files.filter((_, i) => !seen.has(i + 1)).map((f) => f.path)
   if (rest.length) groups.push({ title: 'Other changes', description: '', paths: rest })
+  groups.sort(lastIfGenerated)
   const model = [grouped.model ?? (settings.model || 'unknown'), summaryModel && `summaries by ${summaryModel}`]
     .filter(Boolean)
     .join(', ')
@@ -338,6 +351,10 @@ async function make(
   )
   return { status: 'ok', guide }
 }
+
+// Generated groups go last, the rest keep their order (sort is stable). The Guide tab sorts the same way.
+const lastIfGenerated = (a: { tags?: GuideTag[] }, b: { tags?: GuideTag[] }) =>
+  Number(!!a.tags?.includes('generated')) - Number(!!b.tags?.includes('generated'))
 
 // Runs fn on every item, at most n at once.
 async function inParallel<T>(items: T[], n: number, fn: (item: T) => Promise<void>) {

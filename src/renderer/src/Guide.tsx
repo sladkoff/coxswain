@@ -70,7 +70,7 @@ export function Guide({ workspace, mergeBase, diffs, viewed, onViewedChange, vie
   }, [workspace.id])
 
   // The guide's groups with the file diffs as they are now, plus the changed files it doesn't mention (changed
-  // since it was made, e.g. by an agent). Files no longer changed drop out.
+  // since it was made, e.g. by an agent), before the generated groups, which stay last. Files no longer changed drop out.
   const groups = useMemo(() => {
     if (state.kind !== 'ok') return []
     const byPath = new Map(diffs.map((d) => [d.file.path, d]))
@@ -82,7 +82,9 @@ export function Guide({ workspace, mergeBase, diffs, viewed, onViewedChange, vie
       ...(rest.length
         ? [{ title: 'Not in the guide', description: 'Changed since the guide was made.', paths: [], diffs: rest }]
         : []),
-    ].filter((g) => g.diffs.length)
+    ]
+      .sort((a, b) => Number(generated(a)) - Number(generated(b)))
+      .filter((g) => g.diffs.length)
   }, [state, diffs])
 
   if (state.kind === 'loading') return null // local and near-instant
@@ -142,7 +144,7 @@ export function Guide({ workspace, mergeBase, diffs, viewed, onViewedChange, vie
                   setPending(i)
                 } else scrollTo(i)
               }}
-              className={`flex items-baseline gap-2 rounded px-1.5 py-1 text-left ${i === current ? 'bg-neutral-200 dark:bg-neutral-700' : 'hover:bg-neutral-100 dark:hover:bg-neutral-800'} ${done ? muted : ''}`}
+              className={`flex items-baseline gap-2 rounded px-1.5 py-1 text-left ${i === current ? 'bg-neutral-200 dark:bg-neutral-700' : 'hover:bg-neutral-100 dark:hover:bg-neutral-800'} ${done || generated(g) ? muted : ''}`}
             >
               <span className="min-w-0 flex-1">{g.title}</span>
               <span className={`shrink-0 tabular-nums ${muted}`}>{done ? '✓' : `${n}/${g.diffs.length}`}</span>
@@ -173,11 +175,12 @@ export function Guide({ workspace, mergeBase, diffs, viewed, onViewedChange, vie
           {shown.map((g) => {
             const done = g.diffs.every((d) => viewed.includes(d.file.path))
             return (
-              <section key={g.i} id={`guide-group-${g.i}`} className="pt-3">
+              <section key={g.i} id={`guide-group-${g.i}`} className={`pt-3 ${generated(g) ? 'opacity-60' : ''}`}>
                 <div className="flex items-start gap-3 px-4 pb-2">
                   <div className="min-w-0 flex-1 select-text">
                     <h2 className="font-semibold">
                       {g.title}{' '}
+                      {generated(g) && <span className={`text-xs font-normal ${muted}`}>Generated · </span>}
                       <span className={`text-xs font-normal ${muted}`}>
                         {g.diffs.length} files{g.shown.length < g.diffs.length && `, ${g.diffs.length - g.shown.length} viewed`}
                       </span>
@@ -211,6 +214,8 @@ export function Guide({ workspace, mergeBase, diffs, viewed, onViewedChange, vie
     </div>
   )
 }
+
+const generated = (g: Pick<GuideGroup, 'tags'>) => !!g.tags?.includes('generated')
 
 const duration = (from: string, to: string) => {
   const s = Math.round((Date.parse(to) - Date.parse(from)) / 1000)

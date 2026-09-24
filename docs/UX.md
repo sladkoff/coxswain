@@ -66,7 +66,8 @@ then the workspace's files, the work in the middle and the agents on the right.
   contents lists every group with how many of its file diffs are viewed (✓ when all are), marks the
   group being read as you scroll, and jumps to a group when clicked (showing viewed ones if it's
   hidden). Above it, a bar of how many file diffs are viewed in all. Changed files the guide doesn't mention (changed since it was
-  made) come last, under *Not in the guide*. The first time the tab opens it shows an approximate progress
+  made) come next, under *Not in the guide*. Groups tagged *generated* (glossary) come last, low-lighted, their title
+  marked *Generated*. The first time the tab opens it shows an approximate progress
   bar while Claude Code summarises and groups the files, labelled
   *Summarising files: N of M batches* and then *Grouping files…*. The guide then shows right away,
   its groups reading *Describing…* until their descriptions and file notes arrive, and the top says
