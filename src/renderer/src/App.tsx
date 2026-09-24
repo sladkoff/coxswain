@@ -7,6 +7,7 @@ import { Agents } from './Agents'
 import { Navigator, type NavigatorView } from './Navigator'
 import { NewWorkspace } from './NewWorkspace'
 import { Onboarding } from './Onboarding'
+import { Guide } from './Guide'
 import { Overview } from './Overview'
 import { Projects } from './Projects'
 import { Settings } from './Settings'
@@ -235,7 +236,19 @@ export function App() {
         ) : tab === 'overview' ? (
           <Overview key={currentWorkspace.id} workspace={currentWorkspace} />
         ) : tab === 'guide' ? (
-          <div className={`flex flex-1 items-center justify-center ${muted}`}>Coming soon</div>
+          !pr.commits || !diffs ? (
+            <div className={`flex flex-1 items-center justify-center ${muted}`}>Loading…</div>
+          ) : (
+            <Guide
+              key={currentWorkspace.id}
+              workspace={currentWorkspace}
+              mergeBase={pr.commits.mergeBase}
+              diffs={diffs}
+              viewed={viewed}
+              onViewedChange={markViewed}
+              viewer={viewerProps(currentWorkspace, pr.commits.mergeBase)}
+            />
+          )
         ) : null}
         {/* The Diff tab stays mounted while hidden, so the Navigator and the file diffs keep their state. */}
         {currentWorkspace && (

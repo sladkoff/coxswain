@@ -46,7 +46,7 @@ then the workspace's files, the work in the middle and the agents on the right.
   menu: *As Tree* or *As List* (a flat list of the changed files, each with its folder dimmed
   next to its +/− lines), and *Show Viewed Files*, which shows viewed files again with a ✓.
 - **L3 — Viewer.** Tabs along the top: *Overview* (the PR's title and description, the tab a
-  workspace opens on), *Guide* (coming soon) and *Diff*, all file diffs side by side one after
+  workspace opens on), *Guide* and *Diff*, all file diffs side by side one after
   another, with the Navigator on their left. Selecting a file in *Diffs* scrolls to its file diff;
   selecting one in *Files* shows the whole file in their place, until the toggle goes back to *Diffs*. Under the tabs, a second bar
   that stays put holds the current tab's options (none yet). A file diff's header has a
@@ -57,6 +57,20 @@ then the workspace's files, the work in the middle and the agents on the right.
   agent* (⇧⌘Enter), which saves the comment and asks the agent about it right away, in an agent
   session of its own: the replies stream into the comment's thread, between the lines, with a box to
   answer. These agent sessions don't show in L4.
+
+  *Guide* shows the workspace's guide: its guide groups one after another, each a title, a short
+  description and then the group's file diffs, the same file diffs as in *Diff* (Viewed checkbox,
+  comments, *Ask agent*). A group has its own *Viewed* checkbox, which marks all its file diffs.
+  Viewed file diffs are hidden, and so is a group once all its file diffs are; the top says how many
+  are viewed, with *Show viewed* to show them again, as in the Navigator. On the left, a table of
+  contents lists every group with how many of its file diffs are viewed (✓ when all are), marks the
+  group being read as you scroll, and jumps to a group when clicked (showing viewed ones if it's
+  hidden). Above it, a bar of how many file diffs are viewed in all. Changed files the guide doesn't mention (changed since it was
+  made) come last, under *Not in the guide*. The first time the tab opens it shows an approximate progress
+  bar while Claude Code makes the guide (seconds for small PRs, minutes for big ones), labelled
+  *Summarising files: N of M batches* and then *Grouping files…*;
+  after that the stored guide shows at once. At the top: which model made it, when, and
+  *Regenerate*. The prompt, the model and the summary model are in Settings, under *Guide*.
 - **L4 — Agents** on the right: the agent sessions of the current workspace. Hidden at first. The *Agent* toggle at the right of
   each tab's bar, *View > Toggle Agents* or ⌥⌘B shows and hides it. *Send to agent* shows it. Several can be open at
   once, e.g. as tabs in the pane. For now L4 is a chat with the workspace's latest agent session:
@@ -77,7 +91,8 @@ then the workspace's files, the work in the middle and the agents on the right.
 
 1. **Inbox:** where do you find PRs that aren't workspaces yet (review requested, new comments on
    your PRs)? Probably an inbox; where it lives and what goes in it is to be decided.
-2. **Tabs in L3:** what goes in *Guide*, and which options go in each tab's bar?
+2. **Tabs in L3:** which options go in each tab's bar? Should *Regenerate* move to the Guide's bar?
+   Should a guide group down to hunks, not whole file diffs?
 3. **Comments list:** where do you see all comments of a workspace, to pick which ones to ask the
    agent about? To be explored.
 4. **Agents in L4:** tabs, a list, or split panes, and how running and finished agent sessions look.

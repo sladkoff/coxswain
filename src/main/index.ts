@@ -20,6 +20,7 @@ import {
   readFileAt,
   readWorktreeFile,
 } from '../core/git'
+import { createGuide, getGuide, getGuideSettings, type GuideSettingsChange, setGuideSettings, stopGuides } from '../core/guides'
 import { getCurrentUser, getPullRequestOverview, listPullRequests, listRepos } from '../core/github'
 import { listProjects, openProject } from '../core/projects'
 import { listViewed, setViewed } from '../core/viewed'
@@ -161,6 +162,14 @@ app.whenReady().then(() => {
         ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
       ),
   )
+  ipcMain.handle('guides:get', (_, workspaceId: number, mergeBase: string) => getGuide(db, workspaceId, mergeBase))
+  ipcMain.handle('guides:create', (e, workspaceId: number, mergeBase: string) =>
+    createGuide(db, workspaceId, mergeBase, (p) => {
+      if (!e.sender.isDestroyed()) e.sender.send('guides:progress', workspaceId, p)
+    }),
+  )
+  ipcMain.handle('guides:settings', () => getGuideSettings(db))
+  ipcMain.handle('guides:set-settings', (_, s: GuideSettingsChange) => setGuideSettings(db, s))
   ipcMain.handle('agents:stop-turn', (_, agentSessionId: string) => stopTurn(agentSessionId))
   createWindow()
   app.on('activate', () => {
@@ -168,7 +177,10 @@ app.whenReady().then(() => {
   })
 })
 
-app.on('will-quit', stopAllTurns)
+app.on('will-quit', () => {
+  stopAllTurns()
+  stopGuides()
+})
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()

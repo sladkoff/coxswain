@@ -3,6 +3,46 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-24 — Guide
+
+### What works
+
+- **The Guide tab** ([ADR 0009](adr/0009-guides-from-structured-output.md)). The first time it opens
+  it shows a progress bar while `createGuide` asks Claude Code (`claude -p` with a
+  JSON schema). No diff goes in the prompt: agents get the file list and read diffs themselves with
+  `git diff` (read-only tools, no MCP servers). A big PR is cut into batches of files, summarised by
+  up to eight agents at once on the summary model (`haiku`), then one agent groups the summaries. The guide's groups show one after another: title, a short
+  description of what to look at, then the group's file diffs, the same Viewer as in *Diff*
+  (comments, *Ask agent*, Viewed). A group's *Viewed* checkbox marks all its file diffs. Viewed file
+  diffs and fully viewed groups are hidden, with *Show viewed* to bring them back. A table of
+  contents on the left lists the groups with their viewed counts and a bar for the whole guide,
+  follows the scroll, and jumps to a group on click. Its width is fixed (`ponytail:` in `Guide.tsx`). Files the guide doesn't mention show last under *Not in the guide*. *Regenerate* makes
+  a new one. Leaving the tab while it's being made and coming back waits for the same run.
+- **Guides are stored** (`guides`, migration 7) with the merge base and the model that made them,
+  shown at the top of the tab. Checked in the app: #5284 got five groups from
+  `claude-opus-5-5[1m]`, and showed again at once after a restart.
+- **Settings > Guide**: the guide prompt (with *Reset*), the model (empty is Claude Code's
+  default) and the summary model, stored in a new `settings` table (migration 8).
+- **Stacked file diffs read their files only when scrolled near the screen**, in both *Diff* and
+  *Guide*. Before, a big PR (#5311, 297 files) started ~600 `git` processes at once and every other
+  call, like switching tabs or workspaces, queued behind them.
+- The agents are told to run `git diff --no-ext-diff`, since one repo's `.gitattributes` sends CSV to
+  `daff`, which isn't always installed. A first version put the patch in the prompt and failed on it.
+
+### Tech debt
+
+- **Groups are whole file diffs**, not hunks (UX open question 2).
+- **Summaries aren't cached**, and batch sizes and parallelism are fixed (`ponytail:` in
+  `guides.ts`): *Regenerate* summarises everything again. Cache by `diffFingerprint` when that hurts.
+- **The progress bar is approximate**: the core reports batches summarised and when grouping
+  starts (`guides:progress`); between those the bar creeps on at a guessed pace (`Guide.tsx`), and
+  the split between summarising and grouping (60/40) is a guess from one PR.
+- **A guide from another merge base is hidden, not marked outdated**, and files changed since
+  only show under *Not in the guide*.
+- **Two app instances make two guides**: runs are shared per process only.
+- **A file diff still loading shows its path at a guessed height**, so scrolling to a file can land a
+  bit off until the ones above it have loaded (the old `ponytail:` in `App.tsx`, now smaller).
+
 ## 2026-09-24 — Viewer tabs
 
 ### What works

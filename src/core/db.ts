@@ -43,6 +43,17 @@ const migrations = [
   )`,
   // An agent session asked from a comment, whose replies show in the comment's thread rather than in L4.
   `alter table agent_sessions add column comment_id integer references comments (id) on delete cascade`,
+  // A guide to a workspace's diff, made by an agent. groups: JSON, [{ title, description, paths }].
+  `create table guides (
+    id integer primary key,
+    workspace_id integer not null references workspaces (id) on delete cascade,
+    merge_base text not null,
+    model text not null,
+    groups text not null,
+    created_at text not null
+  )`,
+  // The user's settings that the core needs, e.g. the guide prompt. Unset keys use the core's defaults.
+  `create table settings (key text primary key, value text not null)`,
 ]
 
 export function openDatabase(path: string): DatabaseSync {

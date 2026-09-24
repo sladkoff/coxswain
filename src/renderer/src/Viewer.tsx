@@ -56,10 +56,25 @@ export const Viewer = memo(function Viewer(props: Props) {
     setSelection(null)
   }
   const path = opened.kind === 'diff' ? opened.file.path : opened.path
+  // A stacked file diff reads its file only once it scrolls near the screen: a big PR has thousands, and reading
+  // them all at once queues every other call behind thousands of git processes.
+  const [near, setNear] = useState(!props.stacked)
+  const placeholder = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = placeholder.current
+    if (near || !el) return
+    const o = new IntersectionObserver((es) => es.some((e) => e.isIntersecting) && setNear(true), {
+      root: el.closest('.overflow-auto'),
+      rootMargin: '1500px 0px',
+    })
+    o.observe(el)
+    return () => o.disconnect()
+  }, [near])
 
   // Only a different file clears the Viewer; rereading after an agent turn keeps it in place until the new text is in.
   useEffect(() => setSides(null), [opened, mergeBase])
   useEffect(() => {
+    if (!near) return
     let stale = false
     const oldSide: Promise<FileText> =
       opened.kind === 'file'
@@ -73,7 +88,7 @@ export const Viewer = memo(function Viewer(props: Props) {
         : window.coxswain.readWorktreeFile(workspace.id, path)
     Promise.all([oldSide, newSide]).then(([o, n]) => !stale && setSides({ old: o, new: n }))
     return () => void (stale = true)
-  }, [opened, mergeBase, version])
+  }, [opened, mergeBase, version, near])
   useEffect(closeDraft, [opened])
 
   const options = useMemo(
@@ -110,6 +125,15 @@ export const Viewer = memo(function Viewer(props: Props) {
     }
   }, [comments, draft, opened])
 
+  if (!near && opened.kind === 'diff') {
+    // Roughly the file diff's height, so scrolling to a file further down lands near it.
+    const height = 44 + 20 * Math.min(opened.file.additions + opened.file.deletions + 6, 200)
+    return (
+      <div ref={placeholder} style={{ height }} className={`border-b border-neutral-200 px-3 py-2 text-xs dark:border-neutral-800 ${muted}`}>
+        {path}
+      </div>
+    )
+  }
   if (!sides || !files) return <Centered>Loading…</Centered>
   const { old: o, new: n } = sides
   if (o.status !== 'ok' || n.status !== 'ok')

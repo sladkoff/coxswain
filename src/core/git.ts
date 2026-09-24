@@ -155,7 +155,7 @@ export async function openWorktree(db: DatabaseSync, workspaceId: number): Promi
   })
 }
 
-function openedWorktree(db: DatabaseSync, workspaceId: number): string {
+export function openedWorktree(db: DatabaseSync, workspaceId: number): string {
   const { owner, name } = getWorkspaceRepo(db, workspaceId)
   const path = worktreePath(owner, name, workspaceId)
   if (!existsSync(join(path, '.git'))) throw new GitError('The worktree is not ready yet')

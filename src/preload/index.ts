@@ -3,6 +3,7 @@ import type { AgentSession, ChatEntry, TurnResult } from '../core/agents'
 import type { Comment, NewComment } from '../core/comments'
 import type { ChangedFileList, CloneResult, FileText, FileTreeResult, WorktreeResult } from '../core/git'
 import type { CurrentUser, PullRequestList, PullRequestOverview, RepoPage } from '../core/github'
+import type { Guide, GuideProgress, GuideResult, GuideSettings, GuideSettingsChange } from '../core/guides'
 import type { Project } from '../core/projects'
 import type { Workspace } from '../core/workspaces'
 
@@ -46,6 +47,18 @@ const api = {
     ipcRenderer.invoke('viewed:list', workspaceId, mergeBase),
   setViewed: (workspaceId: number, mergeBase: string, path: string, viewed: boolean): Promise<void> =>
     ipcRenderer.invoke('viewed:set', workspaceId, mergeBase, path, viewed),
+  getGuide: (workspaceId: number, mergeBase: string): Promise<Guide | null> =>
+    ipcRenderer.invoke('guides:get', workspaceId, mergeBase),
+  createGuide: (workspaceId: number, mergeBase: string): Promise<GuideResult> =>
+    ipcRenderer.invoke('guides:create', workspaceId, mergeBase),
+  onGuideProgress: (callback: (workspaceId: number, progress: GuideProgress) => void) => {
+    const listener = (_: unknown, id: number, p: GuideProgress) => callback(id, p)
+    ipcRenderer.on('guides:progress', listener)
+    return () => void ipcRenderer.off('guides:progress', listener)
+  },
+  getGuideSettings: (): Promise<GuideSettings> => ipcRenderer.invoke('guides:settings'),
+  setGuideSettings: (settings: GuideSettingsChange): Promise<void> =>
+    ipcRenderer.invoke('guides:set-settings', settings),
   stopTurn: (agentSessionId: string): Promise<void> => ipcRenderer.invoke('agents:stop-turn', agentSessionId),
   onChatEntry: (callback: (agentSessionId: string, entry: ChatEntry) => void) => {
     const listener = (_: unknown, id: string, entry: ChatEntry) => callback(id, entry)
