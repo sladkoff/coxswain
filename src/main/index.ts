@@ -1,6 +1,14 @@
 import { app, BrowserWindow, ipcMain, Menu, shell } from 'electron'
 import { join } from 'node:path'
-import { listAgentSessions, readTranscript, runTurn, startAgentSession, stopAllTurns, stopTurn } from '../core/agents'
+import {
+  listAgentSessions,
+  readTranscript,
+  runTurn,
+  startAgentSession,
+  startCommentSession,
+  stopAllTurns,
+  stopTurn,
+} from '../core/agents'
 import { addComment, deleteComment, listComments, type NewComment } from '../core/comments'
 import { openDatabase } from '../core/db'
 import {
@@ -12,11 +20,11 @@ import {
   readFileAt,
   readWorktreeFile,
 } from '../core/git'
-import { getCurrentUser, listPullRequests, listRepos } from '../core/github'
+import { getCurrentUser, getPullRequestOverview, listPullRequests, listRepos } from '../core/github'
 import { listProjects, openProject } from '../core/projects'
 import { listViewed, setViewed } from '../core/viewed'
 import type { NavigatorSettings } from '../preload'
-import { listWorkspaces, openPullRequestWorkspace } from '../core/workspaces'
+import { getWorkspaceRepo, listWorkspaces, openPullRequestWorkspace } from '../core/workspaces'
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -47,6 +55,10 @@ function openSettings() {
 }
 
 // ponytail: macOS menu layout only; add a File > Settings entry when we ship Windows/Linux.
+// ponytail: one window for now, so no focused window (e.g. the app isn't frontmost) means that one.
+const sendToWindow = (channel: string) =>
+  (BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0])?.webContents.send(channel)
+
 const menu = Menu.buildFromTemplate([
   {
     label: app.name,
@@ -69,12 +81,8 @@ const menu = Menu.buildFromTemplate([
   {
     label: 'View',
     submenu: [
-      {
-        label: 'Toggle Agents',
-        accelerator: 'CmdOrCtrl+Alt+B',
-        // ponytail: one window for now, so no focused window (e.g. the app isn't frontmost) means that one.
-        click: () => (BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0])?.webContents.send('toggle-agents'),
-      },
+      { label: 'Toggle Navigator', accelerator: 'CmdOrCtrl+B', click: () => sendToWindow('toggle-navigator') },
+      { label: 'Toggle Agents', accelerator: 'CmdOrCtrl+Alt+B', click: () => sendToWindow('toggle-agents') },
       { type: 'separator' },
       { role: 'reload' },
       { role: 'toggleDevTools' },
@@ -97,6 +105,10 @@ app.whenReady().then(() => {
   ipcMain.handle('github:current-user', () => getCurrentUser())
   ipcMain.handle('github:list-repos', (_, page: number) => listRepos(page))
   ipcMain.handle('github:list-pulls', (_, owner: string, name: string) => listPullRequests(owner, name))
+  ipcMain.handle('github:pull-overview', (_, workspaceId: number) => {
+    const { owner, name, prNumber } = getWorkspaceRepo(db, workspaceId)
+    return getPullRequestOverview(owner, name, prNumber)
+  })
   ipcMain.handle('workspaces:list', (_, projectId: number) => listWorkspaces(db, projectId))
   ipcMain.handle('workspaces:open-pr', (_, projectId: number, prNumber: number) =>
     openPullRequestWorkspace(db, projectId, prNumber),
@@ -116,6 +128,7 @@ app.whenReady().then(() => {
   )
   ipcMain.handle('agents:list', (_, workspaceId: number) => listAgentSessions(db, workspaceId))
   ipcMain.handle('agents:start', (_, workspaceId: number) => startAgentSession(db, workspaceId))
+  ipcMain.handle('agents:start-for-comment', (_, commentId: number) => startCommentSession(db, commentId))
   ipcMain.handle('agents:transcript', (_, agentSessionId: string) => readTranscript(agentSessionId))
   ipcMain.handle('comments:list', (_, workspaceId: number) => listComments(db, workspaceId))
   ipcMain.handle('comments:add', (_, comment: NewComment) => addComment(db, comment))

@@ -16,7 +16,7 @@ listed at the end.
 | **Pull request (PR)** | A GitHub request to merge a head branch into a base branch of a repository. Has an author, reviewers, file diffs, review comments and a conversation. | *Branch*: a PR points at a branch but also carries review state and conversation. |
 | **File diff** | The change to one file between two revisions: in a PR (base → head), or in a worktree (its base → working state). | *Diff*: the whole set of file diffs of a PR or worktree. |
 | **Comment** | A remark anchored to a file diff line range (or to a whole PR or diff), stored in coxswain. Either a local comment or an imported comment. Comments are what coxswain gives to agents. | *Annotation*: don't use it as a separate term; a local comment is still a comment. |
-| **Thread** | A comment and its replies. Can be resolved. | |
+| **Thread** | A comment and its replies. Can be resolved. Asking the agent from a comment starts an agent session in its thread: the agent's replies, and the user's answers to them, show there. | *Agent session in L4*: one not tied to a comment. |
 | **Local comment** | A comment written in coxswain, mainly for agents. Private to the user until published. Works on any diff: a PR, a worktree, an agent session's result, a local-only repository. | *Review comment*. |
 | **Imported comment** | A comment copied into coxswain from GitHub (a review comment or a conversation comment), so it can be given to an agent. Remembers where it came from. | *Review comment*: the review comment is the original on GitHub; the imported comment is coxswain's copy. |
 | **Import** | Copying a PR's GitHub comments into coxswain. | |
@@ -26,8 +26,11 @@ listed at the end.
 | **Conversation** | The PR's discussion thread (GitHub's "Conversation" tab): comments on the PR as a whole, not tied to a line. | *Review comment*; GitHub Discussions, which coxswain doesn't use. |
 | **Ask** | Giving a set of comments (or a prompt) to an agent, with what you want back. Two kinds so far: *change* (implement it, producing file diffs) and *explain* (answer, without changing code). Starts an agent session. | *Prompt*: the prompt is the text an ask turns into. |
 | **Workspace** | A unit of work in a project, as shown in the sidebar: either a PR being reviewed or a local iteration. Has one worktree, and its diff, open tabs, comments and agent sessions. | *Agent session*: one run of an agent; a workspace can have many. *Project*: a project has many workspaces. |
-| **Navigator** | The pane next to the workspace icons ([UX](../UX.md) L2). A toggle at its top switches between *Diffs*, the workspace's changed files, and *Files*, the whole file tree of the workspace. | *Viewer*: the navigator lists files; the viewer shows the one you open. |
-| **Viewer** | The main pane ([UX](../UX.md) L3). Shows what was opened from the navigator: the file diff of a changed file (from *Diffs*), or a whole file at the workspace's head (from *Files*). | *Navigator*. |
+| **Navigator** | The file list on the left of the Diff tab ([UX](../UX.md) L2), shown with its *Files* toggle. A toggle at its top switches between *Diffs*, the workspace's changed files, and *Files*, the whole file tree of the workspace. | *Viewer*: the navigator lists files; the viewer shows the one you open. |
+| **Viewer** | The main pane ([UX](../UX.md) L3), with the workspace's tabs along its top: *Overview*, *Guide* and *Diff*, plus a tab for a whole file opened from *Files*. | *Navigator*. |
+| **Overview** | The Viewer tab that shows the PR's title and description. | *Conversation*: the overview is only the PR's description for now. |
+| **Guide** | A Viewer tab, still empty. | |
+| **Diff tab** | The Viewer tab that shows all file diffs of the workspace one after another, to scroll through. Opening a changed file in *Diffs* scrolls to it. | *Diff*: the tab shows the diff. |
 | **Viewed** | A file diff the user has marked as seen, in the Viewer. Stays viewed only while the file diff is unchanged: an agent's edit or new PR commits on that file make it unviewed again. Local to coxswain for now, not synced with GitHub's own *Viewed* checkbox. | *Resolved*: that is for threads, not files. |
 | **Worktree** | One checkout of a repository at a branch, where code can be changed. Every agent session works in exactly one worktree. | *Branch*: several worktrees can't share a branch; a branch exists without a worktree. |
 | **PR worktree** | A worktree checked out on a PR's head branch. Changes made there become new commits on the PR once pushed. | |

@@ -143,3 +143,17 @@ export function getPullRequestHead(owner: string, name: string, prNumber: number
     }
   })
 }
+
+export type PullRequestOverview = { status: 'ok'; title: string; body: string } | GitHubProblem
+
+// What the Overview tab shows about a PR.
+export function getPullRequestOverview(owner: string, name: string, prNumber: number): Promise<PullRequestOverview> {
+  return withGitHub(async (octokit) => {
+    const { data: pr } = await octokit.request('GET /repos/{owner}/{repo}/pulls/{pull_number}', {
+      owner,
+      repo: name,
+      pull_number: prNumber,
+    })
+    return { status: 'ok', title: pr.title, body: pr.body ?? '' }
+  })
+}

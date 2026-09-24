@@ -3,6 +3,26 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-24 — Viewer tabs
+
+### What works
+
+- **Tabs in L3:** *Overview*, *Guide* and *Diff*. A workspace opens on *Overview*: the PR's title
+  and its description as Markdown (`getPullRequestOverview`, fetched each time, not stored).
+  *Guide* says "Coming soon". *Diff* shows every changed file's diff one after another in one
+  scroll, with the Navigator on its left, shown with the *Files N* toggle in the tab's bar; picking a changed file there scrolls to
+  it, and a file picked in *Files* shows in place of the file diffs. The Diff tab stays mounted
+  while another tab shows, so the file diffs and Navigator keep their state. A second bar under the tabs is there for each tab's options, empty so far.
+- **The Navigator and L4 start hidden**; ⌘B (*View > Toggle Navigator*) toggles the Navigator too.
+  L4's button moved from its header to the right of each tab's bar, as an *Agent* toggle like *Files*.
+
+### Tech debt
+
+- **The Diff tab renders every file diff at once** (`ponytail:` in `App.tsx`); load them as they
+  scroll into view if big PRs get slow.
+- **Scrolling to a file diff can land short** while file diffs above it are still loading
+  (`ponytail:` in `App.tsx`).
+
 ## 2026-09-24 — Local comments and asks
 
 Comments on code, handed to the agent: the first version of the main selling point (G4) from inside
@@ -21,6 +41,11 @@ coxswain, before importing any GitHub comments.
   fence, the comment) and marks them sent; they then show *Sent to agent* inline.
 - **Agent replies render as Markdown** in L4 (`react-markdown` + `remark-gfm`: lists, tables,
   code, links). Links open in the browser; the app window never navigates.
+- **Ask agent from a comment.** The comment box has *Ask agent* (⇧⌘Enter): it saves the comment
+  and starts an agent session tied to it (`agent_sessions.comment_id`, migration 6), with the
+  comment as the first turn. Replies stream into the comment's thread in the Viewer, and the user
+  can answer there. L4 leaves these sessions out. The Viewer now keeps showing the file while it
+  rereads after a turn, instead of flashing *Loading…*. Checked in the app: an ask and a follow-up.
 - **Viewed files.** A *Viewed* checkbox in a file diff's header; the Navigator hides viewed files, says
   "N of M viewed", and has a cog button with a native menu: *Show Viewed Files* (then shown with a
   ✓), and *As Tree* / *As List* for the changed files. Stored per workspace (`viewed_files`, migration 5) with a fingerprint of the
@@ -46,6 +71,8 @@ coxswain, before importing any GitHub comments.
   the file and the folder goes in the row decoration. Two files with the same name show their whole
   path instead. A long file name squeezes out its folder and can clip the +/− lines.
 - **Whether the Agents pane is shown resets on restart**, like the pane widths.
+- **A thread may show an entry twice** if it mounts while its turn runs (transcript + stream;
+  `ponytail:` in `Viewer.tsx`).
 - **Pane widths reset on restart** (`ponytail:` in `App.tsx`); persist them once there's a settings
   table.
 - **Comments drift.** They're anchored by line numbers only, so an agent's edits move them off their

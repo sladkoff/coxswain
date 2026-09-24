@@ -12,7 +12,7 @@ then the workspace's files, the work in the middle and the agents on the right.
 
 ```
 ┌─────────────────────┬─────────────────────────────────┬──────────────────┐
-│                     │ [tab] [tab] [tab]               │ [agent] [agent]  │
+│                     │ Overview  Guide  Diff           │ [agent] [agent]  │
 ├────┬────────────────┤─────────────────────────────────┤──────────────────┤
 │ L1 │ L2 Navigator   │ L3 Viewer                       │ L4               │
 │    │ Diffs │ Files  │                                 │                  │
@@ -35,7 +35,9 @@ then the workspace's files, the work in the middle and the agents on the right.
   Below it, one icon per workspace of the project, in the order they were added, with the current
   one marked; `+` starts a new workspace. A workspace is either a PR or a local iteration, and has
   one worktree. For now `+` only offers the repository's open PRs.
-- **L2 — Navigator.** A toggle at the top switches between *Diffs*, the current workspace's changed
+- **L2 — Navigator**, on the left of L3's *Diff* tab. Hidden at first; the *Files N* toggle in the
+  tab's bar (N the number of changed files), *View > Toggle Navigator* or ⌘B shows and hides it.
+  Its border can be dragged. A toggle in its header switches between *Diffs*, the current workspace's changed
   files as a tree with their status and +/− lines, and *Files*, the whole file tree of the
   workspace, with folders that contain changes marked. Both come from the worktree, so *Diffs* shows
   the PR's file diffs and local changes (e.g. an agent's) together, and reloads after each turn.
@@ -43,15 +45,20 @@ then the workspace's files, the work in the middle and the agents on the right.
   files are hidden; the top says how many of the files are viewed, and a cog button opens a native
   menu: *As Tree* or *As List* (a flat list of the changed files, each with its folder dimmed
   next to its +/− lines), and *Show Viewed Files*, which shows viewed files again with a ✓.
-- **L3 — Viewer.** Shows what was opened in the navigator: selecting a file in *Diffs* shows its
-  file diff side by side, selecting one in *Files* shows the whole file. A file diff's header has a
+- **L3 — Viewer.** Tabs along the top: *Overview* (the PR's title and description, the tab a
+  workspace opens on), *Guide* (coming soon) and *Diff*, all file diffs side by side one after
+  another, with the Navigator on their left. Selecting a file in *Diffs* scrolls to its file diff;
+  selecting one in *Files* shows the whole file in their place, until the toggle goes back to *Diffs*. Under the tabs, a second bar
+  that stays put holds the current tab's options (none yet). A file diff's header has a
   *Viewed* checkbox. Local comments go between
   the lines: hovering a line shows a `+` in the gutter; clicking it (or dragging it over a range)
   opens a box to write the comment. A saved comment has *Send to agent*, which puts it in the L4
-  message box, and shows *Sent to agent* once an ask included it. A workspace can have several open tabs along the top (details to be decided).
-- **L4 — Agents** on the right: the agent sessions of the current workspace. It can be hidden with
-  the button in its header, *View > Toggle Agents* or ⌥⌘B, and shown again with the button that
-  then appears at the right of L3's top bar. *Send to agent* shows it. Several can be open at
+  message box, and shows *Sent to agent* once an ask included it. The comment box also has *Ask
+  agent* (⇧⌘Enter), which saves the comment and asks the agent about it right away, in an agent
+  session of its own: the replies stream into the comment's thread, between the lines, with a box to
+  answer. These agent sessions don't show in L4.
+- **L4 — Agents** on the right: the agent sessions of the current workspace. Hidden at first. The *Agent* toggle at the right of
+  each tab's bar, *View > Toggle Agents* or ⌥⌘B shows and hides it. *Send to agent* shows it. Several can be open at
   once, e.g. as tabs in the pane. For now L4 is a chat with the workspace's latest agent session:
   its turns, with each tool the agent used as one line, and a message box at the bottom (Enter
   sends, Shift+Enter adds a line). Comments sent from L3 sit above the message box as chips, can be
@@ -60,7 +67,7 @@ then the workspace's files, the work in the middle and the agents on the right.
 
 ## Across all levels
 
-- The borders between L2, L3 and L4 can be dragged to resize the panes; L3 takes the rest.
+- The borders of L2 and L4 can be dragged to resize the panes; L3 takes the rest.
 - **⌘K** is always available, both to switch to anything (project, workspace, PR, file,
   agent session) and to run any command.
 - Projects, repositories and PRs must be quick to reach: L1 and ⌘K.
@@ -70,8 +77,7 @@ then the workspace's files, the work in the middle and the agents on the right.
 
 1. **Inbox:** where do you find PRs that aren't workspaces yet (review requested, new comments on
    your PRs)? Probably an inbox; where it lives and what goes in it is to be decided.
-2. **Tabs in L3:** what goes in a tab (files, diffs, agent sessions?), and do tabs belong to a
-   workspace and come back when you return to it?
+2. **Tabs in L3:** what goes in *Guide*, and which options go in each tab's bar?
 3. **Comments list:** where do you see all comments of a workspace, to pick which ones to ask the
    agent about? To be explored.
 4. **Agents in L4:** tabs, a list, or split panes, and how running and finished agent sessions look.

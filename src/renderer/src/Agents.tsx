@@ -4,7 +4,7 @@ import remarkGfm from 'remark-gfm'
 import type { AgentSession, ChatEntry } from '../../core/agents'
 import type { Comment } from '../../core/comments'
 import type { Workspace } from '../../core/workspaces'
-import { AgentsToggle, button, muted } from './ui'
+import { button, muted } from './ui'
 
 const pane = 'border-neutral-200 dark:border-neutral-800'
 
@@ -17,10 +17,9 @@ type Props = {
   onDetach: (id: number) => void
   onSent: () => void
   onTurnEnd: () => void
-  onHide: () => void
 }
 
-export function Agents({ workspace, attached, onDetach, onSent, onTurnEnd, onHide }: Props) {
+export function Agents({ workspace, attached, onDetach, onSent, onTurnEnd }: Props) {
   const [session, setSession] = useState<AgentSession | null>(null)
   const [entries, setEntries] = useState<ChatEntry[]>([])
   const [running, setRunning] = useState(false)
@@ -83,7 +82,6 @@ export function Agents({ workspace, attached, onDetach, onSent, onTurnEnd, onHid
           <button className={`${button} text-xs [-webkit-app-region:no-drag]`} disabled={running} onClick={newSession}>
             New session
           </button>
-          <AgentsToggle open onClick={onHide} />
         </div>
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2">
@@ -137,7 +135,7 @@ export function Agents({ workspace, attached, onDetach, onSent, onTurnEnd, onHid
 
 // Agent replies are Markdown; links get target=_blank so the main process opens them in the browser.
 // ponytail: code blocks aren't highlighted; use @pierre/diffs' Shiki if they need it.
-function Entry({ entry }: { entry: ChatEntry }) {
+export function Entry({ entry }: { entry: ChatEntry }) {
   if (entry.kind === 'tool')
     return <div className={`truncate font-mono text-xs ${muted}`}>⏺ {entry.text}</div>
   if (entry.kind === 'user')

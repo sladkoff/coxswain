@@ -15,12 +15,14 @@ export type Comment = {
   body: string
   createdAt: string
   sentAt: string | null
+  agentSessionId: string | null // the agent session in its thread, if the agent was asked from it
 }
 
 export type NewComment = Pick<Comment, 'workspaceId' | 'path' | 'side' | 'startLine' | 'endLine' | 'code' | 'body'>
 
 const columns = `id, workspace_id as workspaceId, path, side, start_line as startLine, end_line as endLine, code, body,
-  created_at as createdAt, sent_at as sentAt`
+  created_at as createdAt, sent_at as sentAt,
+  (select agent_session_id from agent_sessions where comment_id = comments.id order by id desc limit 1) as agentSessionId`
 
 export function listComments(db: DatabaseSync, workspaceId: number): Comment[] {
   return db.prepare(`select ${columns} from comments where workspace_id = ? order by id`).all(workspaceId) as Comment[]
@@ -30,12 +32,13 @@ export function addComment(db: DatabaseSync, c: NewComment): Comment {
   if (c.side !== 'old' && c.side !== 'new') throw new Error(`Not a side: ${c.side}`)
   if (!c.body.trim()) throw new Error('A comment needs text')
   const [start, end] = [c.startLine, c.endLine].sort((a, b) => a - b)
-  return db
+  const { id } = db
     .prepare(
       `insert into comments (workspace_id, path, side, start_line, end_line, code, body, created_at)
-       values (?, ?, ?, ?, ?, ?, ?, ?) returning ${columns}`,
+       values (?, ?, ?, ?, ?, ?, ?, ?) returning id`,
     )
-    .get(c.workspaceId, c.path, c.side, start, end, c.code, c.body.trim(), new Date().toISOString()) as Comment
+    .get(c.workspaceId, c.path, c.side, start, end, c.code, c.body.trim(), new Date().toISOString()) as { id: number }
+  return db.prepare(`select ${columns} from comments where id = ?`).get(id) as Comment
 }
 
 export function deleteComment(db: DatabaseSync, id: number) {

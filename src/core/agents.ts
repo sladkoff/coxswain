@@ -19,10 +19,11 @@ export type TurnResult = { status: 'ok' } | { status: 'error'; message: string }
 
 const columns = 'id, workspace_id as workspaceId, agent_session_id as agentSessionId, created_at as createdAt'
 
-// Oldest first; the last one is the current agent session of the workspace.
+// The workspace's agent sessions in L4, oldest first; the last one is the current one. Those asked from a
+// comment belong to its thread and aren't listed.
 export function listAgentSessions(db: DatabaseSync, workspaceId: number): AgentSession[] {
   return db
-    .prepare(`select ${columns} from agent_sessions where workspace_id = ? order by id`)
+    .prepare(`select ${columns} from agent_sessions where workspace_id = ? and comment_id is null order by id`)
     .all(workspaceId) as AgentSession[]
 }
 
@@ -33,6 +34,19 @@ export function startAgentSession(db: DatabaseSync, workspaceId: number): AgentS
        returning ${columns}`,
     )
     .get(workspaceId, randomUUID(), new Date().toISOString()) as AgentSession
+}
+
+// An agent session in a comment's thread, asked about that comment. Its first turn is the comment itself.
+export function startCommentSession(db: DatabaseSync, commentId: number): AgentSession {
+  const session = db
+    .prepare(
+      `insert into agent_sessions (workspace_id, agent, agent_session_id, created_at, comment_id)
+       select workspace_id, 'claude', ?, ?, id from comments where id = ?
+       returning ${columns}`,
+    )
+    .get(randomUUID(), new Date().toISOString(), commentId) as AgentSession | undefined
+  if (!session) throw new Error(`No comment ${commentId}`)
+  return session
 }
 
 // Agent sessions run in their workspace's worktree, which opening the workspace creates (ADR 0008).

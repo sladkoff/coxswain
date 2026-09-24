@@ -1,13 +1,18 @@
 import type { DiffLineAnnotation, LineAnnotation, SelectedLineRange } from '@pierre/diffs'
 import { File, MultiFileDiff } from '@pierre/diffs/react'
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
+import type { ChatEntry } from '../../core/agents'
 import type { Comment } from '../../core/comments'
 import type { ChangedFile, FileText } from '../../core/git'
 import type { Workspace } from '../../core/workspaces'
+import { Entry } from './Agents'
 import { button, muted, primaryButton, ProblemMessage } from './ui'
 
 // What the Viewer shows: the file diff of a changed file, or a whole file as it is in the worktree.
 export type Opened = { kind: 'diff'; file: ChangedFile } | { kind: 'file'; path: string }
+// A turn of an agent session in a comment's thread.
+export type Turn = { running: boolean; error: string | null }
+type RunTurn = (agentSessionId: string, message: string, commentIds: number[]) => void
 
 type Draft = { side: 'old' | 'new'; startLine: number; endLine: number }
 // What an inline box between the lines shows: a saved comment, or the form for a new one.
@@ -26,6 +31,10 @@ type Props = {
   onAttach: (comment: Comment) => void
   viewed: string[]
   onViewedChange: (path: string, viewed: boolean) => void
+  turns: Record<string, Turn>
+  onRunTurn: RunTurn
+  // One of several file diffs one after another: the parent scrolls, not the Viewer.
+  stacked?: boolean
 }
 
 const baseOptions = { preferredHighlighter: 'shiki-js', overflow: 'scroll', stickyHeader: true } as const
@@ -46,8 +55,9 @@ export function Viewer(props: Props) {
   }
   const path = opened.kind === 'diff' ? opened.file.path : opened.path
 
+  // Only a different file clears the Viewer; rereading after an agent turn keeps it in place until the new text is in.
+  useEffect(() => setSides(null), [opened, mergeBase])
   useEffect(() => {
-    setSides(null)
     let stale = false
     const oldSide: Promise<FileText> =
       opened.kind === 'file'
@@ -99,9 +109,16 @@ export function Viewer(props: Props) {
     const [start, end] = [d.startLine, d.endLine].sort((a, b) => a - b)
     const text = (d.side === 'old' ? o.text : n.text) ?? ''
     const code = text.split('\n').slice(start - 1, end).join('\n')
-    await window.coxswain.addComment({ workspaceId: workspace.id, path, side: d.side, startLine: start, endLine: end, code, body })
+    const comment = await window.coxswain.addComment({ workspaceId: workspace.id, path, side: d.side, startLine: start, endLine: end, code, body })
     closeDraft()
     onCommentsChanged()
+    return comment
+  }
+  // Saves the comment and asks the agent about it in a new agent session, whose replies go in the comment's thread.
+  const ask = async (d: Draft, body: string) => {
+    const comment = await save(d, body)
+    const session = await window.coxswain.startCommentSession(comment.id)
+    props.onRunTurn(session.agentSessionId, '', [comment.id])
   }
   const remove = async (c: Comment) => {
     await window.coxswain.deleteComment(c.id)
@@ -109,18 +126,20 @@ export function Viewer(props: Props) {
   }
   const render = ({ draft, comment }: Note) =>
     draft ? (
-      <DraftBox draft={draft} onSave={save} onCancel={closeDraft} />
+      <DraftBox draft={draft} onSave={save} onAsk={ask} onCancel={closeDraft} />
     ) : comment ? (
       <CommentBox
         comment={comment}
         attached={attachedIds.includes(comment.id)}
         onAttach={() => onAttach(comment)}
         onRemove={() => remove(comment)}
+        turn={comment.agentSessionId ? props.turns[comment.agentSessionId] : undefined}
+        onRunTurn={props.onRunTurn}
       />
     ) : null
 
   return (
-    <div className="min-h-0 flex-1 overflow-auto select-text">
+    <div className={props.stacked ? 'select-text' : 'min-h-0 flex-1 overflow-auto select-text'}>
       {opened.kind === 'file' ? (
         <File<Note>
           file={{ name: path, contents: n.text ?? '' }}
@@ -162,7 +181,14 @@ export function Viewer(props: Props) {
 const lines = (start: number, end: number) => (start === end ? `Line ${start}` : `Lines ${start}–${end}`)
 const box = 'm-2 flex flex-col gap-1.5 rounded-md border border-neutral-300 bg-white p-2 font-sans text-sm dark:border-neutral-700 dark:bg-neutral-900'
 
-function DraftBox({ draft, onSave, onCancel }: { draft: Draft; onSave: (d: Draft, body: string) => void; onCancel: () => void }) {
+type DraftBoxProps = {
+  draft: Draft
+  onSave: (d: Draft, body: string) => void
+  onAsk: (d: Draft, body: string) => void
+  onCancel: () => void
+}
+
+function DraftBox({ draft, onSave, onAsk, onCancel }: DraftBoxProps) {
   const [body, setBody] = useState('')
   // autoFocus loses to the gutter button, which takes focus when the drag that opened this box ends.
   const input = useRef<HTMLTextAreaElement>(null)
@@ -180,15 +206,18 @@ function DraftBox({ draft, onSave, onCancel }: { draft: Draft; onSave: (d: Draft
         onChange={(e) => setBody(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === 'Escape') onCancel()
-          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && body.trim()) onSave(draft, body)
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && body.trim()) (e.shiftKey ? onAsk : onSave)(draft, body)
         }}
         rows={3}
-        placeholder="Comment for the agent (⌘Enter to save)"
+        placeholder="Comment for the agent (⌘Enter to save, ⇧⌘Enter to ask the agent now)"
         className="resize-none rounded-md border border-neutral-300 bg-transparent p-1.5 outline-none focus:border-neutral-500 dark:border-neutral-700"
       />
       <div className="flex justify-end gap-1.5">
         <button className={`${button} text-xs`} onClick={onCancel}>
           Cancel
+        </button>
+        <button className={`${button} text-xs`} disabled={!body.trim()} onClick={() => onAsk(draft, body)}>
+          Ask agent
         </button>
         <button className={`${primaryButton} text-xs`} disabled={!body.trim()} onClick={() => onSave(draft, body)}>
           Comment
@@ -198,9 +227,16 @@ function DraftBox({ draft, onSave, onCancel }: { draft: Draft; onSave: (d: Draft
   )
 }
 
-type CommentBoxProps = { comment: Comment; attached: boolean; onAttach: () => void; onRemove: () => void }
+type CommentBoxProps = {
+  comment: Comment
+  attached: boolean
+  onAttach: () => void
+  onRemove: () => void
+  turn: Turn | undefined
+  onRunTurn: RunTurn
+}
 
-function CommentBox({ comment: c, attached, onAttach, onRemove }: CommentBoxProps) {
+function CommentBox({ comment: c, attached, onAttach, onRemove, turn, onRunTurn }: CommentBoxProps) {
   return (
     <div className={box}>
       <div className={`flex items-center gap-2 text-xs ${muted}`}>
@@ -208,14 +244,72 @@ function CommentBox({ comment: c, attached, onAttach, onRemove }: CommentBoxProp
         {c.sentAt && <span className="rounded bg-neutral-100 px-1 dark:bg-neutral-800">Sent to agent</span>}
       </div>
       <div className="whitespace-pre-wrap [overflow-wrap:anywhere]">{c.body}</div>
+      {c.agentSessionId && <Thread agentSessionId={c.agentSessionId} turn={turn} onRunTurn={onRunTurn} />}
       <div className="flex justify-end gap-1.5">
-        <button className={`${button} text-xs`} onClick={onRemove}>
+        <button className={`${button} text-xs`} disabled={turn?.running} onClick={onRemove}>
           Delete
         </button>
-        <button className={`${button} text-xs`} disabled={attached} onClick={onAttach}>
-          {attached ? 'In the message' : 'Send to agent'}
-        </button>
+        {!c.agentSessionId && (
+          <button className={`${button} text-xs`} disabled={attached} onClick={onAttach}>
+            {attached ? 'In the message' : 'Send to agent'}
+          </button>
+        )}
       </div>
+    </div>
+  )
+}
+
+// The agent session asked from a comment: its replies, streamed while a turn runs, and a box to reply.
+function Thread({ agentSessionId: id, turn, onRunTurn }: { agentSessionId: string; turn: Turn | undefined; onRunTurn: RunTurn }) {
+  const [entries, setEntries] = useState<ChatEntry[]>([])
+  const [reply, setReply] = useState('')
+  useEffect(() => {
+    let stale = false
+    // ponytail: a turn that's running when this mounts may show an entry twice, once from the transcript and once
+    // streamed. Fine while threads are short; dedupe by message ID if it shows.
+    window.coxswain.readTranscript(id).then((e) => !stale && setEntries(e))
+    const off = window.coxswain.onChatEntry((sid, e) => sid === id && setEntries((x) => [...x, e]))
+    return () => {
+      stale = true
+      off()
+    }
+  }, [id])
+  const running = turn?.running ?? false
+  // The first message is the comment itself, already shown above.
+  const shown = entries.filter((e, i) => !(i === 0 && e.kind === 'user'))
+  const send = () => {
+    if (!reply.trim() || running) return
+    onRunTurn(id, reply.trim(), [])
+    setReply('')
+  }
+  return (
+    <div className="flex flex-col gap-1.5 border-t border-neutral-200 pt-1.5 dark:border-neutral-800">
+      <div className="flex max-h-96 flex-col gap-1.5 overflow-y-auto">
+        {shown.map((e, i) => (
+          <Entry key={i} entry={e} />
+        ))}
+        {running && <div className={`text-xs ${muted}`}>Working…</div>}
+        {turn?.error && <div className="text-xs text-red-600 select-text dark:text-red-400">{turn.error}</div>}
+      </div>
+      {running ? (
+        <button className={`${button} self-end text-xs`} onClick={() => window.coxswain.stopTurn(id)}>
+          Stop
+        </button>
+      ) : (
+        <textarea
+          value={reply}
+          onChange={(e) => setReply(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault()
+              send()
+            }
+          }}
+          rows={1}
+          placeholder="Reply to the agent (Enter to send)"
+          className="resize-none rounded-md border border-neutral-300 bg-transparent p-1.5 outline-none focus:border-neutral-500 dark:border-neutral-700"
+        />
+      )}
     </div>
   )
 }

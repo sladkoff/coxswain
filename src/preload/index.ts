@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { AgentSession, ChatEntry, TurnResult } from '../core/agents'
 import type { Comment, NewComment } from '../core/comments'
 import type { ChangedFileList, CloneResult, FileText, FileTreeResult, WorktreeResult } from '../core/git'
-import type { CurrentUser, PullRequestList, RepoPage } from '../core/github'
+import type { CurrentUser, PullRequestList, PullRequestOverview, RepoPage } from '../core/github'
 import type { Project } from '../core/projects'
 import type { Workspace } from '../core/workspaces'
 
@@ -17,6 +17,8 @@ const api = {
   openProject: (fullName: string): Promise<Project> => ipcRenderer.invoke('projects:open', fullName),
   listPullRequests: (owner: string, name: string): Promise<PullRequestList> =>
     ipcRenderer.invoke('github:list-pulls', owner, name),
+  getPullRequestOverview: (workspaceId: number): Promise<PullRequestOverview> =>
+    ipcRenderer.invoke('github:pull-overview', workspaceId),
   cloneProject: (projectId: number): Promise<CloneResult> => ipcRenderer.invoke('git:clone', projectId),
   openedBefore: (workspaceId: number): Promise<WorktreeResult | null> =>
     ipcRenderer.invoke('git:opened-before', workspaceId),
@@ -33,6 +35,7 @@ const api = {
     ipcRenderer.invoke('workspaces:open-pr', projectId, prNumber),
   listAgentSessions: (workspaceId: number): Promise<AgentSession[]> => ipcRenderer.invoke('agents:list', workspaceId),
   startAgentSession: (workspaceId: number): Promise<AgentSession> => ipcRenderer.invoke('agents:start', workspaceId),
+  startCommentSession: (commentId: number): Promise<AgentSession> => ipcRenderer.invoke('agents:start-for-comment', commentId),
   readTranscript: (agentSessionId: string): Promise<ChatEntry[]> => ipcRenderer.invoke('agents:transcript', agentSessionId),
   runTurn: (agentSessionId: string, message: string, commentIds: number[]): Promise<TurnResult> =>
     ipcRenderer.invoke('agents:run-turn', agentSessionId, message, commentIds),
@@ -52,6 +55,11 @@ const api = {
   // Native menu (ADR 0004). Resolves with the new settings when an item is picked; stays pending if dismissed.
   showNavigatorMenu: (settings: NavigatorSettings): Promise<NavigatorSettings> =>
     ipcRenderer.invoke('menus:navigator', settings),
+  onToggleNavigator: (callback: () => void) => {
+    const listener = () => callback()
+    ipcRenderer.on('toggle-navigator', listener)
+    return () => void ipcRenderer.off('toggle-navigator', listener)
+  },
   onToggleAgents: (callback: () => void) => {
     const listener = () => callback()
     ipcRenderer.on('toggle-agents', listener)

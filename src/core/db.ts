@@ -41,6 +41,8 @@ const migrations = [
     fingerprint text not null,
     primary key (workspace_id, path)
   )`,
+  // An agent session asked from a comment, whose replies show in the comment's thread rather than in L4.
+  `alter table agent_sessions add column comment_id integer references comments (id) on delete cascade`,
 ]
 
 export function openDatabase(path: string): DatabaseSync {

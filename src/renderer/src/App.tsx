@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import type { Comment } from '../../core/comments'
 import type { Project } from '../../core/projects'
 import type { Workspace } from '../../core/workspaces'
@@ -6,11 +6,12 @@ import { Agents } from './Agents'
 import { Navigator, type NavigatorView } from './Navigator'
 import { NewWorkspace } from './NewWorkspace'
 import { Onboarding } from './Onboarding'
+import { Overview } from './Overview'
 import { Projects } from './Projects'
 import { Settings } from './Settings'
 import { usePullRequest } from './usePullRequest'
-import { AgentsToggle, Splitter, viewerMin } from './ui'
-import { type Opened, Viewer } from './Viewer'
+import { Splitter, viewerMin } from './ui'
+import { type Opened, type Turn, Viewer } from './Viewer'
 
 const pane = 'border-neutral-200 dark:border-neutral-800'
 const muted = 'text-xs text-neutral-500'
@@ -32,7 +33,10 @@ export function App() {
   // ponytail: pane widths reset on restart; persist them in SQLite once a settings table exists.
   const [leftWidth, setLeftWidth] = useState(416)
   const [agentsWidth, setAgentsWidth] = useState(320)
-  const [agentsOpen, setAgentsOpen] = useState(true)
+  // The Navigator is on the left of the Diff tab. Both start hidden.
+  const [navigatorOpen, setNavigatorOpen] = useState(false)
+  const [agentsOpen, setAgentsOpen] = useState(false)
+  useEffect(() => window.coxswain.onToggleNavigator(() => setNavigatorOpen((o) => !o)), [])
   useEffect(() => window.coxswain.onToggleAgents(() => setAgentsOpen((o) => !o)), [])
 
   const [view, setView] = useState<NavigatorView>('diffs')
@@ -87,12 +91,48 @@ export function App() {
     setViewed((v) => (on ? [...v, path] : v.filter((p) => p !== path)))
     window.coxswain.setViewed(currentWorkspace.id, pr.commits.mergeBase, path, on)
   }
-  const [opened, setOpened] = useState<Opened | null>(null)
-  useEffect(() => setOpened(null), [currentWorkspace?.id])
-  const open = (path: string) => {
-    const file = pr.changed?.find((f) => f.path === path)
-    setOpened(view === 'diffs' && file ? { kind: 'diff', file } : { kind: 'file', path })
+  // Turns of the agent sessions in comment threads, kept here so they outlive the Viewer showing them.
+  const [turns, setTurns] = useState<Record<string, Turn>>({})
+  const runThreadTurn = async (agentSessionId: string, message: string, commentIds: number[]) => {
+    setTurns((t) => ({ ...t, [agentSessionId]: { running: true, error: null } }))
+    const turn = window.coxswain.runTurn(agentSessionId, message, commentIds)
+    loadComments() // the core marks the comments sent as the turn starts
+    const result = await turn
+    setTurns((t) => ({ ...t, [agentSessionId]: { running: false, error: result.status === 'error' ? result.message : null } }))
+    setVersion((v) => v + 1)
   }
+  // L3's tabs. `opened` is a whole file picked in Files, shown in the Diff tab in place of the file diffs.
+  const [tab, setTab] = useState<Tab>('overview')
+  const [opened, setOpened] = useState<Opened | null>(null)
+  useEffect(() => {
+    setTab('overview')
+    setOpened(null)
+  }, [currentWorkspace?.id])
+  // Memoised: the Viewer rereads when its Opened changes.
+  const diffs = useMemo(() => pr.changed?.map((file) => ({ kind: 'diff' as const, file })), [pr.changed])
+  const open = (path: string) => {
+    if (view === 'files') return setOpened({ kind: 'file', path })
+    // ponytail: file diffs above it that are still loading push it down.
+    document.getElementById(`diff:${path}`)?.scrollIntoView()
+  }
+  const showFile = view === 'files' && opened
+
+  const viewerProps = (workspace: Workspace, mergeBase: string) => ({
+    workspace,
+    mergeBase,
+    version,
+    comments,
+    onCommentsChanged: loadComments,
+    attachedIds: attached.map((c) => c.id),
+    onAttach: (c: Comment) => {
+      setAttached((a) => [...a, c])
+      setAgentsOpen(true) // the comment goes in L4's message box, so show it
+    },
+    viewed,
+    onViewedChange: markViewed,
+    turns,
+    onRunTurn: runThreadTurn,
+  })
 
   if (screen === 'settings') return <Settings onClose={close} />
   if (screen === 'projects')
@@ -114,13 +154,11 @@ export function App() {
   return (
     // Side panes keep their dragged width but shrink with the window before the Viewer goes below viewerMin.
     <div className="flex h-full select-none overflow-hidden text-sm">
-      <div style={{ width: leftWidth }} className={`flex min-w-60 flex-col border-r ${pane}`}>
-        {/* Leaves room for the macOS window buttons; the bar drags the window. */}
-        <div className={`flex h-10 shrink-0 items-center justify-end border-b px-2 [-webkit-app-region:drag] ${pane}`}>
-          {currentWorkspace && <ViewToggle view={view} onChange={setView} />}
-        </div>
+      <div className={`flex flex-col border-r ${pane}`}>
+        {/* The bar drags the window; the macOS window buttons reach past it into L3's. */}
+        <div className={`h-10 shrink-0 border-b [-webkit-app-region:drag] ${pane}`} />
         <div className="flex min-h-0 flex-1">
-          <div className={`flex w-12 flex-col items-center gap-2 border-r py-2 ${pane}`}>
+          <div className="flex w-12 flex-col items-center gap-2 py-2">
             {/* The current project, like a Discord server icon. Opens the list to switch or add projects. */}
             <button
               title={`${current.owner}/${current.name}${cloning ? ' (cloning…)' : ''}: switch or add project`}
@@ -160,47 +198,65 @@ export function App() {
               +
             </button>
           </div>
-          <div className="flex min-w-0 flex-1 flex-col">
-            {currentWorkspace ? (
-              <Navigator
-                key={currentWorkspace.id}
-                workspace={currentWorkspace}
-                pr={pr}
-                view={view}
-                viewed={viewed}
-                onOpen={open}
-              />
-            ) : (
-              <div className={`p-2 ${muted}`}>No workspace</div>
-            )}
-          </div>
         </div>
       </div>
 
-      <Splitter min={240} max={720} onResize={setLeftWidth} />
-      <div style={{ minWidth: viewerMin }} className="flex flex-1 flex-col">
-        <div className={`flex h-10 shrink-0 items-center justify-end border-b px-2 [-webkit-app-region:drag] ${pane}`}>
-          {!agentsOpen && <AgentsToggle open={false} onClick={() => setAgentsOpen(true)} />}
+      <div style={{ minWidth: viewerMin }} className="flex min-w-0 flex-1 flex-col">
+        <div className={`flex h-10 shrink-0 items-center gap-1 border-b pr-2 pl-8 [-webkit-app-region:drag] ${pane}`}>
+          {currentWorkspace && <Tabs tab={tab} onChange={setTab} />}
         </div>
-        {opened && pr.commits && currentWorkspace ? (
-          <Viewer
-            workspace={currentWorkspace}
-            mergeBase={pr.commits.mergeBase}
-            opened={opened}
-            version={version}
-            comments={comments}
-            onCommentsChanged={loadComments}
-            attachedIds={attached.map((c) => c.id)}
-            onAttach={(c) => {
-              setAttached((a) => [...a, c])
-              setAgentsOpen(true) // the comment goes in L4's message box, so show it
-            }}
-            viewed={viewed}
-            onViewedChange={markViewed}
-          />
-        ) : (
-          <div className={`flex flex-1 items-center justify-center ${muted}`}>
-            {currentWorkspace ? 'Select a file' : 'No workspace. Start one with +'}
+        {/* The current tab's options; outside the tab's scroll, so it stays put. */}
+        {currentWorkspace && (
+          <div className={`flex h-8 shrink-0 items-center gap-1 border-b px-2 text-xs ${pane}`}>
+            {tab === 'diff' && (
+              <BarToggle title="Show or hide the files (⌘B)" on={navigatorOpen} onClick={() => setNavigatorOpen((o) => !o)}>
+                Files {pr.changed?.length ?? ''}
+              </BarToggle>
+            )}
+            <div className="flex-1" />
+            <BarToggle title="Show or hide the agent (⌥⌘B)" on={agentsOpen} onClick={() => setAgentsOpen((o) => !o)}>
+              Agent
+            </BarToggle>
+          </div>
+        )}
+        {!currentWorkspace ? (
+          <div className={`flex flex-1 items-center justify-center ${muted}`}>No workspace. Start one with +</div>
+        ) : tab === 'overview' ? (
+          <Overview key={currentWorkspace.id} workspace={currentWorkspace} />
+        ) : tab === 'guide' ? (
+          <div className={`flex flex-1 items-center justify-center ${muted}`}>Coming soon</div>
+        ) : null}
+        {/* The Diff tab stays mounted while hidden, so the Navigator and the file diffs keep their state. */}
+        {currentWorkspace && (
+          <div className={`${tab === 'diff' ? 'flex' : 'hidden'} min-h-0 flex-1`}>
+            {navigatorOpen && (
+              <>
+                <div style={{ width: leftWidth }} className={`flex min-w-60 flex-col border-r ${pane}`}>
+                  <div className="flex shrink-0 justify-end px-2 pt-1.5">
+                    <ViewToggle view={view} onChange={setView} />
+                  </div>
+                  <Navigator key={currentWorkspace.id} workspace={currentWorkspace} pr={pr} view={view} viewed={viewed} onOpen={open} />
+                </div>
+                <Splitter min={240} max={720} onResize={setLeftWidth} />
+              </>
+            )}
+            <div style={{ minWidth: viewerMin }} className="flex min-w-0 flex-1 flex-col">
+              {!pr.commits || !diffs ? (
+                <div className={`flex flex-1 items-center justify-center ${muted}`}>Loading…</div>
+              ) : showFile ? (
+                <Viewer opened={opened} {...viewerProps(currentWorkspace, pr.commits.mergeBase)} />
+              ) : (
+                // ponytail: renders every file diff at once; load them as they scroll into view if big PRs get slow.
+                <div className="min-h-0 flex-1 overflow-auto">
+                  {diffs.length === 0 && <div className={`p-4 text-xs ${muted}`}>No changes</div>}
+                  {diffs.map((d) => (
+                    <div key={d.file.path} id={`diff:${d.file.path}`}>
+                      <Viewer stacked opened={d} {...viewerProps(currentWorkspace, pr.commits!.mergeBase)} />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -219,13 +275,10 @@ export function App() {
               loadComments()
             }}
             onTurnEnd={() => setVersion((v) => v + 1)}
-            onHide={() => setAgentsOpen(false)}
           />
         ) : (
           <>
-            <div className={`flex h-10 shrink-0 items-center justify-end border-b px-2 [-webkit-app-region:drag] ${pane}`}>
-              <AgentsToggle open onClick={() => setAgentsOpen(false)} />
-            </div>
+            <div className={`h-10 shrink-0 border-b [-webkit-app-region:drag] ${pane}`} />
             <div className={`flex flex-1 items-center justify-center ${muted}`}>No agent sessions</div>
           </>
         )}
@@ -234,9 +287,41 @@ export function App() {
   )
 }
 
+type Tab = 'overview' | 'guide' | 'diff'
+
+// L3's tabs.
+function Tabs({ tab, onChange }: { tab: Tab; onChange: (tab: Tab) => void }) {
+  return (
+    <div className="flex gap-0.5 [-webkit-app-region:no-drag]">
+      {(['overview', 'guide', 'diff'] as const).map((t) => (
+        <button
+          key={t}
+          onClick={() => onChange(t)}
+          className={`rounded px-2 py-0.5 text-xs capitalize ${t === tab ? 'bg-neutral-200 dark:bg-neutral-700' : 'text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800'}`}
+        >
+          {t}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+// A toggle in a tab's bar that shows or hides a pane.
+function BarToggle(props: { title: string; on: boolean; onClick: () => void; children: ReactNode }) {
+  return (
+    <button
+      title={props.title}
+      onClick={props.onClick}
+      className={`rounded px-2 py-0.5 ${props.on ? 'bg-neutral-200 dark:bg-neutral-700' : 'text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800'}`}
+    >
+      {props.children}
+    </button>
+  )
+}
+
 function ViewToggle({ view, onChange }: { view: NavigatorView; onChange: (view: NavigatorView) => void }) {
   return (
-    <div className="flex rounded-md bg-neutral-100 p-0.5 text-xs [-webkit-app-region:no-drag] dark:bg-neutral-800">
+    <div className="flex rounded-md bg-neutral-100 p-0.5 text-xs dark:bg-neutral-800">
       {(['diffs', 'files'] as const).map((v) => (
         <button
           key={v}
