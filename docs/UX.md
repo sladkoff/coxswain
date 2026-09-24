@@ -54,6 +54,7 @@ then the workspace's files, the work in the middle and the agents on the right.
 
 ## Across all levels
 
+- The borders between L2, L3 and L4 can be dragged to resize the panes; L3 takes the rest.
 - **⌘K** is always available, both to switch to anything (project, workspace, PR, file,
   agent session) and to run any command.
 - Projects, repositories and PRs must be quick to reach: L1 and ⌘K.

@@ -20,6 +20,8 @@ function createWindow() {
   const win = new BrowserWindow({
     width: 1400,
     height: 900,
+    minWidth: 800, // both side panes at their minimum (240px) and the Viewer at its own (320px)
+    minHeight: 500,
     show: false,
     titleBarStyle: 'hiddenInset',
     webPreferences: { preload: join(__dirname, '../preload/index.js') },

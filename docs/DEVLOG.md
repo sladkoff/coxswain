@@ -21,11 +21,15 @@ coxswain, before importing any GitHub comments.
   fence, the comment) and marks them sent; they then show *Sent to agent* inline.
 - **Agent replies render as Markdown** in L4 (`react-markdown` + `remark-gfm`: lists, tables,
   code, links). Links open in the browser; the app window never navigates.
+- **Resizable panes.** Drag the border between L2 and L3, or L3 and L4, to resize. L3 takes the
+  rest.
 - Checked in the app on a private repo #5291: comment on lines 3–5, send with an instruction,
   the agent read the file and answered about those lines.
 
 ### Tech debt
 
+- **Pane widths reset on restart** (`ponytail:` in `App.tsx`); persist them once there's a settings
+  table.
 - **Comments drift.** They're anchored by line numbers only, so an agent's edits move them off their
   lines; the stored code snippet keeps the ask right, the inline position doesn't. Outdated tracking
   is glossary open question 2 (`ponytail:` in `comments.ts`).

@@ -9,6 +9,7 @@ import { Onboarding } from './Onboarding'
 import { Projects } from './Projects'
 import { Settings } from './Settings'
 import { usePullRequest } from './usePullRequest'
+import { Splitter, viewerMin } from './ui'
 import { type Opened, Viewer } from './Viewer'
 
 const pane = 'border-neutral-200 dark:border-neutral-800'
@@ -27,6 +28,10 @@ export function App() {
     setProjects(await window.coxswain.listProjects())
     close()
   }
+
+  // ponytail: pane widths reset on restart; persist them in SQLite once a settings table exists.
+  const [leftWidth, setLeftWidth] = useState(416)
+  const [agentsWidth, setAgentsWidth] = useState(320)
 
   const [view, setView] = useState<NavigatorView>('diffs')
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
@@ -93,8 +98,9 @@ export function App() {
 
   // Empty shell of the main screen from docs/UX.md: L1 project and workspaces, L2 Navigator, L3 Viewer, L4 agents.
   return (
-    <div className="flex h-full select-none text-sm">
-      <div className={`flex w-[26rem] shrink-0 flex-col border-r ${pane}`}>
+    // Side panes keep their dragged width but shrink with the window before the Viewer goes below viewerMin.
+    <div className="flex h-full select-none overflow-hidden text-sm">
+      <div style={{ width: leftWidth }} className={`flex min-w-60 flex-col border-r ${pane}`}>
         {/* Leaves room for the macOS window buttons; the bar drags the window. */}
         <div className={`flex h-10 shrink-0 items-center justify-end border-b px-2 [-webkit-app-region:drag] ${pane}`}>
           {currentWorkspace && <ViewToggle view={view} onChange={setView} />}
@@ -150,7 +156,8 @@ export function App() {
         </div>
       </div>
 
-      <div className="flex min-w-0 flex-1 flex-col">
+      <Splitter min={240} max={720} onResize={setLeftWidth} />
+      <div style={{ minWidth: viewerMin }} className="flex flex-1 flex-col">
         <div className={`h-10 shrink-0 border-b [-webkit-app-region:drag] ${pane}`} />
         {opened && pr.commits && currentWorkspace ? (
           <Viewer
@@ -170,7 +177,8 @@ export function App() {
         )}
       </div>
 
-      <div className={`flex w-80 shrink-0 flex-col border-l ${pane}`}>
+      <Splitter min={240} max={800} fromRight onResize={setAgentsWidth} />
+      <div style={{ width: agentsWidth }} className={`flex min-w-60 flex-col border-l ${pane}`}>
         {currentWorkspace ? (
           <Agents
             key={currentWorkspace.id}

@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import type { GitProblem } from '../../core/git'
 import type { GitHubProblem } from '../../core/github'
 
@@ -47,4 +47,34 @@ export function ProblemMessage({ problem }: { problem: GitHubProblem | GitProble
     case 'error':
       return <span>Couldn't reach GitHub: {problem.message}</span>
   }
+}
+
+// Drag handle on the border between a side pane and the Viewer; resizes the side pane, which is on its left (or
+// right, with `fromRight`). The Viewer never gets narrower than `viewerMin`.
+export const viewerMin = 320
+export function Splitter(props: { min: number; max: number; fromRight?: boolean; onResize: (w: number) => void }) {
+  const start = useRef<{ x: number; width: number; max: number } | null>(null)
+  return (
+    <div
+      className="relative z-10 -mx-0.5 w-1 shrink-0 cursor-col-resize [-webkit-app-region:no-drag]"
+      onPointerDown={(e) => {
+        const el = e.currentTarget
+        const [pane, viewer] = props.fromRight
+          ? [el.nextElementSibling, el.previousElementSibling]
+          : [el.previousElementSibling, el.nextElementSibling]
+        if (!pane || !viewer) return
+        // Measured, not taken from state: the pane may have shrunk with the window.
+        const width = pane.clientWidth
+        el.setPointerCapture(e.pointerId)
+        start.current = { x: e.clientX, width, max: Math.min(props.max, width + viewer.clientWidth - viewerMin) }
+      }}
+      onPointerMove={(e) => {
+        const s = start.current
+        if (!s) return
+        const dx = (e.clientX - s.x) * (props.fromRight ? -1 : 1)
+        props.onResize(Math.max(props.min, Math.min(s.max, s.width + dx)))
+      }}
+      onLostPointerCapture={() => (start.current = null)}
+    />
+  )
 }
