@@ -3,6 +3,43 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-25 — Faster guides
+
+### What works
+
+Not checked in the app yet: the user runs the first guide with it.
+
+- **Guides made in one-turn calls** ([ADR 0010](adr/0010-faster-guides.md)). #5311 took ~6½ minutes,
+  mostly summary agents taking ~20 turns to read diffs themselves. Now coxswain puts each file diff in
+  the prompt (`readFileDiff`, cut to 300 lines) and every `claude -p` runs with no tools and a short
+  system prompt of its own in place of Claude Code's.
+- **Summaries are cached** in `file_summaries` (migration 10) by file diff fingerprint, so
+  *Regenerate* and a PR that moved on only summarise changed files. Every file is summarised now,
+  small PRs too, in batches of at most 25 files or 1200 lines, 16 at once.
+- **Grouping answers with file numbers**, not paths, and no descriptions; files it leaves out go in
+  *Other changes*.
+- **Groups are described in parallel after grouping**, each with a description and a *file note* per
+  file diff (glossary), shown above the file diff. The guide shows as soon as it's grouped, groups
+  read *Describing…* until theirs arrives, and the top counts the groups described.
+- **How long a guide took** is stored (`started_at`, `finished_at`, migration 9) and shown at the top
+  of the tab; the main process logs each phase's seconds and how many summaries were reused.
+- The default guide prompt now asks for file notes too; Settings says what each model does.
+- **First run on #5311: 3 min 31 s** (was ~6 min 25 s), on screen after 1 min 47 s: summaries ~70 s,
+  grouping 30 s, 20 groups described in ~1 min 40 s (one took 99 s). Every file got a note.
+- **Summaries run without thinking** (`MAX_THINKING_TOKENS=0`): Haiku spent about as many tokens
+  thinking as answering. Grouping and describing keep it.
+- **Notes don't mention file numbers**: one said "file 106"; the prompts now say to name files by path.
+
+### Tech debt
+
+- Paid off: summaries weren't cached.
+- **Batch sizes, cut-offs and parallelism are fixed guesses** (`ponytail:` in `guides.ts`): 300 lines
+  per diff, 25 files or 1200 lines per batch, 3000 lines per group, 16 calls at once.
+- **Rules for generated files** (lockfiles, OpenAPI clients, ORM models) are deferred; meant to live
+  in the guide prompt.
+- **An unfinished guide** (the app quit while describing) stays so until regenerated.
+- **The progress bar's split** between summarising and grouping (50/50) and its pace are new guesses.
+
 ## 2026-09-24 — Guide
 
 ### What works

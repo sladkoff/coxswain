@@ -89,7 +89,7 @@ function GuideSection() {
             placeholder="Claude Code's default"
             className={field}
           />
-          <span className={`text-xs ${muted}`}>Groups the files. A Claude Code model name or alias, e.g. sonnet or opus.</span>
+          <span className={`text-xs ${muted}`}>Groups the files, then describes each group. A Claude Code model name or alias, e.g. sonnet or opus.</span>
         </label>
         <label className="flex flex-col gap-1">
           Summary model
@@ -100,7 +100,7 @@ function GuideSection() {
             placeholder="Claude Code's default"
             className={field}
           />
-          <span className={`text-xs ${muted}`}>Summarises big PRs a batch of files at a time, several at once, before grouping. A fast one, e.g. haiku.</span>
+          <span className={`text-xs ${muted}`}>Summarises every file diff before grouping, a batch at a time, many at once. A fast one, e.g. haiku.</span>
         </label>
       </div>
     </>

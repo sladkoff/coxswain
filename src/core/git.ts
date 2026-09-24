@@ -257,6 +257,19 @@ export function diffFingerprint(db: DatabaseSync, workspaceId: number, mergeBase
   return (existsSync(full) ? hash.update(readFileSync(full)) : hash.update('deleted')).digest('hex')
 }
 
+// A file diff as unified diff text, for prompts. A new untracked file has no git diff, so its lines show as added.
+// --no-ext-diff: a repo's .gitattributes can send files to a diff tool that isn't installed (e.g. CSV to daff).
+export async function readFileDiff(db: DatabaseSync, workspaceId: number, mergeBase: string, file: ChangedFile): Promise<string> {
+  if (!isCommit(mergeBase)) throw new GitError(`Not a commit: ${mergeBase}`)
+  const path = openedWorktree(db, workspaceId)
+  const paths = file.previousPath ? [file.previousPath, file.path] : [file.path]
+  const diff = await gitText(path, ['diff', '--no-ext-diff', '--no-color', '-M', mergeBase, '--', ...paths])
+  if (diff || file.status !== 'added') return diff
+  const text = await readWorktreeFile(db, workspaceId, file.path)
+  if (text.status !== 'ok' || text.text === null) return 'Binary file'
+  return `new file\n${text.text.replace(/\n$/, '').replace(/^/gm, '+')}\n`
+}
+
 // A file at a commit, e.g. the merge base. May fetch its contents from GitHub the first time (blobless clone).
 export function readFileAt(db: DatabaseSync, workspaceId: number, commit: string, file: string): Promise<FileText> {
   return withGit(async () => {

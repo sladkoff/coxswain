@@ -1,29 +1,67 @@
 import { type ChildProcess, spawn } from 'node:child_process'
 import type { DatabaseSync } from 'node:sqlite'
-import { type ChangedFile, listChangedFiles, openedWorktree } from './git'
+import { type ChangedFile, diffFingerprint, listChangedFiles, openedWorktree, readFileDiff } from './git'
 
-// A guide (glossary): the workspace's file diffs in groups, each about one theme, with a title and a short
-// description of what the reviewer is looking at. Made by Claude Code, which reads the diff itself; stored, since nobody else has it.
-export type GuideGroup = { title: string; description: string; paths: string[] }
-// model: the model that made it, as Claude Code reported it. mergeBase: the diff it was made from.
-export type Guide = { id: number; workspaceId: number; mergeBase: string; model: string; groups: GuideGroup[]; createdAt: string }
+// A guide (glossary): the workspace's file diffs in groups, each about one theme, with a title, a short description
+// of what the reviewer is looking at, and a note on each file diff. Made by Claude Code; stored, since nobody else has it.
+// notes: by path. Missing on guides made before notes, and on a group not described yet.
+export type GuideGroup = { title: string; description: string; paths: string[]; notes?: Record<string, string> }
+// model: the models that made it, as Claude Code reported them. mergeBase: the diff it was made from.
+// createdAt: when it was grouped and first stored. finishedAt: null while its groups are still being described, or
+// if that was cut off (the app quit).
+export type Guide = {
+  id: number
+  workspaceId: number
+  mergeBase: string
+  model: string
+  groups: GuideGroup[]
+  createdAt: string
+  startedAt: string | null
+  finishedAt: string | null
+}
 export type GuideResult = { status: 'ok'; guide: Guide } | { status: 'error'; message: string }
-// How far making a guide has got: batches summarised of all (0 of 0 for a small PR, which skips summarising),
-// how many are summarised at once, and whether the files are being grouped.
-export type GuideProgress = { summarised: number; batches: number; parallel: number; grouping: boolean }
+// How far making a guide has got (ADR 0010): batches summarised, then grouping, then groups described. guide: the
+// stored guide once grouped, filled in as groups are described.
+export type GuideProgress = {
+  phase: 'summarising' | 'grouping' | 'describing'
+  done: number
+  total: number
+  guide: Guide | null
+}
 
-// The guide prompt and models can be changed in Settings. model groups the files; summaryModel summarises batches of
-// files first when a PR is big. An empty model means Claude Code's own default.
+// The guide prompt and models can be changed in Settings. model groups the files and describes the groups;
+// summaryModel summarises each file first. An empty model means Claude Code's own default.
 export type GuideSettings = { prompt: string; model: string; summaryModel: string; defaultPrompt: string }
 export type GuideSettingsChange = Omit<GuideSettings, 'defaultPrompt'>
 
 const defaultPrompt = `You are helping a reviewer read a pull request. Sort its changed files into groups, each about one theme
 (a feature, a refactor, tests, configuration, ...), in the order a reviewer should read them: the core change
 first, supporting changes after. Give each group a short title and a description of one to three sentences
-saying what the reviewer is looking at and what to check. Every changed file goes in exactly one group.`
+saying what the reviewer is looking at and what to check, and each file a note of one sentence saying what
+to look at in it. Every changed file goes in exactly one group.`
 
-// The answer's shape, which the user can't change.
-const schema = {
+// Claude Code's own system prompt is for coding; replaced, since everything these calls need is in the message.
+const systemPrompt =
+  'You help a reviewer read a pull request. Everything you need is in the message; you have no tools. Answer in the structured format asked for.'
+
+// The answers' shapes, which the user can't change. Files are referred to by their number in the prompt, which
+// is much less to write than their paths.
+const summarySchema = {
+  type: 'object',
+  properties: {
+    files: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { file: { type: 'integer' }, summary: { type: 'string' } },
+        required: ['file', 'summary'],
+      },
+    },
+  },
+  required: ['files'],
+}
+
+const groupSchema = {
   type: 'object',
   properties: {
     groups: {
@@ -32,38 +70,40 @@ const schema = {
         type: 'object',
         properties: {
           title: { type: 'string' },
-          description: { type: 'string' },
-          paths: { type: 'array', items: { type: 'string' }, description: 'Changed file paths, exactly as listed' },
+          files: { type: 'array', items: { type: 'integer' }, description: 'The numbers of its files' },
         },
-        required: ['title', 'description', 'paths'],
+        required: ['title', 'files'],
       },
     },
   },
   required: ['groups'],
 }
 
-const summarySchema = {
+const describeSchema = {
   type: 'object',
   properties: {
+    description: { type: 'string' },
     files: {
       type: 'array',
       items: {
         type: 'object',
-        properties: { path: { type: 'string' }, summary: { type: 'string' } },
-        required: ['path', 'summary'],
+        properties: { file: { type: 'integer' }, note: { type: 'string' } },
+        required: ['file', 'note'],
       },
     },
   },
-  required: ['files'],
+  required: ['description', 'files'],
 }
 
-// A PR with more than one batch is summarised batch by batch in parallel first, then grouped from the summaries.
-// Batches are runs of files in path order, so a batch tends to be one folder.
-// ponytail: fixed sizes and no cache; summaries are made again on every Regenerate. Cache them by
-// diffFingerprint if regenerating big PRs is slow.
-const batchFiles = 40
-const batchLines = 2000
-const parallel = 8
+// ADR 0010. Diffs go in the prompts, cut to fileLines lines each. Files needing a summary are cut into batches of
+// runs in path order, so a batch tends to be one folder. A group is described from its diffs up to groupLines
+// lines; its other files from their summaries.
+// ponytail: fixed sizes, guessed from #5311; make them settings if other PRs want different ones.
+const fileLines = 300
+const batchFiles = 25
+const batchLines = 1200
+const groupLines = 3000
+const parallel = 16
 
 export function getGuideSettings(db: DatabaseSync): GuideSettings {
   const get = (key: string) =>
@@ -87,7 +127,8 @@ export function setGuideSettings(db: DatabaseSync, s: GuideSettingsChange) {
   set.run('guide.summary-model', s.summaryModel.trim())
 }
 
-const columns = 'id, workspace_id as workspaceId, merge_base as mergeBase, model, groups, created_at as createdAt'
+const columns =
+  'id, workspace_id as workspaceId, merge_base as mergeBase, model, groups, created_at as createdAt, started_at as startedAt, finished_at as finishedAt'
 type Row = Omit<Guide, 'groups'> & { groups: string }
 const fromRow = (r: Row): Guide => ({ ...r, groups: JSON.parse(r.groups) })
 
@@ -106,7 +147,7 @@ const making = new Map<number, Run>()
 const children = new Set<ChildProcess>()
 
 // Asks Claude Code for a new guide to the workspace's diff and stores it. Takes a while (tens of seconds, minutes
-// for a big PR).
+// for a big PR); the guide is stored and reported once grouped, and filled in as its groups are described.
 export function createGuide(
   db: DatabaseSync,
   workspaceId: number,
@@ -115,7 +156,7 @@ export function createGuide(
 ): Promise<GuideResult> {
   let run = making.get(workspaceId)
   if (!run) {
-    const r: Run = { result: null!, progress: { summarised: 0, batches: 0, parallel, grouping: false }, listeners: new Set() }
+    const r: Run = { result: null!, progress: { phase: 'summarising', done: 0, total: 0, guide: null }, listeners: new Set() }
     const report = (p: GuideProgress) => {
       r.progress = p
       for (const l of r.listeners) l(p)
@@ -130,7 +171,7 @@ export function createGuide(
   return run.result
 }
 
-const line = (f: ChangedFile) => `${f.status}\t+${f.additions} -${f.deletions}\t${f.path}`
+const changedLines = (f: ChangedFile) => Math.min(f.additions + f.deletions, fileLines)
 
 async function make(
   db: DatabaseSync,
@@ -138,70 +179,164 @@ async function make(
   mergeBase: string,
   report: (p: GuideProgress) => void,
 ): Promise<GuideResult> {
+  const startedAt = new Date()
   const cwd = openedWorktree(db, workspaceId)
   const changed = await listChangedFiles(db, workspaceId, mergeBase)
   if (changed.status !== 'ok') return { status: 'error', message: changed.message }
-  if (!changed.files.length) return { status: 'error', message: 'No changes to guide' }
+  const files = changed.files
+  if (!files.length) return { status: 'error', message: 'No changes to guide' }
   const settings = getGuideSettings(db)
-  // No diff in the prompts: each agent reads the diffs it needs itself.
-  const howToRead = `Read a file's diff with \`git diff --no-ext-diff ${mergeBase} -- <path>\`. An empty diff means a new, untracked file: read the file itself.`
+  const number = new Map(files.map((f, i) => [f.path, i + 1]))
+  const line = (f: ChangedFile) => `${number.get(f.path)}. ${f.status} +${f.additions} -${f.deletions} ${f.path}`
+  // Each file's diff, read once and cut to fileLines lines.
+  const diffs = new Map<string, Promise<string>>()
+  const diffOf = (f: ChangedFile) => {
+    let d = diffs.get(f.path)
+    if (!d) {
+      d = readFileDiff(db, workspaceId, mergeBase, f).then(
+        (text) => {
+          const lines = text.split('\n')
+          return lines.length <= fileLines ? text : `${lines.slice(0, fileLines).join('\n')}\n… ${lines.length - fileLines} more lines`
+        },
+        (e) => `(couldn't read the diff: ${(e as Error).message})`,
+      )
+      diffs.set(f.path, d)
+    }
+    return d
+  }
+  const withDiff = async (f: ChangedFile) => `### ${line(f)}\n${await diffOf(f)}`
 
-  const batches: ChangedFile[][] = [[]]
-  for (const f of changed.files) {
+  // 1. Summarise: a sentence about each file, a batch per agent, several at once. A summary is kept while its
+  // file diff is unchanged, so Regenerate and a PR that moved on only summarise what's new. A failed batch leaves
+  // its files unsummarised.
+  const fingerprints = new Map(files.map((f) => [f.path, diffFingerprint(db, workspaceId, mergeBase, f.path)]))
+  const summaries = new Map<string, string>()
+  const cached = db.prepare('select path, fingerprint, summary from file_summaries where workspace_id = ?').all(workspaceId) as {
+    path: string
+    fingerprint: string
+    summary: string
+  }[]
+  for (const c of cached) if (fingerprints.get(c.path) === c.fingerprint) summaries.set(c.path, c.summary)
+  const todo = files.filter((f) => !summaries.has(f.path))
+  const batches: ChangedFile[][] = []
+  for (const f of todo) {
     const last = batches[batches.length - 1]
-    const lines = last.reduce((n, g) => n + g.additions + g.deletions, 0)
-    if (last.length && (last.length >= batchFiles || lines + f.additions + f.deletions > batchLines)) batches.push([f])
+    const lines = last?.reduce((n, g) => n + changedLines(g), 0) ?? 0
+    if (!last || last.length >= batchFiles || lines + changedLines(f) > batchLines) batches.push([f])
     else last.push(f)
   }
-  // Map: a line about each file, a batch per agent, several at once. A failed batch leaves its files unsummarised.
-  const summaries = new Map<string, string>()
+  const store = db.prepare(
+    `insert into file_summaries (workspace_id, path, fingerprint, summary) values (?, ?, ?, ?)
+     on conflict (workspace_id, path) do update set fingerprint = excluded.fingerprint, summary = excluded.summary`,
+  )
   let summaryModel: string | null = null
-  const mapped = batches.length > 1 ? batches.length : 0
   let summarised = 0
-  report({ summarised, batches: mapped, parallel, grouping: false })
-  if (mapped)
-    await inParallel(batches, parallel, async (batch) => {
-      const prompt = [
-        'You are summarising part of a pull request for a reviewer. For each file below, write one short sentence saying what changed in it (and why, if the diff shows it). Don\'t review; be brief.',
-        howToRead,
-        `Files (status, lines added and removed, path):\n${batch.map(line).join('\n')}`,
-      ].join('\n\n')
-      const out = await runClaude(cwd, prompt, summarySchema, settings.summaryModel).catch(() => null)
-      const files = (out?.structured as { files?: { path: string; summary: string }[] } | undefined)?.files ?? []
-      for (const f of files) summaries.set(f.path, String(f.summary))
-      summaryModel ??= out?.model ?? null
-      report({ summarised: ++summarised, batches: mapped, parallel, grouping: false })
-    })
-  report({ summarised, batches: mapped, parallel, grouping: true })
+  report({ phase: 'summarising', done: 0, total: batches.length, guide: null })
+  await inParallel(batches, parallel, async (batch) => {
+    const prompt = [
+      "You are summarising part of a pull request for a reviewer. For each file below, write one short sentence saying what changed in it (and why, if the diff shows it). Don't review; be brief. Answer with each file's number; in the summaries, name files by path, never by number.",
+      `Files (number, status, lines added and removed, path), each with its diff:\n\n${(await Promise.all(batch.map(withDiff))).join('\n\n')}`,
+    ].join('\n\n')
+    const out = await runClaude(cwd, prompt, summarySchema, settings.summaryModel, false).catch(() => null)
+    const answers = (out?.structured as { files?: { file: number; summary: string }[] } | undefined)?.files ?? []
+    for (const a of answers) {
+      const f = batch.find((g) => number.get(g.path) === a.file)
+      if (!f) continue
+      summaries.set(f.path, String(a.summary))
+      store.run(workspaceId, f.path, fingerprints.get(f.path)!, String(a.summary))
+    }
+    summaryModel ??= out?.model ?? null
+    report({ phase: 'summarising', done: ++summarised, total: batches.length, guide: null })
+  })
+  const summarisedAt = new Date()
 
-  // Reduce: one agent groups all files, from the summaries when there are any.
-  const listed = changed.files.map((f) => (summaries.has(f.path) ? `${line(f)}: ${summaries.get(f.path)}` : line(f)))
-  const prompt = [
-    settings.prompt,
-    howToRead,
-    `Changed files (status, lines added and removed, path${summaries.size ? ', and a summary of the change' : ''}):\n${listed.join('\n')}`,
-  ].join('\n\n')
-  const out = await runClaude(cwd, prompt, schema, settings.model)
-  const groups = (out.structured as { groups?: GuideGroup[] } | undefined)?.groups
-  if (!groups) return { status: 'error', message: 'Claude Code gave no guide' }
-
-  // Keep only paths that are changed files, each in its first group, and drop groups left empty.
-  const seen = new Set<string>()
-  const known = new Set(changed.files.map((f) => f.path))
-  const clean = groups
+  // 2. Group: one agent sorts all files into titled groups from the summaries, answering with file numbers only.
+  report({ phase: 'grouping', done: 0, total: 1, guide: null })
+  const listed = files.map((f) => (summaries.has(f.path) ? `${line(f)}: ${summaries.get(f.path)}` : line(f)))
+  const grouped = await runClaude(
+    cwd,
+    [
+      settings.prompt,
+      "First, sort the files into groups and put the groups in reading order. Give each group only its title and its files' numbers; descriptions and notes are written later, a group at a time.",
+      `Changed files (number, status, lines added and removed, path, and a summary of the change):\n${listed.join('\n')}`,
+    ].join('\n\n'),
+    groupSchema,
+    settings.model,
+  )
+  const answer = (grouped.structured as { groups?: { title: string; files: number[] }[] } | undefined)?.groups
+  if (!answer) return { status: 'error', message: 'Claude Code gave no guide' }
+  // Keep only numbers of changed files, each in its first group, and drop groups left empty. Files the agent left
+  // out go in a last group of their own.
+  const seen = new Set<number>()
+  const groups: GuideGroup[] = answer
     .map((g) => ({
       title: String(g.title),
-      description: String(g.description),
-      paths: g.paths.filter((p) => known.has(p) && !seen.has(p) && seen.add(p)),
+      description: '',
+      paths: g.files.filter((n) => n >= 1 && n <= files.length && !seen.has(n) && seen.add(n)).map((n) => files[n - 1].path),
     }))
     .filter((g) => g.paths.length)
-  const model = [out.model ?? (settings.model || 'unknown'), summaryModel && `summaries by ${summaryModel}`].filter(Boolean).join(', ')
-  const row = db
-    .prepare(
-      `insert into guides (workspace_id, merge_base, model, groups, created_at) values (?, ?, ?, ?, ?) returning ${columns}`,
-    )
-    .get(workspaceId, mergeBase, model, JSON.stringify(clean), new Date().toISOString()) as Row
-  return { status: 'ok', guide: fromRow(row) }
+  const rest = files.filter((_, i) => !seen.has(i + 1)).map((f) => f.path)
+  if (rest.length) groups.push({ title: 'Other changes', description: '', paths: rest })
+  const model = [grouped.model ?? (settings.model || 'unknown'), summaryModel && `summaries by ${summaryModel}`]
+    .filter(Boolean)
+    .join(', ')
+  let guide = fromRow(
+    db
+      .prepare(
+        `insert into guides (workspace_id, merge_base, model, groups, created_at, started_at) values (?, ?, ?, ?, ?, ?) returning ${columns}`,
+      )
+      .get(workspaceId, mergeBase, model, JSON.stringify(groups), new Date().toISOString(), startedAt.toISOString()) as Row,
+  )
+  const groupedAt = new Date()
+
+  // 3. Describe: an agent per group, several at once, writes its description and a note on each file, from the
+  // group's diffs. Each is stored and reported as it arrives. A failed group is left without a description.
+  const byPath = new Map(files.map((f) => [f.path, f]))
+  const titles = groups.map((g, i) => `${i + 1}. ${g.title}`).join('\n')
+  let described = 0
+  report({ phase: 'describing', done: 0, total: groups.length, guide })
+  await inParallel(
+    groups.map((_, i) => i),
+    parallel,
+    async (i) => {
+      const group = groups[i]
+      let budget = groupLines
+      const parts = await Promise.all(
+        group.paths.map((p) => {
+          const f = byPath.get(p)!
+          const inline = budget > 0
+          budget -= changedLines(f)
+          return inline ? withDiff(f) : Promise.resolve(`### ${line(f)} (diff left out${summaries.has(p) ? `; summary: ${summaries.get(p)}` : ''})`)
+        }),
+      )
+      const prompt = [
+        settings.prompt,
+        `The files are already sorted into these groups, in reading order:\n${titles}`,
+        `Now write group ${i + 1}, "${group.title}": its description, and a note on each of its files. Answer with each file's number; in the description and notes, name files by path, never by number: the reader doesn't see the numbers.`,
+        `Its files (number, status, lines added and removed, path), each with its diff:\n\n${parts.join('\n\n')}`,
+      ].join('\n\n')
+      const out = await runClaude(cwd, prompt, describeSchema, settings.model).catch(() => null)
+      const d = out?.structured as { description?: string; files?: { file: number; note: string }[] } | undefined
+      if (d?.description) {
+        const notes: Record<string, string> = {}
+        for (const n of d.files ?? []) {
+          const p = files[n.file - 1]?.path
+          if (p && group.paths.includes(p)) notes[p] = String(n.note)
+        }
+        guide = { ...guide, groups: guide.groups.map((g, j) => (j === i ? { ...g, description: String(d.description), notes } : g)) }
+        db.prepare('update guides set groups = ? where id = ?').run(JSON.stringify(guide.groups), guide.id)
+      }
+      report({ phase: 'describing', done: ++described, total: groups.length, guide })
+    },
+  )
+  const finishedAt = new Date()
+  db.prepare('update guides set finished_at = ? where id = ?').run(finishedAt.toISOString(), guide.id)
+  guide = { ...guide, finishedAt: finishedAt.toISOString() }
+  const s = (a: Date, b: Date) => `${Math.round((b.getTime() - a.getTime()) / 1000)} s`
+  console.log(
+    `guide ${guide.id}: ${files.length} files, ${batches.length} batches (${files.length - todo.length} summaries reused) in ${s(startedAt, summarisedAt)}, grouped in ${s(summarisedAt, groupedAt)}, ${groups.length} groups described in ${s(groupedAt, finishedAt)}; ${s(startedAt, finishedAt)} in all`,
+  )
+  return { status: 'ok', guide }
 }
 
 // Runs fn on every item, at most n at once.
@@ -215,15 +350,17 @@ async function inParallel<T>(items: T[], n: number, fn: (item: T) => Promise<voi
 
 // One `claude -p` with a JSON schema; resolves with its structured output and the model that did most of the work.
 // ponytail: relies on PATH to find `claude`, like runTurn.
-// Read-only: the only commands allowed are git's read commands. No MCP servers: a guide doesn't need them, and
-// their tool definitions alone can overflow a small model's context.
-async function runClaude(cwd: string, prompt: string, schema: object, model: string) {
+// One turn, no tools (ADR 0010): the diffs are in the prompt. No MCP servers and Claude Code's system prompt replaced,
+// so each call doesn't pay for tool definitions and instructions it won't use. thinking: false for summaries, one
+// sentence per file read straight off the diff, where thinking cost about as many tokens as the answer.
+async function runClaude(cwd: string, prompt: string, schema: object, model: string, thinking = true) {
   const args = ['-p', '--output-format', 'json', '--json-schema', JSON.stringify(schema), '--strict-mcp-config']
-  args.push('--tools', 'Read,Grep,Glob,Bash', '--allowedTools', 'Bash(git diff:*)', 'Bash(git show:*)', 'Bash(git log:*)')
+  args.push('--tools', '', '--system-prompt', systemPrompt)
   if (model) args.push('--model', model)
-  const child = spawn('claude', args, { cwd, stdio: ['pipe', 'pipe', 'pipe'] })
+  const env = thinking ? process.env : { ...process.env, MAX_THINKING_TOKENS: '0' }
+  const child = spawn('claude', args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] })
   children.add(child)
-  child.stdin.end(prompt) // on stdin: a long file list doesn't fit in the arguments
+  child.stdin.end(prompt) // on stdin: a long prompt doesn't fit in the arguments
   let stdout = ''
   let stderr = ''
   child.stdout.on('data', (d) => (stdout += d))

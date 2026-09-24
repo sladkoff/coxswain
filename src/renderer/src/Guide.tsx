@@ -56,10 +56,17 @@ export function Guide({ workspace, mergeBase, diffs, viewed, onViewedChange, vie
   }, [workspace.id, mergeBase])
 
   // Subscribed for as long as the tab shows, so progress sent right as a run starts or is rejoined isn't missed.
+  // Once grouped, the guide being made shows, and fills in as its groups are described.
   const [progress, setProgress] = useState<GuideProgress | null>(null)
   useEffect(() => {
     setProgress(null)
-    return window.coxswain.onGuideProgress((id, p) => id === workspace.id && setProgress(p))
+    return window.coxswain.onGuideProgress((id, p) => {
+      if (id !== workspace.id) return
+      setProgress(p)
+      const g = p.guide
+      if (g)
+        setState((s) => (s.kind === 'creating' || (s.kind === 'ok' && s.guide.id === g.id) ? { kind: 'ok', guide: g } : s))
+    })
   }, [workspace.id])
 
   // The guide's groups with the file diffs as they are now, plus the changed files it doesn't mention (changed
@@ -96,6 +103,7 @@ export function Guide({ workspace, mergeBase, diffs, viewed, onViewedChange, vie
     )
 
   const { guide } = state
+  const describing = progress?.phase === 'describing' && progress.guide?.id === guide.id && progress.done < progress.total
   const all = groups.flatMap((g) => g.diffs)
   const viewedCount = all.filter((d) => viewed.includes(d.file.path)).length
   const shown = groups
@@ -146,7 +154,10 @@ export function Guide({ workspace, mergeBase, diffs, viewed, onViewedChange, vie
         <Virtualizer className="min-h-0 flex-1 overflow-auto">
           <div className={`flex items-center gap-2 px-4 pt-3 text-xs ${muted}`}>
             <span>
-              Made by {guide.model} on {new Date(guide.createdAt).toLocaleString()}
+              Made by {guide.model} on {new Date(guide.finishedAt ?? guide.createdAt).toLocaleString()}
+              {guide.startedAt && guide.finishedAt && ` in ${duration(guide.startedAt, guide.finishedAt)}`}
+              {!guide.finishedAt &&
+                (describing ? `, describing groups: ${progress.done} of ${progress.total}…` : ', unfinished: some groups have no description')}
             </span>
             <button className={`${button} text-xs`} onClick={create}>
               Regenerate
@@ -171,7 +182,7 @@ export function Guide({ workspace, mergeBase, diffs, viewed, onViewedChange, vie
                         {g.diffs.length} files{g.shown.length < g.diffs.length && `, ${g.diffs.length - g.shown.length} viewed`}
                       </span>
                     </h2>
-                    <p className={`text-xs ${muted}`}>{g.description}</p>
+                    <p className={`text-xs ${muted}`}>{g.description || (describing && g.paths.length ? 'Describing…' : '')}</p>
                   </div>
                   <label className="flex shrink-0 items-center gap-1 text-xs">
                     <input
@@ -187,7 +198,10 @@ export function Guide({ workspace, mergeBase, diffs, viewed, onViewedChange, vie
                   </label>
                 </div>
                 {g.shown.map((d) => (
-                  <Viewer key={d.file.path} stacked opened={d} {...viewer} />
+                  <div key={d.file.path}>
+                    {g.notes?.[d.file.path] && <p className="px-4 pt-2 pb-1 text-xs select-text">{g.notes[d.file.path]}</p>}
+                    <Viewer stacked opened={d} {...viewer} />
+                  </div>
                 ))}
               </section>
             )
@@ -198,34 +212,37 @@ export function Guide({ workspace, mergeBase, diffs, viewed, onViewedChange, vie
   )
 }
 
-// Share of the bar for summarising, when there is any; grouping takes the rest. Roughly what #5311 (297 files,
-// 9 batches) took: ~90 s summarising, about as long grouping.
-const summarisingShare = 0.6
+const duration = (from: string, to: string) => {
+  const s = Math.round((Date.parse(to) - Date.parse(from)) / 1000)
+  return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${s % 60} s`
+}
+
+// Share of the bar for summarising, when there is any; grouping takes the rest. Describing happens with the
+// guide showing. A guess: summarising and grouping should each take well under a minute for #5311 (ADR 0010).
+const summarisingShare = 0.5
 
 // An approximate progress bar: steps the core reports fill it, and between them it creeps towards the next step,
 // slower and slower, so it moves without ever getting ahead of the work.
 function ProgressBar({ progress: p }: { progress: GuideProgress | null }) {
   const [since, setSince] = useState(() => Date.now())
   const [now, setNow] = useState(() => Date.now())
-  useEffect(() => setSince(Date.now()), [p?.summarised, p?.grouping])
+  useEffect(() => setSince(Date.now()), [p?.done, p?.phase])
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 250)
     return () => clearInterval(t)
   }, [])
 
-  const share = p?.batches ? summarisingShare : 0
+  const summarising = p?.phase === 'summarising'
   const [from, to, label] = !p
     ? [0, 0.05, 'Creating guide…']
-    : p.grouping
-      ? [share, 1, 'Grouping files…']
-      : // Batches run several at once, so the bar heads for when the running ones are done.
-        [
-          (share * p.summarised) / p.batches,
-          (share * Math.min(p.batches, p.summarised + p.parallel)) / p.batches,
-          `Summarising files: ${p.summarised} of ${p.batches} batches`,
-        ]
-  // Seconds a step takes, roughly: a batch of summaries, or the grouping.
-  const pace = p?.grouping ? 60 : 45
+    : summarising && p.total
+      ? // Batches run many at once, so the bar heads for the end of summarising.
+        [(summarisingShare * p.done) / p.total, summarisingShare, `Summarising files: ${p.done} of ${p.total} batches`]
+      : summarising
+        ? [0, 0.05, 'Creating guide…']
+        : [summarisingShare, 1, 'Grouping files…']
+  // Seconds a step takes, roughly: the summaries, or the grouping.
+  const pace = summarising ? 20 : 30
   const fraction = from + (to - from) * 0.9 * (1 - Math.exp(-(now - since) / 1000 / pace))
   return (
     <div className="flex w-72 flex-col gap-1.5">

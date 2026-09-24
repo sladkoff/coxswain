@@ -59,7 +59,7 @@ then the workspace's files, the work in the middle and the agents on the right.
   answer. These agent sessions don't show in L4.
 
   *Guide* shows the workspace's guide: its guide groups one after another, each a title, a short
-  description and then the group's file diffs, the same file diffs as in *Diff* (Viewed checkbox,
+  description and then the group's file diffs, each with its file note above it, the same file diffs as in *Diff* (Viewed checkbox,
   comments, *Ask agent*). A group has its own *Viewed* checkbox, which marks all its file diffs.
   Viewed file diffs are hidden, and so is a group once all its file diffs are; the top says how many
   are viewed, with *Show viewed* to show them again, as in the Navigator. On the left, a table of
@@ -67,10 +67,11 @@ then the workspace's files, the work in the middle and the agents on the right.
   group being read as you scroll, and jumps to a group when clicked (showing viewed ones if it's
   hidden). Above it, a bar of how many file diffs are viewed in all. Changed files the guide doesn't mention (changed since it was
   made) come last, under *Not in the guide*. The first time the tab opens it shows an approximate progress
-  bar while Claude Code makes the guide (seconds for small PRs, minutes for big ones), labelled
-  *Summarising files: N of M batches* and then *Grouping files…*;
-  after that the stored guide shows at once. At the top: which model made it, when, and
-  *Regenerate*. The prompt, the model and the summary model are in Settings, under *Guide*.
+  bar while Claude Code summarises and groups the files, labelled
+  *Summarising files: N of M batches* and then *Grouping files…*. The guide then shows right away,
+  its groups reading *Describing…* until their descriptions and file notes arrive, and the top says
+  *describing groups: N of M*. After that the stored guide shows at once. At the top: which models
+  made it, when, how long it took, and *Regenerate*. The prompt, the model and the summary model are in Settings, under *Guide*.
 - **L4 — Agents** on the right: the agent sessions of the current workspace. Hidden at first. The *Agent* toggle at the right of
   each tab's bar, *View > Toggle Agents* or ⌥⌘B shows and hides it. *Send to agent* shows it. Several can be open at
   once, e.g. as tabs in the pane. For now L4 is a chat with the workspace's latest agent session:

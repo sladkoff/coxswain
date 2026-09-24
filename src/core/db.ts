@@ -54,6 +54,19 @@ const migrations = [
   )`,
   // The user's settings that the core needs, e.g. the guide prompt. Unset keys use the core's defaults.
   `create table settings (key text primary key, value text not null)`,
+  // ADR 0010: a guide is stored once grouped and filled in group by group; finished_at is null until it's done.
+  // Guides made before were stored finished.
+  `alter table guides add column started_at text;
+   alter table guides add column finished_at text;
+   update guides set finished_at = created_at`,
+  // ADR 0010: a one-sentence summary per file diff, reused while the file diff's fingerprint is unchanged.
+  `create table file_summaries (
+    workspace_id integer not null references workspaces (id) on delete cascade,
+    path text not null,
+    fingerprint text not null,
+    summary text not null,
+    primary key (workspace_id, path)
+  )`,
 ]
 
 export function openDatabase(path: string): DatabaseSync {
