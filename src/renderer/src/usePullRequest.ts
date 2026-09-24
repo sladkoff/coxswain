@@ -16,26 +16,30 @@ const empty: PullRequestData = { changed: null, commits: null, notice: null, pro
 // open, ADR 0008) and what differs from the PR's merge base. `version` changes reload the changes, e.g. after
 // an agent turn.
 export function usePullRequest(workspace: Workspace | undefined, version: number): PullRequestData {
-  const [data, setData] = useState<PullRequestData>(empty)
+  // workspaceId: whose data it is. Reset only in an effect, so the first render after switching workspace still
+  // holds the last one's, and children's effects run before this one's: a Guide would make a guide for the new
+  // workspace from the old merge base. Returned only when it's the current workspace's.
+  const [data, setData] = useState<PullRequestData & { workspaceId?: number }>(empty)
 
   useEffect(() => {
     setData(empty)
     if (!workspace) return
     let stale = false
     const id = workspace.id
+    const start = { ...empty, workspaceId: id }
     ;(async () => {
       // Show a worktree opened before right away, then check GitHub and fetch in the background.
       const before = await window.coxswain.openedBefore(id)
       if (stale) return
-      if (before?.status === 'ok') setData({ ...empty, commits: { head: before.head, mergeBase: before.mergeBase } })
+      if (before?.status === 'ok') setData({ ...start, commits: { head: before.head, mergeBase: before.mergeBase } })
       const w = await window.coxswain.openWorktree(id)
       if (stale) return
       if (w.status !== 'ok') {
         // Offline or signed out: keep showing the worktree, and say it may be out of date.
         if (before) setData((d) => ({ ...d, notice: 'Could not check the PR for new commits' }))
-        else setData({ ...empty, problem: w })
+        else setData({ ...start, problem: w })
       } else if (!before || before.status !== 'ok' || w.head !== before.head || w.mergeBase !== before.mergeBase) {
-        setData({ ...empty, commits: { head: w.head, mergeBase: w.mergeBase }, notice: w.notice })
+        setData({ ...start, commits: { head: w.head, mergeBase: w.mergeBase }, notice: w.notice })
       } else if (w.notice) setData((d) => ({ ...d, notice: w.notice }))
     })()
     return () => void (stale = true)
@@ -52,5 +56,5 @@ export function usePullRequest(workspace: Workspace | undefined, version: number
     return () => void (stale = true)
   }, [data.commits, version])
 
-  return data
+  return data.workspaceId === workspace?.id ? data : empty
 }

@@ -28,6 +28,10 @@ Not checked in the app yet: the user runs the first guide with it.
   grouping 30 s, 20 groups described in ~1 min 40 s (one took 99 s). Every file got a note.
 - **Summaries run without thinking** (`MAX_THINKING_TOKENS=0`): Haiku spent about as many tokens
   thinking as answering. Grouping and describing keep it.
+- **Fixed: switching workspace on the Guide tab made a stray guide** for the new workspace from the old one's
+  merge base (the first render after a switch still held the old PR data), running 16 `claude` processes
+  in the background over a diff of 1000+ files. `usePullRequest` now only returns data for the current
+  workspace.
 - **Notes don't mention file numbers**: one said "file 106"; the prompts now say to name files by path.
 
 ### Tech debt
