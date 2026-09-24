@@ -19,6 +19,8 @@ coxswain, before importing any GitHub comments.
 - **Asks.** *Send to agent* puts a comment in the L4 message box as a chip; several can be collected.
   On send, the core puts each comment in front of the message (file, lines, side, the code in a
   fence, the comment) and marks them sent; they then show *Sent to agent* inline.
+- **Agent replies render as Markdown** in L4 (`react-markdown` + `remark-gfm`: lists, tables,
+  code, links). Links open in the browser; the app window never navigates.
 - Checked in the app on a private repo #5291: comment on lines 3–5, send with an instruction,
   the agent read the file and answered about those lines.
 
@@ -35,6 +37,8 @@ coxswain, before importing any GitHub comments.
   list of a workspace's unsent comments and no "send all" ([UX](UX.md) open question 3).
 - No threads, no resolving.
 - Asks are sent as one plain-text prompt; the chat shows it in full.
+- Code blocks in agent replies aren't syntax-highlighted (`ponytail:` in `Agents.tsx`); user
+  messages stay plain text.
 
 ## 2026-09-24 — Clones and PR worktrees
 

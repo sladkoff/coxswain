@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
+import Markdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import type { AgentSession, ChatEntry } from '../../core/agents'
 import type { Comment } from '../../core/comments'
 import type { Workspace } from '../../core/workspaces'
@@ -129,7 +131,8 @@ export function Agents({ workspace, attached, onDetach, onSent, onTurnEnd }: Pro
   )
 }
 
-// ponytail: text is shown as plain text; render Markdown when replies get long enough to need it.
+// Agent replies are Markdown; links get target=_blank so the main process opens them in the browser.
+// ponytail: code blocks aren't highlighted; use @pierre/diffs' Shiki if they need it.
 function Entry({ entry }: { entry: ChatEntry }) {
   if (entry.kind === 'tool')
     return <div className={`truncate font-mono text-xs ${muted}`}>⏺ {entry.text}</div>
@@ -139,5 +142,11 @@ function Entry({ entry }: { entry: ChatEntry }) {
         {entry.text}
       </div>
     )
-  return <div className="whitespace-pre-wrap select-text [overflow-wrap:anywhere]">{entry.text}</div>
+  return (
+    <div className="markdown select-text [overflow-wrap:anywhere]">
+      <Markdown remarkPlugins={[remarkGfm]} components={{ a: (p) => <a {...p} target="_blank" /> }}>
+        {entry.text}
+      </Markdown>
+    </div>
+  )
 }

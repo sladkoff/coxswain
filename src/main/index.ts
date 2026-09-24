@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Menu } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu, shell } from 'electron'
 import { join } from 'node:path'
 import { listAgentSessions, readTranscript, runTurn, startAgentSession, stopAllTurns, stopTurn } from '../core/agents'
 import { addComment, deleteComment, listComments, type NewComment } from '../core/comments'
@@ -25,6 +25,11 @@ function createWindow() {
     webPreferences: { preload: join(__dirname, '../preload/index.js') },
   })
   win.once('ready-to-show', () => win.show())
+  // Links in agent replies open in the browser, never in the app window.
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:/.test(url)) shell.openExternal(url)
+    return { action: 'deny' }
+  })
 
   if (process.env.ELECTRON_RENDERER_URL) {
     win.loadURL(process.env.ELECTRON_RENDERER_URL)
