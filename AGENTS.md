@@ -15,6 +15,7 @@ Read these before changing anything; they are the source of truth.
 | [docs/UX.md](docs/UX.md) | The screen layout (L1–L4) and open UX questions. |
 | [docs/adr/](docs/adr/) | Architecture decisions, one numbered file each. |
 | [docs/DEVLOG.md](docs/DEVLOG.md) | What has been built so far and the tech debt we carry. |
+| [docs/tickets/](docs/tickets/) | Work still to do, one numbered file per ticket. |
 
 ## Development process
 
@@ -57,7 +58,7 @@ src/core/       UI-free core: GitHub, SQLite, projects, workspaces
 src/main/       Electron main process: window, menu, IPC handlers
 src/preload/    The typed interface between UI and core
 src/renderer/   React UI: one file per screen or pane
-docs/           Goals, glossary, UX, ADRs, devlog
+docs/           Goals, glossary, UX, ADRs, devlog, tickets
 ```
 
 ## Commands
