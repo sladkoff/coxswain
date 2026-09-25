@@ -67,6 +67,55 @@ const migrations = [
     summary text not null,
     primary key (workspace_id, path)
   )`,
+  // ADR 0011: review rounds of entries replace comments, which are dropped with the agent sessions asked from them.
+  // agent_sessions is rebuilt to lose comment_id, which a foreign key keeps from being dropped.
+  `create table review_rounds (
+    id integer primary key,
+    workspace_id integer not null references workspaces (id) on delete cascade,
+    created_at text not null
+  );
+  create table entries (
+    id integer primary key,
+    review_round_id integer not null references review_rounds (id) on delete cascade,
+    kind text not null check (kind in ('note', 'question', 'answer')),
+    body text not null,
+    parent_id integer references entries (id) on delete cascade,
+    path text,
+    side text check (side in ('old', 'new')),
+    start_line integer,
+    end_line integer,
+    code text,
+    created_at text not null,
+    sent_at text
+  );
+  create table agent_sessions_new (
+    id integer primary key,
+    workspace_id integer not null references workspaces (id) on delete cascade,
+    agent text not null,
+    agent_session_id text not null unique,
+    created_at text not null,
+    review_round_id integer references review_rounds (id) on delete cascade
+  );
+  insert into agent_sessions_new (id, workspace_id, agent, agent_session_id, created_at)
+    select id, workspace_id, agent, agent_session_id, created_at from agent_sessions where comment_id is null;
+  drop table agent_sessions;
+  alter table agent_sessions_new rename to agent_sessions;
+  drop table comments`,
+  // ADR 0012: wrapping up ends a round and drafts its action items. entry_ids: JSON, the entries an item came from.
+  `alter table review_rounds add column ended_at text;
+  create table action_items (
+    id integer primary key,
+    review_round_id integer not null references review_rounds (id) on delete cascade,
+    position integer not null,
+    body text not null,
+    entry_ids text not null,
+    path text,
+    side text check (side in ('old', 'new')),
+    start_line integer,
+    end_line integer,
+    code text,
+    created_at text not null
+  )`,
 ]
 
 export function openDatabase(path: string): DatabaseSync {

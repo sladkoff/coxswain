@@ -5,11 +5,9 @@ import {
   readTranscript,
   runTurn,
   startAgentSession,
-  startCommentSession,
   stopAllTurns,
   stopTurn,
 } from '../core/agents'
-import { addComment, deleteComment, listComments, type NewComment } from '../core/comments'
 import { openDatabase } from '../core/db'
 import {
   cloneProject,
@@ -23,6 +21,19 @@ import {
 import { createGuide, getGuide, getGuideSettings, type GuideSettingsChange, setGuideSettings, stopGuides } from '../core/guides'
 import { getCurrentUser, getPullRequestOverview, listPullRequests, listRepos } from '../core/github'
 import { listProjects, openProject } from '../core/projects'
+import {
+  addNote,
+  askQuestion,
+  deleteActionItem,
+  deleteEntry,
+  formatAsk,
+  getRound,
+  listEntries,
+  type NewEntry,
+  stopQuestion,
+  updateActionItem,
+  wrapUp,
+} from '../core/review'
 import { listViewed, setViewed } from '../core/viewed'
 import type { NavigatorSettings, ViewSettings } from '../preload'
 import { getWorkspaceRepo, listWorkspaces, openPullRequestWorkspace } from '../core/workspaces'
@@ -129,17 +140,29 @@ app.whenReady().then(() => {
   )
   ipcMain.handle('agents:list', (_, workspaceId: number) => listAgentSessions(db, workspaceId))
   ipcMain.handle('agents:start', (_, workspaceId: number) => startAgentSession(db, workspaceId))
-  ipcMain.handle('agents:start-for-comment', (_, commentId: number) => startCommentSession(db, commentId))
   ipcMain.handle('agents:transcript', (_, agentSessionId: string) => readTranscript(agentSessionId))
-  ipcMain.handle('comments:list', (_, workspaceId: number) => listComments(db, workspaceId))
-  ipcMain.handle('comments:add', (_, comment: NewComment) => addComment(db, comment))
-  ipcMain.handle('comments:delete', (_, id: number) => deleteComment(db, id))
+  ipcMain.handle('review:list', (_, workspaceId: number) => listEntries(db, workspaceId))
+  ipcMain.handle('review:add-note', (_, note: NewEntry) => addNote(db, note))
+  ipcMain.handle('review:delete', (_, id: number) => deleteEntry(db, id))
+  // Returns the question once saved; the reply streams as review:chat and the turn's end comes as review:turn-end.
+  ipcMain.handle('review:ask', (e, question: NewEntry) => {
+    const send = (channel: string, ...args: unknown[]) => !e.sender.isDestroyed() && e.sender.send(channel, ...args)
+    const asked = askQuestion(db, question, (threadId, entry) => send('review:chat', threadId, entry))
+    const threadId = asked.question.parentId ?? asked.question.id
+    asked.turn.then((result) => send('review:turn-end', threadId, result))
+    return asked.question
+  })
+  ipcMain.handle('review:stop', (_, workspaceId: number) => stopQuestion(db, workspaceId))
+  ipcMain.handle('review:round', (_, workspaceId: number) => getRound(db, workspaceId))
+  ipcMain.handle('review:wrap-up', (_, workspaceId: number) => wrapUp(db, workspaceId))
+  ipcMain.handle('review:update-item', (_, id: number, body: string) => updateActionItem(db, id, body))
+  ipcMain.handle('review:delete-item', (_, id: number) => deleteActionItem(db, id))
   ipcMain.handle('viewed:list', (_, workspaceId: number, mergeBase: string) => listViewed(db, workspaceId, mergeBase))
   ipcMain.handle('viewed:set', (_, workspaceId: number, mergeBase: string, path: string, viewed: boolean) =>
     setViewed(db, workspaceId, mergeBase, path, viewed),
   )
-  ipcMain.handle('agents:run-turn', (e, agentSessionId: string, message: string, commentIds: number[]) =>
-    runTurn(db, agentSessionId, message, commentIds, (entry) => {
+  ipcMain.handle('agents:run-turn', (e, agentSessionId: string, message: string, noteIds: number[]) =>
+    runTurn(db, agentSessionId, formatAsk(db, noteIds, message), {}, (entry) => {
       if (!e.sender.isDestroyed()) e.sender.send('agents:entry', agentSessionId, entry)
     }),
   )

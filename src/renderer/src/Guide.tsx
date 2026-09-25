@@ -3,7 +3,7 @@ import { type ComponentProps, type UIEvent, useEffect, useMemo, useRef, useState
 import type { ChangedFile } from '../../core/git'
 import type { Guide as GuideData, GuideGroup, GuideProgress } from '../../core/guides'
 import type { Workspace } from '../../core/workspaces'
-import { button, muted, Prose } from './ui'
+import { button, countItems, itemsTitle, muted, Prose } from './ui'
 import { Viewer } from './Viewer'
 
 type Diff = { kind: 'diff'; file: ChangedFile }
@@ -108,6 +108,7 @@ export function Guide({ workspace, mergeBase, diffs, viewed, onViewedChange, sho
   const describing = progress?.phase === 'describing' && progress.guide?.id === guide.id && progress.done < progress.total
   const all = groups.flatMap((g) => g.diffs)
   const viewedCount = all.filter((d) => viewed.includes(d.file.path)).length
+  const items = countItems(viewer.entries)
   const shown = groups
     .map((g, i) => ({ ...g, i, shown: showViewed ? g.diffs : g.diffs.filter((d) => !viewed.includes(d.file.path)) }))
     .filter((g) => g.shown.length)
@@ -135,6 +136,14 @@ export function Guide({ workspace, mergeBase, diffs, viewed, onViewedChange, sho
         {groups.map((g, i) => {
           const n = g.diffs.filter((d) => viewed.includes(d.file.path)).length
           const done = n === g.diffs.length
+          const c = g.diffs.reduce(
+            (sum, d) => {
+              const f = items.get(d.file.path)
+              return { notes: sum.notes + (f?.notes ?? 0), questions: sum.questions + (f?.questions ?? 0) }
+            },
+            { notes: 0, questions: 0 },
+          )
+          const itemCount = c.notes + c.questions
           return (
             <button
               key={i}
@@ -149,6 +158,11 @@ export function Guide({ workspace, mergeBase, diffs, viewed, onViewedChange, sho
               <span className="min-w-0 flex-1">
                 <Prose inline>{g.title}</Prose>
               </span>
+              {itemCount > 0 && (
+                <span title={itemsTitle(c)} className="shrink-0 text-blue-600 tabular-nums dark:text-blue-400">
+                  ✎ {itemCount}
+                </span>
+              )}
               <span className={`shrink-0 tabular-nums ${muted}`}>{done ? '✓' : `${n}/${g.diffs.length}`}</span>
             </button>
           )

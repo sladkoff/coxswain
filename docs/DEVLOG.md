@@ -3,6 +3,55 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-25 — Review rounds
+
+### What works
+
+Not checked in the app yet: the user tests it.
+
+- **Review rounds of entries replace local comments** ([ADR 0011](adr/0011-review-rounds-and-entries.md)).
+  Glossary first: *note*, *question*, *answer*, *thread*, *anchor*, *review round*; *comment* now
+  means GitHub only; *local comment*, *imported comment*, *import* and *publish* are gone (*post*
+  replaces publish).
+- Migration 11: `review_rounds` and `entries` (kind, body, `parent_id`, optional anchor); old comments
+  and the agent sessions asked from them are dropped; `agent_sessions` rebuilt with
+  `review_round_id` in place of `comment_id`. Checked from a copy of a version 10 database.
+- `src/core/comments.ts` is now `src/core/review.ts`. The gutter box says *Note* where it said
+  *Comment*.
+- **Questions share one agent session per round**, so a question knows the earlier ones. They run
+  read-only (`--permission-mode default`, so edits are refused), and the reply is saved as an answer
+  entry when the turn ends. Follow-ups are questions in the same thread.
+- **Counts of notes and questions** (`✎ N`, hover for how many of each) on changed files in the
+  Navigator, tree and list, and on groups in the Guide's table of contents (`countItems` in `ui.tsx`).
+  A question's follow-ups and answers don't count; the thread does.
+- **Wrap up** ([ADR 0012](adr/0012-wrap-up-and-action-items.md)): a bar at the bottom of *Guide* and
+  *Diff* shows the round (*Round N*, its notes and questions) and *Wrap up*, which sends the round's
+  numbered stream to one `claude -p` with a schema and no tools (`runClaude`, now exported from
+  `guides.ts`) and stores the action items it drafts (migration 12: `action_items`,
+  `review_rounds.ended_at`). The draft opens above the bar to edit or delete items. Wrapping up ends
+  the round; the next entry starts another. On #5311's test round it took 15 s and made one anchored
+  item from a question and its answer, leaving out a note with nothing to change.
+- `runTurn` takes a finished prompt; formatting an ask's notes moved to the main process
+  (`formatAsk`), so `agents.ts` no longer depends on the review code.
+
+### Tech debt
+
+- **Rounds don't go stale** (`ponytail:` in `review.ts`): a round isn't tied to the commit or guide it
+  reviewed, so new changes don't end it; only wrapping up does (glossary open question 3).
+- **Only the latest round is reachable**: once a new round starts, the last one's entries and action
+  items leave the UI (`ponytail:` on `ReviewRound`).
+- **The wrap-up prompt is fixed** and uses Claude Code's default model, not in Settings like the
+  guide's. No *Stop* while it runs.
+- **Hand-off isn't built**: action items can't be implemented or posted yet.
+- **Questions run one at a time per round**: a second while one runs gets *A turn is already running*.
+  Queue them if it gets in the way.
+- **Tool calls in a thread show only while streaming**; an answer keeps only the agent's text, and a
+  stopped or failed turn leaves no answer.
+- **Only changed files show counts** in the Navigator: in *Files*, a note on an unchanged file (made
+  from a whole file) has no row decoration.
+- No UI yet for a round's whole stream, floating entries, action items or GitHub comments (UX open
+  question 3).
+
 ## 2026-09-25 — Faster guides
 
 ### What works

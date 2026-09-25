@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { AgentSession, ChatEntry } from '../../core/agents'
-import type { Comment } from '../../core/comments'
+import type { ReviewEntry } from '../../core/review'
 import type { Workspace } from '../../core/workspaces'
 import { button, muted, Prose } from './ui'
 
@@ -8,10 +8,10 @@ const pane = 'border-neutral-200 dark:border-neutral-800'
 
 // L4: a chat with the workspace's current agent session. The session starts with its first message.
 // ponytail: shows only the latest agent session; the others stay in the database until L4 gets tabs (UX open question 4).
-// attached: comments sent here from the Viewer; they go in front of the next message, making it an ask.
+// attached: notes sent here from the Viewer; they go in front of the next message, making it an ask.
 type Props = {
   workspace: Workspace
-  attached: Comment[]
+  attached: ReviewEntry[]
   onDetach: (id: number) => void
   onSent: () => void
   onTurnEnd: () => void
@@ -57,7 +57,7 @@ export function Agents({ workspace, attached, onDetach, onSent, onTurnEnd }: Pro
     setDraft('')
     setError(null)
     setRunning(true)
-    // The core marks the comments sent as soon as the turn starts, so onSent can reload them right away.
+    // The core marks the notes sent as soon as the turn starts, so onSent can reload them right away.
     const turn = window.coxswain.runTurn(current.agentSessionId, message, attached.map((c) => c.id))
     onSent()
     const result = await turn
@@ -97,7 +97,8 @@ export function Agents({ workspace, attached, onDetach, onSent, onTurnEnd }: Pro
         {attached.map((c) => (
           <div key={c.id} className="flex items-center gap-1 rounded-md bg-neutral-100 px-1.5 py-0.5 text-xs dark:bg-neutral-800">
             <span className="min-w-0 flex-1 truncate" title={c.body}>
-              {c.path.split('/').at(-1)}:{c.startLine === c.endLine ? c.startLine : `${c.startLine}–${c.endLine}`} {c.body}
+              {c.path && `${c.path.split('/').at(-1)}:${c.startLine === c.endLine ? c.startLine : `${c.startLine}–${c.endLine}`} `}
+              {c.body}
             </span>
             <button title="Remove from the message" className={muted} onClick={() => onDetach(c.id)}>
               ✕
@@ -116,7 +117,7 @@ export function Agents({ workspace, attached, onDetach, onSent, onTurnEnd }: Pro
           rows={3}
           placeholder={
             attached.length
-              ? 'What should the agent do with these comments? (Enter to send)'
+              ? 'What should the agent do with these notes? (Enter to send)'
               : 'Message Claude Code (Enter to send, Shift+Enter for a new line)'
           }
           className="resize-none rounded-md border border-neutral-300 bg-transparent p-1.5 text-sm outline-none focus:border-neutral-500 dark:border-neutral-700"

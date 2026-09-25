@@ -2,22 +2,22 @@ import type { DiffLineAnnotation, LineAnnotation, SelectedLineRange } from '@pie
 import { File, MultiFileDiff } from '@pierre/diffs/react'
 import { memo, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChatEntry } from '../../core/agents'
-import type { Comment } from '../../core/comments'
 import type { ChangedFile, FileText } from '../../core/git'
+import type { NewEntry, ReviewEntry } from '../../core/review'
 import type { Workspace } from '../../core/workspaces'
 import { Entry } from './Agents'
-import { button, muted, primaryButton, ProblemMessage } from './ui'
+import { button, muted, primaryButton, ProblemMessage, Prose } from './ui'
 
 // What the Viewer shows: the file diff of a changed file, or a whole file as it is in the worktree.
 export type Opened = { kind: 'diff'; file: ChangedFile } | { kind: 'file'; path: string }
-// A turn of an agent session in a comment's thread.
-export type Turn = { running: boolean; error: string | null }
-type RunTurn = (agentSessionId: string, message: string, commentIds: number[]) => void
+// A question's turn in a thread: the reply streamed so far (live) until it's saved as an answer entry.
+export type Turn = { running: boolean; error: string | null; live: ChatEntry[] }
+type Ask = (question: NewEntry) => void
 
 type Draft = { side: 'old' | 'new'; startLine: number; endLine: number }
-// What an inline box between the lines shows: a saved comment, or the form for a new one.
+// What an inline box between the lines shows: an entry with its thread, or the form for a new one.
 // One object type, not a union: the library's annotation types distribute over unions.
-type Note = { comment?: Comment; draft?: Draft }
+type Box = { entry?: ReviewEntry; draft?: Draft }
 
 // version: bump to reread, e.g. after an agent turn changed the worktree.
 type Props = {
@@ -25,14 +25,14 @@ type Props = {
   mergeBase: string
   opened: Opened
   version: number
-  comments: Comment[]
-  onCommentsChanged: () => void
+  entries: ReviewEntry[] // the current review round's
+  onEntriesChanged: () => void
   attachedIds: number[]
-  onAttach: (comment: Comment) => void
+  onAttach: (note: ReviewEntry) => void
   viewed: string[]
   onViewedChange: (path: string, viewed: boolean) => void
-  turns: Record<string, Turn>
-  onRunTurn: RunTurn
+  turns: Record<number, Turn> // by thread
+  onAsk: Ask
   diffStyle: 'unified' | 'split'
   // One of several file diffs one after another: the parent scrolls, not the Viewer.
   stacked?: boolean
@@ -42,11 +42,11 @@ const baseOptions = { preferredHighlighter: 'shiki-js', overflow: 'wrap', sticky
 
 // L3: shows the diff or file opened from the Navigator.
 // The old side is the merge base (git show), the new side the worktree now.
-// The + in the gutter (click, or drag for a range) starts a local comment on those lines.
+// The + in the gutter (click, or drag for a range) starts a note or question on those lines.
 // Memoised, and so are the files and annotations it hands the library: @pierre/diffs re-diffs on a new file
 // object and redraws on every render, so the Diff tab's many Viewers must only render when their props change.
 export const Viewer = memo(function Viewer(props: Props) {
-  const { workspace, mergeBase, opened, version, comments, onCommentsChanged, attachedIds, onAttach } = props
+  const { workspace, mergeBase, opened, version, entries, onEntriesChanged, attachedIds, onAttach } = props
   const [sides, setSides] = useState<{ old: FileText; new: FileText } | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
   // The highlighted lines. Controlled, so they can be cleared when a draft is cancelled or saved: left to
@@ -112,20 +112,21 @@ export const Viewer = memo(function Viewer(props: Props) {
     return sides && { old: { name: oldName, contents: text(sides.old) }, new: { name: path, contents: text(sides.new) } }
   }, [sides])
   const annotations = useMemo(() => {
-    // A whole file only shows the worktree, so only comments on the new side belong in it.
-    const notes: { side: 'old' | 'new'; line: number; note: Note }[] = [
-      ...comments
-        .filter((c) => c.path === path && (opened.kind === 'diff' || c.side === 'new'))
-        .map((c) => ({ side: c.side, line: c.endLine, note: { comment: c } })),
-      ...(draft ? [{ side: draft.side, line: Math.max(draft.startLine, draft.endLine), note: { draft } }] : []),
+    // Threads show under their first question, so only anchored entries without a parent get a box.
+    // A whole file only shows the worktree, so only entries on the new side belong in it.
+    const boxes: { side: 'old' | 'new'; line: number; box: Box }[] = [
+      ...entries
+        .filter((e) => e.path === path && !e.parentId && (opened.kind === 'diff' || e.side === 'new'))
+        .map((e) => ({ side: e.side!, line: e.endLine!, box: { entry: e } })),
+      ...(draft ? [{ side: draft.side, line: Math.max(draft.startLine, draft.endLine), box: { draft } }] : []),
     ]
     return {
-      file: notes.map((a): LineAnnotation<Note> => ({ lineNumber: a.line, metadata: a.note })),
-      diff: notes.map(
-        (a): DiffLineAnnotation<Note> => ({ side: a.side === 'old' ? 'deletions' : 'additions', lineNumber: a.line, metadata: a.note }),
+      file: boxes.map((a): LineAnnotation<Box> => ({ lineNumber: a.line, metadata: a.box })),
+      diff: boxes.map(
+        (a): DiffLineAnnotation<Box> => ({ side: a.side === 'old' ? 'deletions' : 'additions', lineNumber: a.line, metadata: a.box }),
       ),
     }
-  }, [comments, draft, opened])
+  }, [entries, draft, opened])
 
   if (!near && opened.kind === 'diff') {
     // Roughly the file diff's height, so scrolling to a file further down lands near it.
@@ -146,43 +147,51 @@ export const Viewer = memo(function Viewer(props: Props) {
     )
   if (o.binary || n.binary) return <Centered>Binary file, not shown</Centered>
 
-  const save = async (d: Draft, body: string) => {
+  const anchored = (d: Draft, body: string): NewEntry => {
     const [start, end] = [d.startLine, d.endLine].sort((a, b) => a - b)
     const text = (d.side === 'old' ? o.text : n.text) ?? ''
     const code = text.split('\n').slice(start - 1, end).join('\n')
-    const comment = await window.coxswain.addComment({ workspaceId: workspace.id, path, side: d.side, startLine: start, endLine: end, code, body })
+    return { workspaceId: workspace.id, body, anchor: { path, side: d.side, startLine: start, endLine: end, code } }
+  }
+  const note = async (d: Draft, body: string) => {
+    await window.coxswain.addNote(anchored(d, body))
     closeDraft()
-    onCommentsChanged()
-    return comment
+    onEntriesChanged()
   }
-  // Saves the comment and asks the agent about it in a new agent session, whose replies go in the comment's thread.
-  const ask = async (d: Draft, body: string) => {
-    const comment = await save(d, body)
-    const session = await window.coxswain.startCommentSession(comment.id)
-    props.onRunTurn(session.agentSessionId, '', [comment.id])
+  // Asks the round's agent session about the lines; the reply goes in the question's thread.
+  const ask = (d: Draft, body: string) => {
+    props.onAsk(anchored(d, body))
+    closeDraft()
   }
-  const remove = async (c: Comment) => {
-    await window.coxswain.deleteComment(c.id)
-    onCommentsChanged()
+  const remove = async (e: ReviewEntry) => {
+    await window.coxswain.deleteEntry(e.id)
+    onEntriesChanged()
   }
-  const render = ({ draft, comment }: Note) =>
+  const render = ({ draft, entry }: Box) =>
     draft ? (
-      <DraftBox draft={draft} onSave={save} onAsk={ask} onCancel={closeDraft} />
-    ) : comment ? (
-      <CommentBox
-        comment={comment}
-        attached={attachedIds.includes(comment.id)}
-        onAttach={() => onAttach(comment)}
-        onRemove={() => remove(comment)}
-        turn={comment.agentSessionId ? props.turns[comment.agentSessionId] : undefined}
-        onRunTurn={props.onRunTurn}
+      <DraftBox draft={draft} onNote={note} onAsk={ask} onCancel={closeDraft} />
+    ) : entry?.kind === 'note' ? (
+      <NoteBox
+        note={entry}
+        attached={attachedIds.includes(entry.id)}
+        onAttach={() => onAttach(entry)}
+        onRemove={() => remove(entry)}
+      />
+    ) : entry?.kind === 'question' ? (
+      <ThreadBox
+        question={entry}
+        replies={entries.filter((e) => e.parentId === entry.id)}
+        turn={props.turns[entry.id]}
+        onReply={(body) => props.onAsk({ workspaceId: workspace.id, body, parentId: entry.id })}
+        onStop={() => window.coxswain.stopQuestion(workspace.id)}
+        onRemove={() => remove(entry)}
       />
     ) : null
 
   return (
     <div className={props.stacked ? 'select-text' : 'min-h-0 flex-1 overflow-auto select-text'}>
       {opened.kind === 'file' ? (
-        <File<Note>
+        <File<Box>
           file={files.new}
           options={options}
           selectedLines={selection}
@@ -190,7 +199,7 @@ export const Viewer = memo(function Viewer(props: Props) {
           renderAnnotation={(a) => render(a.metadata)}
         />
       ) : (
-        <MultiFileDiff<Note>
+        <MultiFileDiff<Box>
           oldFile={files.old}
           newFile={files.new}
           options={options}
@@ -218,12 +227,12 @@ const box = 'm-2 flex flex-col gap-1.5 rounded-md border border-neutral-300 bg-w
 
 type DraftBoxProps = {
   draft: Draft
-  onSave: (d: Draft, body: string) => void
+  onNote: (d: Draft, body: string) => void
   onAsk: (d: Draft, body: string) => void
   onCancel: () => void
 }
 
-function DraftBox({ draft, onSave, onAsk, onCancel }: DraftBoxProps) {
+function DraftBox({ draft, onNote, onAsk, onCancel }: DraftBoxProps) {
   const [body, setBody] = useState('')
   // autoFocus loses to the gutter button, which takes focus when the drag that opened this box ends.
   const input = useRef<HTMLTextAreaElement>(null)
@@ -241,10 +250,10 @@ function DraftBox({ draft, onSave, onAsk, onCancel }: DraftBoxProps) {
         onChange={(e) => setBody(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === 'Escape') onCancel()
-          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && body.trim()) (e.shiftKey ? onAsk : onSave)(draft, body)
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && body.trim()) (e.shiftKey ? onAsk : onNote)(draft, body)
         }}
         rows={3}
-        placeholder="Comment for the agent (⌘Enter to save, ⇧⌘Enter to ask the agent now)"
+        placeholder="A note (⌘Enter), or a question for the agent (⇧⌘Enter)"
         className="resize-none rounded-md border border-neutral-300 bg-transparent p-1.5 outline-none focus:border-neutral-500 dark:border-neutral-700"
       />
       <div className="flex justify-end gap-1.5">
@@ -254,97 +263,98 @@ function DraftBox({ draft, onSave, onAsk, onCancel }: DraftBoxProps) {
         <button className={`${button} text-xs`} disabled={!body.trim()} onClick={() => onAsk(draft, body)}>
           Ask agent
         </button>
-        <button className={`${primaryButton} text-xs`} disabled={!body.trim()} onClick={() => onSave(draft, body)}>
-          Comment
+        <button className={`${primaryButton} text-xs`} disabled={!body.trim()} onClick={() => onNote(draft, body)}>
+          Note
         </button>
       </div>
     </div>
   )
 }
 
-type CommentBoxProps = {
-  comment: Comment
-  attached: boolean
-  onAttach: () => void
-  onRemove: () => void
-  turn: Turn | undefined
-  onRunTurn: RunTurn
-}
+type NoteBoxProps = { note: ReviewEntry; attached: boolean; onAttach: () => void; onRemove: () => void }
 
-function CommentBox({ comment: c, attached, onAttach, onRemove, turn, onRunTurn }: CommentBoxProps) {
+function NoteBox({ note: n, attached, onAttach, onRemove }: NoteBoxProps) {
   return (
     <div className={box}>
       <div className={`flex items-center gap-2 text-xs ${muted}`}>
-        <span>{lines(c.startLine, c.endLine)}</span>
-        {c.sentAt && <span className="rounded bg-neutral-100 px-1 dark:bg-neutral-800">Sent to agent</span>}
+        <span>Note · {lines(n.startLine!, n.endLine!)}</span>
+        {n.sentAt && <span className="rounded bg-neutral-100 px-1 dark:bg-neutral-800">Sent to agent</span>}
       </div>
-      <div className="whitespace-pre-wrap [overflow-wrap:anywhere]">{c.body}</div>
-      {c.agentSessionId && <Thread agentSessionId={c.agentSessionId} turn={turn} onRunTurn={onRunTurn} />}
+      <div className="whitespace-pre-wrap [overflow-wrap:anywhere]">{n.body}</div>
       <div className="flex justify-end gap-1.5">
-        <button className={`${button} text-xs`} disabled={turn?.running} onClick={onRemove}>
+        <button className={`${button} text-xs`} onClick={onRemove}>
           Delete
         </button>
-        {!c.agentSessionId && (
-          <button className={`${button} text-xs`} disabled={attached} onClick={onAttach}>
-            {attached ? 'In the message' : 'Send to agent'}
-          </button>
-        )}
+        <button className={`${button} text-xs`} disabled={attached} onClick={onAttach}>
+          {attached ? 'In the message' : 'Send to agent'}
+        </button>
       </div>
     </div>
   )
 }
 
-// The agent session asked from a comment: its replies, streamed while a turn runs, and a box to reply.
-function Thread({ agentSessionId: id, turn, onRunTurn }: { agentSessionId: string; turn: Turn | undefined; onRunTurn: RunTurn }) {
-  const [entries, setEntries] = useState<ChatEntry[]>([])
+type ThreadBoxProps = {
+  question: ReviewEntry
+  replies: ReviewEntry[] // follow-up questions and answers, in order
+  turn: Turn | undefined
+  onReply: (body: string) => void
+  onStop: () => void
+  onRemove: () => void
+}
+
+// A thread: the question, its follow-ups and answers, the reply streaming in while a turn runs, and a box to follow up.
+function ThreadBox({ question: q, replies, turn, onReply, onStop, onRemove }: ThreadBoxProps) {
   const [reply, setReply] = useState('')
-  useEffect(() => {
-    let stale = false
-    // ponytail: a turn that's running when this mounts may show an entry twice, once from the transcript and once
-    // streamed. Fine while threads are short; dedupe by message ID if it shows.
-    window.coxswain.readTranscript(id).then((e) => !stale && setEntries(e))
-    const off = window.coxswain.onChatEntry((sid, e) => sid === id && setEntries((x) => [...x, e]))
-    return () => {
-      stale = true
-      off()
-    }
-  }, [id])
   const running = turn?.running ?? false
-  // The first message is the comment itself, already shown above.
-  const shown = entries.filter((e, i) => !(i === 0 && e.kind === 'user'))
   const send = () => {
     if (!reply.trim() || running) return
-    onRunTurn(id, reply.trim(), [])
+    onReply(reply.trim())
     setReply('')
   }
   return (
-    <div className="flex flex-col gap-1.5 border-t border-neutral-200 pt-1.5 dark:border-neutral-800">
-      <div className="flex max-h-96 flex-col gap-1.5 overflow-y-auto">
-        {shown.map((e, i) => (
-          <Entry key={i} entry={e} />
-        ))}
-        {running && <div className={`text-xs ${muted}`}>Working…</div>}
-        {turn?.error && <div className="text-xs text-red-600 select-text dark:text-red-400">{turn.error}</div>}
+    <div className={box}>
+      <span className={`text-xs ${muted}`}>Question · {lines(q.startLine!, q.endLine!)}</span>
+      <div className="whitespace-pre-wrap [overflow-wrap:anywhere]">{q.body}</div>
+      <div className="flex flex-col gap-1.5 border-t border-neutral-200 pt-1.5 dark:border-neutral-800">
+        <div className="flex max-h-96 flex-col gap-1.5 overflow-y-auto">
+          {replies.map((e) =>
+            e.kind === 'answer' ? (
+              <div key={e.id} className="markdown select-text [overflow-wrap:anywhere]">
+                <Prose>{e.body}</Prose>
+              </div>
+            ) : (
+              <Entry key={e.id} entry={{ kind: 'user', text: e.body }} />
+            ),
+          )}
+          {turn?.live.filter((c) => c.kind !== 'user').map((c, i) => <Entry key={`live${i}`} entry={c} />)}
+          {running && <div className={`text-xs ${muted}`}>Working…</div>}
+          {turn?.error && <div className="text-xs text-red-600 select-text dark:text-red-400">{turn.error}</div>}
+        </div>
+        {running ? (
+          <button className={`${button} self-end text-xs`} onClick={onStop}>
+            Stop
+          </button>
+        ) : (
+          <div className="flex items-end gap-1.5">
+            <textarea
+              value={reply}
+              onChange={(e) => setReply(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  send()
+                }
+              }}
+              rows={1}
+              placeholder="Follow up (Enter to send)"
+              className="min-w-0 flex-1 resize-none rounded-md border border-neutral-300 bg-transparent p-1.5 outline-none focus:border-neutral-500 dark:border-neutral-700"
+            />
+            <button className={`${button} text-xs`} onClick={onRemove}>
+              Delete
+            </button>
+          </div>
+        )}
       </div>
-      {running ? (
-        <button className={`${button} self-end text-xs`} onClick={() => window.coxswain.stopTurn(id)}>
-          Stop
-        </button>
-      ) : (
-        <textarea
-          value={reply}
-          onChange={(e) => setReply(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault()
-              send()
-            }
-          }}
-          rows={1}
-          placeholder="Reply to the agent (Enter to send)"
-          className="resize-none rounded-md border border-neutral-300 bg-transparent p-1.5 outline-none focus:border-neutral-500 dark:border-neutral-700"
-        />
-      )}
     </div>
   )
 }

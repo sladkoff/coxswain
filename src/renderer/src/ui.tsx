@@ -3,8 +3,26 @@ import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { GitProblem } from '../../core/git'
 import type { GitHubProblem } from '../../core/github'
+import type { ReviewEntry } from '../../core/review'
 
 export const muted = 'text-neutral-500'
+
+// The notes and questions of the current review round on each file, as the Navigator and the Guide show them.
+// A question's follow-ups and answers are part of its thread, so they don't count.
+export type ItemCount = { notes: number; questions: number }
+export function countItems(entries: ReviewEntry[]): Map<string, ItemCount> {
+  const counts = new Map<string, ItemCount>()
+  for (const e of entries) {
+    if (!e.path || e.parentId) continue
+    const c = counts.get(e.path) ?? { notes: 0, questions: 0 }
+    if (e.kind === 'note') c.notes++
+    if (e.kind === 'question') c.questions++
+    counts.set(e.path, c)
+  }
+  return counts
+}
+const plural = (n: number, word: string) => (n ? `${n} ${word}${n === 1 ? '' : 's'}` : '')
+export const itemsTitle = (c: ItemCount) => [plural(c.notes, 'note'), plural(c.questions, 'question')].filter(Boolean).join(', ')
 export const button =
   'rounded-md border border-neutral-300 px-2.5 py-1 hover:bg-neutral-100 disabled:opacity-50 dark:border-neutral-700 dark:hover:bg-neutral-800'
 export const primaryButton =

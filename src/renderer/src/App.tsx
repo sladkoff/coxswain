@@ -1,6 +1,6 @@
 import { Virtualizer } from '@pierre/diffs/react'
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
-import type { Comment } from '../../core/comments'
+import type { NewEntry, ReviewEntry } from '../../core/review'
 import type { Project } from '../../core/projects'
 import type { Workspace } from '../../core/workspaces'
 import { Agents } from './Agents'
@@ -10,6 +10,7 @@ import { Onboarding } from './Onboarding'
 import { Guide } from './Guide'
 import { Overview } from './Overview'
 import { Projects } from './Projects'
+import { Round } from './Round'
 import { Settings } from './Settings'
 import { usePullRequest } from './usePullRequest'
 import type { ViewSettings } from '../../preload'
@@ -73,21 +74,21 @@ export function App() {
   const [version, setVersion] = useState(0)
   const pr = usePullRequest(currentWorkspace, version)
 
-  // The workspace's local comments, and those waiting in the L4 message box.
-  const [comments, setComments] = useState<Comment[]>([])
-  const [attached, setAttached] = useState<Comment[]>([])
+  // The entries of the workspace's current review round, and the notes waiting in the L4 message box.
+  const [entries, setEntries] = useState<ReviewEntry[]>([])
+  const [attached, setAttached] = useState<ReviewEntry[]>([])
   // Callbacks handed to the Viewers are stable (useCallback), so a memoised Viewer doesn't redraw its file diff.
-  const loadComments = useCallback(
-    () => void (currentWorkspace && window.coxswain.listComments(currentWorkspace.id).then(setComments)),
+  const loadEntries = useCallback(
+    () => void (currentWorkspace && window.coxswain.listEntries(currentWorkspace.id).then(setEntries)),
     [currentWorkspace?.id],
   )
   useEffect(() => {
-    setComments([])
+    setEntries([])
     setAttached([])
   }, [currentWorkspace?.id])
-  useEffect(() => void loadComments(), [currentWorkspace?.id, version])
-  // A deleted comment leaves the message box too.
-  useEffect(() => setAttached((a) => a.filter((c) => comments.some((k) => k.id === c.id))), [comments])
+  useEffect(() => void loadEntries(), [currentWorkspace?.id, version])
+  // A deleted note leaves the message box too.
+  useEffect(() => setAttached((a) => a.filter((c) => entries.some((k) => k.id === c.id))), [entries])
   // Paths of the viewed file diffs. Reloaded with the changes, since a file diff that changed is no longer viewed.
   const [viewed, setViewed] = useState<string[]>([])
   useEffect(() => {
@@ -104,16 +105,31 @@ export function App() {
     },
     [currentWorkspace?.id, mergeBase],
   )
-  // Turns of the agent sessions in comment threads, kept here so they outlive the Viewer showing them.
-  const [turns, setTurns] = useState<Record<string, Turn>>({})
-  const runThreadTurn = useCallback(async (agentSessionId: string, message: string, commentIds: number[]) => {
-    setTurns((t) => ({ ...t, [agentSessionId]: { running: true, error: null } }))
-    const turn = window.coxswain.runTurn(agentSessionId, message, commentIds)
-    loadComments() // the core marks the comments sent as the turn starts
-    const result = await turn
-    setTurns((t) => ({ ...t, [agentSessionId]: { running: false, error: result.status === 'error' ? result.message : null } }))
-    setVersion((v) => v + 1)
-  }, [loadComments])
+  // Questions' turns by thread, kept here so they outlive the Viewer showing them. The reply streams in as chat
+  // entries; once the turn ends it's an answer entry.
+  const [turns, setTurns] = useState<Record<number, Turn>>({})
+  useEffect(() => {
+    const offChat = window.coxswain.onQuestionChat((id, c) =>
+      setTurns((t) => ({ ...t, [id]: { running: true, error: null, live: [...(t[id]?.live ?? []), c] } })),
+    )
+    const offEnd = window.coxswain.onQuestionEnd((id, result) => {
+      setTurns((t) => ({ ...t, [id]: { running: false, error: result.status === 'error' ? result.message : null, live: [] } }))
+      loadEntries()
+    })
+    return () => {
+      offChat()
+      offEnd()
+    }
+  }, [loadEntries])
+  const ask = useCallback(
+    async (q: NewEntry) => {
+      const question = await window.coxswain.askQuestion(q)
+      const id = question.parentId ?? question.id
+      setTurns((t) => ({ ...t, [id]: { running: true, error: null, live: t[id]?.live ?? [] } }))
+      loadEntries()
+    },
+    [loadEntries],
+  )
   // L3's tabs. `opened` is a whole file picked in Files, shown in the Diff tab in place of the file diffs.
   const [tab, setTab] = useState<Tab>('overview')
   const [opened, setOpened] = useState<Opened | null>(null)
@@ -131,22 +147,22 @@ export function App() {
   const showFile = view === 'files' && opened
 
   const attachedIds = useMemo(() => attached.map((c) => c.id), [attached])
-  const attach = useCallback((c: Comment) => {
+  const attach = useCallback((c: ReviewEntry) => {
     setAttached((a) => [...a, c])
-    setAgentsOpen(true) // the comment goes in L4's message box, so show it
+    setAgentsOpen(true) // the note goes in L4's message box, so show it
   }, [])
   const viewerProps = (workspace: Workspace, mergeBase: string) => ({
     workspace,
     mergeBase,
     version,
-    comments,
-    onCommentsChanged: loadComments,
+    entries,
+    onEntriesChanged: loadEntries,
     attachedIds,
     onAttach: attach,
     viewed,
     onViewedChange: markViewed,
     turns,
-    onRunTurn: runThreadTurn,
+    onAsk: ask,
     diffStyle: viewSettings.diffStyle,
   })
 
@@ -274,7 +290,7 @@ export function App() {
                   <div className="flex shrink-0 justify-end px-2 pt-1.5">
                     <ViewToggle view={view} onChange={setView} />
                   </div>
-                  <Navigator key={currentWorkspace.id} workspace={currentWorkspace} pr={pr} view={view} viewed={viewed} showViewed={viewSettings.showViewed} onOpen={open} />
+                  <Navigator key={currentWorkspace.id} workspace={currentWorkspace} pr={pr} view={view} viewed={viewed} showViewed={viewSettings.showViewed} entries={entries} onOpen={open} />
                 </div>
                 <Splitter min={240} max={720} onResize={setLeftWidth} />
               </>
@@ -298,6 +314,7 @@ export function App() {
             </div>
           </div>
         )}
+        {currentWorkspace && tab !== 'overview' && <Round key={currentWorkspace.id} workspace={currentWorkspace} entries={entries} />}
       </div>
 
       {agentsOpen && <Splitter min={240} max={800} fromRight onResize={setAgentsWidth} />}
@@ -311,7 +328,7 @@ export function App() {
             onDetach={(id) => setAttached((a) => a.filter((c) => c.id !== id))}
             onSent={() => {
               setAttached([])
-              loadComments()
+              loadEntries()
             }}
             onTurnEnd={() => setVersion((v) => v + 1)}
           />

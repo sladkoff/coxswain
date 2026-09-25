@@ -5,7 +5,6 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import type { DatabaseSync } from 'node:sqlite'
-import { formatAsk } from './comments'
 import { worktreePath } from './git'
 import { getWorkspaceRepo } from './workspaces'
 
@@ -19,11 +18,11 @@ export type TurnResult = { status: 'ok' } | { status: 'error'; message: string }
 
 const columns = 'id, workspace_id as workspaceId, agent_session_id as agentSessionId, created_at as createdAt'
 
-// The workspace's agent sessions in L4, oldest first; the last one is the current one. Those asked from a
-// comment belong to its thread and aren't listed.
+// The workspace's agent sessions in L4, oldest first; the last one is the current one. A review round's session for
+// its questions isn't listed (ADR 0011).
 export function listAgentSessions(db: DatabaseSync, workspaceId: number): AgentSession[] {
   return db
-    .prepare(`select ${columns} from agent_sessions where workspace_id = ? and comment_id is null order by id`)
+    .prepare(`select ${columns} from agent_sessions where workspace_id = ? and review_round_id is null order by id`)
     .all(workspaceId) as AgentSession[]
 }
 
@@ -34,19 +33,6 @@ export function startAgentSession(db: DatabaseSync, workspaceId: number): AgentS
        returning ${columns}`,
     )
     .get(workspaceId, randomUUID(), new Date().toISOString()) as AgentSession
-}
-
-// An agent session in a comment's thread, asked about that comment. Its first turn is the comment itself.
-export function startCommentSession(db: DatabaseSync, commentId: number): AgentSession {
-  const session = db
-    .prepare(
-      `insert into agent_sessions (workspace_id, agent, agent_session_id, created_at, comment_id)
-       select workspace_id, 'claude', ?, ?, id from comments where id = ?
-       returning ${columns}`,
-    )
-    .get(randomUUID(), new Date().toISOString(), commentId) as AgentSession | undefined
-  if (!session) throw new Error(`No comment ${commentId}`)
-  return session
 }
 
 // Agent sessions run in their workspace's worktree, which opening the workspace creates (ADR 0008).
@@ -113,24 +99,23 @@ export function readTranscript(agentSessionId: string): ChatEntry[] {
 
 const running = new Map<string, ChildProcess>()
 
-// Sends one message, with any comments put in front of it (an ask), and streams the agent's reply as chat
-// entries until the turn ends.
+// Sends one message and streams the agent's reply as chat entries until the turn ends.
+// readOnly: file edits aren't pre-approved either, so the agent can't change the worktree (a question).
 // ponytail: relies on PATH to find `claude`, like `gh`; and permission prompts aren't surfaced, so
 // only file edits in the worktree are pre-approved (ADR 0008); other tools that need approval, like most Bash
 // commands, are refused. Add --permission-prompt-tool to ask the user.
 export function runTurn(
   db: DatabaseSync,
   agentSessionId: string,
-  message: string,
-  commentIds: number[],
+  prompt: string,
+  { readOnly = false }: { readOnly?: boolean },
   onEntry: (entry: ChatEntry) => void,
 ): Promise<TurnResult> {
   if (running.has(agentSessionId)) return Promise.resolve({ status: 'error', message: 'A turn is already running' })
   const cwd = agentWorktree(db, agentSessionId)
   if (!existsSync(join(cwd, '.git'))) return Promise.resolve({ status: 'error', message: 'The worktree is not ready yet' })
-  const prompt = formatAsk(db, commentIds, message)
   const session = transcriptPath(agentSessionId) ? ['--resume', agentSessionId] : ['--session-id', agentSessionId]
-  const child = spawn('claude', ['-p', prompt, '--output-format', 'stream-json', '--verbose', '--permission-mode', 'acceptEdits', ...session], {
+  const child = spawn('claude', ['-p', prompt, '--output-format', 'stream-json', '--verbose', '--permission-mode', readOnly ? 'default' : 'acceptEdits', ...session], {
     cwd,
     stdio: ['ignore', 'pipe', 'pipe'],
   })

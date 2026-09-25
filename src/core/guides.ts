@@ -370,9 +370,10 @@ async function inParallel<T>(items: T[], n: number, fn: (item: T) => Promise<voi
 // One turn, no tools (ADR 0010): the diffs are in the prompt. No MCP servers and Claude Code's system prompt replaced,
 // so each call doesn't pay for tool definitions and instructions it won't use. thinking: false for summaries, one
 // sentence per file read straight off the diff, where thinking cost about as many tokens as the answer.
-async function runClaude(cwd: string, prompt: string, schema: object, model: string, thinking = true) {
+// system: in place of the guides' own system prompt, e.g. for a wrap-up (ADR 0012).
+export async function runClaude(cwd: string, prompt: string, schema: object, model: string, thinking = true, system = systemPrompt) {
   const args = ['-p', '--output-format', 'json', '--json-schema', JSON.stringify(schema), '--strict-mcp-config']
-  args.push('--tools', '', '--system-prompt', systemPrompt)
+  args.push('--tools', '', '--system-prompt', system)
   if (model) args.push('--model', model)
   const env = thinking ? process.env : { ...process.env, MAX_THINKING_TOKENS: '0' }
   const child = spawn('claude', args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] })

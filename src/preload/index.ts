@@ -1,10 +1,10 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { AgentSession, ChatEntry, TurnResult } from '../core/agents'
-import type { Comment, NewComment } from '../core/comments'
 import type { ChangedFileList, CloneResult, FileText, FileTreeResult, WorktreeResult } from '../core/git'
 import type { CurrentUser, PullRequestList, PullRequestOverview, RepoPage } from '../core/github'
 import type { Guide, GuideProgress, GuideResult, GuideSettings, GuideSettingsChange } from '../core/guides'
 import type { Project } from '../core/projects'
+import type { NewEntry, ReviewEntry, ReviewRound } from '../core/review'
 import type { Workspace } from '../core/workspaces'
 
 // The Navigator's settings in its cog menu. layout: changed files as a tree or as a flat list.
@@ -39,13 +39,32 @@ const api = {
     ipcRenderer.invoke('workspaces:open-pr', projectId, prNumber),
   listAgentSessions: (workspaceId: number): Promise<AgentSession[]> => ipcRenderer.invoke('agents:list', workspaceId),
   startAgentSession: (workspaceId: number): Promise<AgentSession> => ipcRenderer.invoke('agents:start', workspaceId),
-  startCommentSession: (commentId: number): Promise<AgentSession> => ipcRenderer.invoke('agents:start-for-comment', commentId),
   readTranscript: (agentSessionId: string): Promise<ChatEntry[]> => ipcRenderer.invoke('agents:transcript', agentSessionId),
-  runTurn: (agentSessionId: string, message: string, commentIds: number[]): Promise<TurnResult> =>
-    ipcRenderer.invoke('agents:run-turn', agentSessionId, message, commentIds),
-  listComments: (workspaceId: number): Promise<Comment[]> => ipcRenderer.invoke('comments:list', workspaceId),
-  addComment: (comment: NewComment): Promise<Comment> => ipcRenderer.invoke('comments:add', comment),
-  deleteComment: (id: number): Promise<void> => ipcRenderer.invoke('comments:delete', id),
+  // An ask: the notes go in front of the message.
+  runTurn: (agentSessionId: string, message: string, noteIds: number[]): Promise<TurnResult> =>
+    ipcRenderer.invoke('agents:run-turn', agentSessionId, message, noteIds),
+  // The current review round's entries (ADR 0011).
+  listEntries: (workspaceId: number): Promise<ReviewEntry[]> => ipcRenderer.invoke('review:list', workspaceId),
+  addNote: (note: NewEntry): Promise<ReviewEntry> => ipcRenderer.invoke('review:add-note', note),
+  deleteEntry: (id: number): Promise<void> => ipcRenderer.invoke('review:delete', id),
+  askQuestion: (question: NewEntry): Promise<ReviewEntry> => ipcRenderer.invoke('review:ask', question),
+  stopQuestion: (workspaceId: number): Promise<void> => ipcRenderer.invoke('review:stop', workspaceId),
+  // The latest review round with its action items; wrapping up drafts them and ends the round (ADR 0012).
+  getRound: (workspaceId: number): Promise<ReviewRound | null> => ipcRenderer.invoke('review:round', workspaceId),
+  wrapUp: (workspaceId: number): Promise<{ status: 'ok' } | { status: 'error'; message: string }> =>
+    ipcRenderer.invoke('review:wrap-up', workspaceId),
+  updateActionItem: (id: number, body: string): Promise<void> => ipcRenderer.invoke('review:update-item', id, body),
+  deleteActionItem: (id: number): Promise<void> => ipcRenderer.invoke('review:delete-item', id),
+  onQuestionChat: (callback: (threadId: number, entry: ChatEntry) => void) => {
+    const listener = (_: unknown, id: number, entry: ChatEntry) => callback(id, entry)
+    ipcRenderer.on('review:chat', listener)
+    return () => void ipcRenderer.off('review:chat', listener)
+  },
+  onQuestionEnd: (callback: (threadId: number, result: TurnResult) => void) => {
+    const listener = (_: unknown, id: number, result: TurnResult) => callback(id, result)
+    ipcRenderer.on('review:turn-end', listener)
+    return () => void ipcRenderer.off('review:turn-end', listener)
+  },
   listViewed: (workspaceId: number, mergeBase: string): Promise<string[]> =>
     ipcRenderer.invoke('viewed:list', workspaceId, mergeBase),
   setViewed: (workspaceId: number, mergeBase: string, path: string, viewed: boolean): Promise<void> =>
