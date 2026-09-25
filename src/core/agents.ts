@@ -101,9 +101,9 @@ const running = new Map<string, ChildProcess>()
 
 // Sends one message and streams the agent's reply as chat entries until the turn ends.
 // readOnly: file edits aren't pre-approved either, so the agent can't change the worktree (a question).
-// ponytail: relies on PATH to find `claude`, like `gh`; and permission prompts aren't surfaced, so
-// only file edits in the worktree are pre-approved (ADR 0008); other tools that need approval, like most Bash
-// commands, are refused. Add --permission-prompt-tool to ask the user.
+// Otherwise auto mode (ADR 0013): Claude Code's classifier approves or blocks each tool use that would prompt.
+// ponytail: relies on PATH to find `claude`, like `gh`; and permission prompts aren't surfaced, so what auto mode
+// blocks stays blocked. Add --permission-prompt-tool to ask the user.
 export function runTurn(
   db: DatabaseSync,
   agentSessionId: string,
@@ -115,7 +115,7 @@ export function runTurn(
   const cwd = agentWorktree(db, agentSessionId)
   if (!existsSync(join(cwd, '.git'))) return Promise.resolve({ status: 'error', message: 'The worktree is not ready yet' })
   const session = transcriptPath(agentSessionId) ? ['--resume', agentSessionId] : ['--session-id', agentSessionId]
-  const child = spawn('claude', ['-p', prompt, '--output-format', 'stream-json', '--verbose', '--permission-mode', readOnly ? 'default' : 'acceptEdits', ...session], {
+  const child = spawn('claude', ['-p', prompt, '--output-format', 'stream-json', '--verbose', '--permission-mode', readOnly ? 'default' : 'auto', ...session], {
     cwd,
     stdio: ['ignore', 'pipe', 'pipe'],
   })
@@ -130,7 +130,8 @@ export function runTurn(
       const line = JSON.parse(l)
       if (line.type === 'result' && line.is_error) error = line.result ?? line.subtype
       // The user's own message is already shown; stream-json only echoes tool results as user lines.
-      if (line.type === 'assistant') entriesOf(line).forEach(onEntry)
+      // A subagent's messages carry the Agent call's id; the transcript leaves them out, so the live view does too.
+      if (line.type === 'assistant' && !line.parent_tool_use_id) entriesOf(line).forEach(onEntry)
     } catch {}
   })
 

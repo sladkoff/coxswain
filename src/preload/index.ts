@@ -40,9 +40,9 @@ const api = {
   listAgentSessions: (workspaceId: number): Promise<AgentSession[]> => ipcRenderer.invoke('agents:list', workspaceId),
   startAgentSession: (workspaceId: number): Promise<AgentSession> => ipcRenderer.invoke('agents:start', workspaceId),
   readTranscript: (agentSessionId: string): Promise<ChatEntry[]> => ipcRenderer.invoke('agents:transcript', agentSessionId),
-  // An ask: the notes go in front of the message.
-  runTurn: (agentSessionId: string, message: string, noteIds: number[]): Promise<TurnResult> =>
-    ipcRenderer.invoke('agents:run-turn', agentSessionId, message, noteIds),
+  // An ask: the notes go in front of the message, and a handed-off round's action items in front of them.
+  runTurn: (agentSessionId: string, message: string, noteIds: number[], roundId?: number): Promise<TurnResult> =>
+    ipcRenderer.invoke('agents:run-turn', agentSessionId, message, noteIds, roundId),
   // The current review round's entries (ADR 0011).
   listEntries: (workspaceId: number): Promise<ReviewEntry[]> => ipcRenderer.invoke('review:list', workspaceId),
   addNote: (note: NewEntry): Promise<ReviewEntry> => ipcRenderer.invoke('review:add-note', note),

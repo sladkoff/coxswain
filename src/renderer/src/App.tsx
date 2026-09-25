@@ -1,6 +1,6 @@
 import { Virtualizer } from '@pierre/diffs/react'
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
-import type { NewEntry, ReviewEntry } from '../../core/review'
+import type { NewEntry, ReviewEntry, ReviewRound } from '../../core/review'
 import type { Project } from '../../core/projects'
 import type { Workspace } from '../../core/workspaces'
 import { Agents } from './Agents'
@@ -77,6 +77,7 @@ export function App() {
   // The entries of the workspace's current review round, and the notes waiting in the L4 message box.
   const [entries, setEntries] = useState<ReviewEntry[]>([])
   const [attached, setAttached] = useState<ReviewEntry[]>([])
+  const [handedOff, setHandedOff] = useState<ReviewRound | null>(null) // a wrapped-up round in L4's message box
   // Callbacks handed to the Viewers are stable (useCallback), so a memoised Viewer doesn't redraw its file diff.
   const loadEntries = useCallback(
     () => void (currentWorkspace && window.coxswain.listEntries(currentWorkspace.id).then(setEntries)),
@@ -85,6 +86,7 @@ export function App() {
   useEffect(() => {
     setEntries([])
     setAttached([])
+    setHandedOff(null)
   }, [currentWorkspace?.id])
   useEffect(() => void loadEntries(), [currentWorkspace?.id, version])
   // A deleted note leaves the message box too.
@@ -314,7 +316,17 @@ export function App() {
             </div>
           </div>
         )}
-        {currentWorkspace && tab !== 'overview' && <Round key={currentWorkspace.id} workspace={currentWorkspace} entries={entries} />}
+        {/* Its own key: a sibling of the Guide, and a key shared with it left old Guides behind on a tab switch. */}
+        {currentWorkspace && tab !== 'overview' && <Round
+            key={`round-${currentWorkspace.id}`}
+            workspace={currentWorkspace}
+            entries={entries}
+            handedOff={handedOff?.id === entries[0]?.reviewRoundId}
+            onHandOff={(r) => {
+              setHandedOff(r)
+              setAgentsOpen(true)
+            }}
+          />}
       </div>
 
       {agentsOpen && <Splitter min={240} max={800} fromRight onResize={setAgentsWidth} />}
@@ -325,9 +337,12 @@ export function App() {
             key={currentWorkspace.id}
             workspace={currentWorkspace}
             attached={attached}
+            handedOff={handedOff}
             onDetach={(id) => setAttached((a) => a.filter((c) => c.id !== id))}
+            onDetachRound={() => setHandedOff(null)}
             onSent={() => {
               setAttached([])
+              setHandedOff(null)
               loadEntries()
             }}
             onTurnEnd={() => setVersion((v) => v + 1)}

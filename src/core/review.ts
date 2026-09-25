@@ -96,7 +96,8 @@ function describe(a: Pick<ReviewEntry, 'path' | 'side' | 'startLine' | 'endLine'
 
 // The prompt of an ask: the notes with where they point and the code they're about, then the user's message.
 // Marks the notes as sent.
-export function formatAsk(db: DatabaseSync, noteIds: number[], message: string): string {
+export function formatAsk(db: DatabaseSync, noteIds: number[], message: string, roundId?: number): string {
+  if (roundId) message = [formatHandOff(db, roundId), message.trim()].filter(Boolean).join('\n\n')
   if (!noteIds.length) return message
   const byId = db.prepare(`select ${columns} from entries where id = ? and kind = 'note'`)
   const notes = noteIds.map((id) => byId.get(id) as ReviewEntry | undefined).filter((n) => n !== undefined)
@@ -199,6 +200,40 @@ export function deleteActionItem(db: DatabaseSync, id: number) {
   db.prepare('delete from action_items where id = ?').run(id)
 }
 
+// A round's entries, numbered from 1 in order; answers and follow-ups cite their question's number.
+function formatStream(entries: ReviewEntry[]): string {
+  const number = new Map(entries.map((e, i) => [e.id, i + 1]))
+  return entries
+    .map((e, i) => {
+      const on = e.path ? ` on ${describe(e)}` : ''
+      const head =
+        e.kind === 'answer'
+          ? `Your answer to [${number.get(e.parentId!)}]`
+          : e.parentId
+            ? `My follow-up to [${number.get(e.parentId)}]`
+            : `My ${e.kind}${on}`
+      return `[${i + 1}] ${head}:\n${e.body}`
+    })
+    .join('\n\n')
+}
+
+// Hand off (glossary): a wrapped-up round's action items, with where they point, then the round's whole stream so the
+// agent has the reasoning behind them. Goes in front of an ask's message.
+// ponytail: a hand-off isn't recorded; action items don't know they were sent. Add a handed_off_at when it matters.
+function formatHandOff(db: DatabaseSync, roundId: number): string {
+  const entries = db.prepare(`select ${columns} from entries where review_round_id = ? order by id`).all(roundId) as ReviewEntry[]
+  const items = db
+    .prepare('select body, path, side, start_line as startLine, end_line as endLine, code from action_items where review_round_id = ? order by position')
+    .all(roundId) as Pick<ActionItem, 'body' | 'path' | 'side' | 'startLine' | 'endLine' | 'code'>[]
+  const list = items.map((item, i) => `${i + 1}. ${item.path ? `On ${describe(item)}\n` : ''}${item.body}`)
+  return `Implement these action items from my review of this worktree's changes, in order:\n\n${list.join('\n\n')}
+
+For context, the review round they came from: my notes and questions, and the answers, numbered, in order.
+The numbers are the round's own, not the action items'. Where an item and the round disagree, the item wins.
+
+${formatStream(entries)}`
+}
+
 const wrapUpSystem =
   'You help a reviewer finish reviewing a pull request. Everything you need is in the message; you have no tools. Answer in the structured format asked for.'
 
@@ -235,23 +270,11 @@ export async function wrapUp(db: DatabaseSync, workspaceId: number): Promise<{ s
     ? (db.prepare(`select ${columns} from entries where review_round_id = ? order by id`).all(round.id) as ReviewEntry[])
     : []
   if (!round || !entries.length) return { status: 'error', message: 'Nothing to wrap up yet' }
-  // Numbered from 1 in the prompt; the answer cites those numbers.
-  const number = new Map(entries.map((e, i) => [e.id, i + 1]))
-  const stream = entries.map((e, i) => {
-    const on = e.path ? ` on ${describe(e)}` : ''
-    const head =
-      e.kind === 'answer'
-        ? `Your answer to [${number.get(e.parentId!)}]`
-        : e.parentId
-          ? `My follow-up to [${number.get(e.parentId)}]`
-          : `My ${e.kind}${on}`
-    return `[${i + 1}] ${head}:\n${e.body}`
-  })
   try {
     const { owner, name } = getWorkspaceRepo(db, workspaceId)
     const { structured } = await runClaude(
       worktreePath(owner, name, workspaceId),
-      `${wrapUpPrompt}\n\n${stream.join('\n\n')}`,
+      `${wrapUpPrompt}\n\n${formatStream(entries)}`,
       wrapUpSchema,
       '',
       true,

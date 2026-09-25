@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { AgentSession, ChatEntry } from '../../core/agents'
-import type { ReviewEntry } from '../../core/review'
+import type { ReviewEntry, ReviewRound } from '../../core/review'
 import type { Workspace } from '../../core/workspaces'
 import { button, muted, Prose } from './ui'
 
@@ -9,15 +9,18 @@ const pane = 'border-neutral-200 dark:border-neutral-800'
 // L4: a chat with the workspace's current agent session. The session starts with its first message.
 // ponytail: shows only the latest agent session; the others stay in the database until L4 gets tabs (UX open question 4).
 // attached: notes sent here from the Viewer; they go in front of the next message, making it an ask.
+// handedOff: a wrapped-up round sent here from its bar; its action items and stream go in front of the message too.
 type Props = {
   workspace: Workspace
   attached: ReviewEntry[]
+  handedOff: ReviewRound | null
   onDetach: (id: number) => void
+  onDetachRound: () => void
   onSent: () => void
   onTurnEnd: () => void
 }
 
-export function Agents({ workspace, attached, onDetach, onSent, onTurnEnd }: Props) {
+export function Agents({ workspace, attached, handedOff, onDetach, onDetachRound, onSent, onTurnEnd }: Props) {
   const [session, setSession] = useState<AgentSession | null>(null)
   const [entries, setEntries] = useState<ChatEntry[]>([])
   const [running, setRunning] = useState(false)
@@ -50,7 +53,7 @@ export function Agents({ workspace, attached, onDetach, onSent, onTurnEnd }: Pro
 
   const send = async () => {
     const message = draft.trim()
-    if ((!message && !attached.length) || running) return
+    if ((!message && !attached.length && !handedOff) || running) return
     const current = session ?? (await window.coxswain.startAgentSession(workspace.id))
     sessionRef.current = current
     setSession(current)
@@ -58,7 +61,7 @@ export function Agents({ workspace, attached, onDetach, onSent, onTurnEnd }: Pro
     setError(null)
     setRunning(true)
     // The core marks the notes sent as soon as the turn starts, so onSent can reload them right away.
-    const turn = window.coxswain.runTurn(current.agentSessionId, message, attached.map((c) => c.id))
+    const turn = window.coxswain.runTurn(current.agentSessionId, message, attached.map((c) => c.id), handedOff?.id)
     onSent()
     const result = await turn
     setRunning(false)
@@ -94,6 +97,16 @@ export function Agents({ workspace, attached, onDetach, onSent, onTurnEnd }: Pro
         <div ref={bottom} />
       </div>
       <div className={`flex flex-col gap-1 border-t p-2 ${pane}`}>
+        {handedOff && (
+          <div className="flex items-center gap-1 rounded-md bg-neutral-100 px-1.5 py-0.5 text-xs dark:bg-neutral-800">
+            <span className="min-w-0 flex-1 truncate">
+              Round {handedOff.number} · {handedOff.actionItems.length} action item{handedOff.actionItems.length === 1 ? '' : 's'}
+            </span>
+            <button title="Remove from the message" className={muted} onClick={onDetachRound}>
+              ✕
+            </button>
+          </div>
+        )}
         {attached.map((c) => (
           <div key={c.id} className="flex items-center gap-1 rounded-md bg-neutral-100 px-1.5 py-0.5 text-xs dark:bg-neutral-800">
             <span className="min-w-0 flex-1 truncate" title={c.body}>
@@ -116,7 +129,9 @@ export function Agents({ workspace, attached, onDetach, onSent, onTurnEnd }: Pro
           }}
           rows={3}
           placeholder={
-            attached.length
+            handedOff
+              ? 'Anything to add? (Enter to send)'
+              : attached.length
               ? 'What should the agent do with these notes? (Enter to send)'
               : 'Message Claude Code (Enter to send, Shift+Enter for a new line)'
           }
@@ -136,7 +151,8 @@ export function Agents({ workspace, attached, onDetach, onSent, onTurnEnd }: Pro
 // ponytail: code blocks aren't highlighted; use @pierre/diffs' Shiki if they need it.
 export function Entry({ entry }: { entry: ChatEntry }) {
   if (entry.kind === 'tool')
-    return <div className={`truncate font-mono text-xs ${muted}`}>⏺ {entry.text}</div>
+    // shrink-0: truncate's overflow lets a flex item shrink to nothing once the chat overflows, leaving only the gaps.
+    return <div className={`shrink-0 truncate font-mono text-xs ${muted}`}>⏺ {entry.text}</div>
   if (entry.kind === 'user')
     return (
       <div className="self-end rounded-md bg-neutral-100 px-2 py-1 whitespace-pre-wrap select-text [overflow-wrap:anywhere] dark:bg-neutral-800">

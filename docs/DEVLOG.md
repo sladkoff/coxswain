@@ -3,6 +3,40 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-25 — Hand off a round to the agent
+
+### What works
+
+- **Send to agent** on a wrapped-up round's bar puts the round in L4's message box (*Round N · N
+  action items*, ✕ to take it out). The next message is an ask whose prompt is the action items in
+  order, each with its anchor and code, then the round's whole numbered stream (notes, questions,
+  answers) as context, then the notes attached and the user's text (`formatHandOff` in `review.ts`;
+  `formatStream` is shared with wrap-up). It goes to L4's current agent session, so it shows there.
+- Checked: the prompt for #5311's round 2 (4 items, 11 entries) from a copy of the database.
+- **Agent sessions run in auto mode** ([ADR 0013](adr/0013-auto-permission-mode.md)), so the
+  agent can read Linear, run tests and the like when Claude Code's classifier allows it; before,
+  anything that would prompt was refused, which is why a hand-off on #5311 said Linear was declined.
+  Checked with `claude -p --permission-mode auto` in #5311's worktree: a Linear read and `git log`
+  ran with no denials. Questions stay read-only.
+- **Fixed blank space in L4**: tool lines (`⏺ Bash …`) collapsed to nothing once the chat
+  overflowed (`truncate` lets a flex item shrink to zero), leaving only the gaps between them. A
+  subagent's own messages no longer stream into L4, matching what the transcript shows on reload.
+- **Fixed Guides piling up**: every Guide → Diff → Guide switch left the old Guide in the page, so
+  the tab showed several stacked. `Round` shared the Guide's key (the workspace ID) as its sibling, so
+  React never deleted the old Guide's DOM. Found by driving a second instance over the Chrome
+  DevTools protocol (`--remote-debugging-port`); checked the same way after the fix: one Guide on
+  Guide, none on Diff or Overview.
+
+### Tech debt
+
+- **A hand-off isn't recorded** (`ponytail:` on `formatHandOff`): the items don't know they were
+  sent, and the button offers it again. Add `handed_off_at` when it matters.
+- **All items or none**: no picking single items; delete the others in the draft first.
+- **Blocked tools can't be approved** (`ponytail:` on `runTurn`): what auto mode blocks stays
+  blocked until L4 shows permission prompts (`--permission-prompt-tool`).
+- **The whole stream goes along**, answers in full. Fine for a round; trim if long rounds crowd the
+  prompt.
+
 ## 2026-09-25 — App icon
 
 ### What works
@@ -57,7 +91,7 @@ Not checked in the app yet: the user tests it.
   items leave the UI (`ponytail:` on `ReviewRound`).
 - **The wrap-up prompt is fixed** and uses Claude Code's default model, not in Settings like the
   guide's. No *Stop* while it runs.
-- **Hand-off isn't built**: action items can't be implemented or posted yet.
+- **Hand-off isn't built**: action items can't be implemented or posted yet. (Paid off for agents in *Hand off a round to the agent*.)
 - **Questions run one at a time per round**: a second while one runs gets *A turn is already running*.
   Queue them if it gets in the way.
 - **Tool calls in a thread show only while streaming**; an answer keeps only the agent's text, and a

@@ -165,8 +165,8 @@ app.whenReady().then(() => {
   ipcMain.handle('viewed:set', (_, workspaceId: number, mergeBase: string, path: string, viewed: boolean) =>
     setViewed(db, workspaceId, mergeBase, path, viewed),
   )
-  ipcMain.handle('agents:run-turn', (e, agentSessionId: string, message: string, noteIds: number[]) =>
-    runTurn(db, agentSessionId, formatAsk(db, noteIds, message), {}, (entry) => {
+  ipcMain.handle('agents:run-turn', (e, agentSessionId: string, message: string, noteIds: number[], roundId?: number) =>
+    runTurn(db, agentSessionId, formatAsk(db, noteIds, message, roundId), {}, (entry) => {
       if (!e.sender.isDestroyed()) e.sender.send('agents:entry', agentSessionId, entry)
     }),
   )

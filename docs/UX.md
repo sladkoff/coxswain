@@ -68,8 +68,10 @@ then the workspace's files, the work in the middle and the agents on the right.
   *Round N*, how many notes and questions it has, and *Wrap up*. Wrapping up (*Wrapping up…* while
   the agent works) ends the round and opens its action items above the bar: numbered, each with where
   it points and its text, which a click edits (⌘Enter or leaving the box saves, Esc cancels), and ✕ to
-  delete. Then the bar says *wrapped up, N action items*, with *Show/Hide action items* and *Wrap up
-  again*, which replaces them. The next note or question starts the next round.
+  delete. Then the bar says *wrapped up, N action items*, with *Show/Hide action items*, *Wrap up
+  again*, which replaces them, and *Send to agent*, which hands the round off: it puts *Round N · N
+  action items* in the L4 message box, like a note, and the next message carries the items and the
+  round's stream to the current agent session. The next note or question starts the next round.
 
   *Guide* shows the workspace's guide: its guide groups one after another, each a title, a short
   description and then the group's file diffs, each with its file note above it, the same file diffs as in *Diff* (Viewed checkbox,
@@ -111,7 +113,8 @@ then the workspace's files, the work in the middle and the agents on the right.
    Should a guide group down to hunks, not whole file diffs?
 3. **The review round as a whole:** where do you see a round's whole stream, and earlier rounds with
    their action items? Where do you write an entry that floats on the round rather than on lines?
-   Hand-off from the action items: *Implement* (one or all, in L4) and *Post*. And where do a PR's
+   Hand-off from the action items: all of them go to L4 (*Send to agent*); one at a time, and *Post*,
+   are still open. And where do a PR's
    GitHub comments show? To be explored.
 4. **Agents in L4:** tabs, a list, or split panes, and how running and finished agent sessions look.
    Only the latest agent session is reachable so far; earlier ones need a way back.

@@ -8,7 +8,10 @@ const pane = 'border-neutral-200 dark:border-neutral-800'
 // The review round's bar at the bottom of the Viewer: how many notes and questions it has, and Wrap up (ADR 0012),
 // which drafts its action items and ends it. The draft opens above the bar, to edit.
 // entries: the latest round's, reloaded by the parent; the round itself is reread when they change.
-export function Round({ workspace, entries }: { workspace: Workspace; entries: ReviewEntry[] }) {
+// handedOff: the round is in L4's message box; onHandOff puts it there (hand off, glossary).
+type Props = { workspace: Workspace; entries: ReviewEntry[]; handedOff: boolean; onHandOff: (round: ReviewRound) => void }
+
+export function Round({ workspace, entries, handedOff, onHandOff }: Props) {
   const [round, setRound] = useState<ReviewRound | null>(null)
   const [open, setOpen] = useState(false)
   const [wrapping, setWrapping] = useState(false)
@@ -58,6 +61,11 @@ export function Round({ workspace, entries }: { workspace: Workspace; entries: R
         <button className={`${round.endedAt ? button : primaryButton} text-xs`} disabled={wrapping} onClick={wrapUp}>
           {wrapping ? 'Wrapping up…' : round.endedAt ? 'Wrap up again' : 'Wrap up'}
         </button>
+        {round.endedAt && items.length > 0 && (
+          <button className={`${primaryButton} text-xs`} disabled={wrapping || handedOff} onClick={() => onHandOff(round)}>
+            {handedOff ? 'In the message' : 'Send to agent'}
+          </button>
+        )}
       </div>
     </div>
   )
