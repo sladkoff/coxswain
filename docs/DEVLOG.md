@@ -78,7 +78,14 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
   each other's summaries and re-summarise those files (Haiku calls) when they alternate.
 - **A merge commit's diff** is against its first parent, so it shows everything merged in.
 - **Blocked tools can't be approved** (`ponytail:` on `runTurn`): what auto mode blocks stays
-  blocked until L4 shows permission prompts (`--permission-prompt-tool`).
+  blocked until L4 shows permission prompts. Planned: every agent run over ACP
+  ([ADR 0018](adr/0018-agents-over-acp.md), [ticket 0004](tickets/0004-agent-sessions-over-acp.md)).
+- **Untyped queries**: 43 raw `prepare()` calls with `as` casts. Planned: Kysely
+  ([ADR 0016](adr/0016-typed-queries-with-kysely.md), [ticket 0002](tickets/0002-typed-queries-with-kysely.md)).
+- **No data cache in the UI**: panes refetch on every switch and reread through `version` counters.
+  Planned: TanStack Query with `changed` events from the core
+  ([ADR 0017](adr/0017-data-fetching-with-tanstack-query.md),
+  [ticket 0003](tickets/0003-data-fetching-with-tanstack-query.md)).
 - **The whole stream goes along**, answers in full. Fine for a round; trim if long rounds crowd the
   prompt.
 
