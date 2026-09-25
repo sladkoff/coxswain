@@ -33,11 +33,12 @@ type Props = {
   onViewedChange: (path: string, viewed: boolean) => void
   turns: Record<string, Turn>
   onRunTurn: RunTurn
+  diffStyle: 'unified' | 'split'
   // One of several file diffs one after another: the parent scrolls, not the Viewer.
   stacked?: boolean
 }
 
-const baseOptions = { preferredHighlighter: 'shiki-js', overflow: 'scroll', stickyHeader: true } as const
+const baseOptions = { preferredHighlighter: 'shiki-js', overflow: 'wrap', stickyHeader: true } as const
 
 // L3: shows the diff or file opened from the Navigator.
 // The old side is the merge base (git show), the new side the worktree now.
@@ -94,6 +95,7 @@ export const Viewer = memo(function Viewer(props: Props) {
   const options = useMemo(
     () => ({
       ...baseOptions,
+      diffStyle: props.diffStyle,
       enableGutterUtility: true,
       // In a diff the range has a side; a whole file is always the worktree. ponytail: a range spanning
       // both sides of a diff is taken as the side it ends on.
@@ -101,7 +103,7 @@ export const Viewer = memo(function Viewer(props: Props) {
         setDraft({ side: (r.endSide ?? r.side) === 'deletions' ? 'old' : 'new', startLine: r.start, endLine: r.end }),
       onLineSelectionChange: setSelection,
     }),
-    [],
+    [props.diffStyle],
   )
 
   const files = useMemo(() => {

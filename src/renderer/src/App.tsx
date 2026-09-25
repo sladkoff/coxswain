@@ -12,7 +12,8 @@ import { Overview } from './Overview'
 import { Projects } from './Projects'
 import { Settings } from './Settings'
 import { usePullRequest } from './usePullRequest'
-import { Splitter, viewerMin } from './ui'
+import type { ViewSettings } from '../../preload'
+import { Cog, Splitter, viewerMin } from './ui'
 import { type Opened, type Turn, Viewer } from './Viewer'
 
 const pane = 'border-neutral-200 dark:border-neutral-800'
@@ -42,6 +43,8 @@ export function App() {
   useEffect(() => window.coxswain.onToggleAgents(() => setAgentsOpen((o) => !o)), [])
 
   const [view, setView] = useState<NavigatorView>('diffs')
+  // ponytail: resets on restart, like the Navigator's settings; store them once there's a settings table.
+  const [viewSettings, setViewSettings] = useState<ViewSettings>({ diffStyle: 'unified', showViewed: false })
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const currentWorkspace = workspaces.reduce<Workspace | undefined>(
     (latest, w) => (!latest || w.lastOpenedAt > latest.lastOpenedAt ? w : latest),
@@ -144,6 +147,7 @@ export function App() {
     onViewedChange: markViewed,
     turns,
     onRunTurn: runThreadTurn,
+    diffStyle: viewSettings.diffStyle,
   })
 
   if (screen === 'settings') return <Settings onClose={close} />
@@ -226,6 +230,15 @@ export function App() {
               </BarToggle>
             )}
             <div className="flex-1" />
+            {tab !== 'overview' && (
+              <button
+                title="View options"
+                className="rounded p-1 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                onClick={async () => setViewSettings(await window.coxswain.showViewMenu(viewSettings))}
+              >
+                <Cog />
+              </button>
+            )}
             <BarToggle title="Show or hide the agent (⌥⌘B)" on={agentsOpen} onClick={() => setAgentsOpen((o) => !o)}>
               Agent
             </BarToggle>
@@ -246,6 +259,8 @@ export function App() {
               diffs={diffs}
               viewed={viewed}
               onViewedChange={markViewed}
+              showViewed={viewSettings.showViewed}
+              onShowViewed={() => setViewSettings((s) => ({ ...s, showViewed: true }))}
               viewer={viewerProps(currentWorkspace, pr.commits.mergeBase)}
             />
           )
@@ -259,7 +274,7 @@ export function App() {
                   <div className="flex shrink-0 justify-end px-2 pt-1.5">
                     <ViewToggle view={view} onChange={setView} />
                   </div>
-                  <Navigator key={currentWorkspace.id} workspace={currentWorkspace} pr={pr} view={view} viewed={viewed} onOpen={open} />
+                  <Navigator key={currentWorkspace.id} workspace={currentWorkspace} pr={pr} view={view} viewed={viewed} showViewed={viewSettings.showViewed} onOpen={open} />
                 </div>
                 <Splitter min={240} max={720} onResize={setLeftWidth} />
               </>

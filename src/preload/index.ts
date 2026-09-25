@@ -8,7 +8,10 @@ import type { Project } from '../core/projects'
 import type { Workspace } from '../core/workspaces'
 
 // The Navigator's settings in its cog menu. layout: changed files as a tree or as a flat list.
-export type NavigatorSettings = { showViewed: boolean; layout: 'tree' | 'list' }
+export type NavigatorSettings = { layout: 'tree' | 'list' }
+// The tab bar's settings in its cog menu, for the Diff and Guide tabs. showViewed: viewed file diffs stay in the
+// Navigator and the Guide.
+export type ViewSettings = { diffStyle: 'unified' | 'split'; showViewed: boolean }
 
 // The one interface between the UI and the core (ADR 0002).
 const api = {
@@ -68,6 +71,7 @@ const api = {
   // Native menu (ADR 0004). Resolves with the new settings when an item is picked; stays pending if dismissed.
   showNavigatorMenu: (settings: NavigatorSettings): Promise<NavigatorSettings> =>
     ipcRenderer.invoke('menus:navigator', settings),
+  showViewMenu: (settings: ViewSettings): Promise<ViewSettings> => ipcRenderer.invoke('menus:view', settings),
   onToggleNavigator: (callback: () => void) => {
     const listener = () => callback()
     ipcRenderer.on('toggle-navigator', listener)

@@ -24,7 +24,7 @@ import { createGuide, getGuide, getGuideSettings, type GuideSettingsChange, setG
 import { getCurrentUser, getPullRequestOverview, listPullRequests, listRepos } from '../core/github'
 import { listProjects, openProject } from '../core/projects'
 import { listViewed, setViewed } from '../core/viewed'
-import type { NavigatorSettings } from '../preload'
+import type { NavigatorSettings, ViewSettings } from '../preload'
 import { getWorkspaceRepo, listWorkspaces, openPullRequestWorkspace } from '../core/workspaces'
 
 function createWindow() {
@@ -152,6 +152,16 @@ app.whenReady().then(() => {
         Menu.buildFromTemplate([
           { label: 'As Tree', type: 'radio', checked: s.layout === 'tree', click: () => resolve({ ...s, layout: 'tree' }) },
           { label: 'As List', type: 'radio', checked: s.layout === 'list', click: () => resolve({ ...s, layout: 'list' }) },
+        ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
+      ),
+  )
+  ipcMain.handle(
+    'menus:view',
+    (e, s: ViewSettings) =>
+      new Promise<ViewSettings>((resolve) =>
+        Menu.buildFromTemplate([
+          { label: 'Unified', type: 'radio', checked: s.diffStyle === 'unified', click: () => resolve({ ...s, diffStyle: 'unified' }) },
+          { label: 'Split', type: 'radio', checked: s.diffStyle === 'split', click: () => resolve({ ...s, diffStyle: 'split' }) },
           { type: 'separator' },
           {
             label: 'Show Viewed Files',

@@ -3,7 +3,7 @@ import { type ComponentProps, type UIEvent, useEffect, useMemo, useRef, useState
 import type { ChangedFile } from '../../core/git'
 import type { Guide as GuideData, GuideGroup, GuideProgress } from '../../core/guides'
 import type { Workspace } from '../../core/workspaces'
-import { button, muted } from './ui'
+import { button, muted, Prose } from './ui'
 import { Viewer } from './Viewer'
 
 type Diff = { kind: 'diff'; file: ChangedFile }
@@ -13,6 +13,8 @@ type Props = {
   diffs: Diff[] // memoised by the parent, so the Viewers don't reread
   viewed: string[]
   onViewedChange: (path: string, viewed: boolean) => void
+  showViewed: boolean
+  onShowViewed: () => void
   viewer: Omit<ComponentProps<typeof Viewer>, 'opened' | 'stacked'>
 }
 
@@ -20,11 +22,9 @@ type State = { kind: 'loading' } | { kind: 'creating' } | { kind: 'ok'; guide: G
 
 // The Guide tab: the workspace's file diffs in groups made by the agent, each with a title and what to look at.
 // Opens the stored guide; makes one the first time.
-export function Guide({ workspace, mergeBase, diffs, viewed, onViewedChange, viewer }: Props) {
+export function Guide({ workspace, mergeBase, diffs, viewed, onViewedChange, showViewed, onShowViewed, viewer }: Props) {
   const [state, setState] = useState<State>({ kind: 'loading' })
-  // Viewed file diffs, and groups whose file diffs are all viewed, are hidden unless shown, like in the Navigator.
-  // ponytail: resets per workspace and on restart, like the Navigator's settings.
-  const [showViewed, setShowViewed] = useState(false)
+  // Viewed file diffs, and groups whose file diffs are all viewed, are hidden unless shown (the tab bar's cog menu).
   // The group at the top of the scroll, marked in the table of contents.
   const [current, setCurrent] = useState(0)
   // A group picked in the table of contents while it was hidden: scrolled to once viewed groups show.
@@ -140,13 +140,15 @@ export function Guide({ workspace, mergeBase, diffs, viewed, onViewedChange, vie
               key={i}
               onClick={() => {
                 if (done && !showViewed) {
-                  setShowViewed(true)
+                  onShowViewed()
                   setPending(i)
                 } else scrollTo(i)
               }}
               className={`flex items-baseline gap-2 rounded px-1.5 py-1 text-left ${i === current ? 'bg-neutral-200 dark:bg-neutral-700' : 'hover:bg-neutral-100 dark:hover:bg-neutral-800'} ${done || generated(g) ? muted : ''}`}
             >
-              <span className="min-w-0 flex-1">{g.title}</span>
+              <span className="min-w-0 flex-1">
+                <Prose inline>{g.title}</Prose>
+              </span>
               <span className={`shrink-0 tabular-nums ${muted}`}>{done ? '✓' : `${n}/${g.diffs.length}`}</span>
             </button>
           )
@@ -164,30 +166,30 @@ export function Guide({ workspace, mergeBase, diffs, viewed, onViewedChange, vie
             <button className={`${button} text-xs`} onClick={create}>
               Regenerate
             </button>
-            <div className="flex-1" />
-            {viewedCount > 0 && (
-              <button className={`${button} text-xs`} onClick={() => setShowViewed((v) => !v)}>
-                {showViewed ? 'Hide viewed' : 'Show viewed'}
-              </button>
-            )}
           </div>
           {!shown.length && <div className={`p-4 text-xs ${muted}`}>All files viewed</div>}
           {shown.map((g) => {
             const done = g.diffs.every((d) => viewed.includes(d.file.path))
             return (
-              <section key={g.i} id={`guide-group-${g.i}`} className={`pt-3 ${generated(g) ? 'opacity-60' : ''}`}>
-                <div className="flex items-start gap-3 px-4 pb-2">
-                  <div className="min-w-0 flex-1 select-text">
-                    <h2 className="font-semibold">
-                      {g.title}{' '}
-                      {generated(g) && <span className={`text-xs font-normal ${muted}`}>Generated · </span>}
-                      <span className={`text-xs font-normal ${muted}`}>
-                        {g.diffs.length} files{g.shown.length < g.diffs.length && `, ${g.diffs.length - g.shown.length} viewed`}
-                      </span>
+              <section key={g.i} id={`guide-group-${g.i}`} className={`pt-6 ${generated(g) ? 'opacity-60' : ''}`}>
+                <div className="flex items-start gap-3 px-4 pb-3">
+                  <div className="flex min-w-0 flex-1 flex-col gap-1.5 select-text">
+                    <h2 className="text-base font-semibold">
+                      <Prose inline>{g.title}</Prose>
                     </h2>
-                    <p className={`text-xs ${muted}`}>{g.description || (describing && g.paths.length ? 'Describing…' : '')}</p>
+                    <div className={`text-xs ${muted}`}>
+                      {generated(g) && 'Generated · '}
+                      {g.diffs.length} files{g.shown.length < g.diffs.length && `, ${g.diffs.length - g.shown.length} viewed`}
+                    </div>
+                    {g.description ? (
+                      <div className={prose}>
+                        <Prose>{g.description}</Prose>
+                      </div>
+                    ) : (
+                      describing && g.paths.length > 0 && <div className={`text-xs ${muted}`}>Describing…</div>
+                    )}
                   </div>
-                  <label className="flex shrink-0 items-center gap-1 text-xs">
+                  <label className="flex shrink-0 items-center gap-1 pt-1 text-xs">
                     <input
                       type="checkbox"
                       checked={done}
@@ -202,7 +204,11 @@ export function Guide({ workspace, mergeBase, diffs, viewed, onViewedChange, vie
                 </div>
                 {g.shown.map((d) => (
                   <div key={d.file.path}>
-                    {g.notes?.[d.file.path] && <p className="px-4 pt-2 pb-1 text-xs select-text">{g.notes[d.file.path]}</p>}
+                    {g.notes?.[d.file.path] && (
+                      <div className={`px-4 pt-3 pb-2 select-text ${prose}`}>
+                        <Prose>{g.notes[d.file.path]}</Prose>
+                      </div>
+                    )}
                     <Viewer stacked opened={d} {...viewer} />
                   </div>
                 ))}
@@ -214,6 +220,9 @@ export function Guide({ workspace, mergeBase, diffs, viewed, onViewedChange, vie
     </div>
   )
 }
+
+// A group's description and its file notes: the same readable text, at a line length that's easy to follow.
+const prose = 'markdown max-w-[80ch] text-[13px] leading-relaxed text-neutral-700 [overflow-wrap:anywhere] dark:text-neutral-300'
 
 const generated = (g: Pick<GuideGroup, 'tags'>) => !!g.tags?.includes('generated')
 

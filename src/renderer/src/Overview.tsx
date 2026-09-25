@@ -1,9 +1,7 @@
 import { useEffect, useState } from 'react'
-import Markdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
 import type { PullRequestOverview } from '../../core/github'
 import type { Workspace } from '../../core/workspaces'
-import { muted, ProblemMessage } from './ui'
+import { muted, ProblemMessage, Prose } from './ui'
 
 // The last overview fetched per workspace, shown at once when the tab opens again while a fresh one loads.
 // In memory only: GitHub has it (ADR 0005).
@@ -36,9 +34,7 @@ export function Overview({ workspace }: { workspace: Workspace }) {
       </h1>
       {pr.body ? (
         <div className="markdown [overflow-wrap:anywhere]">
-          <Markdown remarkPlugins={[remarkGfm]} components={{ a: (p) => <a {...p} target="_blank" /> }}>
-            {pr.body}
-          </Markdown>
+          <Prose>{pr.body}</Prose>
         </div>
       ) : (
         <div className={`text-xs ${muted}`}>No description</div>

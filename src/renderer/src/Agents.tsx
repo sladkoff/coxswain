@@ -1,10 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import Markdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
 import type { AgentSession, ChatEntry } from '../../core/agents'
 import type { Comment } from '../../core/comments'
 import type { Workspace } from '../../core/workspaces'
-import { button, muted } from './ui'
+import { button, muted, Prose } from './ui'
 
 const pane = 'border-neutral-200 dark:border-neutral-800'
 
@@ -133,7 +131,7 @@ export function Agents({ workspace, attached, onDetach, onSent, onTurnEnd }: Pro
   )
 }
 
-// Agent replies are Markdown; links get target=_blank so the main process opens them in the browser.
+// Agent replies are Markdown.
 // ponytail: code blocks aren't highlighted; use @pierre/diffs' Shiki if they need it.
 export function Entry({ entry }: { entry: ChatEntry }) {
   if (entry.kind === 'tool')
@@ -146,9 +144,7 @@ export function Entry({ entry }: { entry: ChatEntry }) {
     )
   return (
     <div className="markdown select-text [overflow-wrap:anywhere]">
-      <Markdown remarkPlugins={[remarkGfm]} components={{ a: (p) => <a {...p} target="_blank" /> }}>
-        {entry.text}
-      </Markdown>
+      <Prose>{entry.text}</Prose>
     </div>
   )
 }

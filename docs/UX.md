@@ -44,12 +44,15 @@ then the workspace's files, the work in the middle and the agents on the right.
   While the project is being cloned, its icon pulses and the Navigator says so. In *Diffs*, viewed
   files are hidden; the top says how many of the files are viewed, and a cog button opens a native
   menu: *As Tree* or *As List* (a flat list of the changed files, each with its folder dimmed
-  next to its +/− lines), and *Show Viewed Files*, which shows viewed files again with a ✓.
+  next to its +/− lines). *Show Viewed Files* in the tab bar's cog menu (L3) shows viewed files again
+  with a ✓.
 - **L3 — Viewer.** Tabs along the top: *Overview* (the PR's title and description, the tab a
   workspace opens on), *Guide* and *Diff*, all file diffs side by side one after
   another, with the Navigator on their left. Selecting a file in *Diffs* scrolls to its file diff;
   selecting one in *Files* shows the whole file in their place, until the toggle goes back to *Diffs*. Under the tabs, a second bar
-  that stays put holds the current tab's options (none yet). A file diff's header has a
+  that stays put holds the current tab's options. On *Guide* and *Diff* it has a cog button that
+  opens a native menu: *Unified* or *Split* file diffs, and *Show Viewed Files*, shared by the
+  Navigator and the Guide. A file diff's header has a
   *Viewed* checkbox. Local comments go between
   the lines: hovering a line shows a `+` in the gutter; clicking it (or dragging it over a range)
   opens a box to write the comment. A saved comment has *Send to agent*, which puts it in the L4
@@ -62,7 +65,7 @@ then the workspace's files, the work in the middle and the agents on the right.
   description and then the group's file diffs, each with its file note above it, the same file diffs as in *Diff* (Viewed checkbox,
   comments, *Ask agent*). A group has its own *Viewed* checkbox, which marks all its file diffs.
   Viewed file diffs are hidden, and so is a group once all its file diffs are; the top says how many
-  are viewed, with *Show viewed* to show them again, as in the Navigator. On the left, a table of
+  are viewed; *Show Viewed Files* in the bar's cog menu shows them again, as in the Navigator. On the left, a table of
   contents lists every group with how many of its file diffs are viewed (✓ when all are), marks the
   group being read as you scroll, and jumps to a group when clicked (showing viewed ones if it's
   hidden). Above it, a bar of how many file diffs are viewed in all. Changed files the guide doesn't mention (changed since it was

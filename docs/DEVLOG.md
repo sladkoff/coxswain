@@ -39,6 +39,15 @@ Not checked in the app yet: the user runs the first guide with it.
 - **Scrolling file diffs no longer freezes** (Diff and Guide tabs): `@pierre/diffs` highlighted each
   file diff on the main thread as it scrolled into range. It now runs in the library's worker pool
   (`WorkerPoolContextProvider` in `main.tsx`, ES module workers in `electron.vite.config.ts`).
+- **Long lines wrap** in file diffs and files, instead of scrolling sideways (`overflow: 'wrap'` in
+  `Viewer.tsx`; the library's virtualizer measures wrapped lines).
+- **View options in the tab's bar**: on *Guide* and *Diff*, a cog opens a native menu with *Unified*
+  or *Split* file diffs and *Show Viewed Files*. That setting moved there from the Navigator's cog
+  menu and the Guide's *Show viewed* button, so the two now share it. It resets on restart
+  (`ponytail:` in `App.tsx`), like the Navigator's settings.
+- **Guide text renders as Markdown**: group titles (inline), descriptions and file notes, with one
+  readable style for descriptions and notes and more space between groups. The Markdown setup is
+  shared as `Prose` in `ui.tsx`, also used by the Overview and agent replies.
 
 ### Tech debt
 
