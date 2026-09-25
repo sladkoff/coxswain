@@ -2,7 +2,7 @@
 
 ## Status
 
-Open.
+Done.
 
 ## Goal
 
@@ -16,8 +16,7 @@ interface, so a wrong column name fails `pnpm typecheck` instead of showing `und
 ## Notes
 
 - [ADR 0016](../adr/0016-typed-queries-with-kysely.md).
-- Add `kysely` and `kysely-node-sqlite`, pinned. Check the dialect works with Electron 44's `node:sqlite` (`pnpm
-  start`) before converting anything.
+- Add `kysely`, pinned. Kysely's SQLite dialect runs on `node:sqlite` through a small adapter in `openDatabase`.
 - `openDatabase` keeps running the migrations on the raw `DatabaseSync`, then wraps it in a `Kysely<DB>`. The core's
   functions take the `Kysely<DB>` instead of `DatabaseSync`.
 - Write `DB` from the schema as migrated today (all 15 migrations), not from the first `create table`s: e.g.

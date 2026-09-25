@@ -1,4 +1,4 @@
-import type { DatabaseSync } from 'node:sqlite'
+import type { Db } from './db'
 import { diffFingerprints } from './git'
 
 // Viewed file diffs (glossary). Each is stored with the fingerprint of the file diff's contents when it was marked
@@ -7,22 +7,21 @@ import { diffFingerprints } from './git'
 // ponytail: rows for fingerprints no longer in use stay; prune them if the table ever matters.
 
 // The paths of the workspace's file diffs that are viewed and haven't changed since.
-export async function listViewed(db: DatabaseSync, workspaceId: number, base: string, head?: string): Promise<string[]> {
-  const rows = db.prepare('select path, fingerprint from viewed_files where workspace_id = ?').all(workspaceId) as {
-    path: string
-    fingerprint: string
-  }[]
+export async function listViewed(db: Db, workspaceId: number, base: string, head?: string): Promise<string[]> {
+  const rows = await db.selectFrom('viewed_files').select(['path', 'fingerprint']).where('workspace_id', '=', workspaceId).execute()
   const now = await diffFingerprints(db, workspaceId, base, [...new Set(rows.map((r) => r.path))], head)
   return [...new Set(rows.filter((r) => r.fingerprint === now.get(r.path)).map((r) => r.path))]
 }
 
-export async function setViewed(db: DatabaseSync, workspaceId: number, base: string, path: string, viewed: boolean, head?: string) {
+export async function setViewed(db: Db, workspaceId: number, base: string, path: string, viewed: boolean, head?: string) {
   const fingerprint = (await diffFingerprints(db, workspaceId, base, [path], head)).get(path)!
   if (viewed)
-    db.prepare('insert or ignore into viewed_files (workspace_id, path, fingerprint) values (?, ?, ?)').run(
-      workspaceId,
-      path,
-      fingerprint,
-    )
-  else db.prepare('delete from viewed_files where workspace_id = ? and path = ? and fingerprint = ?').run(workspaceId, path, fingerprint)
+    await db.insertInto('viewed_files').orIgnore().values({ workspace_id: workspaceId, path, fingerprint }).execute()
+  else
+    await db
+      .deleteFrom('viewed_files')
+      .where('workspace_id', '=', workspaceId)
+      .where('path', '=', path)
+      .where('fingerprint', '=', fingerprint)
+      .execute()
 }

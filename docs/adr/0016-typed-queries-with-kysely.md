@@ -22,7 +22,8 @@ Migrations are a list of SQL strings in `src/core/db.ts`, run in order inside a 
 
 1. **Kysely for queries** in the core. Queries stay SQL-shaped, like today's, but table and column names and result
    types are checked by TypeScript.
-2. **On `node:sqlite`**, through the `kysely-node-sqlite` dialect. No native module to rebuild for Electron.
+2. **On `node:sqlite`**, through Kysely's own SQLite dialect and a few lines in `openDatabase` that adapt `node:sqlite`
+   to it (parameters as one array, and a `reader` flag from `columns()`). No native module to rebuild for Electron.
 3. **The `DB` type is written by hand** in `src/core/db.ts`, next to the migrations, and changed in the same commit as
    the migration that changes the table. Columns are snake_case in SQL and in the type; each module maps rows to its
    own camelCase types (e.g. `AgentSession`) in one place, as the `columns` strings do now.
@@ -40,6 +41,8 @@ Migrations are a list of SQL strings in `src/core/db.ts`, run in order inside a 
   SQL we already have. Worth another look if hand-written rebuilds become a burden.
 - **`kysely-codegen`** to generate the `DB` type from a database. Saves writing the type, but needs a migrated
   database at build time and a generation step. The schema is small; by hand is fine.
+- **The `kysely-node-sqlite` dialect.** A thousand lines, a mutex dependency, and its own copy of an older Kysely,
+  for what the adapter does in ten.
 - **better-sqlite3**, which Kysely's built-in dialect expects. Rejected: a native module that has to be rebuilt for
   each Electron version, for no gain over `node:sqlite`.
 - **Keep raw SQL and add runtime checks** (e.g. zod on each row). Catches mistakes later than the compiler does and
@@ -52,5 +55,5 @@ Migrations are a list of SQL strings in `src/core/db.ts`, run in order inside a 
 - A column renamed in a migration but not in `DB`, or the reverse, is still possible; one place to keep in step
   instead of 43.
 - JSON columns (`guides.groups`, `action_items.entry_ids`) are typed as `string` and still parsed by hand.
-- One more dependency and one small community dialect, both pinned.
+- One more dependency, pinned.
 - Moving the core to a utility process later (devlog tech debt) is unaffected; Kysely doesn't care where it runs.

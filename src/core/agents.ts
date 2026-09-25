@@ -4,7 +4,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
-import type { DatabaseSync } from 'node:sqlite'
+import type { Db } from './db'
 import { worktreePath } from './git'
 import { getWorkspaceRepo } from './workspaces'
 
@@ -16,32 +16,37 @@ export type ChatEntry = { kind: 'user' | 'text' | 'tool'; text: string }
 
 export type TurnResult = { status: 'ok' } | { status: 'error'; message: string }
 
-const columns = 'id, workspace_id as workspaceId, agent_session_id as agentSessionId, created_at as createdAt'
+const columns = ['id', 'workspace_id as workspaceId', 'agent_session_id as agentSessionId', 'created_at as createdAt'] as const
 
 // The workspace's agent sessions in L4, oldest first; the last one is the current one. A review round's session for
 // its questions isn't listed (ADR 0011).
-export function listAgentSessions(db: DatabaseSync, workspaceId: number): AgentSession[] {
+export function listAgentSessions(db: Db, workspaceId: number): Promise<AgentSession[]> {
   return db
-    .prepare(`select ${columns} from agent_sessions where workspace_id = ? and review_round_id is null order by id`)
-    .all(workspaceId) as AgentSession[]
+    .selectFrom('agent_sessions')
+    .select(columns)
+    .where('workspace_id', '=', workspaceId)
+    .where('review_round_id', 'is', null)
+    .orderBy('id')
+    .execute()
 }
 
-export function startAgentSession(db: DatabaseSync, workspaceId: number): AgentSession {
+export function startAgentSession(db: Db, workspaceId: number): Promise<AgentSession> {
   return db
-    .prepare(
-      `insert into agent_sessions (workspace_id, agent, agent_session_id, created_at) values (?, 'claude', ?, ?)
-       returning ${columns}`,
-    )
-    .get(workspaceId, randomUUID(), new Date().toISOString()) as AgentSession
+    .insertInto('agent_sessions')
+    .values({ workspace_id: workspaceId, agent: 'claude', agent_session_id: randomUUID(), created_at: new Date().toISOString() })
+    .returning(columns)
+    .executeTakeFirstOrThrow()
 }
 
 // Agent sessions run in their workspace's worktree, which opening the workspace creates (ADR 0008).
-function agentWorktree(db: DatabaseSync, agentSessionId: string): string {
-  const row = db.prepare('select workspace_id as id from agent_sessions where agent_session_id = ?').get(agentSessionId) as
-    | { id: number }
-    | undefined
+async function agentWorktree(db: Db, agentSessionId: string): Promise<string> {
+  const row = await db
+    .selectFrom('agent_sessions')
+    .select('workspace_id as id')
+    .where('agent_session_id', '=', agentSessionId)
+    .executeTakeFirst()
   if (!row) throw new Error(`No agent session ${agentSessionId}`)
-  const { owner, name } = getWorkspaceRepo(db, row.id)
+  const { owner, name } = await getWorkspaceRepo(db, row.id)
   return worktreePath(owner, name, row.id)
 }
 
@@ -104,16 +109,18 @@ const running = new Map<string, ChildProcess>()
 // Otherwise auto mode (ADR 0013): Claude Code's classifier approves or blocks each tool use that would prompt.
 // ponytail: relies on PATH to find `claude`, like `gh`; and permission prompts aren't surfaced, so what auto mode
 // blocks stays blocked. Add --permission-prompt-tool to ask the user.
-export function runTurn(
-  db: DatabaseSync,
+export async function runTurn(
+  db: Db,
   agentSessionId: string,
   prompt: string,
   { readOnly = false }: { readOnly?: boolean },
   onEntry: (entry: ChatEntry) => void,
 ): Promise<TurnResult> {
-  if (running.has(agentSessionId)) return Promise.resolve({ status: 'error', message: 'A turn is already running' })
-  const cwd = agentWorktree(db, agentSessionId)
-  if (!existsSync(join(cwd, '.git'))) return Promise.resolve({ status: 'error', message: 'The worktree is not ready yet' })
+  if (running.has(agentSessionId)) return { status: 'error', message: 'A turn is already running' }
+  const cwd = await agentWorktree(db, agentSessionId)
+  if (!existsSync(join(cwd, '.git'))) return { status: 'error', message: 'The worktree is not ready yet' }
+  // Checked again: another turn may have started while the worktree was looked up.
+  if (running.has(agentSessionId)) return { status: 'error', message: 'A turn is already running' }
   const session = transcriptPath(agentSessionId) ? ['--resume', agentSessionId] : ['--session-id', agentSessionId]
   const child = spawn('claude', ['-p', prompt, '--output-format', 'stream-json', '--verbose', '--permission-mode', readOnly ? 'default' : 'auto', ...session], {
     cwd,

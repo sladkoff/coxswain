@@ -123,8 +123,8 @@ app.whenReady().then(() => {
   ipcMain.handle('github:current-user', () => getCurrentUser())
   ipcMain.handle('github:list-repos', (_, page: number) => listRepos(page))
   ipcMain.handle('github:list-pulls', (_, owner: string, name: string) => listPullRequests(owner, name))
-  ipcMain.handle('github:pull-overview', (_, workspaceId: number) => {
-    const { owner, name, prNumber } = getWorkspaceRepo(db, workspaceId)
+  ipcMain.handle('github:pull-overview', async (_, workspaceId: number) => {
+    const { owner, name, prNumber } = await getWorkspaceRepo(db, workspaceId)
     return getPullRequestOverview(owner, name, prNumber)
   })
   ipcMain.handle('workspaces:list', (_, projectId: number) => listWorkspaces(db, projectId))
@@ -151,9 +151,9 @@ app.whenReady().then(() => {
   ipcMain.handle('review:add-note', (_, note: NewEntry) => addNote(db, note))
   ipcMain.handle('review:delete', (_, id: number) => deleteEntry(db, id))
   // Returns the question once saved; the reply streams as review:chat and the turn's end comes as review:turn-end.
-  ipcMain.handle('review:ask', (e, question: NewEntry) => {
+  ipcMain.handle('review:ask', async (e, question: NewEntry) => {
     const send = (channel: string, ...args: unknown[]) => !e.sender.isDestroyed() && e.sender.send(channel, ...args)
-    const asked = askQuestion(db, question, (threadId, entry) => send('review:chat', threadId, entry))
+    const asked = await askQuestion(db, question, (threadId, entry) => send('review:chat', threadId, entry))
     const threadId = asked.question.parentId ?? asked.question.id
     asked.turn.then((result) => send('review:turn-end', threadId, result))
     return asked.question
@@ -169,8 +169,8 @@ app.whenReady().then(() => {
   ipcMain.handle('viewed:set', (_, workspaceId: number, mergeBase: string, path: string, viewed: boolean, head?: string) =>
     setViewed(db, workspaceId, mergeBase, path, viewed, head),
   )
-  ipcMain.handle('agents:run-turn', (e, agentSessionId: string, message: string, noteIds: number[], roundId?: number) =>
-    runTurn(db, agentSessionId, formatAsk(db, noteIds, message, roundId), {}, (entry) => {
+  ipcMain.handle('agents:run-turn', async (e, agentSessionId: string, message: string, noteIds: number[], roundId?: number) =>
+    runTurn(db, agentSessionId, await formatAsk(db, noteIds, message, roundId), {}, (entry) => {
       if (!e.sender.isDestroyed()) e.sender.send('agents:entry', agentSessionId, entry)
     }),
   )

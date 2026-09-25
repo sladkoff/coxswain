@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import type { DatabaseSync } from 'node:sqlite'
 import { type ChatEntry, runTurn, stopTurn, type TurnResult } from './agents'
+import type { Db } from './db'
 import { readTexts, worktreePath } from './git'
 import { runClaude } from './guides'
 import { getWorkspaceRepo } from './workspaces'
@@ -42,36 +42,59 @@ export type ReviewEntry = {
 // A note or question from the user: anchored, or a follow-up in a thread (parentId).
 export type NewEntry = { workspaceId: number; body: string; anchor?: Anchor; parentId?: number }
 
-const columns = `id, review_round_id as reviewRoundId, kind, body, parent_id as parentId, path, side,
-  start_line as startLine, end_line as endLine, code, base, head, created_at as createdAt, sent_at as sentAt`
+const columns = [
+  'id',
+  'review_round_id as reviewRoundId',
+  'kind',
+  'body',
+  'parent_id as parentId',
+  'path',
+  'side',
+  'start_line as startLine',
+  'end_line as endLine',
+  'code',
+  'base',
+  'head',
+  'created_at as createdAt',
+  'sent_at as sentAt',
+] as const
+
+// A round's entries in order.
+const roundEntries = (db: Db, roundId: number): Promise<Omit<ReviewEntry, 'state'>[]> =>
+  db.selectFrom('entries').select(columns).where('review_round_id', '=', roundId).orderBy('id').execute()
 
 // The round new entries go in: the latest, unless it was wrapped up, which starts a new one (ADR 0012).
 // ponytail: a round doesn't go stale when the code changes (glossary open question 3).
 // A new round records the range its first entry was written in (ADR 0015).
-function currentRound(db: DatabaseSync, workspaceId: number, anchor?: Anchor): number {
-  const row = db
-    .prepare('select id from review_rounds where workspace_id = ? and ended_at is null order by id desc limit 1')
-    .get(workspaceId) as
-    | { id: number }
-    | undefined
+async function currentRound(db: Db, workspaceId: number, anchor?: Anchor): Promise<number> {
+  const row = await db
+    .selectFrom('review_rounds')
+    .select('id')
+    .where('workspace_id', '=', workspaceId)
+    .where('ended_at', 'is', null)
+    .orderBy('id', 'desc')
+    .limit(1)
+    .executeTakeFirst()
   if (row) return row.id
-  return (
-    db
-      .prepare('insert into review_rounds (workspace_id, created_at, merge_base, head) values (?, ?, ?, ?) returning id')
-      .get(workspaceId, new Date().toISOString(), anchor?.base ?? null, anchor?.head ?? null) as { id: number }
-  ).id
+  const created = await db
+    .insertInto('review_rounds')
+    .values({ workspace_id: workspaceId, created_at: new Date().toISOString(), merge_base: anchor?.base ?? null, head: anchor?.head ?? null })
+    .returning('id')
+    .executeTakeFirstOrThrow()
+  return created.id
 }
 
 // The latest round's entries, with their state in the view of base → head (the worktree without head).
-export async function listEntries(db: DatabaseSync, workspaceId: number, base: string, head?: string): Promise<ReviewEntry[]> {
-  const round = db
-    .prepare('select id, ended_at as endedAt from review_rounds where workspace_id = ? order by id desc limit 1')
-    .get(workspaceId) as { id: number; endedAt: string | null } | undefined
+export async function listEntries(db: Db, workspaceId: number, base: string, head?: string): Promise<ReviewEntry[]> {
+  const round = await db
+    .selectFrom('review_rounds')
+    .select(['id', 'ended_at as endedAt'])
+    .where('workspace_id', '=', workspaceId)
+    .orderBy('id', 'desc')
+    .limit(1)
+    .executeTakeFirst()
   if (!round) return []
-  const rows = db.prepare(`select ${columns} from entries where review_round_id = ? order by id`).all(round.id) as Omit<
-    ReviewEntry,
-    'state'
-  >[]
+  const rows = await roundEntries(db, round.id)
   if (round.endedAt) return rows.map((e) => ({ ...e, state: 'wrapped-up' }))
   const anchored = rows.filter((e) => e.path && !e.parentId)
   const paths = (side: 'old' | 'new') => [...new Set(anchored.filter((e) => e.side === side).map((e) => e.path!))]
@@ -87,40 +110,38 @@ export async function listEntries(db: DatabaseSync, workspaceId: number, base: s
   return rows.map((e) => ({ ...e, state: state.get(e.parentId ?? e.id) ?? 'current' }))
 }
 
-function addEntry(db: DatabaseSync, roundId: number, kind: ReviewEntry['kind'], e: Omit<NewEntry, 'workspaceId'>): Omit<ReviewEntry, 'state'> {
+function addEntry(db: Db, roundId: number, kind: ReviewEntry['kind'], e: Omit<NewEntry, 'workspaceId'>): Promise<Omit<ReviewEntry, 'state'>> {
   if (!e.body.trim()) throw new Error(`A ${kind} needs text`)
   const a = e.anchor
   if (a && a.side !== 'old' && a.side !== 'new') throw new Error(`Not a side: ${a.side}`)
   const [start, end] = a ? [a.startLine, a.endLine].sort((x, y) => x - y) : [null, null]
   return db
-    .prepare(
-      `insert into entries (review_round_id, kind, body, parent_id, path, side, start_line, end_line, code, base, head, created_at)
-       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) returning ${columns}`,
-    )
-    .get(
-      roundId,
+    .insertInto('entries')
+    .values({
+      review_round_id: roundId,
       kind,
-      e.body.trim(),
-      e.parentId ?? null,
-      a?.path ?? null,
-      a?.side ?? null,
-      start,
-      end,
-      a?.code ?? null,
-      a?.base ?? null,
-      a?.head ?? null,
-      new Date().toISOString(),
-    ) as Omit<ReviewEntry, 'state'>
+      body: e.body.trim(),
+      parent_id: e.parentId ?? null,
+      path: a?.path ?? null,
+      side: a?.side ?? null,
+      start_line: start,
+      end_line: end,
+      code: a?.code ?? null,
+      base: a?.base ?? null,
+      head: a?.head ?? null,
+      created_at: new Date().toISOString(),
+    })
+    .returning(columns)
+    .executeTakeFirstOrThrow()
 }
 
 // A new entry is current in the view it was written in.
-export const addNote = (db: DatabaseSync, e: NewEntry): ReviewEntry => ({
-  ...addEntry(db, currentRound(db, e.workspaceId, e.anchor), 'note', e),
-  state: 'current',
-})
+export async function addNote(db: Db, e: NewEntry): Promise<ReviewEntry> {
+  return { ...(await addEntry(db, await currentRound(db, e.workspaceId, e.anchor), 'note', e)), state: 'current' }
+}
 
-export function deleteEntry(db: DatabaseSync, id: number) {
-  db.prepare('delete from entries where id = ?').run(id)
+export async function deleteEntry(db: Db, id: number) {
+  await db.deleteFrom('entries').where('id', '=', id).execute()
 }
 
 function describe(a: Pick<ReviewEntry, 'path' | 'side' | 'startLine' | 'endLine' | 'code'> & Partial<Pick<ReviewEntry, 'base' | 'head'>>): string {
@@ -138,29 +159,36 @@ function describe(a: Pick<ReviewEntry, 'path' | 'side' | 'startLine' | 'endLine'
 
 // The prompt of an ask: the notes with where they point and the code they're about, then the user's message.
 // Marks the notes as sent.
-export function formatAsk(db: DatabaseSync, noteIds: number[], message: string, roundId?: number): string {
-  if (roundId) message = [formatHandOff(db, roundId), message.trim()].filter(Boolean).join('\n\n')
+export async function formatAsk(db: Db, noteIds: number[], message: string, roundId?: number): Promise<string> {
+  if (roundId) message = [await formatHandOff(db, roundId), message.trim()].filter(Boolean).join('\n\n')
   if (!noteIds.length) return message
-  const byId = db.prepare(`select ${columns} from entries where id = ? and kind = 'note'`)
-  const notes = noteIds.map((id) => byId.get(id) as ReviewEntry | undefined).filter((n) => n !== undefined)
-  const sent = db.prepare('update entries set sent_at = ? where id = ?')
-  const now = new Date().toISOString()
-  for (const n of notes) sent.run(now, n.id)
+  const found = await db.selectFrom('entries').select(columns).where('id', 'in', noteIds).where('kind', '=', 'note').execute()
+  // In the order given, not the table's.
+  const notes = noteIds.map((id) => found.find((n) => n.id === id)).filter((n) => n !== undefined)
+  await db.updateTable('entries').set({ sent_at: new Date().toISOString() }).where('id', 'in', noteIds).where('kind', '=', 'note').execute()
   const parts = notes.map((n) => (n.path ? `Note on ${describe(n)}\n${n.body}` : `Note: ${n.body}`))
   return [...parts, message.trim()].filter(Boolean).join('\n\n')
 }
 
 // The round's agent session for its questions (ADR 0011), made with its first question.
-function questionSession(db: DatabaseSync, roundId: number): { agentSessionId: string; first: boolean } {
-  const row = db.prepare('select agent_session_id as id from agent_sessions where review_round_id = ?').get(roundId) as
-    | { id: string }
-    | undefined
+async function questionSession(db: Db, roundId: number): Promise<{ agentSessionId: string; first: boolean }> {
+  const row = await db
+    .selectFrom('agent_sessions')
+    .select('agent_session_id as id')
+    .where('review_round_id', '=', roundId)
+    .executeTakeFirst()
   if (row) return { agentSessionId: row.id, first: false }
   const id = randomUUID()
-  db.prepare(
-    `insert into agent_sessions (workspace_id, agent, agent_session_id, created_at, review_round_id)
-     select workspace_id, 'claude', ?, ?, id from review_rounds where id = ?`,
-  ).run(id, new Date().toISOString(), roundId)
+  await db
+    .insertInto('agent_sessions')
+    .columns(['workspace_id', 'agent', 'agent_session_id', 'created_at', 'review_round_id'])
+    .expression((eb) =>
+      eb
+        .selectFrom('review_rounds')
+        .select(['workspace_id', eb.val('claude').as('agent'), eb.val(id).as('agent_session_id'), eb.val(new Date().toISOString()).as('created_at'), 'id'])
+        .where('id', '=', roundId),
+    )
+    .execute()
   return { agentSessionId: id, first: true }
 }
 
@@ -170,34 +198,35 @@ const preamble =
 
 // Adds a question and asks it in the round's agent session, streaming the reply; the agent's text becomes an answer
 // entry in the question's thread. Returns the question once saved, and the turn's result when it ends.
-export function askQuestion(
-  db: DatabaseSync,
+export async function askQuestion(
+  db: Db,
   e: NewEntry,
   onChat: (threadId: number, entry: ChatEntry) => void,
-): { question: ReviewEntry; turn: Promise<TurnResult> } {
-  const question = addEntry(db, currentRound(db, e.workspaceId, e.anchor), 'question', e)
+): Promise<{ question: ReviewEntry; turn: Promise<TurnResult> }> {
+  const question = await addEntry(db, await currentRound(db, e.workspaceId, e.anchor), 'question', e)
   const threadId = question.parentId ?? question.id
-  const { agentSessionId, first } = questionSession(db, question.reviewRoundId)
+  const { agentSessionId, first } = await questionSession(db, question.reviewRoundId)
   const prompt = (first ? preamble : '') + (question.path ? `About ${describe(question)}\n${question.body}` : question.body)
   const texts: string[] = []
   const turn = runTurn(db, agentSessionId, prompt, { readOnly: true }, (c) => {
     if (c.kind === 'text') texts.push(c.text)
     onChat(threadId, c)
-  }).then((result) => {
+  }).then(async (result) => {
     if (result.status === 'ok' && texts.length)
-      addEntry(db, question.reviewRoundId, 'answer', { body: texts.join('\n\n'), parentId: threadId })
+      await addEntry(db, question.reviewRoundId, 'answer', { body: texts.join('\n\n'), parentId: threadId })
     return result
   })
   return { question: { ...question, state: 'current' }, turn }
 }
 
-export function stopQuestion(db: DatabaseSync, workspaceId: number) {
-  const row = db
-    .prepare(
-      `select agent_session_id as id from agent_sessions where review_round_id =
-       (select id from review_rounds where workspace_id = ? order by id desc limit 1)`,
+export async function stopQuestion(db: Db, workspaceId: number) {
+  const row = await db
+    .selectFrom('agent_sessions')
+    .select('agent_session_id as id')
+    .where('review_round_id', '=', (eb) =>
+      eb.selectFrom('review_rounds').select('id').where('workspace_id', '=', workspaceId).orderBy('id', 'desc').limit(1),
     )
-    .get(workspaceId) as { id: string } | undefined
+    .executeTakeFirst()
   if (row) stopTurn(row.id)
 }
 
@@ -216,34 +245,47 @@ export type ActionItem = {
 // The latest round, as its bar shows it. ponytail: earlier rounds, and a wrapped-up round's entries (ADR 0015), aren't reachable until rounds get a history (ticket 0001).
 export type ReviewRound = { id: number; number: number; createdAt: string; endedAt: string | null; actionItems: ActionItem[] }
 
-export function getRound(db: DatabaseSync, workspaceId: number): ReviewRound | null {
-  const round = db
-    .prepare(
-      `select id, (select count(*) from review_rounds r where r.workspace_id = review_rounds.workspace_id and r.id <= review_rounds.id) as number,
-       created_at as createdAt, ended_at as endedAt from review_rounds where workspace_id = ? order by id desc limit 1`,
-    )
-    .get(workspaceId) as Omit<ReviewRound, 'actionItems'> | undefined
+const itemColumns = [
+  'id',
+  'review_round_id as reviewRoundId',
+  'body',
+  'entry_ids as entryIds',
+  'path',
+  'side',
+  'start_line as startLine',
+  'end_line as endLine',
+  'code',
+] as const
+
+// A round's action items in order.
+async function roundItems(db: Db, roundId: number): Promise<ActionItem[]> {
+  const items = await db.selectFrom('action_items').select(itemColumns).where('review_round_id', '=', roundId).orderBy('position').execute()
+  return items.map((i) => ({ ...i, entryIds: JSON.parse(i.entryIds) }))
+}
+
+export async function getRound(db: Db, workspaceId: number): Promise<ReviewRound | null> {
+  const rounds = await db
+    .selectFrom('review_rounds')
+    .select(['id', 'created_at as createdAt', 'ended_at as endedAt'])
+    .where('workspace_id', '=', workspaceId)
+    .orderBy('id')
+    .execute()
+  const round = rounds.at(-1)
   if (!round) return null
-  const items = db
-    .prepare(
-      `select id, review_round_id as reviewRoundId, body, entry_ids as entryIds, path, side, start_line as startLine,
-       end_line as endLine, code from action_items where review_round_id = ? order by position`,
-    )
-    .all(round.id) as (Omit<ActionItem, 'entryIds'> & { entryIds: string })[]
-  return { ...round, actionItems: items.map((i) => ({ ...i, entryIds: JSON.parse(i.entryIds) })) }
+  return { ...round, number: rounds.length, actionItems: await roundItems(db, round.id) }
 }
 
-export function updateActionItem(db: DatabaseSync, id: number, body: string) {
+export async function updateActionItem(db: Db, id: number, body: string) {
   if (!body.trim()) throw new Error('An action item needs text')
-  db.prepare('update action_items set body = ? where id = ?').run(body.trim(), id)
+  await db.updateTable('action_items').set({ body: body.trim() }).where('id', '=', id).execute()
 }
 
-export function deleteActionItem(db: DatabaseSync, id: number) {
-  db.prepare('delete from action_items where id = ?').run(id)
+export async function deleteActionItem(db: Db, id: number) {
+  await db.deleteFrom('action_items').where('id', '=', id).execute()
 }
 
 // A round's entries, numbered from 1 in order; answers and follow-ups cite their question's number.
-function formatStream(entries: ReviewEntry[]): string {
+function formatStream(entries: Omit<ReviewEntry, 'state'>[]): string {
   const number = new Map(entries.map((e, i) => [e.id, i + 1]))
   return entries
     .map((e, i) => {
@@ -262,11 +304,8 @@ function formatStream(entries: ReviewEntry[]): string {
 // Hand off (glossary): a wrapped-up round's action items, with where they point, then the round's whole stream so the
 // agent has the reasoning behind them. Goes in front of an ask's message.
 // ponytail: a hand-off isn't recorded; action items don't know they were sent. Add a handed_off_at when it matters.
-function formatHandOff(db: DatabaseSync, roundId: number): string {
-  const entries = db.prepare(`select ${columns} from entries where review_round_id = ? order by id`).all(roundId) as ReviewEntry[]
-  const items = db
-    .prepare('select body, path, side, start_line as startLine, end_line as endLine, code from action_items where review_round_id = ? order by position')
-    .all(roundId) as Pick<ActionItem, 'body' | 'path' | 'side' | 'startLine' | 'endLine' | 'code'>[]
+async function formatHandOff(db: Db, roundId: number): Promise<string> {
+  const [entries, items] = await Promise.all([roundEntries(db, roundId), roundItems(db, roundId)])
   const list = items.map((item, i) => `${i + 1}. ${item.path ? `On ${describe(item)}\n` : ''}${item.body}`)
   return `Implement these action items from my review of this worktree's changes, in order:\n\n${list.join('\n\n')}
 
@@ -306,14 +345,12 @@ const wrapUpSchema = {
 
 // Wraps up the latest round (ADR 0012): drafts its action items from its entries and ends it. Again on an ended round,
 // replaces its action items.
-export async function wrapUp(db: DatabaseSync, workspaceId: number): Promise<{ status: 'ok' } | { status: 'error'; message: string }> {
-  const round = getRound(db, workspaceId)
-  const entries = round
-    ? (db.prepare(`select ${columns} from entries where review_round_id = ? order by id`).all(round.id) as ReviewEntry[])
-    : []
+export async function wrapUp(db: Db, workspaceId: number): Promise<{ status: 'ok' } | { status: 'error'; message: string }> {
+  const round = await getRound(db, workspaceId)
+  const entries = round ? await roundEntries(db, round.id) : []
   if (!round || !entries.length) return { status: 'error', message: 'Nothing to wrap up yet' }
   try {
-    const { owner, name } = getWorkspaceRepo(db, workspaceId)
+    const { owner, name } = await getWorkspaceRepo(db, workspaceId)
     const { structured } = await runClaude(
       worktreePath(owner, name, workspaceId),
       `${wrapUpPrompt}\n\n${formatStream(entries)}`,
@@ -323,32 +360,38 @@ export async function wrapUp(db: DatabaseSync, workspaceId: number): Promise<{ s
       wrapUpSystem,
     )
     const items = (structured as { items?: { text: string; entries: number[] }[] } | undefined)?.items ?? []
-    const byNumber = (n: number) => entries[n - 1] as ReviewEntry | undefined
+    const byNumber = (n: number) => entries[n - 1] as (typeof entries)[number] | undefined
     // An item's anchor is its first cited entry's; an answer's or follow-up's is its question's.
-    const anchorOf = (cited: ReviewEntry[]) =>
+    const anchorOf = (cited: typeof entries) =>
       cited.map((e) => (e.parentId ? entries.find((x) => x.id === e.parentId) : e)).find((e) => e?.path)
-    const insert = db.prepare(
-      `insert into action_items (review_round_id, position, body, entry_ids, path, side, start_line, end_line, code, created_at)
-       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
     const now = new Date().toISOString()
-    db.exec('begin')
-    try {
-      db.prepare('delete from action_items where review_round_id = ?').run(round.id)
-      items
-        .filter((item) => item.text?.trim())
-        .forEach((item, position) => {
-          const cited = (item.entries ?? []).map(byNumber).filter((e) => e !== undefined)
-          const a = anchorOf(cited)
-          insert.run(round.id, position, item.text.trim(), JSON.stringify(cited.map((e) => e.id)),
-            a?.path ?? null, a?.side ?? null, a?.startLine ?? null, a?.endLine ?? null, a?.code ?? null, now)
-        })
-      db.prepare('update review_rounds set ended_at = coalesce(ended_at, ?) where id = ?').run(now, round.id)
-      db.exec('commit')
-    } catch (e) {
-      db.exec('rollback')
-      throw e
-    }
+    const rows = items
+      .filter((item) => item.text?.trim())
+      .map((item, position) => {
+        const cited = (item.entries ?? []).map(byNumber).filter((e) => e !== undefined)
+        const a = anchorOf(cited)
+        return {
+          review_round_id: round.id,
+          position,
+          body: item.text.trim(),
+          entry_ids: JSON.stringify(cited.map((e) => e.id)),
+          path: a?.path ?? null,
+          side: a?.side ?? null,
+          start_line: a?.startLine ?? null,
+          end_line: a?.endLine ?? null,
+          code: a?.code ?? null,
+          created_at: now,
+        }
+      })
+    await db.transaction().execute(async (trx) => {
+      await trx.deleteFrom('action_items').where('review_round_id', '=', round.id).execute()
+      if (rows.length) await trx.insertInto('action_items').values(rows).execute()
+      await trx
+        .updateTable('review_rounds')
+        .set((eb) => ({ ended_at: eb.fn.coalesce('ended_at', eb.val(now)) }))
+        .where('id', '=', round.id)
+        .execute()
+    })
     return { status: 'ok' }
   } catch (e) {
     return { status: 'error', message: (e as Error).message }

@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
-import type { DatabaseSync } from 'node:sqlite'
+import type { Db } from './db'
 import { getPullRequestHead, type GitHubProblem } from './github'
 import { getProject } from './projects'
 import { getWorkspaceRepo } from './workspaces'
@@ -64,8 +64,8 @@ async function withGit<T>(fn: () => Promise<T>): Promise<T | GitProblem> {
 const clones = new Map<string, Promise<CloneResult>>()
 
 // Clones the project if it isn't yet; safe to call again while a clone runs.
-export function cloneProject(db: DatabaseSync, projectId: number): Promise<CloneResult> {
-  const { owner, name } = getProject(db, projectId)
+export async function cloneProject(db: Db, projectId: number): Promise<CloneResult> {
+  const { owner, name } = await getProject(db, projectId)
   return clone(owner, name)
 }
 
@@ -101,17 +101,17 @@ function ghProtocol(): Promise<string> {
 const lastOpened = new Map<number, { head: string; mergeBase: string }>()
 
 // What openWorktree last said, if the worktree is still there; null when it has to be opened properly.
-export function openedBefore(db: DatabaseSync, workspaceId: number): WorktreeResult | null {
+export async function openedBefore(db: Db, workspaceId: number): Promise<WorktreeResult | null> {
   const last = lastOpened.get(workspaceId)
-  const { owner, name } = getWorkspaceRepo(db, workspaceId)
+  const { owner, name } = await getWorkspaceRepo(db, workspaceId)
   if (!last || !existsSync(join(worktreePath(owner, name, workspaceId), '.git'))) return null
   return { status: 'ok', ...last, notice: null }
 }
 
 // Makes sure the workspace's worktree exists and is on the PR's latest head, then says what its diff is against.
 // Talks to GitHub and fetches, so it takes a second or more; show openedBefore meanwhile.
-export async function openWorktree(db: DatabaseSync, workspaceId: number): Promise<WorktreeResult> {
-  const { owner, name, prNumber } = getWorkspaceRepo(db, workspaceId)
+export async function openWorktree(db: Db, workspaceId: number): Promise<WorktreeResult> {
+  const { owner, name, prNumber } = await getWorkspaceRepo(db, workspaceId)
   const [pr, cloned] = await Promise.all([getPullRequestHead(owner, name, prNumber), clone(owner, name)])
   if (pr.status !== 'ok') return pr
   if (cloned.status !== 'ok') return cloned
@@ -157,8 +157,8 @@ export async function openWorktree(db: DatabaseSync, workspaceId: number): Promi
   })
 }
 
-export function openedWorktree(db: DatabaseSync, workspaceId: number): string {
-  const { owner, name } = getWorkspaceRepo(db, workspaceId)
+export async function openedWorktree(db: Db, workspaceId: number): Promise<string> {
+  const { owner, name } = await getWorkspaceRepo(db, workspaceId)
   const path = worktreePath(owner, name, workspaceId)
   if (!existsSync(join(path, '.git'))) throw new GitError('The worktree is not ready yet')
   return path
@@ -168,11 +168,11 @@ const isCommit = (s: string) => /^[0-9a-f]{40}$/.test(s)
 
 // Everything that differs between the merge base and the worktree: the PR's commits, and local commits,
 // uncommitted and untracked files. With head, only what differs between the two commits (a commit diff).
-export function listChangedFiles(db: DatabaseSync, workspaceId: number, mergeBase: string, head?: string): Promise<ChangedFileList> {
+export function listChangedFiles(db: Db, workspaceId: number, mergeBase: string, head?: string): Promise<ChangedFileList> {
   return withGit(async () => {
     if (!isCommit(mergeBase)) throw new GitError(`Not a commit: ${mergeBase}`)
     if (head !== undefined && !isCommit(head)) throw new GitError(`Not a commit: ${head}`)
-    const path = openedWorktree(db, workspaceId)
+    const path = await openedWorktree(db, workspaceId)
     const range = head ? [mergeBase, head] : [mergeBase]
     const [names, counts, untracked] = await Promise.all([
       gitText(path, ['diff', '-M', '-z', '--name-status', ...range]),
@@ -184,10 +184,10 @@ export function listChangedFiles(db: DatabaseSync, workspaceId: number, mergeBas
 }
 
 // The commits from the merge base to the worktree's HEAD, newest first.
-export function listCommits(db: DatabaseSync, workspaceId: number, mergeBase: string): Promise<{ status: 'ok'; commits: Commit[] } | GitProblem> {
+export function listCommits(db: Db, workspaceId: number, mergeBase: string): Promise<{ status: 'ok'; commits: Commit[] } | GitProblem> {
   return withGit(async () => {
     if (!isCommit(mergeBase)) throw new GitError(`Not a commit: ${mergeBase}`)
-    const out = await gitText(openedWorktree(db, workspaceId), ['log', '-z', '--format=%H%x1f%P%x1f%s', `${mergeBase}..HEAD`])
+    const out = await gitText(await openedWorktree(db, workspaceId), ['log', '-z', '--format=%H%x1f%P%x1f%s', `${mergeBase}..HEAD`])
     const commits = out
       .split('\0')
       .filter(Boolean)
@@ -244,9 +244,9 @@ function countLines(file: string): number {
 }
 
 // Every file in the worktree: tracked ones plus new files that aren't ignored.
-export function listWorktreeFiles(db: DatabaseSync, workspaceId: number): Promise<FileTreeResult> {
+export function listWorktreeFiles(db: Db, workspaceId: number): Promise<FileTreeResult> {
   return withGit(async () => {
-    const path = openedWorktree(db, workspaceId)
+    const path = await openedWorktree(db, workspaceId)
     const out = await gitText(path, ['ls-files', '-z', '--cached', '--others', '--exclude-standard', '--deduplicate'])
     // A file deleted in the worktree is still in the index until the deletion is staged.
     const paths = out.split('\0').filter((p) => p && existsSync(join(path, p)))
@@ -258,9 +258,9 @@ const asText = (bytes: Buffer): FileText =>
   bytes.includes(0) ? { status: 'ok', text: null, binary: true } : { status: 'ok', text: bytes.toString('utf8'), binary: false }
 
 // A file as it is in the worktree now.
-export function readWorktreeFile(db: DatabaseSync, workspaceId: number, file: string): Promise<FileText> {
+export function readWorktreeFile(db: Db, workspaceId: number, file: string): Promise<FileText> {
   return withGit(async () => {
-    const path = openedWorktree(db, workspaceId)
+    const path = await openedWorktree(db, workspaceId)
     const full = resolve(path, file)
     if (relative(path, full).startsWith('..')) throw new GitError(`Outside the worktree: ${file}`)
     return existsSync(full) ? asText(readFileSync(full)) : { status: 'ok' as const, text: null, binary: false }
@@ -271,13 +271,13 @@ export function readWorktreeFile(db: DatabaseSync, workspaceId: number, file: st
 // head for a pinned range (ADR 0014). Changes when either does, e.g. after an agent's edit or new commits on the PR;
 // a file diff with no local changes gets the same fingerprint either way.
 export async function diffFingerprints(
-  db: DatabaseSync,
+  db: Db,
   workspaceId: number,
   base: string,
   files: string[],
   head?: string,
 ): Promise<Map<string, string>> {
-  const path = openedWorktree(db, workspaceId)
+  const path = await openedWorktree(db, workspaceId)
   const contents = head ? await readBlobs(path, head, files) : new Map(files.map((f) => [f, worktreeBytes(path, f)]))
   const hash = (f: string) => {
     const bytes = contents.get(f)
@@ -287,8 +287,8 @@ export async function diffFingerprints(
 }
 
 // Files as text in a view of the diff: at a commit, or in the worktree without one; null where the file isn't there.
-export async function readTexts(db: DatabaseSync, workspaceId: number, files: string[], commit?: string): Promise<Map<string, string | null>> {
-  const path = openedWorktree(db, workspaceId)
+export async function readTexts(db: Db, workspaceId: number, files: string[], commit?: string): Promise<Map<string, string | null>> {
+  const path = await openedWorktree(db, workspaceId)
   const bytes = commit ? await readBlobs(path, commit, files) : new Map(files.map((f) => [f, worktreeBytes(path, f)]))
   return new Map(files.map((f) => [f, bytes.get(f)?.toString('utf8') ?? null]))
 }
@@ -333,10 +333,10 @@ function readBlobs(cwd: string, commit: string, files: string[]): Promise<Map<st
 // A file diff as unified diff text, for prompts. A new untracked file has no git diff, so its lines show as added.
 // --no-ext-diff: a repo's .gitattributes can send files to a diff tool that isn't installed (e.g. CSV to daff).
 // With head, the file's diff in a commit diff.
-export async function readFileDiff(db: DatabaseSync, workspaceId: number, mergeBase: string, file: ChangedFile, head?: string): Promise<string> {
+export async function readFileDiff(db: Db, workspaceId: number, mergeBase: string, file: ChangedFile, head?: string): Promise<string> {
   if (!isCommit(mergeBase)) throw new GitError(`Not a commit: ${mergeBase}`)
   if (head !== undefined && !isCommit(head)) throw new GitError(`Not a commit: ${head}`)
-  const path = openedWorktree(db, workspaceId)
+  const path = await openedWorktree(db, workspaceId)
   const paths = file.previousPath ? [file.previousPath, file.path] : [file.path]
   const range = head ? [mergeBase, head] : [mergeBase]
   const diff = await gitText(path, ['diff', '--no-ext-diff', '--no-color', '-M', ...range, '--', ...paths])
@@ -347,9 +347,9 @@ export async function readFileDiff(db: DatabaseSync, workspaceId: number, mergeB
 }
 
 // A file at a commit, e.g. the merge base. May fetch its contents from GitHub the first time (blobless clone).
-export function readFileAt(db: DatabaseSync, workspaceId: number, commit: string, file: string): Promise<FileText> {
+export function readFileAt(db: Db, workspaceId: number, commit: string, file: string): Promise<FileText> {
   return withGit(async () => {
     if (!isCommit(commit)) throw new GitError(`Not a commit: ${commit}`)
-    return asText(await git(openedWorktree(db, workspaceId), ['show', `${commit}:${file}`]))
+    return asText(await git(await openedWorktree(db, workspaceId), ['show', `${commit}:${file}`]))
   })
 }

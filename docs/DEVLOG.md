@@ -3,6 +3,31 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-25 — Typed queries
+
+### What works
+
+- **Every query in the core goes through Kysely** ([ADR 0016](adr/0016-typed-queries-with-kysely.md),
+  [ticket 0002](tickets/0002-typed-queries-with-kysely.md)). `db.ts` has the tables' types (`Tables`) next to the
+  migrations; `openDatabase` still runs the migrations on `node:sqlite`, then returns a `Kysely<Tables>` (`Db`) on
+  Kysely's own SQLite dialect, through a ten-line adapter. Column lists are typed arrays with `as` aliases, so a wrong
+  column or alias fails `pnpm typecheck`. The `as` casts are gone; it found one: the stream was typed as entries with
+  a state they don't have.
+- Queries are async now, and so are the core functions that look up a workspace's worktree (`openedWorktree`,
+  `openedBefore`, `getWorkspaceRepo`). `runTurn` checks for a running turn again after its lookup.
+- Wrap-up writes its action items in a Kysely transaction; `getRound` counts the rounds in the same query it reads.
+- Checked on a copy of the real database: projects, workspaces, agent sessions, settings, a guide and round 3
+  read the same; the hand-offs of rounds 1–3, `getRound` and `getGuide` come out identical to the code before;
+  a note is added, sent by an ask and deleted; a question with a stand-in `claude` makes the round's agent session,
+  stores the answer and reuses the session; a failed transaction rolls back. A second instance on the copy shows
+  #5311's Overview, Guide (80 files) and Diff (279 files, 223 viewed) as before.
+
+### Tech debt
+
+- **`Tables` is kept in step with the migrations by hand** (ADR 0016). A migration that changes a table without
+  changing `Tables` still typechecks.
+- JSON columns (`guides.groups`, `action_items.entry_ids`) are `string` and parsed by hand.
+
 ## 2026-09-25 — Hand off a round to the agent
 
 ### What works
@@ -80,8 +105,6 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 - **Blocked tools can't be approved** (`ponytail:` on `runTurn`): what auto mode blocks stays
   blocked until L4 shows permission prompts. Planned: every agent run over ACP
   ([ADR 0018](adr/0018-agents-over-acp.md), [ticket 0004](tickets/0004-agent-sessions-over-acp.md)).
-- **Untyped queries**: 43 raw `prepare()` calls with `as` casts. Planned: Kysely
-  ([ADR 0016](adr/0016-typed-queries-with-kysely.md), [ticket 0002](tickets/0002-typed-queries-with-kysely.md)).
 - **No data cache in the UI**: panes refetch on every switch and reread through `version` counters.
   Planned: TanStack Query with `changed` events from the core
   ([ADR 0017](adr/0017-data-fetching-with-tanstack-query.md),

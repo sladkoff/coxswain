@@ -1,5 +1,5 @@
 import { type ChildProcess, spawn } from 'node:child_process'
-import type { DatabaseSync } from 'node:sqlite'
+import type { Db } from './db'
 import { type ChangedFile, diffFingerprints, listChangedFiles, openedWorktree, readFileDiff } from './git'
 
 // A guide (glossary): the workspace's file diffs in groups, each about one theme, with a title, a short description
@@ -120,9 +120,9 @@ const batchLines = 1200
 const groupLines = 3000
 const parallel = 16
 
-export function getGuideSettings(db: DatabaseSync): GuideSettings {
-  const get = (key: string) =>
-    (db.prepare('select value from settings where key = ?').get(key) as { value: string } | undefined)?.value
+export async function getGuideSettings(db: Db): Promise<GuideSettings> {
+  const rows = await db.selectFrom('settings').select(['key', 'value']).where('key', 'in', ['guide.prompt', 'guide.model', 'guide.summary-model']).execute()
+  const get = (key: string) => rows.find((r) => r.key === key)?.value
   return {
     prompt: get('guide.prompt') ?? defaultPrompt,
     model: get('guide.model') ?? '',
@@ -131,31 +131,46 @@ export function getGuideSettings(db: DatabaseSync): GuideSettings {
   }
 }
 
-export function setGuideSettings(db: DatabaseSync, s: GuideSettingsChange) {
-  const set = db.prepare(
-    'insert into settings (key, value) values (?, ?) on conflict (key) do update set value = excluded.value',
-  )
+export async function setGuideSettings(db: Db, s: GuideSettingsChange) {
+  const set = (key: string, value: string) =>
+    db
+      .insertInto('settings')
+      .values({ key, value })
+      .onConflict((oc) => oc.column('key').doUpdateSet({ value }))
+      .execute()
   // Saving the default prompt stores nothing, so a later change to the default reaches the user.
-  if (!s.prompt.trim() || s.prompt.trim() === defaultPrompt) db.prepare("delete from settings where key = 'guide.prompt'").run()
-  else set.run('guide.prompt', s.prompt.trim())
-  set.run('guide.model', s.model.trim())
-  set.run('guide.summary-model', s.summaryModel.trim())
+  if (!s.prompt.trim() || s.prompt.trim() === defaultPrompt) await db.deleteFrom('settings').where('key', '=', 'guide.prompt').execute()
+  else await set('guide.prompt', s.prompt.trim())
+  await set('guide.model', s.model.trim())
+  await set('guide.summary-model', s.summaryModel.trim())
 }
 
-const columns =
-  'id, workspace_id as workspaceId, merge_base as mergeBase, head, kind, model, groups, created_at as createdAt, started_at as startedAt, finished_at as finishedAt'
-type Row = Omit<Guide, 'groups'> & { groups: string }
-const fromRow = (r: Row): Guide => ({ ...r, groups: JSON.parse(r.groups) })
+const columns = [
+  'id',
+  'workspace_id as workspaceId',
+  'merge_base as mergeBase',
+  'head',
+  'kind',
+  'model',
+  'groups',
+  'created_at as createdAt',
+  'started_at as startedAt',
+  'finished_at as finishedAt',
+] as const
+const fromRow = <R extends { groups: string }>(r: R): Omit<R, 'groups'> & { groups: GuideGroup[] } => ({ ...r, groups: JSON.parse(r.groups) })
 
 // The workspace's latest guide: to all changes from this merge base, or to one commit. One to all changes from
 // another merge base (the PR was rebased or its base moved) doesn't match the file diffs any more, so it isn't shown.
 // ponytail: a commit guide stays even if a rebase drops the commit from the PR; check it's still in listCommits if so.
-export function getGuide(db: DatabaseSync, workspaceId: number, mergeBase: string): Guide | null {
-  const row = db
-    .prepare(
-      `select ${columns} from guides where workspace_id = ? and (kind = 'commit' or merge_base = ?) order by id desc limit 1`,
-    )
-    .get(workspaceId, mergeBase) as Row | undefined
+export async function getGuide(db: Db, workspaceId: number, mergeBase: string): Promise<Guide | null> {
+  const row = await db
+    .selectFrom('guides')
+    .select(columns)
+    .where('workspace_id', '=', workspaceId)
+    .where((eb) => eb.or([eb('kind', '=', 'commit'), eb('merge_base', '=', mergeBase)]))
+    .orderBy('id', 'desc')
+    .limit(1)
+    .executeTakeFirst()
   return row ? fromRow(row) : null
 }
 
@@ -167,7 +182,7 @@ const children = new Set<ChildProcess>()
 // Asks Claude Code for a new guide to the workspace's diff and stores it. Takes a while (tens of seconds, minutes
 // for a big PR); the guide is stored and reported once grouped, and filled in as its groups are described.
 export function createGuide(
-  db: DatabaseSync,
+  db: Db,
   workspaceId: number,
   mergeBase: string,
   head: string,
@@ -194,7 +209,7 @@ export function createGuide(
 const changedLines = (f: ChangedFile) => Math.min(f.additions + f.deletions, fileLines)
 
 async function make(
-  db: DatabaseSync,
+  db: Db,
   workspaceId: number,
   mergeBase: string,
   head: string,
@@ -202,12 +217,12 @@ async function make(
   report: (p: GuideProgress) => void,
 ): Promise<GuideResult> {
   const startedAt = new Date()
-  const cwd = openedWorktree(db, workspaceId)
+  const cwd = await openedWorktree(db, workspaceId)
   const changed = await listChangedFiles(db, workspaceId, mergeBase, head)
   if (changed.status !== 'ok') return { status: 'error', message: changed.message }
   const files = changed.files
   if (!files.length) return { status: 'error', message: 'No changes to guide' }
-  const settings = getGuideSettings(db)
+  const settings = await getGuideSettings(db)
   const number = new Map(files.map((f, i) => [f.path, i + 1]))
   const line = (f: ChangedFile) => `${number.get(f.path)}. ${f.status} +${f.additions} -${f.deletions} ${f.path}`
   // Each file's diff, read once and cut to fileLines lines.
@@ -233,11 +248,11 @@ async function make(
   // its files unsummarised.
   const fingerprints = await diffFingerprints(db, workspaceId, mergeBase, files.map((f) => f.path), head)
   const summaries = new Map<string, string>()
-  const cached = db.prepare('select path, fingerprint, summary from file_summaries where workspace_id = ?').all(workspaceId) as {
-    path: string
-    fingerprint: string
-    summary: string
-  }[]
+  const cached = await db
+    .selectFrom('file_summaries')
+    .select(['path', 'fingerprint', 'summary'])
+    .where('workspace_id', '=', workspaceId)
+    .execute()
   for (const c of cached) if (fingerprints.get(c.path) === c.fingerprint) summaries.set(c.path, c.summary)
   const todo = files.filter((f) => !summaries.has(f.path))
   const batches: ChangedFile[][] = []
@@ -247,10 +262,12 @@ async function make(
     if (!last || last.length >= batchFiles || lines + changedLines(f) > batchLines) batches.push([f])
     else last.push(f)
   }
-  const store = db.prepare(
-    `insert into file_summaries (workspace_id, path, fingerprint, summary) values (?, ?, ?, ?)
-     on conflict (workspace_id, path) do update set fingerprint = excluded.fingerprint, summary = excluded.summary`,
-  )
+  const store = (path: string, fingerprint: string, summary: string) =>
+    db
+      .insertInto('file_summaries')
+      .values({ workspace_id: workspaceId, path, fingerprint, summary })
+      .onConflict((oc) => oc.columns(['workspace_id', 'path']).doUpdateSet({ fingerprint, summary }))
+      .execute()
   let summaryModel: string | null = null
   let summarised = 0
   report({ phase: 'summarising', done: 0, total: batches.length, guide: null })
@@ -265,7 +282,7 @@ async function make(
       const f = batch.find((g) => number.get(g.path) === a.file)
       if (!f) continue
       summaries.set(f.path, String(a.summary))
-      store.run(workspaceId, f.path, fingerprints.get(f.path)!, String(a.summary))
+      await store(f.path, fingerprints.get(f.path)!, String(a.summary))
     }
     summaryModel ??= out?.model ?? null
     report({ phase: 'summarising', done: ++summarised, total: batches.length, guide: null })
@@ -304,12 +321,21 @@ async function make(
   const model = [grouped.model ?? (settings.model || 'unknown'), summaryModel && `summaries by ${summaryModel}`]
     .filter(Boolean)
     .join(', ')
-  let guide = fromRow(
-    db
-      .prepare(
-        `insert into guides (workspace_id, merge_base, head, kind, model, groups, created_at, started_at) values (?, ?, ?, ?, ?, ?, ?, ?) returning ${columns}`,
-      )
-      .get(workspaceId, mergeBase, head, kind, model, JSON.stringify(groups), new Date().toISOString(), startedAt.toISOString()) as Row,
+  let guide: Guide = fromRow(
+    await db
+      .insertInto('guides')
+      .values({
+        workspace_id: workspaceId,
+        merge_base: mergeBase,
+        head,
+        kind,
+        model,
+        groups: JSON.stringify(groups),
+        created_at: new Date().toISOString(),
+        started_at: startedAt.toISOString(),
+      })
+      .returning(columns)
+      .executeTakeFirstOrThrow(),
   )
   const groupedAt = new Date()
 
@@ -348,13 +374,13 @@ async function make(
           if (p && group.paths.includes(p)) notes[p] = String(n.note)
         }
         guide = { ...guide, groups: guide.groups.map((g, j) => (j === i ? { ...g, description: String(d.description), notes } : g)) }
-        db.prepare('update guides set groups = ? where id = ?').run(JSON.stringify(guide.groups), guide.id)
+        await db.updateTable('guides').set({ groups: JSON.stringify(guide.groups) }).where('id', '=', guide.id).execute()
       }
       report({ phase: 'describing', done: ++described, total: groups.length, guide })
     },
   )
   const finishedAt = new Date()
-  db.prepare('update guides set finished_at = ? where id = ?').run(finishedAt.toISOString(), guide.id)
+  await db.updateTable('guides').set({ finished_at: finishedAt.toISOString() }).where('id', '=', guide.id).execute()
   guide = { ...guide, finishedAt: finishedAt.toISOString() }
   const s = (a: Date, b: Date) => `${Math.round((b.getTime() - a.getTime()) / 1000)} s`
   console.log(
