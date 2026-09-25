@@ -13,7 +13,8 @@ export type ItemCount = { notes: number; questions: number }
 export function countItems(entries: ReviewEntry[]): Map<string, ItemCount> {
   const counts = new Map<string, ItemCount>()
   for (const e of entries) {
-    if (!e.path || e.parentId) continue
+    // Only what's about the code on screen (ADR 0015): not outdated or wrapped-up entries.
+    if (!e.path || e.parentId || e.state !== 'current') continue
     const c = counts.get(e.path) ?? { notes: 0, questions: 0 }
     if (e.kind === 'note') c.notes++
     if (e.kind === 'question') c.questions++

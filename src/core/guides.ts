@@ -1,6 +1,6 @@
 import { type ChildProcess, spawn } from 'node:child_process'
 import type { DatabaseSync } from 'node:sqlite'
-import { type ChangedFile, diffFingerprint, listChangedFiles, openedWorktree, readFileDiff } from './git'
+import { type ChangedFile, diffFingerprints, listChangedFiles, openedWorktree, readFileDiff } from './git'
 
 // A guide (glossary): the workspace's file diffs in groups, each about one theme, with a title, a short description
 // of what the reviewer is looking at, and a note on each file diff. Made by Claude Code; stored, since nobody else has it.
@@ -10,13 +10,17 @@ export type GuideGroup = { title: string; description: string; paths: string[]; 
 // low-lighted and comes last.
 export const guideTags = ['generated'] as const
 export type GuideTag = (typeof guideTags)[number]
-// model: the models that made it, as Claude Code reported them. mergeBase: the diff it was made from.
+// model: the models that made it, as Claude Code reported them. The diff it was made from (ADR 0014): kind 'all' is
+// the merge base → the PR head then (head; null for a guide from before, which shows the live diff), kind 'commit'
+// one commit's diff, mergeBase being the commit's parent.
 // createdAt: when it was grouped and first stored. finishedAt: null while its groups are still being described, or
 // if that was cut off (the app quit).
 export type Guide = {
   id: number
   workspaceId: number
   mergeBase: string
+  head: string | null
+  kind: 'all' | 'commit'
   model: string
   groups: GuideGroup[]
   createdAt: string
@@ -139,15 +143,18 @@ export function setGuideSettings(db: DatabaseSync, s: GuideSettingsChange) {
 }
 
 const columns =
-  'id, workspace_id as workspaceId, merge_base as mergeBase, model, groups, created_at as createdAt, started_at as startedAt, finished_at as finishedAt'
+  'id, workspace_id as workspaceId, merge_base as mergeBase, head, kind, model, groups, created_at as createdAt, started_at as startedAt, finished_at as finishedAt'
 type Row = Omit<Guide, 'groups'> & { groups: string }
 const fromRow = (r: Row): Guide => ({ ...r, groups: JSON.parse(r.groups) })
 
-// The latest guide to the workspace's diff from this merge base. One from another merge base (the PR was rebased
-// or its base moved) doesn't match the file diffs any more, so it isn't shown.
+// The workspace's latest guide: to all changes from this merge base, or to one commit. One to all changes from
+// another merge base (the PR was rebased or its base moved) doesn't match the file diffs any more, so it isn't shown.
+// ponytail: a commit guide stays even if a rebase drops the commit from the PR; check it's still in listCommits if so.
 export function getGuide(db: DatabaseSync, workspaceId: number, mergeBase: string): Guide | null {
   const row = db
-    .prepare(`select ${columns} from guides where workspace_id = ? and merge_base = ? order by id desc limit 1`)
+    .prepare(
+      `select ${columns} from guides where workspace_id = ? and (kind = 'commit' or merge_base = ?) order by id desc limit 1`,
+    )
     .get(workspaceId, mergeBase) as Row | undefined
   return row ? fromRow(row) : null
 }
@@ -163,6 +170,8 @@ export function createGuide(
   db: DatabaseSync,
   workspaceId: number,
   mergeBase: string,
+  head: string,
+  kind: Guide['kind'],
   onProgress: (p: GuideProgress) => void,
 ): Promise<GuideResult> {
   let run = making.get(workspaceId)
@@ -172,7 +181,7 @@ export function createGuide(
       r.progress = p
       for (const l of r.listeners) l(p)
     }
-    r.result = make(db, workspaceId, mergeBase, report)
+    r.result = make(db, workspaceId, mergeBase, head, kind, report)
       .catch((e): GuideResult => ({ status: 'error', message: (e as Error).message }))
       .finally(() => making.delete(workspaceId))
     making.set(workspaceId, (run = r))
@@ -188,11 +197,13 @@ async function make(
   db: DatabaseSync,
   workspaceId: number,
   mergeBase: string,
+  head: string,
+  kind: Guide['kind'],
   report: (p: GuideProgress) => void,
 ): Promise<GuideResult> {
   const startedAt = new Date()
   const cwd = openedWorktree(db, workspaceId)
-  const changed = await listChangedFiles(db, workspaceId, mergeBase)
+  const changed = await listChangedFiles(db, workspaceId, mergeBase, head)
   if (changed.status !== 'ok') return { status: 'error', message: changed.message }
   const files = changed.files
   if (!files.length) return { status: 'error', message: 'No changes to guide' }
@@ -204,7 +215,7 @@ async function make(
   const diffOf = (f: ChangedFile) => {
     let d = diffs.get(f.path)
     if (!d) {
-      d = readFileDiff(db, workspaceId, mergeBase, f).then(
+      d = readFileDiff(db, workspaceId, mergeBase, f, head).then(
         (text) => {
           const lines = text.split('\n')
           return lines.length <= fileLines ? text : `${lines.slice(0, fileLines).join('\n')}\n… ${lines.length - fileLines} more lines`
@@ -220,7 +231,7 @@ async function make(
   // 1. Summarise: a sentence about each file, a batch per agent, several at once. A summary is kept while its
   // file diff is unchanged, so Regenerate and a PR that moved on only summarise what's new. A failed batch leaves
   // its files unsummarised.
-  const fingerprints = new Map(files.map((f) => [f.path, diffFingerprint(db, workspaceId, mergeBase, f.path)]))
+  const fingerprints = await diffFingerprints(db, workspaceId, mergeBase, files.map((f) => f.path), head)
   const summaries = new Map<string, string>()
   const cached = db.prepare('select path, fingerprint, summary from file_summaries where workspace_id = ?').all(workspaceId) as {
     path: string
@@ -296,9 +307,9 @@ async function make(
   let guide = fromRow(
     db
       .prepare(
-        `insert into guides (workspace_id, merge_base, model, groups, created_at, started_at) values (?, ?, ?, ?, ?, ?) returning ${columns}`,
+        `insert into guides (workspace_id, merge_base, head, kind, model, groups, created_at, started_at) values (?, ?, ?, ?, ?, ?, ?, ?) returning ${columns}`,
       )
-      .get(workspaceId, mergeBase, model, JSON.stringify(groups), new Date().toISOString(), startedAt.toISOString()) as Row,
+      .get(workspaceId, mergeBase, head, kind, model, JSON.stringify(groups), new Date().toISOString(), startedAt.toISOString()) as Row,
   )
   const groupedAt = new Date()
 

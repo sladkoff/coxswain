@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { AgentSession, ChatEntry, TurnResult } from '../core/agents'
-import type { ChangedFileList, CloneResult, FileText, FileTreeResult, WorktreeResult } from '../core/git'
+import type { ChangedFileList, CloneResult, Commit, FileText, FileTreeResult, WorktreeResult } from '../core/git'
 import type { CurrentUser, PullRequestList, PullRequestOverview, RepoPage } from '../core/github'
 import type { Guide, GuideProgress, GuideResult, GuideSettings, GuideSettingsChange } from '../core/guides'
 import type { Project } from '../core/projects'
@@ -27,8 +27,9 @@ const api = {
   openedBefore: (workspaceId: number): Promise<WorktreeResult | null> =>
     ipcRenderer.invoke('git:opened-before', workspaceId),
   openWorktree: (workspaceId: number): Promise<WorktreeResult> => ipcRenderer.invoke('git:open-worktree', workspaceId),
-  listChangedFiles: (workspaceId: number, mergeBase: string): Promise<ChangedFileList> =>
-    ipcRenderer.invoke('git:changed-files', workspaceId, mergeBase),
+  // With head: a commit diff, mergeBase being the commit's parent.
+  listChangedFiles: (workspaceId: number, mergeBase: string, head?: string): Promise<ChangedFileList> =>
+    ipcRenderer.invoke('git:changed-files', workspaceId, mergeBase, head),
   listWorktreeFiles: (workspaceId: number): Promise<FileTreeResult> => ipcRenderer.invoke('git:worktree-files', workspaceId),
   readWorktreeFile: (workspaceId: number, path: string): Promise<FileText> =>
     ipcRenderer.invoke('git:read-worktree-file', workspaceId, path),
@@ -43,8 +44,9 @@ const api = {
   // An ask: the notes go in front of the message, and a handed-off round's action items in front of them.
   runTurn: (agentSessionId: string, message: string, noteIds: number[], roundId?: number): Promise<TurnResult> =>
     ipcRenderer.invoke('agents:run-turn', agentSessionId, message, noteIds, roundId),
-  // The current review round's entries (ADR 0011).
-  listEntries: (workspaceId: number): Promise<ReviewEntry[]> => ipcRenderer.invoke('review:list', workspaceId),
+  // The latest round's entries, each current, outdated or wrapped up in the view of base → head (ADR 0015).
+  listEntries: (workspaceId: number, base: string, head?: string): Promise<ReviewEntry[]> =>
+    ipcRenderer.invoke('review:list', workspaceId, base, head),
   addNote: (note: NewEntry): Promise<ReviewEntry> => ipcRenderer.invoke('review:add-note', note),
   deleteEntry: (id: number): Promise<void> => ipcRenderer.invoke('review:delete', id),
   askQuestion: (question: NewEntry): Promise<ReviewEntry> => ipcRenderer.invoke('review:ask', question),
@@ -65,14 +67,16 @@ const api = {
     ipcRenderer.on('review:turn-end', listener)
     return () => void ipcRenderer.off('review:turn-end', listener)
   },
-  listViewed: (workspaceId: number, mergeBase: string): Promise<string[]> =>
-    ipcRenderer.invoke('viewed:list', workspaceId, mergeBase),
-  setViewed: (workspaceId: number, mergeBase: string, path: string, viewed: boolean): Promise<void> =>
-    ipcRenderer.invoke('viewed:set', workspaceId, mergeBase, path, viewed),
+  // head: a pinned range (a guide); without it, the worktree (ADR 0014).
+  listViewed: (workspaceId: number, mergeBase: string, head?: string): Promise<string[]> =>
+    ipcRenderer.invoke('viewed:list', workspaceId, mergeBase, head),
+  setViewed: (workspaceId: number, mergeBase: string, path: string, viewed: boolean, head?: string): Promise<void> =>
+    ipcRenderer.invoke('viewed:set', workspaceId, mergeBase, path, viewed, head),
   getGuide: (workspaceId: number, mergeBase: string): Promise<Guide | null> =>
     ipcRenderer.invoke('guides:get', workspaceId, mergeBase),
-  createGuide: (workspaceId: number, mergeBase: string): Promise<GuideResult> =>
-    ipcRenderer.invoke('guides:create', workspaceId, mergeBase),
+  // A guide to mergeBase → head (ADR 0014): all changes up to the PR head, or one commit, mergeBase being its parent.
+  createGuide: (workspaceId: number, mergeBase: string, head: string, kind: 'all' | 'commit'): Promise<GuideResult> =>
+    ipcRenderer.invoke('guides:create', workspaceId, mergeBase, head, kind),
   onGuideProgress: (callback: (workspaceId: number, progress: GuideProgress) => void) => {
     const listener = (_: unknown, id: number, p: GuideProgress) => callback(id, p)
     ipcRenderer.on('guides:progress', listener)
@@ -91,6 +95,9 @@ const api = {
   showNavigatorMenu: (settings: NavigatorSettings): Promise<NavigatorSettings> =>
     ipcRenderer.invoke('menus:navigator', settings),
   showViewMenu: (settings: ViewSettings): Promise<ViewSettings> => ipcRenderer.invoke('menus:view', settings),
+  // The Diff tab's commits: resolves with the commit picked, or null for all changes.
+  showCommitsMenu: (workspaceId: number, mergeBase: string, current: string | null): Promise<Commit | null> =>
+    ipcRenderer.invoke('menus:commits', workspaceId, mergeBase, current),
   onToggleNavigator: (callback: () => void) => {
     const listener = () => callback()
     ipcRenderer.on('toggle-navigator', listener)

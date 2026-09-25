@@ -1,28 +1,33 @@
 import { Virtualizer } from '@pierre/diffs/react'
-import { type ComponentProps, type UIEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { type ComponentProps, type UIEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangedFile } from '../../core/git'
 import type { Guide as GuideData, GuideGroup, GuideProgress } from '../../core/guides'
+import type { ReviewEntry } from '../../core/review'
 import type { Workspace } from '../../core/workspaces'
-import { button, countItems, itemsTitle, muted, Prose } from './ui'
+import { button, countItems, itemsTitle, muted, primaryButton, Prose } from './ui'
 import { Viewer } from './Viewer'
 
 type Diff = { kind: 'diff'; file: ChangedFile }
 type Props = {
   workspace: Workspace
   mergeBase: string
-  diffs: Diff[] // memoised by the parent, so the Viewers don't reread
-  viewed: string[]
+  prHead: string // what a new guide to all changes is pinned to, and what an old one is stale against
+  diffs: Diff[] // the live diff, for a guide from before pinning; memoised by the parent, so the Viewers don't reread
+  viewed: string[] // the live diff's, likewise
   onViewedChange: (path: string, viewed: boolean) => void
   showViewed: boolean
   onShowViewed: () => void
   viewer: Omit<ComponentProps<typeof Viewer>, 'opened' | 'stacked'>
 }
 
-type State = { kind: 'loading' } | { kind: 'creating' } | { kind: 'ok'; guide: GuideData } | { kind: 'error'; message: string }
+type State = { kind: 'loading' } | { kind: 'none' } | { kind: 'creating' } | { kind: 'ok'; guide: GuideData } | { kind: 'error'; message: string }
 
 // The Guide tab: the workspace's file diffs in groups made by the agent, each with a title and what to look at.
-// Opens the stored guide; makes one the first time.
-export function Guide({ workspace, mergeBase, diffs, viewed, onViewedChange, showViewed, onShowViewed, viewer }: Props) {
+// Opens the stored guide; without one, offers to make it (it takes minutes and costs tokens, so not on open).
+// Making one first asks what to guide, in the same native menu as the Diff tab's Commits: all changes or one commit.
+// A guide is pinned to the range it was made from (ADR 0014): its file diffs and Viewed are read there, not live.
+export function Guide(props: Props) {
+  const { workspace, mergeBase, prHead, diffs, showViewed, onShowViewed, viewer } = props
   const [state, setState] = useState<State>({ kind: 'loading' })
   // Viewed file diffs, and groups whose file diffs are all viewed, are hidden unless shown (the tab bar's cog menu).
   // The group at the top of the scroll, marked in the table of contents.
@@ -37,10 +42,16 @@ export function Guide({ workspace, mergeBase, diffs, viewed, onViewedChange, sho
   }, [pending, showViewed])
   // Bumped when the workspace changes or the tab closes, so a guide that arrives late is dropped.
   const request = useRef(0)
-  const create = () => {
+  const create = async () => {
     const r = request.current
+    const current = state.kind === 'ok' && state.guide.kind === 'commit' ? state.guide.head : null
+    const picked = await window.coxswain.showCommitsMenu(workspace.id, mergeBase, current)
+    if (r !== request.current) return
     setState({ kind: 'creating' })
-    window.coxswain.createGuide(workspace.id, mergeBase).then((g) => {
+    const made = picked
+      ? window.coxswain.createGuide(workspace.id, picked.parent, picked.sha, 'commit')
+      : window.coxswain.createGuide(workspace.id, mergeBase, prHead, 'all')
+    made.then((g) => {
       if (r === request.current) setState(g.status === 'ok' ? { kind: 'ok', guide: g.guide } : { kind: 'error', message: g.message })
     })
   }
@@ -49,8 +60,7 @@ export function Guide({ workspace, mergeBase, diffs, viewed, onViewedChange, sho
     setState({ kind: 'loading' })
     window.coxswain.getGuide(workspace.id, mergeBase).then((guide) => {
       if (r !== request.current) return
-      if (guide) setState({ kind: 'ok', guide })
-      else create()
+      setState(guide ? { kind: 'ok', guide } : { kind: 'none' })
     })
     return () => void request.current++
   }, [workspace.id, mergeBase])
@@ -63,19 +73,68 @@ export function Guide({ workspace, mergeBase, diffs, viewed, onViewedChange, sho
     return window.coxswain.onGuideProgress((id, p) => {
       if (id !== workspace.id) return
       setProgress(p)
+      // A guide already being made (started before the tab opened) shows its progress.
+      setState((s) => (s.kind === 'none' ? { kind: 'creating' } : s))
       const g = p.guide
       if (g)
         setState((s) => (s.kind === 'creating' || (s.kind === 'ok' && s.guide.id === g.id) ? { kind: 'ok', guide: g } : s))
     })
   }, [workspace.id])
 
+  // A guide to one commit shows that commit's file diffs, read at the commit, in place of all changes.
+  const head = state.kind === 'ok' ? state.guide.head : null
+  const base = state.kind === 'ok' ? state.guide.mergeBase : mergeBase
+  const [commitDiffs, setCommitDiffs] = useState<Diff[] | null>(null)
+  useEffect(() => {
+    setCommitDiffs(null)
+    if (!head) return
+    let stale = false
+    window.coxswain.listChangedFiles(workspace.id, base, head).then((c) => {
+      if (!stale) setCommitDiffs(c.status === 'ok' ? c.files.map((file) => ({ kind: 'diff' as const, file })) : [])
+    })
+    return () => void (stale = true)
+  }, [workspace.id, base, head])
+  const guideDiffs = head ? commitDiffs : diffs
+  // Viewed at the guide's head: stays as it was when the code moves on, and carries over to a new guide for file
+  // diffs that didn't change.
+  const [pinnedViewed, setPinnedViewed] = useState<string[]>([])
+  useEffect(() => {
+    setPinnedViewed([])
+    if (!head) return
+    let stale = false
+    window.coxswain.listViewed(workspace.id, base, head).then((v) => !stale && setPinnedViewed(v))
+    return () => void (stale = true)
+  }, [workspace.id, base, head])
+  const viewed = head ? pinnedViewed : props.viewed
+  const onViewedChange = useCallback(
+    (path: string, on: boolean) => {
+      if (!head) return props.onViewedChange(path, on)
+      setPinnedViewed((v) => (on ? [...v, path] : v.filter((p) => p !== path)))
+      window.coxswain.setViewed(workspace.id, base, path, on, head)
+    },
+    [workspace.id, base, head, props.onViewedChange],
+  )
+  // The round's entries as they stand in the guide's range (ADR 0015); reread whenever the parent's list changes.
+  const [pinnedEntries, setPinnedEntries] = useState<ReviewEntry[]>([])
+  useEffect(() => {
+    if (!head) return
+    let stale = false
+    window.coxswain.listEntries(workspace.id, base, head).then((e) => !stale && setPinnedEntries(e))
+    return () => void (stale = true)
+  }, [workspace.id, base, head, viewer.entries])
+  const entries = head ? pinnedEntries : viewer.entries
+  const guideViewer = useMemo(
+    () => (head ? { ...viewer, mergeBase: base, head, viewed, onViewedChange, entries } : viewer),
+    [viewer, base, head, viewed, onViewedChange, entries],
+  )
+
   // The guide's groups with the file diffs as they are now, plus the changed files it doesn't mention (changed
   // since it was made, e.g. by an agent), before the generated groups, which stay last. Files no longer changed drop out.
   const groups = useMemo(() => {
-    if (state.kind !== 'ok') return []
-    const byPath = new Map(diffs.map((d) => [d.file.path, d]))
+    if (state.kind !== 'ok' || !guideDiffs) return []
+    const byPath = new Map(guideDiffs.map((d) => [d.file.path, d]))
     const listed = new Set(state.guide.groups.flatMap((g) => g.paths))
-    const rest = diffs.filter((d) => !listed.has(d.file.path))
+    const rest = guideDiffs.filter((d) => !listed.has(d.file.path))
     const withDiffs = (g: GuideGroup) => ({ ...g, diffs: g.paths.flatMap((p) => byPath.get(p) ?? []) })
     return [
       ...state.guide.groups.map(withDiffs),
@@ -85,9 +144,18 @@ export function Guide({ workspace, mergeBase, diffs, viewed, onViewedChange, sho
     ]
       .sort((a, b) => Number(generated(a)) - Number(generated(b)))
       .filter((g) => g.diffs.length)
-  }, [state, diffs])
+  }, [state, guideDiffs])
 
   if (state.kind === 'loading') return null // local and near-instant
+  if (state.kind === 'none')
+    return (
+      <div className={`flex flex-1 flex-col items-center justify-center gap-2 text-xs ${muted}`}>
+        <span>No guide yet. Claude Code groups the file diffs by theme and says what to look at.</span>
+        <button className={primaryButton} onClick={create}>
+          Create guide
+        </button>
+      </div>
+    )
   if (state.kind === 'creating')
     return (
       <div className={`flex flex-1 items-center justify-center text-xs ${muted}`}>
@@ -108,7 +176,7 @@ export function Guide({ workspace, mergeBase, diffs, viewed, onViewedChange, sho
   const describing = progress?.phase === 'describing' && progress.guide?.id === guide.id && progress.done < progress.total
   const all = groups.flatMap((g) => g.diffs)
   const viewedCount = all.filter((d) => viewed.includes(d.file.path)).length
-  const items = countItems(viewer.entries)
+  const items = countItems(entries)
   const shown = groups
     .map((g, i) => ({ ...g, i, shown: showViewed ? g.diffs : g.diffs.filter((d) => !viewed.includes(d.file.path)) }))
     .filter((g) => g.shown.length)
@@ -169,10 +237,19 @@ export function Guide({ workspace, mergeBase, diffs, viewed, onViewedChange, sho
         })}
       </nav>
       <div className="flex min-w-0 flex-1 flex-col" onScrollCapture={onScroll}>
+        {/* Stale (ADR 0014): the PR moved on since the guide was made. The guide stays as it was. */}
+        {guide.kind === 'all' && guide.head && guide.head !== prHead && (
+          <div className="flex shrink-0 items-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-1.5 text-xs dark:border-amber-900 dark:bg-amber-950">
+            <span>The PR has new commits since this guide. It still shows the PR as it was.</span>
+            <button className={`${button} text-xs`} onClick={create}>
+              Regenerate
+            </button>
+          </div>
+        )}
         <Virtualizer className="min-h-0 flex-1 overflow-auto">
           <div className={`flex items-center gap-2 px-4 pt-3 text-xs ${muted}`}>
             <span>
-              Made by {guide.model} on {new Date(guide.finishedAt ?? guide.createdAt).toLocaleString()}
+              {guide.kind === 'commit' ? `Commit ${guide.head!.slice(0, 7)}` : `All changes${guide.head ? ` at ${guide.head.slice(0, 7)}` : ''}`} · Made by {guide.model} on {new Date(guide.finishedAt ?? guide.createdAt).toLocaleString()}
               {guide.startedAt && guide.finishedAt && ` in ${duration(guide.startedAt, guide.finishedAt)}`}
               {!guide.finishedAt &&
                 (describing ? `, describing groups: ${progress.done} of ${progress.total}…` : ', unfinished: some groups have no description')}
@@ -223,7 +300,7 @@ export function Guide({ workspace, mergeBase, diffs, viewed, onViewedChange, sho
                         <Prose>{g.notes[d.file.path]}</Prose>
                       </div>
                     )}
-                    <Viewer stacked opened={d} {...viewer} />
+                    <Viewer stacked opened={d} {...guideViewer} />
                   </div>
                 ))}
               </section>

@@ -26,12 +26,57 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
   React never deleted the old Guide's DOM. Found by driving a second instance over the Chrome
   DevTools protocol (`--remote-debugging-port`); checked the same way after the fix: one Guide on
   Guide, none on Diff or Overview.
+- **Commits in the Diff tab**: *Commits* next to *Files* opens a native menu of the commits from
+  the merge base to HEAD (`listCommits`); picking one shows its commit diff (first parent → commit;
+  `listChangedFiles` takes a `head`, and the Viewer reads the new side at it). Checked on #5311: a
+  commit's 80 files match `git diff`, and the button shows. The menu itself wasn't clicked (a native
+  menu can't be driven over the DevTools protocol).
+- **The guide is made on request**: without a stored guide, the Guide tab shows *Create guide*
+  instead of starting one on open. A guide already being made still shows its progress.
+- **A guide to one commit**: *Create guide* and *Regenerate* first open the Commits menu, *All
+  Changes* or one commit. A commit guide is made from its commit diff (migration 13: `guides.head`,
+  with `merge_base` the commit's parent; `readFileDiff` and `diffFingerprints` take a `head`), and the
+  Guide tab shows it with that commit's file diffs, its header saying *Commit abc1234* or *All
+  changes*. The tab shows the latest guide of either kind. Checked with a hand-made commit guide on a
+  copy of the database: the commit's 80 files, 2 in its group and 78 under *Not in the guide*.
+- Dropdown buttons have no ▾.
+- **Guides are pinned to the PR head** ([ADR 0014](adr/0014-guides-pinned-to-the-pr-head.md)): a new
+  guide to all changes covers the merge base → the PR head (migration 14: `guides.kind`, and `head`
+  set for both kinds) and reads its file diffs there, so an agent's local edits don't show in it.
+  When the PR head moves on, an amber bar says the guide is stale, with *Regenerate*. **Viewed
+  belongs to file diff contents**: in a pinned guide it's read at the guide's head
+  (`diffFingerprints`, one `git cat-file --batch`), in the Diff tab from the worktree; `viewed_files`
+  keeps a row per fingerprint. File summaries use the same fingerprint. Checked on a copy of the
+  database with #5311: a guide pinned at the head before the agent's commit shows 297 of 297 viewed
+  and the stale bar; the live Diff tab shows 223 of 279; a guide at the new head would start at 223.
+  Guides from before keep showing the live diff.
+- **Entries record where they were written, and go outdated**
+  ([ADR 0015](adr/0015-entries-pinned-and-outdated.md)). Migration 15: `entries.base`/`head` and
+  `review_rounds.merge_base`/`head`. `listEntries` takes the view's range and gives each entry a
+  state: current (its lines still read as its code), outdated, or wrapped-up. Only current entries
+  show between the lines and in the ✎ counts; a file diff's header opens its *N outdated*. A
+  wrapped-up round's entries leave the views; the Round bar still counts them. Prompts say "as at
+  commit abc1234" for entries made on a pinned range.
 
 ### Tech debt
 
 - **A hand-off isn't recorded** (`ponytail:` on `formatHandOff`): the items don't know they were
   sent, and the button offers it again. Add `handed_off_at` when it matters.
 - **All items or none**: no picking single items; delete the others in the draft first.
+- **Notes on a commit diff** keep the commit's line numbers but say "as in the worktree then", and
+  *Viewed* in a commit diff marks the file viewed for all changes (`ponytail:` on the Viewer's
+  `head`). Anchor entries to the commit if that misleads.
+- **A wrapped-up round with no action items can't be read again** (ADR 0015 hides wrapped-up rounds):
+  [ticket 0001](tickets/0001-read-a-wrapped-up-round.md).
+- **Guide and Diff tab can disagree** on a file with local changes: viewed in one, not the other
+  (ADR 0014). Local changes get no guide or "changes since" yet.
+- **Guides from before pinning** have no head and keep the old live behaviour until regenerated.
+- **Old viewed rows stay** (`ponytail:` in `viewed.ts`).
+- **Commit guides don't expire** (`ponytail:` on `getGuide`): one stays even if a rebase drops its
+  commit from the PR.
+- **Summaries are cached per file**, not per diff, so guides to a commit and to all changes evict
+  each other's summaries and re-summarise those files (Haiku calls) when they alternate.
+- **A merge commit's diff** is against its first parent, so it shows everything merged in.
 - **Blocked tools can't be approved** (`ponytail:` on `runTurn`): what auto mode blocks stays
   blocked until L4 shows permission prompts (`--permission-prompt-tool`).
 - **The whole stream goes along**, answers in full. Fine for a round; trim if long rounds crowd the

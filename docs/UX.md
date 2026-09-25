@@ -52,10 +52,16 @@ then the workspace's files, the work in the middle and the agents on the right.
   workspace opens on), *Guide* and *Diff*, all file diffs side by side one after
   another, with the Navigator on their left. Selecting a file in *Diffs* scrolls to its file diff;
   selecting one in *Files* shows the whole file in their place, until the toggle goes back to *Diffs*. Under the tabs, a second bar
-  that stays put holds the current tab's options. On *Guide* and *Diff* it has a cog button that
+  that stays put holds the current tab's options. On *Diff*, next to *Files*, *Commits* opens a
+  native menu: *All Changes*, or one of the PR's commits (and local ones on top), newest first.
+  Picking a commit shows its commit diff in the Navigator and the file diffs, and the button then
+  names the commit; the Guide keeps all changes. On *Guide* and *Diff* it has a cog button that
   opens a native menu: *Unified* or *Split* file diffs, and *Show Viewed Files*, shared by the
   Navigator and the Guide. A file diff's header has a
-  *Viewed* checkbox. Entries of the current review round (glossary) go between the lines: hovering
+  *Viewed* checkbox. Entries of the current review round (glossary) go between the lines while
+  they're current, i.e. their lines still read as the code they were written on; the header says *N
+  outdated* for the others, and a click shows them above the file diff with that code. A wrapped-up
+  round's entries don't show. Hovering
   a line shows a `+` in the gutter; clicking it (or dragging it over a range) opens a box with two
   actions. *Note* (⌘Enter) saves a note. A saved note has *Send to agent*, which puts it in the L4
   message box, and shows *Sent to agent* once an ask included it. *Ask agent* (⇧⌘Enter) asks a
@@ -83,12 +89,17 @@ then the workspace's files, the work in the middle and the agents on the right.
   group being read as you scroll, and jumps to a group when clicked (showing viewed ones if it's
   hidden). Above it, a bar of how many file diffs are viewed in all. Changed files the guide doesn't mention (changed since it was
   made) come next, under *Not in the guide*. Groups tagged *generated* (glossary) come last, low-lighted, their title
-  marked *Generated*. The first time the tab opens it shows an approximate progress
+  marked *Generated*. Without a guide the tab offers *Create guide*; it isn't made on its own,
+  since it takes minutes and costs tokens. *Create guide* and *Regenerate* open the Commits menu
+  first: *All Changes*, or one commit for a guide to its commit diff. While it's made the tab shows an approximate progress
   bar while Claude Code summarises and groups the files, labelled
   *Summarising files: N of M batches* and then *Grouping files…*. The guide then shows right away,
   its groups reading *Describing…* until their descriptions and file notes arrive, and the top says
-  *describing groups: N of M*. After that the stored guide shows at once. At the top: which models
-  made it, when, how long it took, and *Regenerate*. The prompt, the model and the summary model are in Settings, under *Guide*.
+  *describing groups: N of M*. After that the stored guide shows at once. At the top: what it's
+  to (*All changes* or *Commit abc1234*), which models made it, when, how long it took, and
+  *Regenerate*. A guide shows the PR as it was when made, and its *Viewed* ticks stay as they were;
+  once the PR has new commits, an amber bar above it says so, with *Regenerate*. A new guide keeps the
+  ticks of file diffs that didn't change. The prompt, the model and the summary model are in Settings, under *Guide*.
 - **L4 — Agents** on the right: the agent sessions of the current workspace. Hidden at first. The *Agent* toggle at the right of
   each tab's bar, *View > Toggle Agents* or ⌥⌘B shows and hides it. *Send to agent* shows it. Several can be open at
   once, e.g. as tabs in the pane. For now L4 is a chat with the workspace's latest agent session:

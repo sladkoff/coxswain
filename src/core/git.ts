@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -21,6 +21,8 @@ export type ChangedFile = {
 
 export type ChangedFileList = { status: 'ok'; files: ChangedFile[] } | GitProblem
 export type FileTreeResult = { status: 'ok'; paths: string[] } | GitProblem
+// A commit of the PR, or a local one on top. parent: its first parent, the old side of its commit diff.
+export type Commit = { sha: string; parent: string; subject: string }
 // text is null when the file doesn't exist on that side or is binary.
 export type FileText = { status: 'ok'; text: string | null; binary: boolean } | GitProblem
 export type CloneResult = { status: 'ok' } | GitProblem | GitHubProblem
@@ -165,17 +167,35 @@ export function openedWorktree(db: DatabaseSync, workspaceId: number): string {
 const isCommit = (s: string) => /^[0-9a-f]{40}$/.test(s)
 
 // Everything that differs between the merge base and the worktree: the PR's commits, and local commits,
-// uncommitted and untracked files.
-export function listChangedFiles(db: DatabaseSync, workspaceId: number, mergeBase: string): Promise<ChangedFileList> {
+// uncommitted and untracked files. With head, only what differs between the two commits (a commit diff).
+export function listChangedFiles(db: DatabaseSync, workspaceId: number, mergeBase: string, head?: string): Promise<ChangedFileList> {
   return withGit(async () => {
     if (!isCommit(mergeBase)) throw new GitError(`Not a commit: ${mergeBase}`)
+    if (head !== undefined && !isCommit(head)) throw new GitError(`Not a commit: ${head}`)
     const path = openedWorktree(db, workspaceId)
+    const range = head ? [mergeBase, head] : [mergeBase]
     const [names, counts, untracked] = await Promise.all([
-      gitText(path, ['diff', '-M', '-z', '--name-status', mergeBase]),
-      gitText(path, ['diff', '-M', '-z', '--numstat', mergeBase]),
-      gitText(path, ['ls-files', '-z', '--others', '--exclude-standard']),
+      gitText(path, ['diff', '-M', '-z', '--name-status', ...range]),
+      gitText(path, ['diff', '-M', '-z', '--numstat', ...range]),
+      head ? '' : gitText(path, ['ls-files', '-z', '--others', '--exclude-standard']),
     ])
     return { status: 'ok' as const, files: parseChanges(names, counts, untracked, (p) => countLines(join(path, p))) }
+  })
+}
+
+// The commits from the merge base to the worktree's HEAD, newest first.
+export function listCommits(db: DatabaseSync, workspaceId: number, mergeBase: string): Promise<{ status: 'ok'; commits: Commit[] } | GitProblem> {
+  return withGit(async () => {
+    if (!isCommit(mergeBase)) throw new GitError(`Not a commit: ${mergeBase}`)
+    const out = await gitText(openedWorktree(db, workspaceId), ['log', '-z', '--format=%H%x1f%P%x1f%s', `${mergeBase}..HEAD`])
+    const commits = out
+      .split('\0')
+      .filter(Boolean)
+      .map((l) => {
+        const [sha, parents, subject] = l.split('\x1f')
+        return { sha, parent: parents.split(' ')[0], subject }
+      })
+    return { status: 'ok' as const, commits }
   })
 }
 
@@ -247,24 +267,80 @@ export function readWorktreeFile(db: DatabaseSync, workspaceId: number, file: st
   })
 }
 
-// Identifies a file diff as it is now: the merge base (the old side) and the worktree file (the new side).
-// Changes when either does, e.g. after an agent's edit or new commits on the PR.
-export function diffFingerprint(db: DatabaseSync, workspaceId: number, mergeBase: string, file: string): string {
+// Identifies file diffs by their contents: the old side (base) and the new side's bytes, from the worktree, or at
+// head for a pinned range (ADR 0014). Changes when either does, e.g. after an agent's edit or new commits on the PR;
+// a file diff with no local changes gets the same fingerprint either way.
+export async function diffFingerprints(
+  db: DatabaseSync,
+  workspaceId: number,
+  base: string,
+  files: string[],
+  head?: string,
+): Promise<Map<string, string>> {
   const path = openedWorktree(db, workspaceId)
+  const contents = head ? await readBlobs(path, head, files) : new Map(files.map((f) => [f, worktreeBytes(path, f)]))
+  const hash = (f: string) => {
+    const bytes = contents.get(f)
+    return createHash('sha1').update(base).update('\0').update(bytes ?? 'deleted').digest('hex')
+  }
+  return new Map(files.map((f) => [f, hash(f)]))
+}
+
+// Files as text in a view of the diff: at a commit, or in the worktree without one; null where the file isn't there.
+export async function readTexts(db: DatabaseSync, workspaceId: number, files: string[], commit?: string): Promise<Map<string, string | null>> {
+  const path = openedWorktree(db, workspaceId)
+  const bytes = commit ? await readBlobs(path, commit, files) : new Map(files.map((f) => [f, worktreeBytes(path, f)]))
+  return new Map(files.map((f) => [f, bytes.get(f)?.toString('utf8') ?? null]))
+}
+
+function worktreeBytes(path: string, file: string): Buffer | null {
   const full = resolve(path, file)
   if (relative(path, full).startsWith('..')) throw new Error(`Outside the worktree: ${file}`)
-  const hash = createHash('sha1').update(mergeBase).update('\0')
-  return (existsSync(full) ? hash.update(readFileSync(full)) : hash.update('deleted')).digest('hex')
+  return existsSync(full) ? readFileSync(full) : null
+}
+
+// Files' contents at a commit, in one `git cat-file --batch`; null where the file isn't there.
+function readBlobs(cwd: string, commit: string, files: string[]): Promise<Map<string, Buffer | null>> {
+  if (!isCommit(commit)) throw new GitError(`Not a commit: ${commit}`)
+  return new Promise((done, fail) => {
+    const child = spawn('git', ['cat-file', '--batch'], { cwd, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } })
+    const chunks: Buffer[] = []
+    child.stdout.on('data', (d: Buffer) => chunks.push(d))
+    child.on('error', fail)
+    child.on('close', (code) => {
+      if (code) return fail(new GitError(`git cat-file exited with ${code}`))
+      const out = Buffer.concat(chunks)
+      const blobs = new Map<string, Buffer | null>()
+      let at = 0
+      for (const f of files) {
+        const eol = out.indexOf(10, at)
+        const header = out.subarray(at, eol).toString()
+        at = eol + 1
+        // "<oid> <type> <size>", then the contents and a newline; or "<name> missing".
+        const size = header.endsWith(' missing') ? -1 : Number(header.split(' ')[2])
+        if (size < 0) blobs.set(f, null)
+        else {
+          blobs.set(f, out.subarray(at, at + size))
+          at += size + 1
+        }
+      }
+      done(blobs)
+    })
+    child.stdin.end(files.map((f) => `${commit}:${f}\n`).join(''))
+  })
 }
 
 // A file diff as unified diff text, for prompts. A new untracked file has no git diff, so its lines show as added.
 // --no-ext-diff: a repo's .gitattributes can send files to a diff tool that isn't installed (e.g. CSV to daff).
-export async function readFileDiff(db: DatabaseSync, workspaceId: number, mergeBase: string, file: ChangedFile): Promise<string> {
+// With head, the file's diff in a commit diff.
+export async function readFileDiff(db: DatabaseSync, workspaceId: number, mergeBase: string, file: ChangedFile, head?: string): Promise<string> {
   if (!isCommit(mergeBase)) throw new GitError(`Not a commit: ${mergeBase}`)
+  if (head !== undefined && !isCommit(head)) throw new GitError(`Not a commit: ${head}`)
   const path = openedWorktree(db, workspaceId)
   const paths = file.previousPath ? [file.previousPath, file.path] : [file.path]
-  const diff = await gitText(path, ['diff', '--no-ext-diff', '--no-color', '-M', mergeBase, '--', ...paths])
-  if (diff || file.status !== 'added') return diff
+  const range = head ? [mergeBase, head] : [mergeBase]
+  const diff = await gitText(path, ['diff', '--no-ext-diff', '--no-color', '-M', ...range, '--', ...paths])
+  if (diff || head || file.status !== 'added') return diff
   const text = await readWorktreeFile(db, workspaceId, file.path)
   if (text.status !== 'ok' || text.text === null) return 'Binary file'
   return `new file\n${text.text.replace(/\n$/, '').replace(/^/gm, '+')}\n`

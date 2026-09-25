@@ -1,15 +1,23 @@
 import { randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import { type ChatEntry, runTurn, stopTurn, type TurnResult } from './agents'
-import { worktreePath } from './git'
+import { readTexts, worktreePath } from './git'
 import { runClaude } from './guides'
 import { getWorkspaceRepo } from './workspaces'
 
 // ADR 0011: a review round is a stream of entries (glossary): notes, questions and answers.
 // An entry's anchor is a line range of a file; side 'old' is the merge base (removed lines in a diff), 'new' the
 // worktree. code: the lines as they were, since line numbers drift as the worktree changes. No anchor: it floats.
-// ponytail: anchored by line numbers only, so entries drift after edits; outdated tracking is glossary open question 2.
-export type Anchor = { path: string; side: 'old' | 'new'; startLine: number; endLine: number; code: string }
+// base, head: the range of the view it was written in (ADR 0015); head null is the worktree (the live Diff tab).
+export type Anchor = {
+  path: string
+  side: 'old' | 'new'
+  startLine: number
+  endLine: number
+  code: string
+  base: string
+  head: string | null
+}
 
 export type ReviewEntry = {
   id: number
@@ -22,19 +30,25 @@ export type ReviewEntry = {
   startLine: number | null
   endLine: number | null
   code: string | null
+  base: string | null
+  head: string | null
   createdAt: string
   sentAt: string | null
+  // In the view it was listed for (ADR 0015): current if its lines still read as its code; outdated if not; wrapped-up
+  // if its round was. A follow-up or answer takes its question's. Floating entries are current.
+  state: 'current' | 'outdated' | 'wrapped-up'
 }
 
 // A note or question from the user: anchored, or a follow-up in a thread (parentId).
 export type NewEntry = { workspaceId: number; body: string; anchor?: Anchor; parentId?: number }
 
 const columns = `id, review_round_id as reviewRoundId, kind, body, parent_id as parentId, path, side,
-  start_line as startLine, end_line as endLine, code, created_at as createdAt, sent_at as sentAt`
+  start_line as startLine, end_line as endLine, code, base, head, created_at as createdAt, sent_at as sentAt`
 
 // The round new entries go in: the latest, unless it was wrapped up, which starts a new one (ADR 0012).
 // ponytail: a round doesn't go stale when the code changes (glossary open question 3).
-function currentRound(db: DatabaseSync, workspaceId: number): number {
+// A new round records the range its first entry was written in (ADR 0015).
+function currentRound(db: DatabaseSync, workspaceId: number, anchor?: Anchor): number {
   const row = db
     .prepare('select id from review_rounds where workspace_id = ? and ended_at is null order by id desc limit 1')
     .get(workspaceId) as
@@ -43,29 +57,45 @@ function currentRound(db: DatabaseSync, workspaceId: number): number {
   if (row) return row.id
   return (
     db
-      .prepare('insert into review_rounds (workspace_id, created_at) values (?, ?) returning id')
-      .get(workspaceId, new Date().toISOString()) as { id: number }
+      .prepare('insert into review_rounds (workspace_id, created_at, merge_base, head) values (?, ?, ?, ?) returning id')
+      .get(workspaceId, new Date().toISOString(), anchor?.base ?? null, anchor?.head ?? null) as { id: number }
   ).id
 }
 
-export function listEntries(db: DatabaseSync, workspaceId: number): ReviewEntry[] {
-  return db
-    .prepare(
-      `select ${columns} from entries where review_round_id =
-       (select id from review_rounds where workspace_id = ? order by id desc limit 1) order by id`,
-    )
-    .all(workspaceId) as ReviewEntry[]
+// The latest round's entries, with their state in the view of base → head (the worktree without head).
+export async function listEntries(db: DatabaseSync, workspaceId: number, base: string, head?: string): Promise<ReviewEntry[]> {
+  const round = db
+    .prepare('select id, ended_at as endedAt from review_rounds where workspace_id = ? order by id desc limit 1')
+    .get(workspaceId) as { id: number; endedAt: string | null } | undefined
+  if (!round) return []
+  const rows = db.prepare(`select ${columns} from entries where review_round_id = ? order by id`).all(round.id) as Omit<
+    ReviewEntry,
+    'state'
+  >[]
+  if (round.endedAt) return rows.map((e) => ({ ...e, state: 'wrapped-up' }))
+  const anchored = rows.filter((e) => e.path && !e.parentId)
+  const paths = (side: 'old' | 'new') => [...new Set(anchored.filter((e) => e.side === side).map((e) => e.path!))]
+  const [oldTexts, newTexts] = await Promise.all([
+    readTexts(db, workspaceId, paths('old'), base),
+    readTexts(db, workspaceId, paths('new'), head),
+  ])
+  const current = (e: Omit<ReviewEntry, 'state'>) => {
+    const text = (e.side === 'old' ? oldTexts : newTexts).get(e.path!) ?? ''
+    return text.split('\n').slice(e.startLine! - 1, e.endLine!).join('\n') === e.code
+  }
+  const state = new Map(anchored.map((e) => [e.id, current(e) ? ('current' as const) : ('outdated' as const)]))
+  return rows.map((e) => ({ ...e, state: state.get(e.parentId ?? e.id) ?? 'current' }))
 }
 
-function addEntry(db: DatabaseSync, roundId: number, kind: ReviewEntry['kind'], e: Omit<NewEntry, 'workspaceId'>): ReviewEntry {
+function addEntry(db: DatabaseSync, roundId: number, kind: ReviewEntry['kind'], e: Omit<NewEntry, 'workspaceId'>): Omit<ReviewEntry, 'state'> {
   if (!e.body.trim()) throw new Error(`A ${kind} needs text`)
   const a = e.anchor
   if (a && a.side !== 'old' && a.side !== 'new') throw new Error(`Not a side: ${a.side}`)
   const [start, end] = a ? [a.startLine, a.endLine].sort((x, y) => x - y) : [null, null]
   return db
     .prepare(
-      `insert into entries (review_round_id, kind, body, parent_id, path, side, start_line, end_line, code, created_at)
-       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) returning ${columns}`,
+      `insert into entries (review_round_id, kind, body, parent_id, path, side, start_line, end_line, code, base, head, created_at)
+       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) returning ${columns}`,
     )
     .get(
       roundId,
@@ -77,19 +107,31 @@ function addEntry(db: DatabaseSync, roundId: number, kind: ReviewEntry['kind'], 
       start,
       end,
       a?.code ?? null,
+      a?.base ?? null,
+      a?.head ?? null,
       new Date().toISOString(),
-    ) as ReviewEntry
+    ) as Omit<ReviewEntry, 'state'>
 }
 
-export const addNote = (db: DatabaseSync, e: NewEntry) => addEntry(db, currentRound(db, e.workspaceId), 'note', e)
+// A new entry is current in the view it was written in.
+export const addNote = (db: DatabaseSync, e: NewEntry): ReviewEntry => ({
+  ...addEntry(db, currentRound(db, e.workspaceId, e.anchor), 'note', e),
+  state: 'current',
+})
 
 export function deleteEntry(db: DatabaseSync, id: number) {
   db.prepare('delete from entries where id = ?').run(id)
 }
 
-function describe(a: Pick<ReviewEntry, 'path' | 'side' | 'startLine' | 'endLine' | 'code'>): string {
+function describe(a: Pick<ReviewEntry, 'path' | 'side' | 'startLine' | 'endLine' | 'code'> & Partial<Pick<ReviewEntry, 'base' | 'head'>>): string {
   const lines = a.startLine === a.endLine ? `line ${a.startLine}` : `lines ${a.startLine}-${a.endLine}`
-  const where = a.side === 'old' ? 'removed by the PR, as at its merge base' : 'as in the worktree then'
+  const at = (sha: string) => `commit ${sha.slice(0, 7)}`
+  const where =
+    a.side === 'old'
+      ? `removed, as at ${a.base ? at(a.base) : 'the merge base'}`
+      : a.head
+        ? `as at ${at(a.head)}`
+        : 'as in the worktree then'
   const fence = '`'.repeat(Math.max(3, ...[...(a.code ?? '').matchAll(/`+/g)].map((m) => m[0].length + 1)))
   return `\`${a.path}\` ${lines} (${where}):\n${fence}\n${a.code}\n${fence}`
 }
@@ -133,7 +175,7 @@ export function askQuestion(
   e: NewEntry,
   onChat: (threadId: number, entry: ChatEntry) => void,
 ): { question: ReviewEntry; turn: Promise<TurnResult> } {
-  const question = addEntry(db, currentRound(db, e.workspaceId), 'question', e)
+  const question = addEntry(db, currentRound(db, e.workspaceId, e.anchor), 'question', e)
   const threadId = question.parentId ?? question.id
   const { agentSessionId, first } = questionSession(db, question.reviewRoundId)
   const prompt = (first ? preamble : '') + (question.path ? `About ${describe(question)}\n${question.body}` : question.body)
@@ -146,7 +188,7 @@ export function askQuestion(
       addEntry(db, question.reviewRoundId, 'answer', { body: texts.join('\n\n'), parentId: threadId })
     return result
   })
-  return { question, turn }
+  return { question: { ...question, state: 'current' }, turn }
 }
 
 export function stopQuestion(db: DatabaseSync, workspaceId: number) {
@@ -171,7 +213,7 @@ export type ActionItem = {
   endLine: number | null
   code: string | null
 }
-// The latest round, as its bar shows it. ponytail: earlier rounds aren't reachable until rounds get a history.
+// The latest round, as its bar shows it. ponytail: earlier rounds, and a wrapped-up round's entries (ADR 0015), aren't reachable until rounds get a history (ticket 0001).
 export type ReviewRound = { id: number; number: number; createdAt: string; endedAt: string | null; actionItems: ActionItem[] }
 
 export function getRound(db: DatabaseSync, workspaceId: number): ReviewRound | null {

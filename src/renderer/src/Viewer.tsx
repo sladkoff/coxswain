@@ -23,6 +23,10 @@ type Box = { entry?: ReviewEntry; draft?: Draft }
 type Props = {
   workspace: Workspace
   mergeBase: string
+  // A commit diff (the Diff tab's Commits): the new side is this commit, and mergeBase its parent.
+  // ponytail: notes on it keep the commit's line numbers and say "as in the worktree", and Viewed marks the file
+  // viewed for all changes; anchor entries and viewed state to the commit if that misleads.
+  head?: string
   opened: Opened
   version: number
   entries: ReviewEntry[] // the current review round's
@@ -46,9 +50,10 @@ const baseOptions = { preferredHighlighter: 'shiki-js', overflow: 'wrap', sticky
 // Memoised, and so are the files and annotations it hands the library: @pierre/diffs re-diffs on a new file
 // object and redraws on every render, so the Diff tab's many Viewers must only render when their props change.
 export const Viewer = memo(function Viewer(props: Props) {
-  const { workspace, mergeBase, opened, version, entries, onEntriesChanged, attachedIds, onAttach } = props
+  const { workspace, mergeBase, head, opened, version, entries, onEntriesChanged, attachedIds, onAttach } = props
   const [sides, setSides] = useState<{ old: FileText; new: FileText } | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
+  const [showOutdated, setShowOutdated] = useState(false)
   // The highlighted lines. Controlled, so they can be cleared when a draft is cancelled or saved: left to
   // itself the library keeps the old selection and extends it on the next drag.
   const [selection, setSelection] = useState<SelectedLineRange | null>(null)
@@ -73,7 +78,7 @@ export const Viewer = memo(function Viewer(props: Props) {
   }, [near])
 
   // Only a different file clears the Viewer; rereading after an agent turn keeps it in place until the new text is in.
-  useEffect(() => setSides(null), [opened, mergeBase])
+  useEffect(() => setSides(null), [opened, mergeBase, head])
   useEffect(() => {
     if (!near) return
     let stale = false
@@ -86,10 +91,12 @@ export const Viewer = memo(function Viewer(props: Props) {
     const newSide: Promise<FileText> =
       opened.kind === 'diff' && opened.file.status === 'deleted'
         ? Promise.resolve({ status: 'ok', text: '', binary: false })
-        : window.coxswain.readWorktreeFile(workspace.id, path)
+        : head
+          ? window.coxswain.readFileAt(workspace.id, head, path)
+          : window.coxswain.readWorktreeFile(workspace.id, path)
     Promise.all([oldSide, newSide]).then(([o, n]) => !stale && setSides({ old: o, new: n }))
     return () => void (stale = true)
-  }, [opened, mergeBase, version, near])
+  }, [opened, mergeBase, head, version, near])
   useEffect(closeDraft, [opened])
 
   const options = useMemo(
@@ -114,9 +121,10 @@ export const Viewer = memo(function Viewer(props: Props) {
   const annotations = useMemo(() => {
     // Threads show under their first question, so only anchored entries without a parent get a box.
     // A whole file only shows the worktree, so only entries on the new side belong in it.
+    // Only current entries go between the lines (ADR 0015); outdated ones open from the header.
     const boxes: { side: 'old' | 'new'; line: number; box: Box }[] = [
       ...entries
-        .filter((e) => e.path === path && !e.parentId && (opened.kind === 'diff' || e.side === 'new'))
+        .filter((e) => e.path === path && !e.parentId && e.state === 'current' && (opened.kind === 'diff' || e.side === 'new'))
         .map((e) => ({ side: e.side!, line: e.endLine!, box: { entry: e } })),
       ...(draft ? [{ side: draft.side, line: Math.max(draft.startLine, draft.endLine), box: { draft } }] : []),
     ]
@@ -151,7 +159,8 @@ export const Viewer = memo(function Viewer(props: Props) {
     const [start, end] = [d.startLine, d.endLine].sort((a, b) => a - b)
     const text = (d.side === 'old' ? o.text : n.text) ?? ''
     const code = text.split('\n').slice(start - 1, end).join('\n')
-    return { workspaceId: workspace.id, body, anchor: { path, side: d.side, startLine: start, endLine: end, code } }
+    const anchor = { path, side: d.side, startLine: start, endLine: end, code, base: mergeBase, head: head ?? null }
+    return { workspaceId: workspace.id, body, anchor }
   }
   const note = async (d: Draft, body: string) => {
     await window.coxswain.addNote(anchored(d, body))
@@ -188,8 +197,24 @@ export const Viewer = memo(function Viewer(props: Props) {
       />
     ) : null
 
+  const outdated = entries.filter((e) => e.path === path && !e.parentId && e.state === 'outdated')
+
   return (
     <div className={props.stacked ? 'select-text' : 'min-h-0 flex-1 overflow-auto select-text'}>
+      {showOutdated && opened.kind === 'diff' && (
+        <div className="border-b border-neutral-200 bg-neutral-50 py-1 dark:border-neutral-800 dark:bg-neutral-950">
+          {outdated.map((e) => (
+            <div key={e.id} className="mx-2 mt-1">
+              <div className={`px-2 text-xs ${muted}`}>
+                Outdated · {lines(e.startLine!, e.endLine!)}
+                {e.side === 'old' && ', removed'}: the code it was about has changed.
+              </div>
+              <pre className="mx-2 mt-1 overflow-x-auto rounded bg-neutral-100 p-1.5 font-mono text-xs dark:bg-neutral-800">{e.code}</pre>
+              {render({ entry: e })}
+            </div>
+          ))}
+        </div>
+      )}
       {opened.kind === 'file' ? (
         <File<Box>
           file={files.new}
@@ -207,14 +232,25 @@ export const Viewer = memo(function Viewer(props: Props) {
           lineAnnotations={annotations.diff}
           renderAnnotation={(a) => render(a.metadata)}
           renderHeaderMetadata={() => (
-            <label className="flex items-center gap-1 font-sans text-xs select-none">
-              <input
-                type="checkbox"
-                checked={props.viewed.includes(path)}
-                onChange={(e) => props.onViewedChange(path, e.target.checked)}
-              />
-              Viewed
-            </label>
+            <div className="flex items-center gap-2">
+              {outdated.length > 0 && (
+                <button
+                  title="Notes and questions about code that has changed since"
+                  className={`font-sans text-xs ${muted} hover:text-neutral-900 dark:hover:text-neutral-100`}
+                  onClick={() => setShowOutdated((s) => !s)}
+                >
+                  {outdated.length} outdated
+                </button>
+              )}
+              <label className="flex items-center gap-1 font-sans text-xs select-none">
+                <input
+                  type="checkbox"
+                  checked={props.viewed.includes(path)}
+                  onChange={(e) => props.onViewedChange(path, e.target.checked)}
+                />
+                Viewed
+              </label>
+            </div>
           )}
         />
       )}

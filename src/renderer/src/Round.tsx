@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { ActionItem, ReviewEntry, ReviewRound } from '../../core/review'
 import type { Workspace } from '../../core/workspaces'
-import { button, countItems, itemsTitle, muted, primaryButton } from './ui'
+import { button, itemsTitle, muted, primaryButton } from './ui'
 
 const pane = 'border-neutral-200 dark:border-neutral-800'
 
@@ -20,10 +20,9 @@ export function Round({ workspace, entries, handedOff, onHandOff }: Props) {
   useEffect(() => void load(), [workspace.id, entries])
 
   if (!round || !entries.length) return null
-  const total = [...countItems(entries).values()].reduce(
-    (sum, c) => ({ notes: sum.notes + c.notes, questions: sum.questions + c.questions }),
-    { notes: 0, questions: 0 },
-  )
+  // The whole round, outdated entries and all.
+  const count = (kind: ReviewEntry['kind']) => entries.filter((e) => e.kind === kind && !e.parentId).length
+  const total = { notes: count('note'), questions: count('question') }
   const items = round.actionItems
   const wrapUp = async () => {
     setWrapping(true)

@@ -1,5 +1,6 @@
 import { Virtualizer } from '@pierre/diffs/react'
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
+import type { ChangedFile, Commit } from '../../core/git'
 import type { NewEntry, ReviewEntry, ReviewRound } from '../../core/review'
 import type { Project } from '../../core/projects'
 import type { Workspace } from '../../core/workspaces'
@@ -73,31 +74,32 @@ export function App() {
   // Bumped when an agent turn ends, so the Navigator and Viewer show what the agent changed.
   const [version, setVersion] = useState(0)
   const pr = usePullRequest(currentWorkspace, version)
+  // The Diff tab's Commits: one commit's diff (its parent to it) in place of all changes. The Guide keeps all changes.
+  const [commit, setCommit] = useState<Commit | null>(null)
+  useEffect(() => setCommit(null), [currentWorkspace?.id, pr.commits])
 
-  // The entries of the workspace's current review round, and the notes waiting in the L4 message box.
+  // The entries of the workspace's current review round, as the Diff tab shows them (ADR 0015: the live diff, or the
+  // commit picked), and the notes waiting in the L4 message box. A pinned guide lists its own.
   const [entries, setEntries] = useState<ReviewEntry[]>([])
   const [attached, setAttached] = useState<ReviewEntry[]>([])
   const [handedOff, setHandedOff] = useState<ReviewRound | null>(null) // a wrapped-up round in L4's message box
   // Callbacks handed to the Viewers are stable (useCallback), so a memoised Viewer doesn't redraw its file diff.
+  const base = commit?.parent ?? pr.commits?.mergeBase
   const loadEntries = useCallback(
-    () => void (currentWorkspace && window.coxswain.listEntries(currentWorkspace.id).then(setEntries)),
-    [currentWorkspace?.id],
+    () => void (currentWorkspace && base && window.coxswain.listEntries(currentWorkspace.id, base, commit?.sha).then(setEntries)),
+    [currentWorkspace?.id, base, commit?.sha],
   )
   useEffect(() => {
     setEntries([])
     setAttached([])
     setHandedOff(null)
   }, [currentWorkspace?.id])
-  useEffect(() => void loadEntries(), [currentWorkspace?.id, version])
+  useEffect(() => void loadEntries(), [loadEntries, version])
   // A deleted note leaves the message box too.
   useEffect(() => setAttached((a) => a.filter((c) => entries.some((k) => k.id === c.id))), [entries])
-  // Paths of the viewed file diffs. Reloaded with the changes, since a file diff that changed is no longer viewed.
+  // Paths of the live diff's viewed file diffs. Reloaded with the changes, since a file diff that changed is no
+  // longer viewed, and on a tab switch, since the Guide may have marked some (ADR 0014).
   const [viewed, setViewed] = useState<string[]>([])
-  useEffect(() => {
-    setViewed([])
-    if (currentWorkspace && pr.commits && pr.changed)
-      window.coxswain.listViewed(currentWorkspace.id, pr.commits.mergeBase).then(setViewed)
-  }, [currentWorkspace?.id, pr.changed])
   const mergeBase = pr.commits?.mergeBase
   const markViewed = useCallback(
     (path: string, on: boolean) => {
@@ -139,8 +141,35 @@ export function App() {
     setTab('overview')
     setOpened(null)
   }, [currentWorkspace?.id])
+  useEffect(() => {
+    if (currentWorkspace && pr.commits && pr.changed)
+      window.coxswain.listViewed(currentWorkspace.id, pr.commits.mergeBase).then(setViewed)
+    else setViewed([])
+  }, [currentWorkspace?.id, pr.changed, tab])
   // Memoised: the Viewer rereads when its Opened changes.
   const diffs = useMemo(() => pr.changed?.map((file) => ({ kind: 'diff' as const, file })), [pr.changed])
+  const [commitChanged, setCommitChanged] = useState<ChangedFile[] | null>(null)
+  useEffect(() => {
+    setCommitChanged(null)
+    if (!currentWorkspace || !commit) return
+    let stale = false
+    window.coxswain.listChangedFiles(currentWorkspace.id, commit.parent, commit.sha).then((c) => {
+      // ponytail: a git error shows as no changes; show it like the Navigator's problems if it happens.
+      if (!stale) setCommitChanged(c.status === 'ok' ? c.files : [])
+    })
+    return () => void (stale = true)
+  }, [commit])
+  const diffPr = commit ? { ...pr, changed: commitChanged } : pr
+  const diffDiffs = useMemo(
+    () => (commit ? commitChanged?.map((file) => ({ kind: 'diff' as const, file })) : diffs),
+    [commit, commitChanged, diffs],
+  )
+  const pickCommit = async () => {
+    if (!currentWorkspace || !pr.commits) return
+    const picked = await window.coxswain.showCommitsMenu(currentWorkspace.id, pr.commits.mergeBase, commit?.sha ?? null)
+    setCommit(picked)
+    setOpened(null)
+  }
   const open = (path: string) => {
     if (view === 'files') return setOpened({ kind: 'file', path })
     // ponytail: file diffs above it that are still loading push it down.
@@ -153,9 +182,10 @@ export function App() {
     setAttached((a) => [...a, c])
     setAgentsOpen(true) // the note goes in L4's message box, so show it
   }, [])
-  const viewerProps = (workspace: Workspace, mergeBase: string) => ({
+  const viewerProps = (workspace: Workspace, mergeBase: string, head?: string) => ({
     workspace,
     mergeBase,
+    head,
     version,
     entries,
     onEntriesChanged: loadEntries,
@@ -244,8 +274,18 @@ export function App() {
           <div className={`flex h-8 shrink-0 items-center gap-1 border-b px-2 text-xs ${pane}`}>
             {tab === 'diff' && (
               <BarToggle title="Show or hide the files (⌘B)" on={navigatorOpen} onClick={() => setNavigatorOpen((o) => !o)}>
-                Files {pr.changed?.length ?? ''}
+                Files {diffPr.changed?.length ?? ''}
               </BarToggle>
+            )}
+            {tab === 'diff' && (
+              <button
+                title="Show all changes or one commit's"
+                disabled={!pr.commits}
+                className={`max-w-80 truncate rounded px-2 py-0.5 ${commit ? 'bg-neutral-200 dark:bg-neutral-700' : 'text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800'}`}
+                onClick={pickCommit}
+              >
+                {commit ? `${commit.sha.slice(0, 7)} ${commit.subject}` : 'Commits'}
+              </button>
             )}
             <div className="flex-1" />
             {tab !== 'overview' && (
@@ -274,6 +314,7 @@ export function App() {
               key={currentWorkspace.id}
               workspace={currentWorkspace}
               mergeBase={pr.commits.mergeBase}
+              prHead={pr.commits.head}
               diffs={diffs}
               viewed={viewed}
               onViewedChange={markViewed}
@@ -292,23 +333,23 @@ export function App() {
                   <div className="flex shrink-0 justify-end px-2 pt-1.5">
                     <ViewToggle view={view} onChange={setView} />
                   </div>
-                  <Navigator key={currentWorkspace.id} workspace={currentWorkspace} pr={pr} view={view} viewed={viewed} showViewed={viewSettings.showViewed} entries={entries} onOpen={open} />
+                  <Navigator key={currentWorkspace.id} workspace={currentWorkspace} pr={diffPr} view={view} viewed={viewed} showViewed={viewSettings.showViewed} entries={entries} onOpen={open} />
                 </div>
                 <Splitter min={240} max={720} onResize={setLeftWidth} />
               </>
             )}
             <div style={{ minWidth: viewerMin }} className="flex min-w-0 flex-1 flex-col">
-              {!pr.commits || !diffs ? (
+              {!pr.commits || !diffDiffs ? (
                 <div className={`flex flex-1 items-center justify-center ${muted}`}>Loading…</div>
               ) : showFile ? (
                 <Viewer opened={opened} {...viewerProps(currentWorkspace, pr.commits.mergeBase)} />
               ) : (
                 // Only the lines on screen are drawn. ponytail: every file is still read from disk up front.
                 <Virtualizer className="min-h-0 flex-1 overflow-auto">
-                  {diffs.length === 0 && <div className={`p-4 text-xs ${muted}`}>No changes</div>}
-                  {diffs.map((d) => (
+                  {diffDiffs.length === 0 && <div className={`p-4 text-xs ${muted}`}>No changes</div>}
+                  {diffDiffs.map((d) => (
                     <div key={d.file.path} id={`diff:${d.file.path}`}>
-                      <Viewer stacked opened={d} {...viewerProps(currentWorkspace, pr.commits!.mergeBase)} />
+                      <Viewer stacked opened={d} {...viewerProps(currentWorkspace, commit?.parent ?? pr.commits!.mergeBase, commit?.sha)} />
                     </div>
                   ))}
                 </Virtualizer>

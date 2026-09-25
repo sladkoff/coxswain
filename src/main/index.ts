@@ -12,7 +12,9 @@ import {
 import { openDatabase } from '../core/db'
 import {
   cloneProject,
+  type Commit,
   listChangedFiles,
+  listCommits,
   listWorktreeFiles,
   openedBefore,
   openWorktree,
@@ -132,8 +134,8 @@ app.whenReady().then(() => {
   ipcMain.handle('git:clone', (_, projectId: number) => cloneProject(db, projectId))
   ipcMain.handle('git:opened-before', (_, workspaceId: number) => openedBefore(db, workspaceId))
   ipcMain.handle('git:open-worktree', (_, workspaceId: number) => openWorktree(db, workspaceId))
-  ipcMain.handle('git:changed-files', (_, workspaceId: number, mergeBase: string) =>
-    listChangedFiles(db, workspaceId, mergeBase),
+  ipcMain.handle('git:changed-files', (_, workspaceId: number, mergeBase: string, head?: string) =>
+    listChangedFiles(db, workspaceId, mergeBase, head),
   )
   ipcMain.handle('git:worktree-files', (_, workspaceId: number) => listWorktreeFiles(db, workspaceId))
   ipcMain.handle('git:read-worktree-file', (_, workspaceId: number, path: string) =>
@@ -145,7 +147,7 @@ app.whenReady().then(() => {
   ipcMain.handle('agents:list', (_, workspaceId: number) => listAgentSessions(db, workspaceId))
   ipcMain.handle('agents:start', (_, workspaceId: number) => startAgentSession(db, workspaceId))
   ipcMain.handle('agents:transcript', (_, agentSessionId: string) => readTranscript(agentSessionId))
-  ipcMain.handle('review:list', (_, workspaceId: number) => listEntries(db, workspaceId))
+  ipcMain.handle('review:list', (_, workspaceId: number, base: string, head?: string) => listEntries(db, workspaceId, base, head))
   ipcMain.handle('review:add-note', (_, note: NewEntry) => addNote(db, note))
   ipcMain.handle('review:delete', (_, id: number) => deleteEntry(db, id))
   // Returns the question once saved; the reply streams as review:chat and the turn's end comes as review:turn-end.
@@ -161,9 +163,11 @@ app.whenReady().then(() => {
   ipcMain.handle('review:wrap-up', (_, workspaceId: number) => wrapUp(db, workspaceId))
   ipcMain.handle('review:update-item', (_, id: number, body: string) => updateActionItem(db, id, body))
   ipcMain.handle('review:delete-item', (_, id: number) => deleteActionItem(db, id))
-  ipcMain.handle('viewed:list', (_, workspaceId: number, mergeBase: string) => listViewed(db, workspaceId, mergeBase))
-  ipcMain.handle('viewed:set', (_, workspaceId: number, mergeBase: string, path: string, viewed: boolean) =>
-    setViewed(db, workspaceId, mergeBase, path, viewed),
+  ipcMain.handle('viewed:list', (_, workspaceId: number, mergeBase: string, head?: string) =>
+    listViewed(db, workspaceId, mergeBase, head),
+  )
+  ipcMain.handle('viewed:set', (_, workspaceId: number, mergeBase: string, path: string, viewed: boolean, head?: string) =>
+    setViewed(db, workspaceId, mergeBase, path, viewed, head),
   )
   ipcMain.handle('agents:run-turn', (e, agentSessionId: string, message: string, noteIds: number[], roundId?: number) =>
     runTurn(db, agentSessionId, formatAsk(db, noteIds, message, roundId), {}, (entry) => {
@@ -182,6 +186,24 @@ app.whenReady().then(() => {
         ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
       ),
   )
+  // The Diff tab's commits: all changes, or one commit's diff. Resolves only on a click, like the menus above.
+  ipcMain.handle('menus:commits', async (e, workspaceId: number, mergeBase: string, current: string | null) => {
+    const listed = await listCommits(db, workspaceId, mergeBase)
+    return new Promise<Commit | null>((resolve) =>
+      Menu.buildFromTemplate([
+        { label: 'All Changes', type: 'radio', checked: current === null, click: () => resolve(null) },
+        { type: 'separator' },
+        ...(listed.status !== 'ok'
+          ? [{ label: `Couldn't list the commits: ${listed.message}`, enabled: false }]
+          : listed.commits.map((c) => ({
+              label: `${c.sha.slice(0, 7)}  ${c.subject}`,
+              type: 'radio' as const,
+              checked: c.sha === current,
+              click: () => resolve(c),
+            }))),
+      ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
+    )
+  })
   ipcMain.handle(
     'menus:view',
     (e, s: ViewSettings) =>
@@ -200,8 +222,8 @@ app.whenReady().then(() => {
       ),
   )
   ipcMain.handle('guides:get', (_, workspaceId: number, mergeBase: string) => getGuide(db, workspaceId, mergeBase))
-  ipcMain.handle('guides:create', (e, workspaceId: number, mergeBase: string) =>
-    createGuide(db, workspaceId, mergeBase, (p) => {
+  ipcMain.handle('guides:create', (e, workspaceId: number, mergeBase: string, head: string, kind: 'all' | 'commit') =>
+    createGuide(db, workspaceId, mergeBase, head, kind, (p) => {
       if (!e.sender.isDestroyed()) e.sender.send('guides:progress', workspaceId, p)
     }),
   )

@@ -116,6 +116,28 @@ const migrations = [
     code text,
     created_at text not null
   )`,
+  // A guide to one commit's diff (its commit diff): head is the commit, merge_base its parent. Null: all changes.
+  `alter table guides add column head text`,
+  // ADR 0014: a guide to all changes is pinned to the PR head it was made at (head), and kind says which range it
+  // is. Guides from before have no head and keep showing the live diff. Viewed keeps a row per fingerprint, so a
+  // pinned file diff and a live one can both be viewed.
+  `alter table guides add column kind text not null default 'all' check (kind in ('all', 'commit'));
+  update guides set kind = 'commit' where head is not null;
+  create table viewed_files_new (
+    workspace_id integer not null references workspaces (id) on delete cascade,
+    path text not null,
+    fingerprint text not null,
+    primary key (workspace_id, path, fingerprint)
+  );
+  insert into viewed_files_new select workspace_id, path, fingerprint from viewed_files;
+  drop table viewed_files;
+  alter table viewed_files_new rename to viewed_files`,
+  // ADR 0015: an entry records the range it was written in (head null: the worktree), and a round its first
+  // entry's. Entries from before have none.
+  `alter table entries add column base text;
+  alter table entries add column head text;
+  alter table review_rounds add column merge_base text;
+  alter table review_rounds add column head text`,
 ]
 
 export function openDatabase(path: string): DatabaseSync {
