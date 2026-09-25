@@ -3,6 +3,21 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-25 — App icon
+
+### What works
+
+- coxswain has an icon: a racing shell seen from above, oars out, with the cox in amber at the stern.
+  The source is `resources/icon.svg`, rendered to `resources/icon.png` with
+  `qlmanage -t -s 1024 -o resources resources/icon.svg` (then rename the output to `icon.png`).
+- The main process sets it as the Dock icon on macOS and as the window icon on Windows and Linux.
+
+### Tech debt
+
+- **The icon is set at runtime** (`ponytail:` in `src/main/index.ts`), because there's no packaging
+  yet. The menu bar still says *Electron*, and the Dock shows Electron's icon for a moment at launch.
+  Build an `.icns` into the app bundle when we package.
+
 ## 2026-09-25 — Review rounds
 
 ### What works

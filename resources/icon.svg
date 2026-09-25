@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- coxswain: a racing shell seen from above, oars out, the cox (amber) steering from the stern. -->
+  <defs>
+    <linearGradient id="water" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2b5a8a"/>
+      <stop offset="1" stop-color="#0c1a2e"/>
+    </linearGradient>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#water)"/>
+  <g transform="rotate(-35 512 512)" stroke-linecap="round">
+    <g stroke="#dbe6f2" fill="none">
+      <path d="M430 512 L360 312 M430 512 L360 712" stroke-width="16"/>
+      <path d="M540 512 L470 312 M540 512 L470 712" stroke-width="16"/>
+      <path d="M650 512 L580 312 M650 512 L580 712" stroke-width="16"/>
+      <path d="M374 352 L360 312 M374 672 L360 712 M484 352 L470 312 M484 672 L470 712 M594 352 L580 312 M594 672 L580 712" stroke-width="40"/>
+    </g>
+    <path d="M200 512 Q512 432 830 512 Q512 592 200 512 Z" fill="#f7f4ec"/>
+    <circle cx="300" cy="512" r="22" fill="#f5a623"/>
+  </g>
+</svg>

@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, Menu, shell } from 'electron'
 import { join } from 'node:path'
+import icon from '../../resources/icon.png?asset'
 import {
   listAgentSessions,
   readTranscript,
@@ -46,6 +47,7 @@ function createWindow() {
     minHeight: 500,
     show: false,
     titleBarStyle: 'hiddenInset',
+    icon, // Windows and Linux; macOS takes the Dock icon below
     webPreferences: { preload: join(__dirname, '../preload/index.js') },
   })
   win.once('ready-to-show', () => win.show())
@@ -110,6 +112,8 @@ const menu = Menu.buildFromTemplate([
 ])
 
 app.whenReady().then(() => {
+  // ponytail: set at runtime since there's no packaging yet; build an .icns into the bundle when we package.
+  app.dock?.setIcon(icon)
   Menu.setApplicationMenu(menu)
   const db = openDatabase(join(app.getPath('userData'), 'coxswain.db'))
   ipcMain.handle('projects:list', () => listProjects(db))
