@@ -155,9 +155,10 @@ export function Entry({ entry, onViewThread }: { entry: ChatEntry; onViewThread?
   if (entry.kind === 'tool')
     // shrink-0: truncate's overflow lets a flex item shrink to nothing once the chat overflows, leaving only the gaps.
     return <div className={`shrink-0 truncate font-mono text-xs ${muted}`}>⏺ {entry.text}</div>
+  // my-3: room above and below the user's messages, between the agent's turns.
   if (entry.kind === 'user')
     return (
-      <div className="self-end rounded-md bg-neutral-100 px-2 py-1 whitespace-pre-wrap select-text [overflow-wrap:anywhere] dark:bg-neutral-800">
+      <div className="my-3 self-end rounded-md bg-neutral-100 px-2 py-1 whitespace-pre-wrap select-text [overflow-wrap:anywhere] dark:bg-neutral-800">
         {entry.text}
       </div>
     )
@@ -172,7 +173,7 @@ export function Entry({ entry, onViewThread }: { entry: ChatEntry; onViewThread?
 function CommentCard({ comment: c, onViewThread }: { comment: SentComment; onViewThread?: (threadId: number) => void }) {
   const view = () => onViewThread?.(c.threadId)
   return (
-    <div className="flex max-w-[85%] shrink-0 flex-col self-end rounded-lg border border-neutral-300 dark:border-neutral-700">
+    <div className="my-3 flex max-w-[85%] shrink-0 flex-col self-end rounded-lg border border-neutral-300 dark:border-neutral-700">
       <button onClick={view} className={`flex items-start gap-2 px-2.5 pt-2 text-left text-xs ${muted}`}>
         <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">
           Comment on <span className="font-mono">{c.where}</span> sent to Claude
