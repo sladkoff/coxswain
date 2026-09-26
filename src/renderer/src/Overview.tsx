@@ -1,24 +1,11 @@
-import { useEffect, useState } from 'react'
-import type { PullRequestOverview } from '../../core/github'
+import { useQuery } from '@tanstack/react-query'
 import type { Workspace } from '../../core/workspaces'
+import { core } from './queries'
 import { muted, ProblemMessage, Prose } from './ui'
 
-// The last overview fetched per workspace, shown at once when the tab opens again while a fresh one loads.
-// In memory only: GitHub has it (ADR 0005).
-const cache = new Map<number, PullRequestOverview>()
-
-// The Overview tab: the PR's title and description.
+// The Overview tab: the PR's title and description. Offline or signed out, it keeps what was fetched before.
 export function Overview({ workspace }: { workspace: Workspace }) {
-  const [pr, setPr] = useState<PullRequestOverview | null>(() => cache.get(workspace.id) ?? null)
-  useEffect(() => {
-    let stale = false
-    window.coxswain.getPullRequestOverview(workspace.id).then((p) => {
-      // Offline or signed out: keep what was fetched before.
-      if (p.status === 'ok' || !cache.has(workspace.id)) cache.set(workspace.id, p)
-      if (!stale) setPr(cache.get(workspace.id)!)
-    })
-    return () => void (stale = true)
-  }, [workspace.id])
+  const pr = useQuery(core('getPullRequestOverview', workspace.id)).data
 
   if (!pr) return <div className={`p-4 text-xs ${muted}`}>Loading…</div>
   if (pr.status !== 'ok')

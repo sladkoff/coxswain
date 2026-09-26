@@ -1,9 +1,11 @@
 import { Virtualizer } from '@pierre/diffs/react'
-import { type ComponentProps, type UIEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { type ComponentProps, type UIEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import type { ChangedFile } from '../../core/git'
 import type { Guide as GuideData, GuideGroup, GuideProgress } from '../../core/guides'
 import type { ReviewEntry } from '../../core/review'
 import type { Workspace } from '../../core/workspaces'
+import { core, markViewed, queryClient } from './queries'
 import { button, countItems, itemsTitle, muted, primaryButton, Prose } from './ui'
 import { Viewer } from './Viewer'
 
@@ -20,7 +22,10 @@ type Props = {
   viewer: Omit<ComponentProps<typeof Viewer>, 'opened' | 'stacked'>
 }
 
-type State = { kind: 'loading' } | { kind: 'none' } | { kind: 'creating' } | { kind: 'ok'; guide: GuideData } | { kind: 'error'; message: string }
+type Making = { kind: 'creating' } | { kind: 'error'; message: string }
+type State = { kind: 'loading' } | { kind: 'none' } | { kind: 'ok'; guide: GuideData } | Making
+const noPaths: string[] = []
+const noEntries: ReviewEntry[] = []
 
 // The Guide tab: the workspace's file diffs in groups made by the agent, each with a title and what to look at.
 // Opens the stored guide; without one, offers to make it (it takes minutes and costs tokens, so not on open).
@@ -28,7 +33,16 @@ type State = { kind: 'loading' } | { kind: 'none' } | { kind: 'creating' } | { k
 // A guide is pinned to the range it was made from (ADR 0014): its file diffs and Viewed are read there, not live.
 export function Guide(props: Props) {
   const { workspace, mergeBase, prHead, diffs, showViewed, onShowViewed, viewer } = props
-  const [state, setState] = useState<State>({ kind: 'loading' })
+  // The stored guide, unless one is being made or failed to be.
+  const guideKey = core('getGuide', workspace.id, mergeBase).queryKey
+  const stored = useQuery(core('getGuide', workspace.id, mergeBase)).data
+  const [making, setMaking] = useState<Making | null>(null)
+  const state: State =
+    making ?? (stored === undefined ? { kind: 'loading' } : stored ? { kind: 'ok', guide: stored } : { kind: 'none' })
+  const show = (guide: GuideData) => {
+    queryClient.setQueryData(guideKey, guide)
+    setMaking(null)
+  }
   // Viewed file diffs, and groups whose file diffs are all viewed, are hidden unless shown (the tab bar's cog menu).
   // The group at the top of the scroll, marked in the table of contents.
   const [current, setCurrent] = useState(0)
@@ -40,30 +54,17 @@ export function Guide(props: Props) {
     scrollTo(pending)
     setPending(null)
   }, [pending, showViewed])
-  // Bumped when the workspace changes or the tab closes, so a guide that arrives late is dropped.
-  const request = useRef(0)
+  // A guide that arrives after the tab closed still goes in the cache, for when it opens again.
   const create = async () => {
-    const r = request.current
     const current = state.kind === 'ok' && state.guide.kind === 'commit' ? state.guide.head : null
     const picked = await window.coxswain.showCommitsMenu(workspace.id, mergeBase, current)
-    if (r !== request.current) return
-    setState({ kind: 'creating' })
-    const made = picked
+    setMaking({ kind: 'creating' })
+    const g = await (picked
       ? window.coxswain.createGuide(workspace.id, picked.parent, picked.sha, 'commit')
-      : window.coxswain.createGuide(workspace.id, mergeBase, prHead, 'all')
-    made.then((g) => {
-      if (r === request.current) setState(g.status === 'ok' ? { kind: 'ok', guide: g.guide } : { kind: 'error', message: g.message })
-    })
+      : window.coxswain.createGuide(workspace.id, mergeBase, prHead, 'all'))
+    if (g.status === 'ok') show(g.guide)
+    else setMaking({ kind: 'error', message: g.message })
   }
-  useEffect(() => {
-    const r = ++request.current
-    setState({ kind: 'loading' })
-    window.coxswain.getGuide(workspace.id, mergeBase).then((guide) => {
-      if (r !== request.current) return
-      setState(guide ? { kind: 'ok', guide } : { kind: 'none' })
-    })
-    return () => void request.current++
-  }, [workspace.id, mergeBase])
 
   // Subscribed for as long as the tab shows, so progress sent right as a run starts or is rejoined isn't missed.
   // Once grouped, the guide being made shows, and fills in as its groups are described.
@@ -73,56 +74,32 @@ export function Guide(props: Props) {
     return window.coxswain.onGuideProgress((id, p) => {
       if (id !== workspace.id) return
       setProgress(p)
+      if (p.guide) show(p.guide)
       // A guide already being made (started before the tab opened) shows its progress.
-      setState((s) => (s.kind === 'none' ? { kind: 'creating' } : s))
-      const g = p.guide
-      if (g)
-        setState((s) => (s.kind === 'creating' || (s.kind === 'ok' && s.guide.id === g.id) ? { kind: 'ok', guide: g } : s))
+      else if (queryClient.getQueryData(guideKey) === null) setMaking((m) => m ?? { kind: 'creating' })
     })
-  }, [workspace.id])
+  }, [workspace.id, mergeBase])
 
   // A guide to one commit shows that commit's file diffs, read at the commit, in place of all changes.
   const head = state.kind === 'ok' ? state.guide.head : null
   const base = state.kind === 'ok' ? state.guide.mergeBase : mergeBase
-  const [commitDiffs, setCommitDiffs] = useState<Diff[] | null>(null)
-  useEffect(() => {
-    setCommitDiffs(null)
-    if (!head) return
-    let stale = false
-    window.coxswain.listChangedFiles(workspace.id, base, head).then((c) => {
-      if (!stale) setCommitDiffs(c.status === 'ok' ? c.files.map((file) => ({ kind: 'diff' as const, file })) : [])
-    })
-    return () => void (stale = true)
-  }, [workspace.id, base, head])
+  const pinned = useQuery({ ...core('listChangedFiles', workspace.id, base, head ?? undefined), enabled: !!head }).data
+  const commitDiffs = useMemo(
+    () => pinned && (pinned.status === 'ok' ? pinned.files.map((file) => ({ kind: 'diff' as const, file })) : []),
+    [pinned],
+  )
   const guideDiffs = head ? commitDiffs : diffs
   // Viewed at the guide's head: stays as it was when the code moves on, and carries over to a new guide for file
   // diffs that didn't change.
-  const [pinnedViewed, setPinnedViewed] = useState<string[]>([])
-  useEffect(() => {
-    setPinnedViewed([])
-    if (!head) return
-    let stale = false
-    window.coxswain.listViewed(workspace.id, base, head).then((v) => !stale && setPinnedViewed(v))
-    return () => void (stale = true)
-  }, [workspace.id, base, head])
-  const viewed = head ? pinnedViewed : props.viewed
+  const pinnedViewed = useQuery({ ...core('listViewed', workspace.id, base, head ?? undefined), enabled: !!head }).data
+  const viewed = head ? (pinnedViewed ?? noPaths) : props.viewed
   const onViewedChange = useCallback(
-    (path: string, on: boolean) => {
-      if (!head) return props.onViewedChange(path, on)
-      setPinnedViewed((v) => (on ? [...v, path] : v.filter((p) => p !== path)))
-      window.coxswain.setViewed(workspace.id, base, path, on, head)
-    },
+    (path: string, on: boolean) => (head ? markViewed(workspace.id, base, path, on, head) : props.onViewedChange(path, on)),
     [workspace.id, base, head, props.onViewedChange],
   )
-  // The round's entries as they stand in the guide's range (ADR 0015); reread whenever the parent's list changes.
-  const [pinnedEntries, setPinnedEntries] = useState<ReviewEntry[]>([])
-  useEffect(() => {
-    if (!head) return
-    let stale = false
-    window.coxswain.listEntries(workspace.id, base, head).then((e) => !stale && setPinnedEntries(e))
-    return () => void (stale = true)
-  }, [workspace.id, base, head, viewer.entries])
-  const entries = head ? pinnedEntries : viewer.entries
+  // The round's entries as they stand in the guide's range (ADR 0015).
+  const pinnedEntries = useQuery({ ...core('listEntries', workspace.id, base, head ?? undefined), enabled: !!head }).data
+  const entries = head ? (pinnedEntries ?? noEntries) : viewer.entries
   const guideViewer = useMemo(
     () => (head ? { ...viewer, mergeBase: base, head, viewed, onViewedChange, entries } : viewer),
     [viewer, base, head, viewed, onViewedChange, entries],

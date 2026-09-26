@@ -3,6 +3,41 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-25 — Data fetching with TanStack Query
+
+### What works
+
+- **Every read from the core is a TanStack Query query** ([ADR 0017](adr/0017-data-fetching-with-tanstack-query.md),
+  [ticket 0003](tickets/0003-data-fetching-with-tanstack-query.md)). `queries.ts` holds the one `QueryClient` and
+  `core(name, ...args)`, which turns a preload call into query options keyed `[name, ...args]`, so the keys live in
+  one place. Switching back to a workspace or tab shows the cached data at once and refreshes behind it.
+- **The core says what changed.** The main process sends `changed` (`{ workspaceId, what }`) when an ask's notes are
+  marked sent, when an agent turn ends (`worktree`, `transcript`), when a question gets its answer (`entries`) and when
+  a guide run ends (`guide`). `changed()` in `queries.ts` maps each `what` to the queries it makes stale. UI writes (a
+  note, a deleted entry, an action item edited, wrap-up) call the same `changed()`; Viewed is set in the cache at once
+  and refetched if storing it fails.
+- The `version` prop and the `onTurnEnd` and `onEntriesChanged` callbacks are gone, and so are the per-component
+  `stale` flags and the Overview's hand-made cache.
+- **GitHub data refreshes**: `openWorktree` (the PR's head), the Overview and the open PRs go stale after a minute
+  and refetch when the window gains focus. Offline or signed out, `openWorktree` and the Overview keep what they
+  fetched before (the query errors and keeps its data), and the Navigator says the PR couldn't be checked.
+- Refetches with the same data keep the same arrays (structural sharing), so the Navigator's tree and the memoised
+  Viewers don't remount or redraw.
+- Checked in the app on #5311: Overview, Diff (279 files, the round bar) and Guide load; the Guide shows its groups
+  two frames after switching back from Overview; Viewed toggles and survives a tab switch. Not yet checked live: an
+  agent turn or a question refreshing the panes through `changed`.
+
+### Tech debt
+
+- UI writes are plain calls followed by `changed()`, not `useMutation`; only Viewed is optimistic. Move to
+  `useMutation` where a write needs pending or error state on screen.
+- The Projects screen (repository pages) and Settings still load with `useEffect`; they aren't on the paths that
+  switch often.
+- Queries are dropped five minutes after their pane unmounts (TanStack's default `gcTime`); raise it if switching
+  back after longer flashes empty.
+- Paid off: "PR data loads once per workspace and never refreshes" and "Nothing is cached; switching workspaces
+  refetches everything".
+
 ## 2026-09-25 — Typed queries
 
 ### What works
@@ -528,9 +563,7 @@ code are found with `grep -rn "ponytail:" src`.
 - `gh` is found through `PATH`, which a packaged app launched from Finder won't have.
 - Open PRs: only the first 100 are listed.
 - Repository search only filters the pages already loaded.
-- No polling or ETags (ADR 0006, decision 7): PR data loads once per workspace and never refreshes
-  while the app runs.
-- Nothing is cached; switching workspaces refetches everything.
+- No ETags (ADR 0006, decision 7): GitHub data refetches in full after a minute, on window focus (ADR 0017).
 
 **Data and state**
 

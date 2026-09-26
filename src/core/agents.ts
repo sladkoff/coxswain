@@ -39,15 +39,20 @@ export function startAgentSession(db: Db, workspaceId: number): Promise<AgentSes
 }
 
 // Agent sessions run in their workspace's worktree, which opening the workspace creates (ADR 0008).
-async function agentWorktree(db: Db, agentSessionId: string): Promise<string> {
+export async function agentSessionWorkspace(db: Db, agentSessionId: string): Promise<number> {
   const row = await db
     .selectFrom('agent_sessions')
     .select('workspace_id as id')
     .where('agent_session_id', '=', agentSessionId)
     .executeTakeFirst()
   if (!row) throw new Error(`No agent session ${agentSessionId}`)
-  const { owner, name } = await getWorkspaceRepo(db, row.id)
-  return worktreePath(owner, name, row.id)
+  return row.id
+}
+
+async function agentWorktree(db: Db, agentSessionId: string): Promise<string> {
+  const id = await agentSessionWorkspace(db, agentSessionId)
+  const { owner, name } = await getWorkspaceRepo(db, id)
+  return worktreePath(owner, name, id)
 }
 
 // Claude Code keeps each transcript at ~/.claude/projects/<cwd, flattened>/<session ID>.jsonl.

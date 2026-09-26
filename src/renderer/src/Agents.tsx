@@ -1,7 +1,9 @@
+import { useQuery } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import type { AgentSession, ChatEntry } from '../../core/agents'
 import type { ReviewEntry, ReviewRound } from '../../core/review'
 import type { Workspace } from '../../core/workspaces'
+import { core } from './queries'
 import { button, muted, Prose } from './ui'
 
 const pane = 'border-neutral-200 dark:border-neutral-800'
@@ -17,25 +19,26 @@ type Props = {
   onDetach: (id: number) => void
   onDetachRound: () => void
   onSent: () => void
-  onTurnEnd: () => void
 }
 
-export function Agents({ workspace, attached, handedOff, onDetach, onDetachRound, onSent, onTurnEnd }: Props) {
-  const [session, setSession] = useState<AgentSession | null>(null)
-  const [entries, setEntries] = useState<ChatEntry[]>([])
+export function Agents({ workspace, attached, handedOff, onDetach, onDetachRound, onSent }: Props) {
+  const last = useQuery(core('listAgentSessions', workspace.id)).data?.at(-1)
+  const transcript = useQuery({ ...core('readTranscript', last?.agentSessionId ?? ''), enabled: !!last }).data
+  const [session, setSession] = useState<AgentSession | null>(last ?? null)
+  const [entries, setEntries] = useState<ChatEntry[]>(transcript ?? [])
   const [running, setRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
   const sessionRef = useRef(session)
   sessionRef.current = session
 
+  // The latest agent session's transcript, once loaded and again when a turn ends (the core says it changed), in
+  // place of the entries streamed during the turn. Not while the turn runs: nothing refetches it then.
   useEffect(() => {
-    window.coxswain.listAgentSessions(workspace.id).then(async (sessions) => {
-      const last = sessions.at(-1) ?? null
-      setSession(last)
-      if (last) setEntries(await window.coxswain.readTranscript(last.agentSessionId))
-    })
-  }, [workspace.id])
+    if (!last || !transcript) return
+    setSession(last)
+    setEntries(transcript)
+  }, [transcript])
 
   useEffect(
     () =>
@@ -60,12 +63,11 @@ export function Agents({ workspace, attached, handedOff, onDetach, onDetachRound
     setDraft('')
     setError(null)
     setRunning(true)
-    // The core marks the notes sent as soon as the turn starts, so onSent can reload them right away.
+    // The core marks the notes sent as the turn starts, and says so.
     const turn = window.coxswain.runTurn(current.agentSessionId, message, attached.map((c) => c.id), handedOff?.id)
     onSent()
     const result = await turn
     setRunning(false)
-    onTurnEnd()
     if (result.status === 'error') setError(result.message)
   }
 

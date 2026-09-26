@@ -1,7 +1,8 @@
-import { app, BrowserWindow, ipcMain, Menu, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu, shell, type WebContents } from 'electron'
 import { join } from 'node:path'
 import icon from '../../resources/icon.png?asset'
 import {
+  agentSessionWorkspace,
   listAgentSessions,
   readTranscript,
   runTurn,
@@ -38,7 +39,7 @@ import {
   wrapUp,
 } from '../core/review'
 import { listViewed, setViewed } from '../core/viewed'
-import type { NavigatorSettings, ViewSettings } from '../preload'
+import type { Changed, NavigatorSettings, ViewSettings } from '../preload'
 import { getWorkspaceRepo, listWorkspaces, openPullRequestWorkspace } from '../core/workspaces'
 
 function createWindow() {
@@ -65,6 +66,9 @@ function createWindow() {
     win.loadFile(join(__dirname, '../renderer/index.html'))
   }
 }
+
+// Tells the UI what the core changed on its own, so it refetches that (ADR 0017).
+const changed = (to: WebContents, change: Changed) => !to.isDestroyed() && to.send('changed', change)
 
 function openSettings() {
   BrowserWindow.getFocusedWindow()?.webContents.send('open-settings')
@@ -155,7 +159,10 @@ app.whenReady().then(() => {
     const send = (channel: string, ...args: unknown[]) => !e.sender.isDestroyed() && e.sender.send(channel, ...args)
     const asked = await askQuestion(db, question, (threadId, entry) => send('review:chat', threadId, entry))
     const threadId = asked.question.parentId ?? asked.question.id
-    asked.turn.then((result) => send('review:turn-end', threadId, result))
+    asked.turn.then((result) => {
+      changed(e.sender, { workspaceId: question.workspaceId, what: 'entries' }) // the answer
+      send('review:turn-end', threadId, result)
+    })
     return asked.question
   })
   ipcMain.handle('review:stop', (_, workspaceId: number) => stopQuestion(db, workspaceId))
@@ -169,11 +176,17 @@ app.whenReady().then(() => {
   ipcMain.handle('viewed:set', (_, workspaceId: number, mergeBase: string, path: string, viewed: boolean, head?: string) =>
     setViewed(db, workspaceId, mergeBase, path, viewed, head),
   )
-  ipcMain.handle('agents:run-turn', async (e, agentSessionId: string, message: string, noteIds: number[], roundId?: number) =>
-    runTurn(db, agentSessionId, await formatAsk(db, noteIds, message, roundId), {}, (entry) => {
+  ipcMain.handle('agents:run-turn', async (e, agentSessionId: string, message: string, noteIds: number[], roundId?: number) => {
+    const workspaceId = await agentSessionWorkspace(db, agentSessionId)
+    const prompt = await formatAsk(db, noteIds, message, roundId)
+    changed(e.sender, { workspaceId, what: 'entries' }) // the notes are marked sent
+    const result = await runTurn(db, agentSessionId, prompt, {}, (entry) => {
       if (!e.sender.isDestroyed()) e.sender.send('agents:entry', agentSessionId, entry)
-    }),
-  )
+    })
+    changed(e.sender, { workspaceId, what: 'worktree' })
+    changed(e.sender, { workspaceId, what: 'transcript' })
+    return result
+  })
   // Resolves only on a click: the menu's close callback can run before the click, so it can't tell a dismissal
   // from a pick. A dismissed menu leaves the promise pending; nothing else waits on it.
   ipcMain.handle(
@@ -225,7 +238,7 @@ app.whenReady().then(() => {
   ipcMain.handle('guides:create', (e, workspaceId: number, mergeBase: string, head: string, kind: 'all' | 'commit') =>
     createGuide(db, workspaceId, mergeBase, head, kind, (p) => {
       if (!e.sender.isDestroyed()) e.sender.send('guides:progress', workspaceId, p)
-    }),
+    }).finally(() => changed(e.sender, { workspaceId, what: 'guide' })),
   )
   ipcMain.handle('guides:settings', () => getGuideSettings(db))
   ipcMain.handle('guides:set-settings', (_, s: GuideSettingsChange) => setGuideSettings(db, s))

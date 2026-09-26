@@ -1,11 +1,13 @@
 import type { DiffLineAnnotation, LineAnnotation, SelectedLineRange } from '@pierre/diffs'
 import { File, MultiFileDiff } from '@pierre/diffs/react'
+import { useQuery } from '@tanstack/react-query'
 import { memo, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChatEntry } from '../../core/agents'
 import type { ChangedFile, FileText } from '../../core/git'
 import type { NewEntry, ReviewEntry } from '../../core/review'
 import type { Workspace } from '../../core/workspaces'
 import { Entry } from './Agents'
+import { changed, core } from './queries'
 import { button, muted, primaryButton, ProblemMessage, Prose } from './ui'
 
 // What the Viewer shows: the file diff of a changed file, or a whole file as it is in the worktree.
@@ -19,7 +21,6 @@ type Draft = { side: 'old' | 'new'; startLine: number; endLine: number }
 // One object type, not a union: the library's annotation types distribute over unions.
 type Box = { entry?: ReviewEntry; draft?: Draft }
 
-// version: bump to reread, e.g. after an agent turn changed the worktree.
 type Props = {
   workspace: Workspace
   mergeBase: string
@@ -28,9 +29,7 @@ type Props = {
   // viewed for all changes; anchor entries and viewed state to the commit if that misleads.
   head?: string
   opened: Opened
-  version: number
   entries: ReviewEntry[] // the current review round's
-  onEntriesChanged: () => void
   attachedIds: number[]
   onAttach: (note: ReviewEntry) => void
   viewed: string[]
@@ -42,6 +41,11 @@ type Props = {
   stacked?: boolean
 }
 
+// The side of a file diff that isn't read: an added file's old side, a deleted one's new side, a whole file's old side.
+// Module-level, so the memoised files below keep their identity.
+const emptyText: FileText = { status: 'ok', text: '', binary: false }
+const noText: FileText = { status: 'ok', text: null, binary: false }
+
 const baseOptions = { preferredHighlighter: 'shiki-js', overflow: 'wrap', stickyHeader: true } as const
 
 // L3: shows the diff or file opened from the Navigator.
@@ -50,8 +54,7 @@ const baseOptions = { preferredHighlighter: 'shiki-js', overflow: 'wrap', sticky
 // Memoised, and so are the files and annotations it hands the library: @pierre/diffs re-diffs on a new file
 // object and redraws on every render, so the Diff tab's many Viewers must only render when their props change.
 export const Viewer = memo(function Viewer(props: Props) {
-  const { workspace, mergeBase, head, opened, version, entries, onEntriesChanged, attachedIds, onAttach } = props
-  const [sides, setSides] = useState<{ old: FileText; new: FileText } | null>(null)
+  const { workspace, mergeBase, head, opened, entries, attachedIds, onAttach } = props
   const [draft, setDraft] = useState<Draft | null>(null)
   const [showOutdated, setShowOutdated] = useState(false)
   // The highlighted lines. Controlled, so they can be cleared when a draft is cancelled or saved: left to
@@ -77,26 +80,17 @@ export const Viewer = memo(function Viewer(props: Props) {
     return () => o.disconnect()
   }, [near])
 
-  // Only a different file clears the Viewer; rereading after an agent turn keeps it in place until the new text is in.
-  useEffect(() => setSides(null), [opened, mergeBase, head])
-  useEffect(() => {
-    if (!near) return
-    let stale = false
-    const oldSide: Promise<FileText> =
-      opened.kind === 'file'
-        ? Promise.resolve({ status: 'ok', text: null, binary: false })
-        : opened.file.status === 'added'
-          ? Promise.resolve({ status: 'ok', text: '', binary: false })
-          : window.coxswain.readFileAt(workspace.id, mergeBase, opened.file.previousPath ?? opened.file.path)
-    const newSide: Promise<FileText> =
-      opened.kind === 'diff' && opened.file.status === 'deleted'
-        ? Promise.resolve({ status: 'ok', text: '', binary: false })
-        : head
-          ? window.coxswain.readFileAt(workspace.id, head, path)
-          : window.coxswain.readWorktreeFile(workspace.id, path)
-    Promise.all([oldSide, newSide]).then(([o, n]) => !stale && setSides({ old: o, new: n }))
-    return () => void (stale = true)
-  }, [opened, mergeBase, head, version, near])
+  // Rereading after an agent turn keeps the old text in place until the new text is in.
+  const readOld = opened.kind === 'diff' && opened.file.status !== 'added'
+  const readNew = !(opened.kind === 'diff' && opened.file.status === 'deleted')
+  const oldPath = opened.kind === 'diff' ? (opened.file.previousPath ?? path) : path
+  const oldSide = useQuery({ ...core('readFileAt', workspace.id, mergeBase, oldPath), enabled: near && readOld }).data
+  const newSide = useQuery({
+    ...(head ? core('readFileAt', workspace.id, head, path) : core('readWorktreeFile', workspace.id, path)),
+    enabled: near && readNew,
+  }).data
+  const o = readOld ? oldSide : opened.kind === 'file' ? noText : emptyText
+  const n = readNew ? newSide : emptyText
   useEffect(closeDraft, [opened])
 
   const options = useMemo(
@@ -115,9 +109,8 @@ export const Viewer = memo(function Viewer(props: Props) {
 
   const files = useMemo(() => {
     const text = (f: FileText) => (f.status === 'ok' ? (f.text ?? '') : '')
-    const oldName = opened.kind === 'diff' ? (opened.file.previousPath ?? path) : path
-    return sides && { old: { name: oldName, contents: text(sides.old) }, new: { name: path, contents: text(sides.new) } }
-  }, [sides])
+    return o && n && { old: { name: oldPath, contents: text(o) }, new: { name: path, contents: text(n) } }
+  }, [o, n])
   const annotations = useMemo(() => {
     // Threads show under their first question, so only anchored entries without a parent get a box.
     // A whole file only shows the worktree, so only entries on the new side belong in it.
@@ -145,8 +138,7 @@ export const Viewer = memo(function Viewer(props: Props) {
       </div>
     )
   }
-  if (!sides || !files) return <Centered>Loading…</Centered>
-  const { old: o, new: n } = sides
+  if (!o || !n || !files) return <Centered>Loading…</Centered>
   if (o.status !== 'ok' || n.status !== 'ok')
     return (
       <Centered>
@@ -165,7 +157,7 @@ export const Viewer = memo(function Viewer(props: Props) {
   const note = async (d: Draft, body: string) => {
     await window.coxswain.addNote(anchored(d, body))
     closeDraft()
-    onEntriesChanged()
+    changed({ workspaceId: workspace.id, what: 'entries' })
   }
   // Asks the round's agent session about the lines; the reply goes in the question's thread.
   const ask = (d: Draft, body: string) => {
@@ -174,7 +166,7 @@ export const Viewer = memo(function Viewer(props: Props) {
   }
   const remove = async (e: ReviewEntry) => {
     await window.coxswain.deleteEntry(e.id)
-    onEntriesChanged()
+    changed({ workspaceId: workspace.id, what: 'entries' })
   }
   const render = ({ draft, entry }: Box) =>
     draft ? (

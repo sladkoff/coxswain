@@ -12,6 +12,8 @@ export type NavigatorSettings = { layout: 'tree' | 'list' }
 // The tab bar's settings in its cog menu, for the Diff and Guide tabs. showViewed: viewed file diffs stay in the
 // Navigator and the Guide.
 export type ViewSettings = { diffStyle: 'unified' | 'split'; showViewed: boolean }
+// What the core changed on its own, e.g. when an agent turn ends, so the UI refetches it (ADR 0017).
+export type Changed = { workspaceId: number; what: 'entries' | 'worktree' | 'transcript' | 'guide' }
 
 // The one interface between the UI and the core (ADR 0002).
 const api = {
@@ -98,6 +100,11 @@ const api = {
   // The Diff tab's commits: resolves with the commit picked, or null for all changes.
   showCommitsMenu: (workspaceId: number, mergeBase: string, current: string | null): Promise<Commit | null> =>
     ipcRenderer.invoke('menus:commits', workspaceId, mergeBase, current),
+  onChanged: (callback: (change: Changed) => void) => {
+    const listener = (_: unknown, change: Changed) => callback(change)
+    ipcRenderer.on('changed', listener)
+    return () => void ipcRenderer.off('changed', listener)
+  },
   onToggleNavigator: (callback: () => void) => {
     const listener = () => callback()
     ipcRenderer.on('toggle-navigator', listener)

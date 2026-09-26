@@ -1,10 +1,12 @@
 import { FileTree, useFileTree } from '@pierre/trees/react'
+import { useQuery } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
-import type { ChangedFile, GitProblem } from '../../core/git'
+import type { ChangedFile } from '../../core/git'
 import type { Workspace } from '../../core/workspaces'
 import type { NavigatorSettings } from '../../preload'
 import type { ReviewEntry } from '../../core/review'
 import { Cog, countItems, type ItemCount, itemsTitle, ProblemMessage, muted } from './ui'
+import { core } from './queries'
 import type { PullRequestData } from './usePullRequest'
 
 export type NavigatorView = 'diffs' | 'files'
@@ -20,23 +22,13 @@ type Props = {
 }
 
 // L2: the workspace's changed files (diffs) or its whole file tree (files).
-// The file tree reloads whenever the changes do, since new files show up in both.
+// The file tree reloads whenever the worktree changes, like the changes.
 export function Navigator({ workspace, pr, view, viewed, showViewed, entries, onOpen }: Props) {
-  const [tree, setTree] = useState<string[] | null>(null)
-  const [treeProblem, setTreeProblem] = useState<GitProblem | null>(null)
+  const files = useQuery({ ...core('listWorktreeFiles', workspace.id), enabled: view === 'files' && !!pr.changed }).data
+  const tree = files?.status === 'ok' ? files.paths : null
+  const treeProblem = files && files.status !== 'ok' ? files : null
   // ponytail: reset per workspace and on restart; store them with the other UI state once there's a settings table.
   const [settings, setSettings] = useState<NavigatorSettings>({ layout: 'tree' })
-
-  useEffect(() => {
-    if (view !== 'files' || !pr.changed) return
-    let stale = false
-    window.coxswain.listWorktreeFiles(workspace.id).then((r) => {
-      if (stale) return
-      if (r.status === 'ok') setTree(r.paths)
-      else setTreeProblem(r)
-    })
-    return () => void (stale = true)
-  }, [view, pr.changed])
 
   const problem = pr.problem ?? treeProblem
   if (problem)
@@ -68,7 +60,8 @@ export function Navigator({ workspace, pr, view, viewed, showViewed, entries, on
           </button>
         </div>
       )}
-      {/* Remounts on reload: the tree takes its paths only when created. */}
+      {/* Remounts on a new list: the tree takes its paths only when created. A refetch with the same paths keeps
+          the same array (structural sharing), so the tree keeps its state. */}
       <Tree
         key={`${view}:${settings.layout}:${idOf(view === 'diffs' ? pr.changed : paths)}`}
         paths={paths}

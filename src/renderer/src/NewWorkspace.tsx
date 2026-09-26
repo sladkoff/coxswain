@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
-import type { GitHubProblem, PullRequest } from '../../core/github'
+import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
 import type { Project } from '../../core/projects'
+import { core } from './queries'
 import { button, ProblemMessage, muted, ScreenHeader } from './ui'
 
 type Props = {
@@ -13,17 +14,11 @@ type Props = {
 const row = 'block w-full rounded-md px-2 py-2 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800'
 
 export function NewWorkspace({ project, openPrNumbers, onSelect, onClose }: Props) {
-  const [pulls, setPulls] = useState<PullRequest[] | null>(null)
-  const [problem, setProblem] = useState<GitHubProblem | null>(null)
+  const result = useQuery(core('listPullRequests', project.owner, project.name))
+  const pulls = result.data?.status === 'ok' ? result.data.pulls : null
+  const problem = result.data && result.data.status !== 'ok' ? result.data : null
+  const load = () => result.refetch()
   const [query, setQuery] = useState('')
-
-  const load = async () => {
-    setProblem(null)
-    const result = await window.coxswain.listPullRequests(project.owner, project.name)
-    if (result.status !== 'ok') return setProblem(result)
-    setPulls(result.pulls)
-  }
-  useEffect(() => void load(), [])
 
   const q = query.trim().toLowerCase()
   const shown = (pulls ?? []).filter(

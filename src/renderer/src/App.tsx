@@ -1,8 +1,8 @@
 import { Virtualizer } from '@pierre/diffs/react'
+import { useQuery } from '@tanstack/react-query'
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
-import type { ChangedFile, Commit } from '../../core/git'
+import type { Commit } from '../../core/git'
 import type { NewEntry, ReviewEntry, ReviewRound } from '../../core/review'
-import type { Project } from '../../core/projects'
 import type { Workspace } from '../../core/workspaces'
 import { Agents } from './Agents'
 import { Navigator, type NavigatorView } from './Navigator'
@@ -11,6 +11,7 @@ import { Onboarding } from './Onboarding'
 import { Guide } from './Guide'
 import { Overview } from './Overview'
 import { Projects } from './Projects'
+import { changed, core, markViewed as mark, queryClient } from './queries'
 import { Round } from './Round'
 import { Settings } from './Settings'
 import { usePullRequest } from './usePullRequest'
@@ -20,18 +21,20 @@ import { type Opened, type Turn, Viewer } from './Viewer'
 
 const pane = 'border-neutral-200 dark:border-neutral-800'
 const muted = 'text-xs text-neutral-500'
+// Stable empty lists: a new [] each render would redraw the memoised Viewers.
+const noEntries: ReviewEntry[] = []
+const noPaths: string[] = []
 
 export function App() {
   const [screen, setScreen] = useState<'main' | 'settings' | 'projects' | 'new-workspace'>('main')
   useEffect(() => window.coxswain.onOpenSettings(() => setScreen('settings')), [])
   const close = () => setScreen('main')
 
-  const [projects, setProjects] = useState<Project[] | null>(null) // null until loaded
+  const projects = useQuery(core('listProjects')).data
   const current = projects?.[0] // listed most recently opened first
-  useEffect(() => void window.coxswain.listProjects().then(setProjects), [])
   const selectProject = async (fullName: string) => {
     await window.coxswain.openProject(fullName)
-    setProjects(await window.coxswain.listProjects())
+    await queryClient.invalidateQueries({ queryKey: ['listProjects'] })
     close()
   }
 
@@ -47,19 +50,15 @@ export function App() {
   const [view, setView] = useState<NavigatorView>('diffs')
   // ponytail: resets on restart, like the Navigator's settings; store them once there's a settings table.
   const [viewSettings, setViewSettings] = useState<ViewSettings>({ diffStyle: 'unified', showViewed: false })
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([])
+  const workspaces = useQuery({ ...core('listWorkspaces', current?.id ?? 0), enabled: !!current }).data ?? []
   const currentWorkspace = workspaces.reduce<Workspace | undefined>(
     (latest, w) => (!latest || w.lastOpenedAt > latest.lastOpenedAt ? w : latest),
     undefined,
   )
-  useEffect(() => {
-    setWorkspaces([])
-    if (current) window.coxswain.listWorkspaces(current.id).then(setWorkspaces)
-  }, [current?.id])
   const selectWorkspace = async (prNumber: number) => {
     if (!current) return
     await window.coxswain.openPullRequestWorkspace(current.id, prNumber)
-    setWorkspaces(await window.coxswain.listWorkspaces(current.id))
+    await queryClient.invalidateQueries({ queryKey: ['listWorkspaces', current.id] })
     close()
   }
 
@@ -71,42 +70,34 @@ export function App() {
     window.coxswain.cloneProject(current.id).finally(() => setCloning(false))
   }, [current?.id])
 
-  // Bumped when an agent turn ends, so the Navigator and Viewer show what the agent changed.
-  const [version, setVersion] = useState(0)
-  const pr = usePullRequest(currentWorkspace, version)
+  const pr = usePullRequest(currentWorkspace)
   // The Diff tab's Commits: one commit's diff (its parent to it) in place of all changes. The Guide keeps all changes.
   const [commit, setCommit] = useState<Commit | null>(null)
   useEffect(() => setCommit(null), [currentWorkspace?.id, pr.commits])
 
   // The entries of the workspace's current review round, as the Diff tab shows them (ADR 0015: the live diff, or the
   // commit picked), and the notes waiting in the L4 message box. A pinned guide lists its own.
-  const [entries, setEntries] = useState<ReviewEntry[]>([])
+  const base = commit?.parent ?? pr.commits?.mergeBase
+  const entries =
+    useQuery({ ...core('listEntries', currentWorkspace?.id ?? 0, base ?? '', commit?.sha), enabled: !!currentWorkspace && !!base })
+      .data ?? noEntries
   const [attached, setAttached] = useState<ReviewEntry[]>([])
   const [handedOff, setHandedOff] = useState<ReviewRound | null>(null) // a wrapped-up round in L4's message box
   // Callbacks handed to the Viewers are stable (useCallback), so a memoised Viewer doesn't redraw its file diff.
-  const base = commit?.parent ?? pr.commits?.mergeBase
-  const loadEntries = useCallback(
-    () => void (currentWorkspace && base && window.coxswain.listEntries(currentWorkspace.id, base, commit?.sha).then(setEntries)),
-    [currentWorkspace?.id, base, commit?.sha],
-  )
   useEffect(() => {
-    setEntries([])
     setAttached([])
     setHandedOff(null)
   }, [currentWorkspace?.id])
-  useEffect(() => void loadEntries(), [loadEntries, version])
   // A deleted note leaves the message box too.
   useEffect(() => setAttached((a) => a.filter((c) => entries.some((k) => k.id === c.id))), [entries])
   // Paths of the live diff's viewed file diffs. Reloaded with the changes, since a file diff that changed is no
-  // longer viewed, and on a tab switch, since the Guide may have marked some (ADR 0014).
-  const [viewed, setViewed] = useState<string[]>([])
+  // longer viewed (ADR 0014).
   const mergeBase = pr.commits?.mergeBase
+  const viewed =
+    useQuery({ ...core('listViewed', currentWorkspace?.id ?? 0, mergeBase ?? ''), enabled: !!currentWorkspace && !!mergeBase && !!pr.changed })
+      .data ?? noPaths
   const markViewed = useCallback(
-    (path: string, on: boolean) => {
-      if (!currentWorkspace || !mergeBase) return
-      setViewed((v) => (on ? [...v, path] : v.filter((p) => p !== path)))
-      window.coxswain.setViewed(currentWorkspace.id, mergeBase, path, on)
-    },
+    (path: string, on: boolean) => void (currentWorkspace && mergeBase && mark(currentWorkspace.id, mergeBase, path, on)),
     [currentWorkspace?.id, mergeBase],
   )
   // Questions' turns by thread, kept here so they outlive the Viewer showing them. The reply streams in as chat
@@ -116,24 +107,21 @@ export function App() {
     const offChat = window.coxswain.onQuestionChat((id, c) =>
       setTurns((t) => ({ ...t, [id]: { running: true, error: null, live: [...(t[id]?.live ?? []), c] } })),
     )
-    const offEnd = window.coxswain.onQuestionEnd((id, result) => {
-      setTurns((t) => ({ ...t, [id]: { running: false, error: result.status === 'error' ? result.message : null, live: [] } }))
-      loadEntries()
-    })
+    // The answer entry comes with the core's change event, just before this.
+    const offEnd = window.coxswain.onQuestionEnd((id, result) =>
+      setTurns((t) => ({ ...t, [id]: { running: false, error: result.status === 'error' ? result.message : null, live: [] } })),
+    )
     return () => {
       offChat()
       offEnd()
     }
-  }, [loadEntries])
-  const ask = useCallback(
-    async (q: NewEntry) => {
-      const question = await window.coxswain.askQuestion(q)
-      const id = question.parentId ?? question.id
-      setTurns((t) => ({ ...t, [id]: { running: true, error: null, live: t[id]?.live ?? [] } }))
-      loadEntries()
-    },
-    [loadEntries],
-  )
+  }, [])
+  const ask = useCallback(async (q: NewEntry) => {
+    const question = await window.coxswain.askQuestion(q)
+    const id = question.parentId ?? question.id
+    setTurns((t) => ({ ...t, [id]: { running: true, error: null, live: t[id]?.live ?? [] } }))
+    changed({ workspaceId: q.workspaceId, what: 'entries' })
+  }, [])
   // L3's tabs. `opened` is a whole file picked in Files, shown in the Diff tab in place of the file diffs.
   const [tab, setTab] = useState<Tab>('overview')
   const [opened, setOpened] = useState<Opened | null>(null)
@@ -141,24 +129,14 @@ export function App() {
     setTab('overview')
     setOpened(null)
   }, [currentWorkspace?.id])
-  useEffect(() => {
-    if (currentWorkspace && pr.commits && pr.changed)
-      window.coxswain.listViewed(currentWorkspace.id, pr.commits.mergeBase).then(setViewed)
-    else setViewed([])
-  }, [currentWorkspace?.id, pr.changed, tab])
   // Memoised: the Viewer rereads when its Opened changes.
   const diffs = useMemo(() => pr.changed?.map((file) => ({ kind: 'diff' as const, file })), [pr.changed])
-  const [commitChanged, setCommitChanged] = useState<ChangedFile[] | null>(null)
-  useEffect(() => {
-    setCommitChanged(null)
-    if (!currentWorkspace || !commit) return
-    let stale = false
-    window.coxswain.listChangedFiles(currentWorkspace.id, commit.parent, commit.sha).then((c) => {
-      // ponytail: a git error shows as no changes; show it like the Navigator's problems if it happens.
-      if (!stale) setCommitChanged(c.status === 'ok' ? c.files : [])
-    })
-    return () => void (stale = true)
-  }, [commit])
+  const commitList = useQuery({
+    ...core('listChangedFiles', currentWorkspace?.id ?? 0, commit?.parent ?? '', commit?.sha),
+    enabled: !!currentWorkspace && !!commit,
+  }).data
+  // ponytail: a git error shows as no changes; show it like the Navigator's problems if it happens.
+  const commitChanged = useMemo(() => (commitList ? (commitList.status === 'ok' ? commitList.files : []) : null), [commitList])
   const diffPr = commit ? { ...pr, changed: commitChanged } : pr
   const diffDiffs = useMemo(
     () => (commit ? commitChanged?.map((file) => ({ kind: 'diff' as const, file })) : diffs),
@@ -186,9 +164,7 @@ export function App() {
     workspace,
     mergeBase,
     head,
-    version,
     entries,
-    onEntriesChanged: loadEntries,
     attachedIds,
     onAttach: attach,
     viewed,
@@ -371,7 +347,7 @@ export function App() {
       </div>
 
       {agentsOpen && <Splitter min={240} max={800} fromRight onResize={setAgentsWidth} />}
-      {/* Hidden, not unmounted: a running turn keeps streaming and still reloads the diff when it ends. */}
+      {/* Hidden, not unmounted: a running turn keeps streaming. */}
       <div style={{ width: agentsWidth }} className={`${agentsOpen ? 'flex' : 'hidden'} min-w-60 flex-col border-l ${pane}`}>
         {currentWorkspace ? (
           <Agents
@@ -384,9 +360,7 @@ export function App() {
             onSent={() => {
               setAttached([])
               setHandedOff(null)
-              loadEntries()
             }}
-            onTurnEnd={() => setVersion((v) => v + 1)}
           />
         ) : (
           <>

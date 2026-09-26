@@ -1,23 +1,24 @@
-import { useEffect, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
 import type { ActionItem, ReviewEntry, ReviewRound } from '../../core/review'
 import type { Workspace } from '../../core/workspaces'
+import { changed, core } from './queries'
 import { button, itemsTitle, muted, primaryButton } from './ui'
 
 const pane = 'border-neutral-200 dark:border-neutral-800'
 
 // The review round's bar at the bottom of the Viewer: how many notes and questions it has, and Wrap up (ADR 0012),
 // which drafts its action items and ends it. The draft opens above the bar, to edit.
-// entries: the latest round's, reloaded by the parent; the round itself is reread when they change.
+// entries: the latest round's; they and the round are reread together when the core says entries changed.
 // handedOff: the round is in L4's message box; onHandOff puts it there (hand off, glossary).
 type Props = { workspace: Workspace; entries: ReviewEntry[]; handedOff: boolean; onHandOff: (round: ReviewRound) => void }
 
 export function Round({ workspace, entries, handedOff, onHandOff }: Props) {
-  const [round, setRound] = useState<ReviewRound | null>(null)
+  const round = useQuery(core('getRound', workspace.id)).data
   const [open, setOpen] = useState(false)
   const [wrapping, setWrapping] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const load = () => window.coxswain.getRound(workspace.id).then(setRound)
-  useEffect(() => void load(), [workspace.id, entries])
+  const load = () => changed({ workspaceId: workspace.id, what: 'entries' })
 
   if (!round || !entries.length) return null
   // The whole round, outdated entries and all.

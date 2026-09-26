@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { useMemo } from 'react'
 import type { ChangedFile, GitProblem } from '../../core/git'
 import type { GitHubProblem } from '../../core/github'
 import type { Workspace } from '../../core/workspaces'
+import { core } from './queries'
 
 export type PullRequestData = {
   changed: ChangedFile[] | null
@@ -10,51 +12,25 @@ export type PullRequestData = {
   problem: GitHubProblem | GitProblem | null
 }
 
-const empty: PullRequestData = { changed: null, commits: null, notice: null, problem: null }
-
 // What the Navigator and Viewer share about the current workspace: its worktree (cloned and created on first
-// open, ADR 0008) and what differs from the PR's merge base. `version` changes reload the changes, e.g. after
-// an agent turn.
-export function usePullRequest(workspace: Workspace | undefined, version: number): PullRequestData {
-  // workspaceId: whose data it is. Reset only in an effect, so the first render after switching workspace still
-  // holds the last one's, and children's effects run before this one's: a Guide would make a guide for the new
-  // workspace from the old merge base. Returned only when it's the current workspace's.
-  const [data, setData] = useState<PullRequestData & { workspaceId?: number }>(empty)
-
-  useEffect(() => {
-    setData(empty)
-    if (!workspace) return
-    let stale = false
-    const id = workspace.id
-    const start = { ...empty, workspaceId: id }
-    ;(async () => {
-      // Show a worktree opened before right away, then check GitHub and fetch in the background.
-      const before = await window.coxswain.openedBefore(id)
-      if (stale) return
-      if (before?.status === 'ok') setData({ ...start, commits: { head: before.head, mergeBase: before.mergeBase } })
-      const w = await window.coxswain.openWorktree(id)
-      if (stale) return
-      if (w.status !== 'ok') {
-        // Offline or signed out: keep showing the worktree, and say it may be out of date.
-        if (before) setData((d) => ({ ...d, notice: 'Could not check the PR for new commits' }))
-        else setData({ ...start, problem: w })
-      } else if (!before || before.status !== 'ok' || w.head !== before.head || w.mergeBase !== before.mergeBase) {
-        setData({ ...start, commits: { head: w.head, mergeBase: w.mergeBase }, notice: w.notice })
-      } else if (w.notice) setData((d) => ({ ...d, notice: w.notice }))
-    })()
-    return () => void (stale = true)
-  }, [workspace?.id])
-
-  useEffect(() => {
-    if (!workspace || !data.commits) return
-    let stale = false
-    window.coxswain.listChangedFiles(workspace.id, data.commits.mergeBase).then((changed) => {
-      if (stale) return
-      if (changed.status !== 'ok') setData((d) => ({ ...d, problem: changed }))
-      else setData((d) => ({ ...d, changed: changed.files }))
-    })
-    return () => void (stale = true)
-  }, [data.commits, version])
-
-  return data.workspaceId === workspace?.id ? data : empty
+// open, ADR 0008) and what differs from the PR's merge base. The changes reload when the core says the worktree
+// changed, e.g. after an agent turn; the PR's head is checked again after a minute, on window focus.
+export function usePullRequest(workspace: Workspace | undefined): PullRequestData {
+  const id = workspace?.id ?? 0
+  // Show a worktree opened before right away, then check GitHub and fetch in the background.
+  const before = useQuery({ ...core('openedBefore', id), enabled: !!workspace }).data
+  const opened = useQuery({ ...core('openWorktree', id), enabled: !!workspace })
+  const w = opened.data
+  const at = w?.status === 'ok' ? w : before?.status === 'ok' ? before : null
+  // Kept while head and merge base stay: a new object would reset what depends on it, e.g. the commit picked.
+  const commits = useMemo(() => at && { head: at.head, mergeBase: at.mergeBase }, [at?.head, at?.mergeBase])
+  const changed = useQuery({ ...core('listChangedFiles', id, commits?.mergeBase ?? ''), enabled: !!workspace && !!commits }).data
+  // Offline or signed out: keep showing the worktree, and say it may be out of date.
+  const unchecked = opened.isError || (w && w.status !== 'ok' && before?.status === 'ok')
+  return {
+    changed: changed?.status === 'ok' ? changed.files : null,
+    commits,
+    notice: unchecked ? 'Could not check the PR for new commits' : w?.status === 'ok' ? w.notice : null,
+    problem: w && w.status !== 'ok' && !commits ? w : changed && changed.status !== 'ok' ? changed : null,
+  }
 }
