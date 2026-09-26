@@ -6,6 +6,7 @@ import type { GuideGroup } from '../../core/guides'
 import type { NewEntry, ReviewEntry } from '../../core/review'
 import type { Workspace } from '../../core/workspaces'
 import { Agents } from './Agents'
+import { Commits } from './Commits'
 import { GuideToc } from './GuideToc'
 import { Navigator, type NavigatorView } from './Navigator'
 import { NewWorkspace } from './NewWorkspace'
@@ -40,9 +41,10 @@ export function App() {
   // ponytail: pane widths reset on restart; persist them in SQLite once a settings table exists.
   const [leftWidth, setLeftWidth] = useState(416)
   const [agentsWidth, setAgentsWidth] = useState(416)
-  // The Navigator is on the left of the canvas. Starts hidden.
-  const [navigatorOpen, setNavigatorOpen] = useState(false)
-  useEffect(() => window.coxswain.onToggleNavigator(() => setNavigatorOpen((o) => !o)), [])
+  // The pane on the left of the canvas: the Navigator (files) or the commits. Starts hidden.
+  const [leftPane, setLeftPane] = useState<'files' | 'commits' | null>(null)
+  const toggleLeftPane = (p: 'files' | 'commits') => setLeftPane((o) => (o === p ? null : p))
+  useEffect(() => window.coxswain.onToggleNavigator(() => toggleLeftPane('files')), [])
 
   const [view, setView] = useState<NavigatorView>('diffs')
   // ponytail: resets on restart, like the Navigator's settings; store them once there's a settings table.
@@ -220,9 +222,7 @@ export function App() {
     const result = await window.coxswain.requestGuide(currentWorkspace.id, picked.make)
     if (result.status === 'error') setGuideError(result.message)
   }
-  const pickCommit = async () => {
-    if (!currentWorkspace || !pr.commits) return
-    const picked = await window.coxswain.showCommitsMenu(currentWorkspace.id, pr.commits.mergeBase, commit?.sha ?? null)
+  const pickCommit = (picked: Commit | null) => {
     setCommit(picked)
     setGuideId(null)
     setOpened(null)
@@ -347,24 +347,19 @@ export function App() {
 
       {/* The canvas: what the agent and the human look at together. For now, the workspace's file diffs. */}
       <div style={{ minWidth: viewerMin }} className="flex min-w-0 flex-1 flex-col">
-        {/* The canvas's tabs, one per thing it shows. ponytail: only Changes so far; a tab state comes with the second. */}
-        <div className={`flex h-10 shrink-0 items-center gap-0.5 border-b px-2 [-webkit-app-region:drag] ${pane}`}>
+        {/* The canvas's bar: the diffs' options. It also drags the window, so it lines up with the agent pane's.
+            ponytail: no tabs row until the canvas shows a second thing. */}
+        <div className={`flex h-10 shrink-0 items-center gap-1 border-b px-2 text-xs [-webkit-app-region:drag] [&_button]:[-webkit-app-region:no-drag] ${pane}`}>
           {currentWorkspace && (
-            <button className="rounded bg-neutral-200 px-2 py-0.5 text-xs [-webkit-app-region:no-drag] dark:bg-neutral-700">Changes</button>
-          )}
-        </div>
-        {/* The current tab's options; outside its scroll, so it stays put. */}
-        {currentWorkspace && (
-          <div className={`flex h-8 shrink-0 items-center gap-1 border-b px-2 text-xs ${pane}`}>
             <div className="flex flex-1 items-center gap-1">
-              <BarToggle title="Show or hide the files (⌘B)" on={navigatorOpen} onClick={() => setNavigatorOpen((o) => !o)}>
+              <BarToggle title="Show or hide the files (⌘B)" on={leftPane === 'files'} onClick={() => toggleLeftPane('files')}>
                 Files {diffPr.changed?.length ?? ''}
               </BarToggle>
               <button
-                title="Show all changes or one commit's"
+                title="Show or hide the commits, to see one commit's changes"
                 disabled={!pr.commits}
-                className={`max-w-80 truncate rounded px-2 py-0.5 ${commit ? 'bg-neutral-200 dark:bg-neutral-700' : 'text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800'}`}
-                onClick={pickCommit}
+                className={`max-w-80 truncate rounded px-2 py-0.5 ${leftPane === 'commits' || commit ? 'bg-neutral-200 dark:bg-neutral-700' : 'text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800'}`}
+                onClick={() => toggleLeftPane('commits')}
               >
                 {commit ? `${commit.sha.slice(0, 7)} ${commit.subject}` : 'Commits'}
               </button>
@@ -386,19 +381,27 @@ export function App() {
                 <Cog />
               </button>
             </div>
-          </div>
-        )}
+          )}
+        </div>
         {!currentWorkspace ? (
           <div className={`flex flex-1 items-center justify-center ${muted}`}>No workspace. Start one with +</div>
         ) : (
           <div className="flex min-h-0 flex-1">
-            {navigatorOpen && (
+            {leftPane && (
               <>
                 <div style={{ width: leftWidth }} className={`flex min-w-60 flex-col border-r ${pane}`}>
-                  <div className="flex shrink-0 justify-end px-2 pt-1.5">
-                    <ViewToggle view={view} onChange={setView} />
-                  </div>
-                  <Navigator key={currentWorkspace.id} workspace={currentWorkspace} pr={diffPr} view={view} viewed={viewed} showViewed={viewSettings.showViewed} entries={entries} onOpen={open} />
+                  {leftPane === 'commits' ? (
+                    pr.commits && (
+                      <Commits workspaceId={currentWorkspace.id} mergeBase={pr.commits.mergeBase} current={commit} onPick={pickCommit} />
+                    )
+                  ) : (
+                    <>
+                      <div className="flex shrink-0 justify-end px-2 pt-1.5">
+                        <ViewToggle view={view} onChange={setView} />
+                      </div>
+                      <Navigator key={currentWorkspace.id} workspace={currentWorkspace} pr={diffPr} view={view} viewed={viewed} showViewed={viewSettings.showViewed} entries={entries} onOpen={open} />
+                    </>
+                  )}
                 </div>
                 <Splitter min={240} max={720} onResize={setLeftWidth} />
               </>

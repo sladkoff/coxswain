@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { AgentSession, ChatEntry, Permission, TurnResult } from '../core/agents'
-import type { ChangedFileList, CloneResult, Commit, FileText, FileTreeResult, WorktreeResult } from '../core/git'
+import type { ChangedFileList, CloneResult, Commit, FileText, FileTreeResult, GitProblem, WorktreeResult } from '../core/git'
 import type { CurrentUser, PullRequestList, RepoPage } from '../core/github'
 import type { Guide } from '../core/guides'
 import type { Project } from '../core/projects'
@@ -33,6 +33,9 @@ const api = {
     ipcRenderer.invoke('git:opened-before', workspaceId),
   openWorktree: (workspaceId: number): Promise<WorktreeResult> => ipcRenderer.invoke('git:open-worktree', workspaceId),
   // With head: a commit diff, mergeBase being the commit's parent.
+  // The PR's commits since the merge base, newest first: the Commits pane's list.
+  listCommits: (workspaceId: number, mergeBase: string): Promise<{ status: 'ok'; commits: Commit[] } | GitProblem> =>
+    ipcRenderer.invoke('git:commits', workspaceId, mergeBase),
   listChangedFiles: (workspaceId: number, mergeBase: string, head?: string): Promise<ChangedFileList> =>
     ipcRenderer.invoke('git:changed-files', workspaceId, mergeBase, head),
   listWorktreeFiles: (workspaceId: number): Promise<FileTreeResult> => ipcRenderer.invoke('git:worktree-files', workspaceId),
@@ -101,9 +104,6 @@ const api = {
   showNavigatorMenu: (settings: NavigatorSettings): Promise<NavigatorSettings> =>
     ipcRenderer.invoke('menus:navigator', settings),
   showViewMenu: (settings: ViewSettings): Promise<ViewSettings> => ipcRenderer.invoke('menus:view', settings),
-  // The Diff tab's commits: resolves with the commit picked, or null for all changes.
-  showCommitsMenu: (workspaceId: number, mergeBase: string, current: string | null): Promise<Commit | null> =>
-    ipcRenderer.invoke('menus:commits', workspaceId, mergeBase, current),
   // The canvas's Guide menu: make one (make: with review), or the guide to show (null: none). Pending if dismissed.
   showGuideMenu: (workspaceId: number, shown: number | null, prHead: string): Promise<{ make: boolean } | { show: number | null }> =>
     ipcRenderer.invoke('menus:guide', workspaceId, shown, prHead),

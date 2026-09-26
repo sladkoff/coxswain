@@ -23,6 +23,10 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 - **The guide's table of contents is back** (`GuideToc.tsx`, from the old Guide tab): left of the canvas while a
   guide shows, with viewed counts per group and in all, `✎` counts, the group being read marked, and click to jump.
   `countItems` no longer makes an empty count for explanations and findings (`✎ 0`).
+- **No tabs row over the canvas:** it only ever held *Changes*. The canvas's bar is now the top strip (and drags the
+  window); a tabs row comes back with a second thing to show.
+- **Commits is a pane, not a menu:** *Commits* in the canvas's bar opens a list on the left, in the Navigator's
+  place (one or the other), and a click picks the commit. `listCommits` replaces the `menus:commits` popup.
 - Tried on PR #1 of the test project: the agent called every tool, and the guide, two explanations and five findings
   showed on the canvas while it worked.
 

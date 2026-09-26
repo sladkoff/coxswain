@@ -14,7 +14,6 @@ import {
 import { openDatabase } from '../core/db'
 import {
   cloneProject,
-  type Commit,
   listChangedFiles,
   listCommits,
   listWorktreeFiles,
@@ -138,6 +137,7 @@ app.whenReady().then(() => {
       )
     return opened
   })
+  ipcMain.handle('git:commits', (_, workspaceId: number, mergeBase: string) => listCommits(db, workspaceId, mergeBase))
   ipcMain.handle('git:changed-files', (_, workspaceId: number, mergeBase: string, head?: string) =>
     listChangedFiles(db, workspaceId, mergeBase, head),
   )
@@ -223,23 +223,6 @@ app.whenReady().then(() => {
       ),
   )
   // The Diff tab's commits: all changes, or one commit's diff. Resolves only on a click, like the menus above.
-  ipcMain.handle('menus:commits', async (e, workspaceId: number, mergeBase: string, current: string | null) => {
-    const listed = await listCommits(db, workspaceId, mergeBase)
-    return new Promise<Commit | null>((resolve) =>
-      Menu.buildFromTemplate([
-        { label: 'All Changes', type: 'radio', checked: current === null, click: () => resolve(null) },
-        { type: 'separator' },
-        ...(listed.status !== 'ok'
-          ? [{ label: `Couldn't list the commits: ${listed.message}`, enabled: false }]
-          : listed.commits.map((c) => ({
-              label: `${c.sha.slice(0, 7)}  ${c.subject}`,
-              type: 'radio' as const,
-              checked: c.sha === current,
-              click: () => resolve(c),
-            }))),
-      ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
-    )
-  })
   ipcMain.handle(
     'menus:view',
     (e, s: ViewSettings) =>

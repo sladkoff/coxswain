@@ -10,8 +10,8 @@ Draft: only the main areas so far. Open questions are listed at the end.
 **Moving to an agent-first layout (prototype, 2026-09-26).** Opening a PR shows the agent pane on
 the left and the canvas on the right. The canvas is one explorer that both the agent and the human
 can annotate; what it can show is still to be decided. The agent will get tools to use the app
-(navigate the canvas, read what's on it). The canvas has a row of tabs at its top, one per thing it shows, and under it a bar with the current tab's
-options. For now its only tab is *Changes*: the file diffs (the old *Diff* tab) with the Navigator. A bar at the bottom of
+(navigate the canvas, read what's on it). The canvas shows *Changes*: the file diffs (the old *Diff* tab) with the Navigator, and a bar at its top with
+their options. A row of tabs comes back once it shows a second thing. A bar at the bottom of
 the canvas sums up the review: how many threads (and how many are outdated or waiting on the agent), the lines added
 and removed, and how many of the files are viewed, with a progress bar. Clicking the thread count opens every thread above
 the bar, one line each: file and lines, the first comment, and whether it's outdated, answered (*N answers*), sent to
@@ -81,9 +81,9 @@ this settles.
   workspace opens on), *Guide* and *Diff*, all file diffs side by side one after
   another, with the Navigator on their left. Selecting a file in *Diffs* scrolls to its file diff;
   selecting one in *Files* shows the whole file in their place, until the toggle goes back to *Diffs*. Under the tabs, a second bar
-  that stays put holds the current tab's options. On *Diff*, next to *Files*, *Commits* opens a
-  native menu: *All Changes*, or one of the PR's commits (and local ones on top), newest first.
-  Picking a commit shows its commit diff in the Navigator and the file diffs, and the button then
+  that stays put holds the current tab's options. On *Diff*, next to *Files*, *Commits* shows and
+  hides the commits pane, in the Navigator's place on the left: *All Changes*, then the PR's commits (and local ones on
+  top), newest first. Picking a commit shows its commit diff in the file diffs (and in the Navigator once it's back), and the button then
   names the commit; the Guide keeps all changes. On *Guide* and *Diff* it has a cog button that
   opens a native menu: *Unified* or *Split* file diffs, and *Show Viewed Files*, shared by the
   Navigator, the file diffs and the Guide: off, viewed file diffs are hidden, and when all are, the canvas says *All N
