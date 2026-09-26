@@ -3,6 +3,42 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-26 — Agent-first layout, first rough pass
+
+### What works
+
+- **No more tabs.** The *Overview*, *Guide* and *Diff* tabs are gone. Opening a PR shows the **agent pane**
+  (the old L4 chat) on the left, always visible and resizable, and the **canvas** on the right (glossary). For
+  now the canvas shows the file diffs, with *Files*, *Commits* and the cog in its bar.
+- *View > Toggle Agents* (⌥⌘B) is gone, since the agent pane is always shown.
+- **Comments are threads.** The comment box on lines is a send button (Enter), a *Send to agent* checkbox and ✕ to
+  cancel. Every comment starts a thread with a reply box of the same shape, so a note can be answered too. Ticked, a
+  comment is a question and the agent's answer lands in the thread; unticked, a note. No schema change: `parent_id`
+  already threads entries, it just wasn't used for notes. A question asked in a thread is given the thread's notes
+  since its last question (and the anchor, if the thread began as a note), since the agent session never saw them.
+  Note boxes and question threads are now one `ThreadBox`. The old *Send to agent* on a note (a chip in the agent
+  pane's message box, once only) is gone with its plumbing (`noteIds`, `formatAsk`'s notes); reply with the box
+  ticked instead. `entries.sent_at` is no longer written or read.
+- **Comments go to the agent pane** ([ADR 0021](adr/0021-comments-go-to-the-agent-pane.md)): a question is a turn
+  in the workspace's current agent session, not a hidden per-round one. The agent chat shows it as a card (*Comment
+  on `a.ts:3` sent to Claude*, the comment, *View thread*, which scrolls the canvas to the thread); the reply streams
+  to both and is kept as the thread's answer. The card comes from a header line in the prompt, read back from the
+  transcript (`withComment` in `core/agents.ts`).
+- **No more review rounds** ([ADR 0022](adr/0022-no-review-rounds.md)): entries belong to their workspace. Rounds,
+  wrap up, action items, hand-off and *Copy as prompt* are gone from the core, IPC and UI (`Round.tsx` deleted; round
+  events left the timeline and action items the change summaries). Migration 20 rebuilds `entries` with
+  `workspace_id` and `agent_sessions` without `review_round_id`, and drops `action_items` and `review_rounds`; ran
+  on the real database with its 17 entries kept. `ask`'s `instructions` parameter went with wrap up.
+
+### Tech debt
+
+- `Overview.tsx` and `Guide.tsx` aren't mounted anywhere. They're kept until the canvas can show them, or delete them.
+- `ponytail:` the comment card is parsed from the prompt's header line; store sent comments by turn if it gets in the way.
+- `ponytail:` *View thread* stops at the file for an outdated thread, which isn't between the lines.
+- The agent pane shows no *Working…* during a comment's turn, and a comment fails if the pane's own turn is running.
+- `ponytail:` every entry a workspace ever had is listed; nothing archives old ones.
+- UX.md's L3 and L4 sections still describe the tabbed layout; they get rewritten once the canvas settles.
+
 ## 2026-09-26 — The Overview's timeline
 
 ### What works

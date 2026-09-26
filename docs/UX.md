@@ -7,22 +7,26 @@ Draft: only the main areas so far. Open questions are listed at the end.
 
 ## Layout
 
-A Discord-style layout: the current project and its workspaces in a narrow column on the far left,
-then the workspace's files, the work in the middle and the agents on the right.
+**Moving to an agent-first layout (prototype, 2026-09-26).** Opening a PR shows the agent pane on
+the left and the canvas on the right. The canvas is one explorer that both the agent and the human
+can annotate; what it can show is still to be decided. The agent will get tools to use the app
+(navigate the canvas, read what's on it). For now the canvas shows the file diffs (the old *Diff*
+tab) with the Navigator. The *Overview*, *Guide* and *Diff* tabs are gone, so
+the timeline and guides can't be reached; the L3 and L4 notes below describe the old layout until
+this settles.
 
 ```
-┌─────────────────────┬─────────────────────────────────┬──────────────────┐
-│                     │ Overview  Guide  Diff           │ [agent] [agent]  │
-├────┬────────────────┤─────────────────────────────────┤──────────────────┤
-│ L1 │ L2 Navigator   │ L3 Viewer                       │ L4               │
-│    │ Diffs │ Files  │                                 │                  │
-│ P  │                │  diff or file,                  │ agent chat       │
-│ ── │ src/           │  with notes and questions       │                  │
-│▌#12│   a.ts   +3    │                                 │ several agent    │
-│ #34│   b.ts   -1    │                                 │ sessions         │
-│ +  │                ├─────────────────────────────────┤                  │
-│    │                │ Round 1 · 2 notes    [Wrap up]  │                  │
-└────┴────────────────┴─────────────────────────────────┴──────────────────┘
+┌──────────────────────────────┬──────────────────────────────────────────┐
+│ Claude Code    [New session] │ Files 3  Commits                     ⚙   │
+├────┬─────────────────────────┼──────────────────────────────────────────┤
+│ L1 │ Agent pane              │ Canvas                                   │
+│    │                         │                                          │
+│ P  │ agent chat              │  file diffs, with notes and questions    │
+│ ── │                         │  (the agent and the human annotate it)   │
+│▌#12│                         │                                          │
+│ #34│                         │                                          │
+│ +  │ [message box]           │                                          │
+└────┴─────────────────────────┴──────────────────────────────────────────┘
           ⌘K from anywhere: switch to anything, do anything
 ```
 
@@ -45,7 +49,7 @@ then the workspace's files, the work in the middle and the agents on the right.
   While the project is being cloned, its icon pulses and the Navigator says so. In *Diffs*, viewed
   files are hidden; the top says how many of the files are viewed, and a cog button opens a native
   menu: *As Tree* or *As List* (a flat list of the changed files, each with its folder dimmed
-  next to its +/− lines). A changed file with notes or questions in the current round shows how many
+  next to its +/− lines). A changed file with notes or questions shows how many
   after its +/− lines (`✎ 2`; hovering says how many of each). *Show Viewed Files* in the tab bar's cog menu (L3) shows viewed files again
   with a ✓.
 - **L3 — Viewer.** Tabs along the top: *Overview* (the PR's title and its timeline, the tab a
@@ -58,32 +62,24 @@ then the workspace's files, the work in the middle and the agents on the right.
   names the commit; the Guide keeps all changes. On *Guide* and *Diff* it has a cog button that
   opens a native menu: *Unified* or *Split* file diffs, and *Show Viewed Files*, shared by the
   Navigator and the Guide. A file diff's header has a
-  *Viewed* checkbox. Entries of the current review round (glossary) go between the lines while
+  *Viewed* checkbox. The workspace's entries (glossary) go between the lines while
   they're current, i.e. their lines still read as the code they were written on; the header says *N
-  outdated* for the others, and a click shows them above the file diff with that code. A wrapped-up
-  round's entries don't show. Hovering
-  a line shows a `+` in the gutter; clicking it (or dragging it over a range) opens a box with two
-  actions. *Note* (⌘Enter) saves a note. A saved note has *Send to agent*, which puts it in the L4
-  message box, and shows *Sent to agent* once an ask included it. *Ask agent* (⇧⌘Enter) asks a
-  question about those lines in the round's agent session, which knows the round's earlier questions:
-  the reply streams into the question's thread between the lines, with each tool used as one line,
-  and is kept as an answer when the turn ends. A box under it asks a follow-up. A tool use that would
+  outdated* for the others, and a click shows them above the file diff with that code. Hovering
+  a line shows a `+` in the gutter; clicking it (or dragging it over a range) opens a comment box: the lines at its top, ✕ at its top right
+  to cancel (or Esc), the text, a *Send to agent* checkbox at the bottom left and a send button (Enter; Shift+Enter
+  adds a line) at the bottom right. Sending starts a **thread** between the lines: every comment is one. Under
+  its comments, a reply box of the same shape adds another comment to the thread; its checkbox starts ticked in a
+  thread that began as a question. Each comment is labelled *You*, or *You → agent* when it went to the agent, and
+  the agent's answers *Agent*. Unticked, a comment is a note. Ticked, it's a question: a turn in the agent pane's
+  agent session (ADR 0021), which shows it as a card (*Comment on `path:lines` sent to Claude*, the comment, and
+  *View thread*, which scrolls the canvas to the thread). The agent is given the thread's notes it hasn't seen (and the lines, if the
+  thread began as a note): the reply streams into the thread, with each tool used as one line, and is kept as an
+  answer when the turn ends. A tool use that would
   change something (a file edit, most shell commands) stops the turn with a permission prompt in the
   thread: what the agent wants to run and the agent's options (*Yes*, *No*, sometimes *Always*); the
-  turn carries on once one is picked, or ends with *Stop*. The round's questions
-  run one at a time. These agent sessions don't show in L4.
-
-  At the bottom of *Guide* and *Diff*, once the workspace has a round, a bar for the **review round**:
-  ‹ *Round N* ›, which steps through every round (the latest shown first), how many notes and questions it has,
-  and *Wrap up*. Wrapping up (*Wrapping up…* while the agent works) ends the round and opens it above the bar.
-  *Show round* opens the selected round there: first its action items, numbered, each with a *done* checkbox, where
-  it points and its text, which a click edits (⌘Enter or leaving the box saves, Esc cancels), and ✕ to delete; then
-  its stream, in order, each question with its follow-ups and answers under it. Then the bar says *wrapped up, N of M
-  done*, or *resolved* once all are, with *Wrap up again*, which replaces the items; *Copy as prompt*, which puts the
-  open items and the round's stream on the clipboard, to paste into an agent outside coxswain; *Post to PR* (not
-  built yet); and *Send to agent*, which hands the round off in L4: it puts *Round N · N action items* in the L4
-  message box, like a note, and the next message carries the items and the round's stream to the current agent
-  session. The next note or question starts the next round.
+  turn carries on once one is picked, or ends with *Stop*. Questions
+  run one at a time, and not while the agent pane's own turn runs. The thread's header has ✕ to delete it.
+  To send a note to the agent afterwards, reply with *Send to agent* ticked; the agent gets the thread's notes too.
 
   *Guide* shows the workspace's guide: its guide groups one after another, each a title, a short
   description and then the group's file diffs, each with its file note above it, the same file diffs as in *Diff* (Viewed checkbox,
@@ -112,8 +108,7 @@ then the workspace's files, the work in the middle and the agents on the right.
   summary, a paragraph or two of prose on what the change sets out to do and why, which model wrote it, and
   *Regenerate*; *Summarising…* while it's made. The first
   phase also has the PR's description, folded. Then the phase's events, one line each, with the time: a note or
-  question of *Round N*, with where it points and its text, a question's answers folded under it; *Round N wrapped
-  up* with *N of M action items done*; a GitHub comment or review, with its author, state (*approved*, *changes
+  question, with where it points and its text, its replies and answers folded under it; a GitHub comment or review, with its author, state (*approved*, *changes
   requested*, *commented*), text and how many review comments it has, linking to GitHub; and the PR being merged,
   closed, reopened, marked ready or draft, or force-pushed. The phase the PR is on now is marked *current*. If
   GitHub can't be reached, a line at the top says so and the timeline shows only what coxswain has.
@@ -132,24 +127,22 @@ then the workspace's files, the work in the middle and the agents on the right.
   ┃  claude-haiku-4-5 · Regenerate
   ┃  Description ▸
   ┃  ○ 11:02  alice reviewed · changes requested · 3 comments  "..."
-  ┃  ○ 10:50  Round 1 wrapped up · 0 of 2 action items done
-  ┃  ○ 10:42  Round 1 · Note · src/users.py:8       drop this helper
-  ┃  ○ 10:40  Round 1 · Question · src/stats.py:4   what is this?     Answer ▸
+  ┃  ○ 10:42  Note · src/users.py:8       drop this helper
+  ┃  ○ 10:40  Question · src/stats.py:4   what is this?     Answer ▸
   ```
 
 - **L4 — Agents** on the right: the agent sessions of the current workspace. Hidden at first. The *Agent* toggle at the right of
   each tab's bar, *View > Toggle Agents* or ⌥⌘B shows and hides it. *Send to agent* shows it. Several can be open at
   once, e.g. as tabs in the pane. For now L4 is a chat with the workspace's latest agent session:
   its turns, with each tool the agent used as one line, and a message box at the bottom (Enter
-  sends, Shift+Enter adds a line). Notes sent from L3 sit above the message box as chips, can be
-  removed, and go in front of the next message, making it an ask. *New session* in the header starts another agent session with
+  sends, Shift+Enter adds a line). *New session* in the header starts another agent session with
   the next message; a running turn can be stopped. When the agent wants a tool that auto mode would block, a
   permission prompt takes the place of *Working…*: *Claude Code wants to:*, the command or file, and the agent's
   options as buttons (*Yes*, *Always*, *No*); the turn waits until one is picked.
 
 ## Across all levels
 
-- The borders of L2 and L4 can be dragged to resize the panes; L3 takes the rest.
+- The borders of the agent pane and the Navigator can be dragged to resize them; the canvas takes the rest.
 - **⌘K** is always available, both to switch to anything (project, workspace, PR, file,
   agent session) and to run any command.
 - Projects, repositories and PRs must be quick to reach: L1 and ⌘K.
@@ -161,14 +154,17 @@ then the workspace's files, the work in the middle and the agents on the right.
    your PRs)? Probably an inbox; where it lives and what goes in it is to be decided.
 2. **Tabs in L3:** which options go in each tab's bar? Should *Regenerate* move to the Guide's bar?
    Should a guide group down to hunks, not whole file diffs?
-3. **The review round as a whole:** where do you write an entry that floats on the round rather than on lines?
-   Hand-off one action item at a time, and *Post*, are still open. GitHub's comments show on the timeline (ADR 0020); should review comments also show in the diff?
+3. **The review as a whole:** where do you write a comment that isn't on lines? *Post* is still open. GitHub's comments
+   show on the timeline (ADR 0020); should review comments also show in the diff?
 4. **Agents in L4:** tabs, a list, or split panes, and how running and finished agent sessions look.
    Only the latest agent session is reachable so far; earlier ones need a way back.
 5. **PR changes vs local changes:** *Diffs* mixes the PR's file diffs with local changes (uncommitted,
    untracked, unpushed), so an agent's work isn't told apart from the PR's. Options: a marker per
    file, a third toggle (*Local*), or showing local changes on top of the PR's head separately.
 6. **The timeline:** What else
-   makes a summary again (new review activity, a finished round), and should a phase get a recap of its events,
-   not just of its code? Should bot comments (CI, Linear) be folded or hidden? Where do agent sessions and
-   hand-offs go on it, once they're recorded?
+   makes a summary again (new review activity), and should a phase get a recap of its events,
+   not just of its code? Should bot comments (CI, Linear) be folded or hidden? Where do agent sessions go on
+   it?
+7. **The canvas:** what it shows besides file diffs (the timeline, a guide, a whole file, something the agent
+   makes), how the agent and the human switch between them, and what an annotation is: an entry, or something new?
+   Which tools the agent gets to navigate the app and read its context.

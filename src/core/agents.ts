@@ -11,11 +11,26 @@ import { worktreePath } from './git'
 import { getWorkspaceRepo } from './workspaces'
 
 // ADR 0018: every agent run is a session over the Agent Client Protocol, in one adapter process per agent. An agent
-// session in L4, a question, a guide step and a wrap-up differ only in the options their session is opened with.
+// session in the agent pane, a guide step and a change summary differ only in the options their session is opened with.
 export type AgentSession = { id: number; workspaceId: number; agentSessionId: string; createdAt: string }
 
-// One line of the chat: something the user said, text the agent wrote, or a tool the agent used.
-export type ChatEntry = { kind: 'user' | 'text' | 'tool'; text: string }
+// One line of the chat: something the user said, text the agent wrote, or a tool the agent used. comment: the user's
+// message was a comment sent from a thread, which the chat shows as a card.
+export type ChatEntry = { kind: 'user' | 'text' | 'tool'; text: string; comment?: SentComment }
+export type SentComment = { threadId: number; where: string; body: string }
+
+// A comment sent to the agent session, as its prompt: a header line the chat knows it by, the comment, then what the
+// agent needs to answer it. ponytail: the transcript is the agent's, so the card is read back from the prompt's text;
+// store sent comments by session and turn if the header ever gets in the way.
+const commentHeader = /^\[Comment on (.+) · thread #(\d+)\]\n/
+export const formatComment = (c: SentComment, context: string) =>
+  `[Comment on ${c.where} · thread #${c.threadId}]\n${c.body}${context ? `\n\n---\n${context}` : ''}`
+export function withComment(entry: ChatEntry): ChatEntry {
+  const m = entry.kind === 'user' ? commentHeader.exec(entry.text) : null
+  if (!m) return entry
+  const body = entry.text.slice(m[0].length).split('\n\n---\n')[0]
+  return { ...entry, comment: { threadId: Number(m[2]), where: m[1], body } }
+}
 
 export type TurnResult = { status: 'ok' } | { status: 'error'; message: string }
 
@@ -362,14 +377,13 @@ const agentSessionOptions = { tools: 'all', mode: 'auto' } as const
 
 const columns = ['id', 'workspace_id as workspaceId', 'agent_session_id as agentSessionId', 'created_at as createdAt'] as const
 
-// The workspace's agent sessions in L4, oldest first; the last one is the current one. A review round's session for
-// its questions isn't listed (ADR 0011).
+// The workspace's agent sessions in the agent pane, oldest first; the last one is the current one, which questions go
+// to too (ADR 0021).
 export function listAgentSessions(db: Db, workspaceId: number): Promise<AgentSession[]> {
   return db
     .selectFrom('agent_sessions')
     .select(columns)
     .where('workspace_id', '=', workspaceId)
-    .where('review_round_id', 'is', null)
     .orderBy('id')
     .execute()
 }
@@ -409,7 +423,8 @@ export async function readyWorktree(db: Db, workspaceId: number): Promise<string
 // history to load.
 export async function readTranscript(db: Db, agentSessionId: string): Promise<ChatEntry[]> {
   try {
-    return await history('claude', agentSessionId, await readyWorktree(db, await agentSessionWorkspace(db, agentSessionId)))
+    const entries = await history('claude', agentSessionId, await readyWorktree(db, await agentSessionWorkspace(db, agentSessionId)))
+    return entries.map(withComment)
   } catch {
     return []
   }
@@ -429,7 +444,7 @@ export async function runTurn(
   running.add(agentSessionId)
   try {
     const cwd = await readyWorktree(db, await agentSessionWorkspace(db, agentSessionId))
-    handlers.onEntry?.({ kind: 'user', text: prompt })
+    handlers.onEntry?.(withComment({ kind: 'user', text: prompt }))
     await run('claude', { cwd, prompt, session: agentSessionId, ...options }, handlers)
     return { status: 'ok' }
   } catch (e) {

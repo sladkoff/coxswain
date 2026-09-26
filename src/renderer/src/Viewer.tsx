@@ -8,7 +8,7 @@ import type { NewEntry, ReviewEntry } from '../../core/review'
 import type { Workspace } from '../../core/workspaces'
 import { Entry, PermissionPrompt } from './Agents'
 import { changed, core } from './queries'
-import { button, muted, primaryButton, ProblemMessage, Prose } from './ui'
+import { button, muted, primaryButton, ProblemMessage, Prose, SendIcon } from './ui'
 
 // What the Viewer shows: the file diff of a changed file, or a whole file as it is in the worktree.
 export type Opened = { kind: 'diff'; file: ChangedFile } | { kind: 'file'; path: string }
@@ -30,9 +30,7 @@ type Props = {
   // viewed for all changes; anchor entries and viewed state to the commit if that misleads.
   head?: string
   opened: Opened
-  entries: ReviewEntry[] // the current review round's
-  attachedIds: number[]
-  onAttach: (note: ReviewEntry) => void
+  entries: ReviewEntry[] // the workspace's
   viewed: string[]
   onViewedChange: (path: string, viewed: boolean) => void
   turns: Record<number, Turn> // by thread
@@ -56,7 +54,7 @@ const baseOptions = { preferredHighlighter: 'shiki-js', overflow: 'wrap', sticky
 // Memoised, and so are the files and annotations it hands the library: @pierre/diffs re-diffs on a new file
 // object and redraws on every render, so the Diff tab's many Viewers must only render when their props change.
 export const Viewer = memo(function Viewer(props: Props) {
-  const { workspace, mergeBase, head, opened, entries, attachedIds, onAttach } = props
+  const { workspace, mergeBase, head, opened, entries } = props
   const [draft, setDraft] = useState<Draft | null>(null)
   const [showOutdated, setShowOutdated] = useState(false)
   // The highlighted lines. Controlled, so they can be cleared when a draft is cancelled or saved: left to
@@ -156,15 +154,11 @@ export const Viewer = memo(function Viewer(props: Props) {
     const anchor = { path, side: d.side, startLine: start, endLine: end, code, base: mergeBase, head: head ?? null }
     return { workspaceId: workspace.id, body, anchor }
   }
-  const note = async (d: Draft, body: string) => {
-    await window.coxswain.addNote(anchored(d, body))
-    closeDraft()
+  // A note, or with toAgent a question for the agent pane's session; its answer goes in the thread.
+  const post = async (e: NewEntry, toAgent: boolean) => {
+    if (toAgent) return props.onAsk(e)
+    await window.coxswain.addNote(e)
     changed({ workspaceId: workspace.id, what: 'entries' })
-  }
-  // Asks the round's agent session about the lines; the reply goes in the question's thread.
-  const ask = (d: Draft, body: string) => {
-    props.onAsk(anchored(d, body))
-    closeDraft()
   }
   const remove = async (e: ReviewEntry) => {
     await window.coxswain.deleteEntry(e.id)
@@ -172,20 +166,20 @@ export const Viewer = memo(function Viewer(props: Props) {
   }
   const render = ({ draft, entry }: Box) =>
     draft ? (
-      <DraftBox draft={draft} onNote={note} onAsk={ask} onCancel={closeDraft} />
-    ) : entry?.kind === 'note' ? (
-      <NoteBox
-        note={entry}
-        attached={attachedIds.includes(entry.id)}
-        onAttach={() => onAttach(entry)}
-        onRemove={() => remove(entry)}
+      <DraftBox
+        draft={draft}
+        onSend={(body, toAgent) => {
+          post(anchored(draft, body), toAgent)
+          closeDraft()
+        }}
+        onCancel={closeDraft}
       />
-    ) : entry?.kind === 'question' ? (
+    ) : entry ? (
       <ThreadBox
-        question={entry}
+        root={entry}
         replies={entries.filter((e) => e.parentId === entry.id)}
         turn={props.turns[entry.id]}
-        onReply={(body) => props.onAsk({ workspaceId: workspace.id, body, parentId: entry.id })}
+        onReply={(body, toAgent) => post({ workspaceId: workspace.id, body, parentId: entry.id }, toAgent)}
         onStop={() => window.coxswain.stopQuestion(workspace.id)}
         onAnswerPermission={(id, optionId) => props.onAnswerPermission(entry.id, id, optionId)}
         onRemove={() => remove(entry)}
@@ -256,141 +250,139 @@ export const Viewer = memo(function Viewer(props: Props) {
 const lines = (start: number, end: number) => (start === end ? `Line ${start}` : `Lines ${start}–${end}`)
 const box = 'm-2 flex flex-col gap-1.5 rounded-md border border-neutral-300 bg-white p-2 font-sans text-sm dark:border-neutral-700 dark:bg-neutral-900'
 
-type DraftBoxProps = {
-  draft: Draft
-  onNote: (d: Draft, body: string) => void
-  onAsk: (d: Draft, body: string) => void
-  onCancel: () => void
-}
+type DraftBoxProps = { draft: Draft; onSend: (body: string, toAgent: boolean) => void; onCancel: () => void }
 
-function DraftBox({ draft, onNote, onAsk, onCancel }: DraftBoxProps) {
-  const [body, setBody] = useState('')
-  // autoFocus loses to the gutter button, which takes focus when the drag that opened this box ends.
-  const input = useRef<HTMLTextAreaElement>(null)
-  useEffect(() => {
-    const t = setTimeout(() => input.current?.focus())
-    return () => clearTimeout(t)
-  }, [])
+// A new thread on the lines picked.
+function DraftBox({ draft, onSend, onCancel }: DraftBoxProps) {
   const [start, end] = [draft.startLine, draft.endLine].sort((a, b) => a - b)
   return (
     <div className={box}>
-      <span className={`text-xs ${muted}`}>{lines(start, end)}</span>
+      <div className={`flex items-center justify-between text-xs ${muted}`}>
+        <span>{lines(start, end)}</span>
+        <button title="Cancel (Esc)" className="hover:text-neutral-900 dark:hover:text-neutral-100" onClick={onCancel}>
+          ✕
+        </button>
+      </div>
+      <Composer autoFocus rows={3} placeholder="Comment" onSend={onSend} onCancel={onCancel} />
+    </div>
+  )
+}
+
+type ComposerProps = {
+  autoFocus?: boolean
+  rows: number
+  placeholder: string
+  toAgent?: boolean // the checkbox's starting state
+  onSend: (body: string, toAgent: boolean) => void
+  onCancel?: () => void
+}
+
+// A comment's text, *Send to agent* on the left and the send button on the right. Enter sends, Shift+Enter adds a line.
+function Composer(props: ComposerProps) {
+  const [body, setBody] = useState('')
+  const [toAgent, setToAgent] = useState(props.toAgent ?? false)
+  // autoFocus loses to the gutter button, which takes focus when the drag that opened the box ends.
+  const input = useRef<HTMLTextAreaElement>(null)
+  useEffect(() => {
+    if (!props.autoFocus) return
+    const t = setTimeout(() => input.current?.focus())
+    return () => clearTimeout(t)
+  }, [])
+  const send = () => {
+    if (!body.trim()) return
+    props.onSend(body.trim(), toAgent)
+    setBody('')
+  }
+  return (
+    <>
       <textarea
         ref={input}
         value={body}
         onChange={(e) => setBody(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Escape') onCancel()
-          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && body.trim()) (e.shiftKey ? onAsk : onNote)(draft, body)
+          if (e.key === 'Escape') props.onCancel?.()
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault()
+            send()
+          }
         }}
-        rows={3}
-        placeholder="A note (⌘Enter), or a question for the agent (⇧⌘Enter)"
+        rows={props.rows}
+        placeholder={`${props.placeholder} (Enter to send)`}
         className="resize-none rounded-md border border-neutral-300 bg-transparent p-1.5 outline-none focus:border-neutral-500 dark:border-neutral-700"
       />
-      <div className="flex justify-end gap-1.5">
-        <button className={`${button} text-xs`} onClick={onCancel}>
-          Cancel
-        </button>
-        <button className={`${button} text-xs`} disabled={!body.trim()} onClick={() => onAsk(draft, body)}>
-          Ask agent
-        </button>
-        <button className={`${primaryButton} text-xs`} disabled={!body.trim()} onClick={() => onNote(draft, body)}>
-          Note
+      <div className="flex items-center justify-between">
+        <label className="flex items-center gap-1 text-xs select-none">
+          <input type="checkbox" checked={toAgent} onChange={(e) => setToAgent(e.target.checked)} />
+          Send to agent
+        </label>
+        <button title="Send (Enter)" className={`${primaryButton} disabled:opacity-50`} disabled={!body.trim()} onClick={send}>
+          <SendIcon />
         </button>
       </div>
-    </div>
-  )
-}
-
-type NoteBoxProps = { note: ReviewEntry; attached: boolean; onAttach: () => void; onRemove: () => void }
-
-function NoteBox({ note: n, attached, onAttach, onRemove }: NoteBoxProps) {
-  return (
-    <div className={box}>
-      <div className={`flex items-center gap-2 text-xs ${muted}`}>
-        <span>Note · {lines(n.startLine!, n.endLine!)}</span>
-        {n.sentAt && <span className="rounded bg-neutral-100 px-1 dark:bg-neutral-800">Sent to agent</span>}
-      </div>
-      <div className="whitespace-pre-wrap [overflow-wrap:anywhere]">{n.body}</div>
-      <div className="flex justify-end gap-1.5">
-        <button className={`${button} text-xs`} onClick={onRemove}>
-          Delete
-        </button>
-        <button className={`${button} text-xs`} disabled={attached} onClick={onAttach}>
-          {attached ? 'In the message' : 'Send to agent'}
-        </button>
-      </div>
-    </div>
+    </>
   )
 }
 
 type ThreadBoxProps = {
-  question: ReviewEntry
-  replies: ReviewEntry[] // follow-up questions and answers, in order
+  root: ReviewEntry // the thread's first note or question
+  replies: ReviewEntry[] // notes, follow-up questions and answers, in order
   turn: Turn | undefined
-  onReply: (body: string) => void
+  onReply: (body: string, toAgent: boolean) => void
   onStop: () => void
   onAnswerPermission: (id: string, optionId: string) => void
   onRemove: () => void
 }
 
-// A thread: the question, its follow-ups and answers, the reply streaming in while a turn runs, and a box to follow up.
-function ThreadBox({ question: q, replies, turn, onReply, onStop, onAnswerPermission, onRemove }: ThreadBoxProps) {
-  const [reply, setReply] = useState('')
+// A thread: its first entry, the replies and answers, the reply streaming in while a turn runs, and a box to reply.
+function ThreadBox({ root, replies, turn, onReply, onStop, onAnswerPermission, onRemove }: ThreadBoxProps) {
   const running = turn?.running ?? false
-  const send = () => {
-    if (!reply.trim() || running) return
-    onReply(reply.trim())
-    setReply('')
-  }
   return (
-    <div className={box}>
-      <span className={`text-xs ${muted}`}>Question · {lines(q.startLine!, q.endLine!)}</span>
-      <div className="whitespace-pre-wrap [overflow-wrap:anywhere]">{q.body}</div>
-      <div className="flex flex-col gap-1.5 border-t border-neutral-200 pt-1.5 dark:border-neutral-800">
-        <div className="flex max-h-96 flex-col gap-1.5 overflow-y-auto">
-          {replies.map((e) =>
-            e.kind === 'answer' ? (
-              <div key={e.id} className="markdown select-text [overflow-wrap:anywhere]">
-                <Prose>{e.body}</Prose>
-              </div>
-            ) : (
-              <Entry key={e.id} entry={{ kind: 'user', text: e.body }} />
-            ),
-          )}
-          {turn?.live.filter((c) => c.kind !== 'user').map((c, i) => <Entry key={`live${i}`} entry={c} />)}
-          {turn?.permission ? (
-            <PermissionPrompt permission={turn.permission} onAnswer={(optionId) => onAnswerPermission(turn.permission!.id, optionId)} />
-          ) : (
-            running && <div className={`text-xs ${muted}`}>Working…</div>
-          )}
-          {turn?.error && <div className="text-xs text-red-600 select-text dark:text-red-400">{turn.error}</div>}
-        </div>
-        {running ? (
-          <button className={`${button} self-end text-xs`} onClick={onStop}>
-            Stop
-          </button>
-        ) : (
-          <div className="flex items-end gap-1.5">
-            <textarea
-              value={reply}
-              onChange={(e) => setReply(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault()
-                  send()
-                }
-              }}
-              rows={1}
-              placeholder="Follow up (Enter to send)"
-              className="min-w-0 flex-1 resize-none rounded-md border border-neutral-300 bg-transparent p-1.5 outline-none focus:border-neutral-500 dark:border-neutral-700"
-            />
-            <button className={`${button} text-xs`} onClick={onRemove}>
-              Delete
-            </button>
-          </div>
-        )}
+    <div id={`thread:${root.id}`} className={box}>
+      <div className={`flex items-center gap-2 text-xs ${muted}`}>
+        <span>{lines(root.startLine!, root.endLine!)}</span>
+        <div className="flex-1" />
+        <button title="Delete the thread" className="hover:text-neutral-900 dark:hover:text-neutral-100" onClick={onRemove}>
+          ✕
+        </button>
       </div>
+      <div className="flex max-h-96 flex-col gap-1.5 overflow-y-auto">
+        <Comment entry={root} />
+        {replies.map((e) => <Comment key={e.id} entry={e} />)}
+        {turn?.live.filter((c) => c.kind !== 'user').map((c, i) => <Entry key={`live${i}`} entry={c} />)}
+        {turn?.permission ? (
+          <PermissionPrompt permission={turn.permission} onAnswer={(optionId) => onAnswerPermission(turn.permission!.id, optionId)} />
+        ) : (
+          running && <div className={`text-xs ${muted}`}>Working…</div>
+        )}
+        {turn?.error && <div className="text-xs text-red-600 select-text dark:text-red-400">{turn.error}</div>}
+      </div>
+      {running ? (
+        <button className={`${button} self-end text-xs`} onClick={onStop}>
+          Stop
+        </button>
+      ) : (
+        <div className="flex flex-col gap-1.5 border-t border-neutral-200 pt-1.5 dark:border-neutral-800">
+          {/* Ticked to start with when the thread is already talking to the agent. */}
+          <Composer rows={1} placeholder="Reply" toAgent={root.kind === 'question'} onSend={onReply} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+// One entry of a thread: the user's (a question marked as sent to the agent), or the agent's answer.
+function Comment({ entry: e }: { entry: ReviewEntry }) {
+  if (e.kind === 'answer')
+    return (
+      <div className="markdown select-text [overflow-wrap:anywhere]">
+        <span className={`text-xs ${muted}`}>Agent</span>
+        <Prose>{e.body}</Prose>
+      </div>
+    )
+  return (
+    <div className="whitespace-pre-wrap select-text [overflow-wrap:anywhere]">
+      <span className={`block text-xs ${muted}`}>{e.kind === 'question' ? 'You → agent' : 'You'}</span>
+      {e.body}
     </div>
   )
 }

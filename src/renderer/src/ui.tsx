@@ -7,13 +7,13 @@ import type { ReviewEntry } from '../../core/review'
 
 export const muted = 'text-neutral-500'
 
-// The notes and questions of the current review round on each file, as the Navigator and the Guide show them.
-// A question's follow-ups and answers are part of its thread, so they don't count.
+// The workspace's notes and questions on each file, as the Navigator and the Guide show them.
+// Replies, follow-ups and answers are part of their thread, so they don't count.
 export type ItemCount = { notes: number; questions: number }
 export function countItems(entries: ReviewEntry[]): Map<string, ItemCount> {
   const counts = new Map<string, ItemCount>()
   for (const e of entries) {
-    // Only what's about the code on screen (ADR 0015): not outdated or wrapped-up entries.
+    // Only what's about the code on screen (ADR 0015): not outdated entries.
     if (!e.path || e.parentId || e.state !== 'current') continue
     const c = counts.get(e.path) ?? { notes: 0, questions: 0 }
     if (e.kind === 'note') c.notes++
@@ -106,6 +106,16 @@ export function Cog() {
     <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
       <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
       <circle cx="12" cy="12" r="3" />
+    </svg>
+  )
+}
+
+// Send, from Lucide (ISC licence).
+export function SendIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z" />
+      <path d="m21.854 2.147-10.94 10.939" />
     </svg>
   )
 }

@@ -17,7 +17,7 @@ type Props = {
   view: NavigatorView
   viewed: string[]
   showViewed: boolean
-  entries: ReviewEntry[] // the current review round's, counted per file
+  entries: ReviewEntry[] // the workspace's, counted per file
   onOpen: (path: string) => void
 }
 

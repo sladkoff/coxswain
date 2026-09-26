@@ -3,7 +3,6 @@ import { useState } from 'react'
 import type { Phase, Timeline, TimelineEvent } from '../../core/timeline'
 import type { Workspace } from '../../core/workspaces'
 import { changed, core } from './queries'
-import { where } from './Round'
 import { button, muted, ProblemMessage, Prose } from './ui'
 
 const line = 'border-neutral-200 dark:border-neutral-800'
@@ -159,7 +158,7 @@ function EventView({ event: e }: { event: TimelineEvent }) {
         <div>
           {head(
             <>
-              Round {e.round} · <span className="capitalize">{e.entry.kind}</span>
+              <span className="capitalize">{e.entry.kind}</span>
               {at && <span className="font-mono"> · {at}</span>}
             </>,
           )}
@@ -171,7 +170,7 @@ function EventView({ event: e }: { event: TimelineEvent }) {
               </summary>
               {e.replies.map((r) => (
                 <div key={r.id} className="mt-1">
-                  <div className={muted}>{r.kind === 'answer' ? 'Answer' : 'Follow-up'}</div>
+                  <div className={muted}>{r.kind === 'answer' ? 'Answer' : r.kind === 'question' ? 'Follow-up' : 'Reply'}</div>
                   <div className="markdown [overflow-wrap:anywhere]">{r.kind === 'answer' ? <Prose>{r.body}</Prose> : r.body}</div>
                 </div>
               ))}
@@ -180,10 +179,6 @@ function EventView({ event: e }: { event: TimelineEvent }) {
         </div>
       )
     }
-    case 'wrap-up':
-      return head(
-        `Round ${e.round} wrapped up · ${e.items ? `${e.done} of ${plural(e.items, 'action item')} done` : 'no action items'}`,
-      )
     case 'comment':
       return (
         <div>
@@ -212,3 +207,6 @@ function Clamped({ text }: { text: string }) {
     </div>
   )
 }
+
+const where = (a: { path: string | null; startLine: number | null; endLine: number | null }) =>
+  a.path && `${a.path}:${a.startLine === a.endLine ? a.startLine : `${a.startLine}–${a.endLine}`}`

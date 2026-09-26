@@ -2,20 +2,17 @@ import type { Db } from './db'
 import { type Commit, isAncestor, listChangedFiles, listCommits, openedWorktree, readFileDiff } from './git'
 import { getPullRequestActivity, type GitHubEvent, type GitHubProblem } from './github'
 import { ask, getGuideSettings } from './guides'
-import { listRounds, type ReviewEntry } from './review'
+import { type ReviewEntry, workspaceEntries } from './review'
 import { getWorkspaceRepo } from './workspaces'
 
 // ADR 0020: the timeline (glossary) is a workspace's PR history in phases, one per PR head coxswain saw, each with a
-// change summary. Only the phases are stored; the rest is put together from rounds, git and GitHub when it's read.
+// change summary. Only the phases are stored; the rest is put together from entries, git and GitHub when it's read.
 // kind: created (the first phase), pushed (builds on the previous head) or rebased (doesn't; base is the merge base).
 // A change summary is prose (markdown); the prompt asks it for the change's intent and why.
 export type ChangeSummary = { text: string; model: string | null; at: string }
 type Entry = Omit<ReviewEntry, 'state'>
-// An event (glossary). entry: a note or question with its follow-ups and answers; round: the round's number.
-export type TimelineEvent =
-  | { kind: 'entry'; at: string; round: number; entry: Entry; replies: Entry[] }
-  | { kind: 'wrap-up'; at: string; round: number; items: number; done: number }
-  | GitHubEvent
+// An event (glossary). entry: a thread's first note or question with its replies and answers.
+export type TimelineEvent = { kind: 'entry'; at: string; entry: Entry; replies: Entry[] } | GitHubEvent
 // files, additions, deletions and commits: base → head, counted by git; null when git couldn't read them.
 export type Phase = {
   id: number
@@ -106,13 +103,12 @@ async function makeSummary(db: Db, phaseId: number) {
   const phase = await db.selectFrom('phases').selectAll().where('id', '=', phaseId).executeTakeFirstOrThrow()
   const workspaceId = phase.workspace_id
   const { owner, name, prNumber } = await getWorkspaceRepo(db, workspaceId)
-  const [cwd, changed, commits, activity, earlier, rounds, settings] = await Promise.all([
+  const [cwd, changed, commits, activity, earlier, settings] = await Promise.all([
     openedWorktree(db, workspaceId),
     listChangedFiles(db, workspaceId, phase.base, phase.head),
     listCommits(db, workspaceId, phase.base, phase.head),
     getPullRequestActivity(owner, name, prNumber),
     db.selectFrom('phases').selectAll().where('workspace_id', '=', workspaceId).where('id', '<', phaseId).orderBy('id').execute(),
-    listRounds(db, workspaceId),
     getGuideSettings(db),
   ])
   if (changed.status !== 'ok') throw new Error(changed.message)
@@ -137,7 +133,6 @@ async function makeSummary(db: Db, phaseId: number) {
   const within = (at: string | null) => !!at && Date.parse(at) >= since && Date.parse(at) < until
   const feedback = previous
     ? [
-        ...rounds.filter((r) => within(r.endedAt)).flatMap((r) => r.actionItems.map((a) => `- Action item from review round ${r.number}: ${a.body}`)),
         ...(activity.status === 'ok' ? activity.events : [])
           .filter((e) => e.kind !== 'state')
           .filter((e) => within(e.at) && e.body.trim())
@@ -177,10 +172,10 @@ async function makeSummary(db: Db, phaseId: number) {
 // ponytail: asks GitHub on every read, and entries changing reads it again; cache the activity if that shows.
 export async function getTimeline(db: Db, workspaceId: number): Promise<Timeline> {
   const { owner, name, prNumber } = await getWorkspaceRepo(db, workspaceId)
-  const [activity, rows, rounds] = await Promise.all([
+  const [activity, rows, entries] = await Promise.all([
     getPullRequestActivity(owner, name, prNumber),
     db.selectFrom('phases').selectAll().where('workspace_id', '=', workspaceId).orderBy('id').execute(),
-    listRounds(db, workspaceId),
+    workspaceEntries(db, workspaceId),
   ])
   const phases: Phase[] = await Promise.all(
     rows.map(async (r, i) => {
@@ -214,11 +209,8 @@ export async function getTimeline(db: Db, workspaceId: number): Promise<Timeline
       (e.kind === 'review' && phases.find((p) => p.head === e.commit)) || phases.findLast((p) => Date.parse(p.seenAt) <= at) || phases[0]
     phase?.events.push(e)
   }
-  for (const r of rounds) {
-    for (const entry of r.entries.filter((e) => !e.parentId))
-      place({ kind: 'entry', at: entry.createdAt, round: r.number, entry, replies: r.entries.filter((e) => e.parentId === entry.id) })
-    if (r.endedAt) place({ kind: 'wrap-up', at: r.endedAt, round: r.number, items: r.actionItems.length, done: r.actionItems.filter((a) => a.doneAt).length })
-  }
+  for (const entry of entries.filter((e) => !e.parentId))
+    place({ kind: 'entry', at: entry.createdAt, entry, replies: entries.filter((e) => e.parentId === entry.id) })
   if (activity.status === 'ok') for (const e of activity.events) place(e)
   // Newest first, phases and the events in them, so the latest is at the top.
   for (const p of phases) p.events.sort((a, b) => Date.parse(b.at) - Date.parse(a.at))

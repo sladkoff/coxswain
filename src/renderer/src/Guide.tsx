@@ -97,7 +97,7 @@ export function Guide(props: Props) {
     (path: string, on: boolean) => (head ? markViewed(workspace.id, base, path, on, head) : props.onViewedChange(path, on)),
     [workspace.id, base, head, props.onViewedChange],
   )
-  // The round's entries as they stand in the guide's range (ADR 0015).
+  // The workspace's entries as they stand in the guide's range (ADR 0015).
   const pinnedEntries = useQuery({ ...core('listEntries', workspace.id, base, head ?? undefined), enabled: !!head }).data
   const entries = head ? (pinnedEntries ?? noEntries) : viewer.entries
   const guideViewer = useMemo(

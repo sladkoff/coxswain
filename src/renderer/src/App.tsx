@@ -2,17 +2,14 @@ import { Virtualizer } from '@pierre/diffs/react'
 import { useQuery } from '@tanstack/react-query'
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
 import type { Commit } from '../../core/git'
-import type { NewEntry, ReviewEntry, ReviewRound } from '../../core/review'
+import type { NewEntry, ReviewEntry } from '../../core/review'
 import type { Workspace } from '../../core/workspaces'
 import { Agents } from './Agents'
 import { Navigator, type NavigatorView } from './Navigator'
 import { NewWorkspace } from './NewWorkspace'
 import { Onboarding } from './Onboarding'
-import { Guide } from './Guide'
-import { Overview } from './Overview'
 import { Projects } from './Projects'
 import { changed, core, markViewed as mark, queryClient } from './queries'
-import { Round } from './Round'
 import { Settings } from './Settings'
 import { usePullRequest } from './usePullRequest'
 import type { ViewSettings } from '../../preload'
@@ -40,12 +37,10 @@ export function App() {
 
   // ponytail: pane widths reset on restart; persist them in SQLite once a settings table exists.
   const [leftWidth, setLeftWidth] = useState(416)
-  const [agentsWidth, setAgentsWidth] = useState(320)
-  // The Navigator is on the left of the Diff tab. Both start hidden.
+  const [agentsWidth, setAgentsWidth] = useState(416)
+  // The Navigator is on the left of the canvas. Starts hidden.
   const [navigatorOpen, setNavigatorOpen] = useState(false)
-  const [agentsOpen, setAgentsOpen] = useState(false)
   useEffect(() => window.coxswain.onToggleNavigator(() => setNavigatorOpen((o) => !o)), [])
-  useEffect(() => window.coxswain.onToggleAgents(() => setAgentsOpen((o) => !o)), [])
 
   const [view, setView] = useState<NavigatorView>('diffs')
   // ponytail: resets on restart, like the Navigator's settings; store them once there's a settings table.
@@ -75,21 +70,13 @@ export function App() {
   const [commit, setCommit] = useState<Commit | null>(null)
   useEffect(() => setCommit(null), [currentWorkspace?.id, pr.commits])
 
-  // The entries of the workspace's current review round, as the Diff tab shows them (ADR 0015: the live diff, or the
-  // commit picked), and the notes waiting in the L4 message box. A pinned guide lists its own.
+  // The workspace's entries, as the canvas shows them (ADR 0015: the live diff, or the commit picked). A pinned guide
+  // lists its own.
   const base = commit?.parent ?? pr.commits?.mergeBase
   const entries =
     useQuery({ ...core('listEntries', currentWorkspace?.id ?? 0, base ?? '', commit?.sha), enabled: !!currentWorkspace && !!base })
       .data ?? noEntries
-  const [attached, setAttached] = useState<ReviewEntry[]>([])
-  const [handedOff, setHandedOff] = useState<ReviewRound | null>(null) // a wrapped-up round in L4's message box
   // Callbacks handed to the Viewers are stable (useCallback), so a memoised Viewer doesn't redraw its file diff.
-  useEffect(() => {
-    setAttached([])
-    setHandedOff(null)
-  }, [currentWorkspace?.id])
-  // A deleted note leaves the message box too.
-  useEffect(() => setAttached((a) => a.filter((c) => entries.some((k) => k.id === c.id))), [entries])
   // Paths of the live diff's viewed file diffs. Reloaded with the changes, since a file diff that changed is no
   // longer viewed (ADR 0014).
   const mergeBase = pr.commits?.mergeBase
@@ -130,13 +117,9 @@ export function App() {
     setTurns((t) => ({ ...t, [id]: { running: true, error: null, live: t[id]?.live ?? [], permission: t[id]?.permission ?? null } }))
     changed({ workspaceId: q.workspaceId, what: 'entries' })
   }, [])
-  // L3's tabs. `opened` is a whole file picked in Files, shown in the Diff tab in place of the file diffs.
-  const [tab, setTab] = useState<Tab>('overview')
+  // `opened` is a whole file picked in Files, shown on the canvas in place of the file diffs.
   const [opened, setOpened] = useState<Opened | null>(null)
-  useEffect(() => {
-    setTab('overview')
-    setOpened(null)
-  }, [currentWorkspace?.id])
+  useEffect(() => setOpened(null), [currentWorkspace?.id])
   // Memoised: the Viewer rereads when its Opened changes.
   const diffs = useMemo(() => pr.changed?.map((file) => ({ kind: 'diff' as const, file })), [pr.changed])
   const commitList = useQuery({
@@ -162,19 +145,28 @@ export function App() {
     document.getElementById(`diff:${path}`)?.scrollIntoView()
   }
   const showFile = view === 'files' && opened
+  // Shows a thread on the canvas: back to the live file diffs, scrolled to its file, then to the thread once the
+  // file diff has drawn it. ponytail: an outdated thread isn't between the lines, so this stops at its file.
+  const viewThread = (threadId: number) => {
+    const root = entries.find((e) => e.id === threadId)
+    if (!root?.path) return
+    setOpened(null)
+    setCommit(null)
+    document.getElementById(`diff:${root.path}`)?.scrollIntoView()
+    let tries = 20
+    const find = () => {
+      const el = document.getElementById(`thread:${threadId}`)
+      if (el) el.scrollIntoView({ block: 'center' })
+      else if (tries--) setTimeout(find, 50)
+    }
+    find()
+  }
 
-  const attachedIds = useMemo(() => attached.map((c) => c.id), [attached])
-  const attach = useCallback((c: ReviewEntry) => {
-    setAttached((a) => [...a, c])
-    setAgentsOpen(true) // the note goes in L4's message box, so show it
-  }, [])
   const viewerProps = (workspace: Workspace, mergeBase: string, head?: string) => ({
     workspace,
     mergeBase,
     head,
     entries,
-    attachedIds,
-    onAttach: attach,
     viewed,
     onViewedChange: markViewed,
     turns,
@@ -199,7 +191,7 @@ export function App() {
   if (!current)
     return <Onboarding onSettings={() => setScreen('settings')} onChooseProject={() => setScreen('projects')} />
 
-  // Empty shell of the main screen from docs/UX.md: L1 project and workspaces, L2 Navigator, L3 Viewer, L4 agents.
+  // Empty shell of the main screen from docs/UX.md: L1 project and workspaces, the agent pane, the canvas.
   return (
     // Side panes keep their dragged width but shrink with the window before the Viewer goes below viewerMin.
     <div className="flex h-full select-none overflow-hidden text-sm">
@@ -250,19 +242,28 @@ export function App() {
         </div>
       </div>
 
+      {currentWorkspace && (
+        <>
+          {/* The agent pane, always shown for a workspace. */}
+          <div style={{ width: agentsWidth }} className={`flex min-w-60 flex-col border-r ${pane}`}>
+            <Agents
+              key={currentWorkspace.id}
+              workspace={currentWorkspace}
+              onViewThread={viewThread}
+            />
+          </div>
+          <Splitter min={240} max={800} onResize={setAgentsWidth} />
+        </>
+      )}
+
+      {/* The canvas: what the agent and the human look at together. For now, the workspace's file diffs. */}
       <div style={{ minWidth: viewerMin }} className="flex min-w-0 flex-1 flex-col">
-        <div className={`flex h-10 shrink-0 items-center gap-1 border-b pr-2 pl-8 [-webkit-app-region:drag] ${pane}`}>
-          {currentWorkspace && <Tabs tab={tab} onChange={setTab} />}
-        </div>
-        {/* The current tab's options; outside the tab's scroll, so it stays put. */}
-        {currentWorkspace && (
-          <div className={`flex h-8 shrink-0 items-center gap-1 border-b px-2 text-xs ${pane}`}>
-            {tab === 'diff' && (
+        <div className={`flex h-10 shrink-0 items-center gap-1 border-b px-2 text-xs [-webkit-app-region:drag] ${pane}`}>
+          {currentWorkspace && (
+            <div className="flex flex-1 items-center gap-1 [-webkit-app-region:no-drag]">
               <BarToggle title="Show or hide the files (⌘B)" on={navigatorOpen} onClick={() => setNavigatorOpen((o) => !o)}>
                 Files {diffPr.changed?.length ?? ''}
               </BarToggle>
-            )}
-            {tab === 'diff' && (
               <button
                 title="Show all changes or one commit's"
                 disabled={!pr.commits}
@@ -271,9 +272,7 @@ export function App() {
               >
                 {commit ? `${commit.sha.slice(0, 7)} ${commit.subject}` : 'Commits'}
               </button>
-            )}
-            <div className="flex-1" />
-            {tab !== 'overview' && (
+              <div className="flex-1" />
               <button
                 title="View options"
                 className="rounded p-1 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
@@ -281,37 +280,13 @@ export function App() {
               >
                 <Cog />
               </button>
-            )}
-            <BarToggle title="Show or hide the agent (⌥⌘B)" on={agentsOpen} onClick={() => setAgentsOpen((o) => !o)}>
-              Agent
-            </BarToggle>
-          </div>
-        )}
+            </div>
+          )}
+        </div>
         {!currentWorkspace ? (
           <div className={`flex flex-1 items-center justify-center ${muted}`}>No workspace. Start one with +</div>
-        ) : tab === 'overview' ? (
-          <Overview key={currentWorkspace.id} workspace={currentWorkspace} />
-        ) : tab === 'guide' ? (
-          !pr.commits || !diffs ? (
-            <div className={`flex flex-1 items-center justify-center ${muted}`}>Loading…</div>
-          ) : (
-            <Guide
-              key={currentWorkspace.id}
-              workspace={currentWorkspace}
-              mergeBase={pr.commits.mergeBase}
-              prHead={pr.commits.head}
-              diffs={diffs}
-              viewed={viewed}
-              onViewedChange={markViewed}
-              showViewed={viewSettings.showViewed}
-              onShowViewed={() => setViewSettings((s) => ({ ...s, showViewed: true }))}
-              viewer={viewerProps(currentWorkspace, pr.commits.mergeBase)}
-            />
-          )
-        ) : null}
-        {/* The Diff tab stays mounted while hidden, so the Navigator and the file diffs keep their state. */}
-        {currentWorkspace && (
-          <div className={`${tab === 'diff' ? 'flex' : 'hidden'} min-h-0 flex-1`}>
+        ) : (
+          <div className="flex min-h-0 flex-1">
             {navigatorOpen && (
               <>
                 <div style={{ width: leftWidth }} className={`flex min-w-60 flex-col border-r ${pane}`}>
@@ -342,65 +317,12 @@ export function App() {
             </div>
           </div>
         )}
-        {/* Its own key: a sibling of the Guide, and a key shared with it left old Guides behind on a tab switch. */}
-        {currentWorkspace && tab !== 'overview' && <Round
-            key={`round-${currentWorkspace.id}`}
-            workspace={currentWorkspace}
-            handedOffId={handedOff?.id}
-            onHandOff={(r) => {
-              setHandedOff(r)
-              setAgentsOpen(true)
-            }}
-          />}
-      </div>
-
-      {agentsOpen && <Splitter min={240} max={800} fromRight onResize={setAgentsWidth} />}
-      {/* Hidden, not unmounted: a running turn keeps streaming. */}
-      <div style={{ width: agentsWidth }} className={`${agentsOpen ? 'flex' : 'hidden'} min-w-60 flex-col border-l ${pane}`}>
-        {currentWorkspace ? (
-          <Agents
-            key={currentWorkspace.id}
-            workspace={currentWorkspace}
-            attached={attached}
-            handedOff={handedOff}
-            onDetach={(id) => setAttached((a) => a.filter((c) => c.id !== id))}
-            onDetachRound={() => setHandedOff(null)}
-            onSent={() => {
-              setAttached([])
-              setHandedOff(null)
-            }}
-          />
-        ) : (
-          <>
-            <div className={`h-10 shrink-0 border-b [-webkit-app-region:drag] ${pane}`} />
-            <div className={`flex flex-1 items-center justify-center ${muted}`}>No agent sessions</div>
-          </>
-        )}
       </div>
     </div>
   )
 }
 
-type Tab = 'overview' | 'guide' | 'diff'
-
-// L3's tabs.
-function Tabs({ tab, onChange }: { tab: Tab; onChange: (tab: Tab) => void }) {
-  return (
-    <div className="flex gap-0.5 [-webkit-app-region:no-drag]">
-      {(['overview', 'guide', 'diff'] as const).map((t) => (
-        <button
-          key={t}
-          onClick={() => onChange(t)}
-          className={`rounded px-2 py-0.5 text-xs capitalize ${t === tab ? 'bg-neutral-200 dark:bg-neutral-700' : 'text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800'}`}
-        >
-          {t}
-        </button>
-      ))}
-    </div>
-  )
-}
-
-// A toggle in a tab's bar that shows or hides a pane.
+// A toggle in the canvas's bar that shows or hides a pane.
 function BarToggle(props: { title: string; on: boolean; onClick: () => void; children: ReactNode }) {
   return (
     <button

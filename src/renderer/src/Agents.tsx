@@ -1,7 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
-import type { AgentSession, ChatEntry, Permission } from '../../core/agents'
-import type { ReviewEntry, ReviewRound } from '../../core/review'
+import type { AgentSession, ChatEntry, Permission, SentComment } from '../../core/agents'
 import type { Workspace } from '../../core/workspaces'
 import { core } from './queries'
 import { button, muted, primaryButton, Prose } from './ui'
@@ -10,21 +9,12 @@ const pane = 'border-neutral-200 dark:border-neutral-800'
 
 // L4: a chat with the workspace's current agent session. The session starts with its first message.
 // ponytail: shows only the latest agent session; the others stay in the database until L4 gets tabs (UX open question 4).
-// attached: notes sent here from the Viewer; they go in front of the next message, making it an ask.
-// handedOff: a wrapped-up round sent here from its bar; its action items and stream go in front of the message too.
 type Props = {
   workspace: Workspace
-  attached: ReviewEntry[]
-  handedOff: ReviewRound | null
-  onDetach: (id: number) => void
-  onDetachRound: () => void
-  onSent: () => void
+  onViewThread: (threadId: number) => void
 }
 
-// Done action items stay out of a hand-off (ADR 0019).
-const open = (r: ReviewRound) => r.actionItems.filter((i) => !i.doneAt).length
-
-export function Agents({ workspace, attached, handedOff, onDetach, onDetachRound, onSent }: Props) {
+export function Agents({ workspace, onViewThread }: Props) {
   const last = useQuery(core('listAgentSessions', workspace.id)).data?.at(-1)
   const transcript = useQuery({ ...core('readTranscript', last?.agentSessionId ?? ''), enabled: !!last }).data
   const [session, setSession] = useState<AgentSession | null>(last ?? null)
@@ -65,17 +55,14 @@ export function Agents({ workspace, attached, handedOff, onDetach, onDetachRound
 
   const send = async () => {
     const message = draft.trim()
-    if ((!message && !attached.length && !handedOff) || running) return
+    if (!message || running) return
     const current = session ?? (await window.coxswain.startAgentSession(workspace.id))
     sessionRef.current = current
     setSession(current)
     setDraft('')
     setError(null)
     setRunning(true)
-    // The core marks the notes sent as the turn starts, and says so.
-    const turn = window.coxswain.runTurn(current.agentSessionId, message, attached.map((c) => c.id), handedOff?.id)
-    onSent()
-    const result = await turn
+    const result = await window.coxswain.runTurn(current.agentSessionId, message)
     setRunning(false)
     setPermission(null)
     if (result.status === 'error') setError(result.message)
@@ -89,7 +76,7 @@ export function Agents({ workspace, attached, handedOff, onDetach, onDetachRound
 
   return (
     <>
-      <div className={`flex h-10 shrink-0 items-center justify-between border-b px-2 [-webkit-app-region:drag] ${pane}`}>
+      <div className={`flex h-10 shrink-0 items-center justify-between border-b pr-2 pl-8 [-webkit-app-region:drag] ${pane}`}>
         <span className="text-xs font-medium">Claude Code</span>
         <div className="flex items-center gap-1">
           <button className={`${button} text-xs [-webkit-app-region:no-drag]`} disabled={running} onClick={newSession}>
@@ -102,7 +89,7 @@ export function Agents({ workspace, attached, handedOff, onDetach, onDetachRound
           <div className={`m-auto text-xs ${muted}`}>Ask Claude Code something to start an agent session</div>
         )}
         {entries.map((e, i) => (
-          <Entry key={i} entry={e} />
+          <Entry key={i} entry={e} onViewThread={onViewThread} />
         ))}
         {permission ? (
           <PermissionPrompt
@@ -119,27 +106,6 @@ export function Agents({ workspace, attached, handedOff, onDetach, onDetachRound
         <div ref={bottom} />
       </div>
       <div className={`flex flex-col gap-1 border-t p-2 ${pane}`}>
-        {handedOff && (
-          <div className="flex items-center gap-1 rounded-md bg-neutral-100 px-1.5 py-0.5 text-xs dark:bg-neutral-800">
-            <span className="min-w-0 flex-1 truncate">
-              Round {handedOff.number} · {open(handedOff)} action item{open(handedOff) === 1 ? '' : 's'}
-            </span>
-            <button title="Remove from the message" className={muted} onClick={onDetachRound}>
-              ✕
-            </button>
-          </div>
-        )}
-        {attached.map((c) => (
-          <div key={c.id} className="flex items-center gap-1 rounded-md bg-neutral-100 px-1.5 py-0.5 text-xs dark:bg-neutral-800">
-            <span className="min-w-0 flex-1 truncate" title={c.body}>
-              {c.path && `${c.path.split('/').at(-1)}:${c.startLine === c.endLine ? c.startLine : `${c.startLine}–${c.endLine}`} `}
-              {c.body}
-            </span>
-            <button title="Remove from the message" className={muted} onClick={() => onDetach(c.id)}>
-              ✕
-            </button>
-          </div>
-        ))}
         <textarea
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
@@ -150,13 +116,7 @@ export function Agents({ workspace, attached, handedOff, onDetach, onDetachRound
             }
           }}
           rows={3}
-          placeholder={
-            handedOff
-              ? 'Anything to add? (Enter to send)'
-              : attached.length
-              ? 'What should the agent do with these notes? (Enter to send)'
-              : 'Message Claude Code (Enter to send, Shift+Enter for a new line)'
-          }
+          placeholder="Message Claude Code (Enter to send, Shift+Enter for a new line)"
           className="resize-none rounded-md border border-neutral-300 bg-transparent p-1.5 text-sm outline-none focus:border-neutral-500 dark:border-neutral-700"
         />
         {running && session && (
@@ -189,7 +149,9 @@ export function PermissionPrompt({ permission, onAnswer }: { permission: Permiss
 
 // Agent replies are Markdown.
 // ponytail: code blocks aren't highlighted; use @pierre/diffs' Shiki if they need it.
-export function Entry({ entry }: { entry: ChatEntry }) {
+// onViewThread: shows a comment's thread on the canvas.
+export function Entry({ entry, onViewThread }: { entry: ChatEntry; onViewThread?: (threadId: number) => void }) {
+  if (entry.comment) return <CommentCard comment={entry.comment} onViewThread={onViewThread} />
   if (entry.kind === 'tool')
     // shrink-0: truncate's overflow lets a flex item shrink to nothing once the chat overflows, leaving only the gaps.
     return <div className={`shrink-0 truncate font-mono text-xs ${muted}`}>⏺ {entry.text}</div>
@@ -202,6 +164,28 @@ export function Entry({ entry }: { entry: ChatEntry }) {
   return (
     <div className="markdown select-text [overflow-wrap:anywhere]">
       <Prose>{entry.text}</Prose>
+    </div>
+  )
+}
+
+// A comment sent from a thread: where it's from, the comment, and a way back to its thread.
+function CommentCard({ comment: c, onViewThread }: { comment: SentComment; onViewThread?: (threadId: number) => void }) {
+  const view = () => onViewThread?.(c.threadId)
+  return (
+    <div className="flex max-w-[85%] shrink-0 flex-col self-end rounded-lg border border-neutral-300 dark:border-neutral-700">
+      <button onClick={view} className={`flex items-start gap-2 px-2.5 pt-2 text-left text-xs ${muted}`}>
+        <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">
+          Comment on <span className="font-mono">{c.where}</span> sent to Claude
+        </span>
+        <span>›</span>
+      </button>
+      <div className="line-clamp-6 px-2.5 py-1.5 whitespace-pre-wrap select-text [overflow-wrap:anywhere]">{c.body}</div>
+      <button
+        onClick={view}
+        className={`border-t px-2.5 py-1.5 text-right text-xs ${muted} hover:text-neutral-900 dark:hover:text-neutral-100 ${pane}`}
+      >
+        View thread ›
+      </button>
     </div>
   )
 }

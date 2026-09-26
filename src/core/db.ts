@@ -162,6 +162,42 @@ const migrations = [
   alter table phases drop column why;
   alter table phases add column summary text;
   update phases set model = null, summarised_at = null`,
+  // ADR 0022: no review rounds. An entry belongs to its workspace; action items and rounds are dropped, and so are the
+  // per-round question sessions (ADR 0021 sends questions to the agent pane's session). sent_at goes too: unused.
+  // Parents come before their replies (order by id), so the self-reference holds while copying.
+  `create table entries_new (
+    id integer primary key,
+    workspace_id integer not null references workspaces (id) on delete cascade,
+    kind text not null check (kind in ('note', 'question', 'answer')),
+    body text not null,
+    parent_id integer references entries_new (id) on delete cascade,
+    path text,
+    side text check (side in ('old', 'new')),
+    start_line integer,
+    end_line integer,
+    code text,
+    base text,
+    head text,
+    created_at text not null
+  );
+  insert into entries_new (id, workspace_id, kind, body, parent_id, path, side, start_line, end_line, code, base, head, created_at)
+    select e.id, r.workspace_id, e.kind, e.body, e.parent_id, e.path, e.side, e.start_line, e.end_line, e.code, e.base, e.head, e.created_at
+    from entries e join review_rounds r on r.id = e.review_round_id order by e.id;
+  drop table entries;
+  alter table entries_new rename to entries;
+  create table agent_sessions_new (
+    id integer primary key,
+    workspace_id integer not null references workspaces (id) on delete cascade,
+    agent text not null,
+    agent_session_id text not null unique,
+    created_at text not null
+  );
+  insert into agent_sessions_new (id, workspace_id, agent, agent_session_id, created_at)
+    select id, workspace_id, agent, agent_session_id, created_at from agent_sessions where review_round_id is null;
+  drop table agent_sessions;
+  alter table agent_sessions_new rename to agent_sessions;
+  drop table action_items;
+  drop table review_rounds`,
 ]
 
 // ADR 0016: the tables as the migrations above leave them. Change this with every migration that changes a table.
@@ -175,7 +211,6 @@ export type Tables = {
     agent: string
     agent_session_id: string
     created_at: string
-    review_round_id: number | null
   }
   viewed_files: { workspace_id: number; path: string; fingerprint: string }
   guides: {
@@ -192,17 +227,9 @@ export type Tables = {
   }
   settings: { key: string; value: string }
   file_summaries: { workspace_id: number; path: string; fingerprint: string; summary: string }
-  review_rounds: {
-    id: Generated<number>
-    workspace_id: number
-    created_at: string
-    ended_at: string | null
-    merge_base: string | null
-    head: string | null
-  }
   entries: {
     id: Generated<number>
-    review_round_id: number
+    workspace_id: number
     kind: 'note' | 'question' | 'answer'
     body: string
     parent_id: number | null
@@ -214,7 +241,6 @@ export type Tables = {
     base: string | null
     head: string | null
     created_at: string
-    sent_at: string | null
   }
   phases: {
     id: Generated<number>
@@ -226,20 +252,6 @@ export type Tables = {
     summary: string | null
     model: string | null
     summarised_at: string | null
-  }
-  action_items: {
-    id: Generated<number>
-    review_round_id: number
-    position: number
-    body: string
-    entry_ids: string // JSON
-    path: string | null
-    side: Side | null
-    start_line: number | null
-    end_line: number | null
-    code: string | null
-    created_at: string
-    done_at: string | null
   }
 }
 

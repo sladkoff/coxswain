@@ -40,9 +40,9 @@ export function core<K extends Reads>(name: K, ...args: Parameters<Api[K]>) {
 
 // The queries each kind of change makes stale, for the workspace it happened in.
 const affects: Record<Changed['what'], Reads[]> = {
-  entries: ['listEntries', 'listRounds', 'getTimeline'],
+  entries: ['listEntries', 'getTimeline'],
   // Entries and Viewed follow the code they're about (ADR 0014, 0015).
-  worktree: ['listChangedFiles', 'listWorktreeFiles', 'readWorktreeFile', 'listViewed', 'listEntries', 'listRounds'],
+  worktree: ['listChangedFiles', 'listWorktreeFiles', 'readWorktreeFile', 'listViewed', 'listEntries'],
   transcript: ['listAgentSessions', 'readTranscript'],
   guide: ['getGuide'],
   timeline: ['getTimeline'],

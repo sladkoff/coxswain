@@ -4,7 +4,7 @@ import type { ChangedFileList, CloneResult, Commit, FileText, FileTreeResult, Wo
 import type { CurrentUser, PullRequestList, RepoPage } from '../core/github'
 import type { Guide, GuideProgress, GuideResult, GuideSettings, GuideSettingsChange } from '../core/guides'
 import type { Project } from '../core/projects'
-import type { NewEntry, ReviewEntry, ReviewRound } from '../core/review'
+import type { NewEntry, ReviewEntry } from '../core/review'
 import type { Timeline } from '../core/timeline'
 import type { Workspace } from '../core/workspaces'
 
@@ -47,25 +47,15 @@ const api = {
   listAgentSessions: (workspaceId: number): Promise<AgentSession[]> => ipcRenderer.invoke('agents:list', workspaceId),
   startAgentSession: (workspaceId: number): Promise<AgentSession> => ipcRenderer.invoke('agents:start', workspaceId),
   readTranscript: (agentSessionId: string): Promise<ChatEntry[]> => ipcRenderer.invoke('agents:transcript', agentSessionId),
-  // An ask: the notes go in front of the message, and a handed-off round's action items in front of them.
-  runTurn: (agentSessionId: string, message: string, noteIds: number[], roundId?: number): Promise<TurnResult> =>
-    ipcRenderer.invoke('agents:run-turn', agentSessionId, message, noteIds, roundId),
-  // The latest round's entries, each current, outdated or wrapped up in the view of base → head (ADR 0015).
+  runTurn: (agentSessionId: string, message: string): Promise<TurnResult> =>
+    ipcRenderer.invoke('agents:run-turn', agentSessionId, message),
+  // The workspace's entries, each current or outdated in the view of base → head (ADR 0015).
   listEntries: (workspaceId: number, base: string, head?: string): Promise<ReviewEntry[]> =>
     ipcRenderer.invoke('review:list', workspaceId, base, head),
   addNote: (note: NewEntry): Promise<ReviewEntry> => ipcRenderer.invoke('review:add-note', note),
   deleteEntry: (id: number): Promise<void> => ipcRenderer.invoke('review:delete', id),
   askQuestion: (question: NewEntry): Promise<ReviewEntry> => ipcRenderer.invoke('review:ask', question),
   stopQuestion: (workspaceId: number): Promise<void> => ipcRenderer.invoke('review:stop', workspaceId),
-  // Every review round with its stream and action items (ADR 0019); wrapping up drafts them and ends the round (ADR 0012).
-  listRounds: (workspaceId: number): Promise<ReviewRound[]> => ipcRenderer.invoke('review:rounds', workspaceId),
-  wrapUp: (roundId: number): Promise<{ status: 'ok' } | { status: 'error'; message: string }> =>
-    ipcRenderer.invoke('review:wrap-up', roundId),
-  setActionItemDone: (id: number, done: boolean): Promise<void> => ipcRenderer.invoke('review:item-done', id, done),
-  // Hand off outside coxswain: the round's open action items and its stream, on the clipboard.
-  copyHandOffPrompt: (roundId: number): Promise<void> => ipcRenderer.invoke('review:copy-prompt', roundId),
-  updateActionItem: (id: number, body: string): Promise<void> => ipcRenderer.invoke('review:update-item', id, body),
-  deleteActionItem: (id: number): Promise<void> => ipcRenderer.invoke('review:delete-item', id),
   onQuestionChat: (callback: (threadId: number, entry: ChatEntry) => void) => {
     const listener = (_: unknown, id: number, entry: ChatEntry) => callback(id, entry)
     ipcRenderer.on('review:chat', listener)
@@ -128,11 +118,6 @@ const api = {
     const listener = () => callback()
     ipcRenderer.on('toggle-navigator', listener)
     return () => void ipcRenderer.off('toggle-navigator', listener)
-  },
-  onToggleAgents: (callback: () => void) => {
-    const listener = () => callback()
-    ipcRenderer.on('toggle-agents', listener)
-    return () => void ipcRenderer.off('toggle-agents', listener)
   },
   onOpenSettings: (callback: () => void) => {
     const listener = () => callback()

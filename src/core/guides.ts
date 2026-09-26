@@ -405,7 +405,7 @@ async function inParallel<T>(items: T[], n: number, fn: (item: T) => Promise<voi
 // One turn, no tools (ADR 0010): the diffs are in the prompt. No MCP servers but the answer tool, and Claude Code's
 // system prompt replaced, so each call doesn't pay for tool definitions and instructions it won't use. thinking: false
 // for summaries, one sentence per file read straight off the diff, where thinking cost about as many tokens as the
-// answer. instructions: in place of the guides' own system prompt, e.g. for a wrap-up (ADR 0012).
-export function ask(cwd: string, prompt: string, answer: object, model: string, thinking = true, instructions = systemPrompt) {
-  return run('claude', { cwd, prompt, answer, model, thinking, instructions, tools: 'none', persist: false })
+// answer.
+export function ask(cwd: string, prompt: string, answer: object, model: string, thinking = true) {
+  return run('claude', { cwd, prompt, answer, model, thinking, instructions: systemPrompt, tools: 'none', persist: false })
 }

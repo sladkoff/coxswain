@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, ipcMain, Menu, shell, type WebContents } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu, shell, type WebContents } from 'electron'
 import { join } from 'node:path'
 import icon from '../../resources/icon.png?asset'
 import {
@@ -26,21 +26,7 @@ import {
 import { createGuide, getGuide, getGuideSettings, type GuideSettingsChange, setGuideSettings } from '../core/guides'
 import { getCurrentUser, listPullRequests, listRepos } from '../core/github'
 import { listProjects, openProject } from '../core/projects'
-import {
-  addNote,
-  askQuestion,
-  deleteActionItem,
-  deleteEntry,
-  formatAsk,
-  formatHandOff,
-  listEntries,
-  listRounds,
-  type NewEntry,
-  setActionItemDone,
-  stopQuestion,
-  updateActionItem,
-  wrapUp,
-} from '../core/review'
+import { addNote, askQuestion, deleteEntry, listEntries, type NewEntry, stopQuestion } from '../core/review'
 import { getTimeline, recordHead, summarise } from '../core/timeline'
 import { listViewed, setViewed } from '../core/viewed'
 import type { Changed, NavigatorSettings, ViewSettings } from '../preload'
@@ -106,7 +92,6 @@ const menu = Menu.buildFromTemplate([
     label: 'View',
     submenu: [
       { label: 'Toggle Navigator', accelerator: 'CmdOrCtrl+B', click: () => sendToWindow('toggle-navigator') },
-      { label: 'Toggle Agents', accelerator: 'CmdOrCtrl+Alt+B', click: () => sendToWindow('toggle-agents') },
       { type: 'separator' },
       { role: 'reload' },
       { role: 'toggleDevTools' },
@@ -169,40 +154,39 @@ app.whenReady().then(() => {
   ipcMain.handle('review:list', (_, workspaceId: number, base: string, head?: string) => listEntries(db, workspaceId, base, head))
   ipcMain.handle('review:add-note', (_, note: NewEntry) => addNote(db, note))
   ipcMain.handle('review:delete', (_, id: number) => deleteEntry(db, id))
-  // Returns the question once saved; the reply streams as review:chat, a tool use to approve comes as
-  // review:permission, and the turn's end as review:turn-end.
+  // Returns the question once saved; the reply streams as review:chat to the thread and agents:entry to the agent
+  // pane, a tool use to approve comes as review:permission, and the turn's end as review:turn-end.
   ipcMain.handle('review:ask', async (e, question: NewEntry) => {
     const send = (channel: string, ...args: unknown[]) => !e.sender.isDestroyed() && e.sender.send(channel, ...args)
     const asked = await askQuestion(
       db,
       question,
-      (threadId, entry) => send('review:chat', threadId, entry),
+      (threadId, entry, agentSessionId) => {
+        send('review:chat', threadId, entry)
+        send('agents:entry', agentSessionId, entry)
+      },
       (threadId, p) => permission(e.sender, () => send('review:permission', threadId, p)),
     )
+    const workspaceId = question.workspaceId
+    changed(e.sender, { workspaceId, what: 'transcript' }) // the session may be new
     const threadId = asked.question.parentId ?? asked.question.id
     asked.turn.then((result) => {
-      changed(e.sender, { workspaceId: question.workspaceId, what: 'entries' }) // the answer
+      changed(e.sender, { workspaceId, what: 'entries' }) // the answer
+      changed(e.sender, { workspaceId, what: 'worktree' }) // the agent may have changed files
+      changed(e.sender, { workspaceId, what: 'transcript' })
       send('review:turn-end', threadId, result)
     })
     return asked.question
   })
   ipcMain.handle('review:stop', (_, workspaceId: number) => stopQuestion(db, workspaceId))
-  ipcMain.handle('review:rounds', (_, workspaceId: number) => listRounds(db, workspaceId))
-  ipcMain.handle('review:wrap-up', (_, roundId: number) => wrapUp(db, roundId))
-  ipcMain.handle('review:item-done', (_, id: number, done: boolean) => setActionItemDone(db, id, done))
-  ipcMain.handle('review:copy-prompt', async (_, roundId: number) => clipboard.writeText(await formatHandOff(db, roundId)))
-  ipcMain.handle('review:update-item', (_, id: number, body: string) => updateActionItem(db, id, body))
-  ipcMain.handle('review:delete-item', (_, id: number) => deleteActionItem(db, id))
   ipcMain.handle('viewed:list', (_, workspaceId: number, mergeBase: string, head?: string) =>
     listViewed(db, workspaceId, mergeBase, head),
   )
   ipcMain.handle('viewed:set', (_, workspaceId: number, mergeBase: string, path: string, viewed: boolean, head?: string) =>
     setViewed(db, workspaceId, mergeBase, path, viewed, head),
   )
-  ipcMain.handle('agents:run-turn', async (e, agentSessionId: string, message: string, noteIds: number[], roundId?: number) => {
+  ipcMain.handle('agents:run-turn', async (e, agentSessionId: string, prompt: string) => {
     const workspaceId = await agentSessionWorkspace(db, agentSessionId)
-    const prompt = await formatAsk(db, noteIds, message, roundId)
-    changed(e.sender, { workspaceId, what: 'entries' }) // the notes are marked sent
     const send = (channel: string, ...args: unknown[]) => !e.sender.isDestroyed() && e.sender.send(channel, ...args)
     const result = await runAgentTurn(db, agentSessionId, prompt, {
       onEntry: (entry) => send('agents:entry', agentSessionId, entry),
