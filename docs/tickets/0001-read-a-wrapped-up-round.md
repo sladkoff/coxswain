@@ -2,7 +2,7 @@
 
 ## Status
 
-Open.
+Done ([ADR 0019](../adr/0019-round-history-and-resolving.md)).
 
 ## Goal
 

@@ -73,14 +73,17 @@ then the workspace's files, the work in the middle and the agents on the right.
   turn carries on once one is picked, or ends with *Stop*. The round's questions
   run one at a time. These agent sessions don't show in L4.
 
-  At the bottom of *Guide* and *Diff*, once the round has an entry, a bar for the **review round**:
-  *Round N*, how many notes and questions it has, and *Wrap up*. Wrapping up (*Wrapping up…* while
-  the agent works) ends the round and opens its action items above the bar: numbered, each with where
-  it points and its text, which a click edits (⌘Enter or leaving the box saves, Esc cancels), and ✕ to
-  delete. Then the bar says *wrapped up, N action items*, with *Show/Hide action items*, *Wrap up
-  again*, which replaces them, and *Send to agent*, which hands the round off: it puts *Round N · N
-  action items* in the L4 message box, like a note, and the next message carries the items and the
-  round's stream to the current agent session. The next note or question starts the next round.
+  At the bottom of *Guide* and *Diff*, once the workspace has a round, a bar for the **review round**:
+  ‹ *Round N* ›, which steps through every round (the latest shown first), how many notes and questions it has,
+  and *Wrap up*. Wrapping up (*Wrapping up…* while the agent works) ends the round and opens it above the bar.
+  *Show round* opens the selected round there: first its action items, numbered, each with a *done* checkbox, where
+  it points and its text, which a click edits (⌘Enter or leaving the box saves, Esc cancels), and ✕ to delete; then
+  its stream, in order, each question with its follow-ups and answers under it. Then the bar says *wrapped up, N of M
+  done*, or *resolved* once all are, with *Wrap up again*, which replaces the items; *Copy as prompt*, which puts the
+  open items and the round's stream on the clipboard, to paste into an agent outside coxswain; *Post to PR* (not
+  built yet); and *Send to agent*, which hands the round off in L4: it puts *Round N · N action items* in the L4
+  message box, like a note, and the next message carries the items and the round's stream to the current agent
+  session. The next note or question starts the next round.
 
   *Guide* shows the workspace's guide: its guide groups one after another, each a title, a short
   description and then the group's file diffs, each with its file note above it, the same file diffs as in *Diff* (Viewed checkbox,
@@ -127,11 +130,8 @@ then the workspace's files, the work in the middle and the agents on the right.
    your PRs)? Probably an inbox; where it lives and what goes in it is to be decided.
 2. **Tabs in L3:** which options go in each tab's bar? Should *Regenerate* move to the Guide's bar?
    Should a guide group down to hunks, not whole file diffs?
-3. **The review round as a whole:** where do you see a round's whole stream, and earlier rounds with
-   their action items? Where do you write an entry that floats on the round rather than on lines?
-   Hand-off from the action items: all of them go to L4 (*Send to agent*); one at a time, and *Post*,
-   are still open. And where do a PR's
-   GitHub comments show? To be explored.
+3. **The review round as a whole:** where do you write an entry that floats on the round rather than on lines?
+   Hand-off one action item at a time, and *Post*, are still open. And where do a PR's GitHub comments show?
 4. **Agents in L4:** tabs, a list, or split panes, and how running and finished agent sessions look.
    Only the latest agent session is reachable so far; earlier ones need a way back.
 5. **PR changes vs local changes:** *Diffs* mixes the PR's file diffs with local changes (uncommitted,

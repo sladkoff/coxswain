@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Menu, shell, type WebContents } from 'electron'
+import { app, BrowserWindow, clipboard, ipcMain, Menu, shell, type WebContents } from 'electron'
 import { join } from 'node:path'
 import icon from '../../resources/icon.png?asset'
 import {
@@ -32,9 +32,11 @@ import {
   deleteActionItem,
   deleteEntry,
   formatAsk,
-  getRound,
+  formatHandOff,
   listEntries,
+  listRounds,
   type NewEntry,
+  setActionItemDone,
   stopQuestion,
   updateActionItem,
   wrapUp,
@@ -173,8 +175,10 @@ app.whenReady().then(() => {
     return asked.question
   })
   ipcMain.handle('review:stop', (_, workspaceId: number) => stopQuestion(db, workspaceId))
-  ipcMain.handle('review:round', (_, workspaceId: number) => getRound(db, workspaceId))
-  ipcMain.handle('review:wrap-up', (_, workspaceId: number) => wrapUp(db, workspaceId))
+  ipcMain.handle('review:rounds', (_, workspaceId: number) => listRounds(db, workspaceId))
+  ipcMain.handle('review:wrap-up', (_, roundId: number) => wrapUp(db, roundId))
+  ipcMain.handle('review:item-done', (_, id: number, done: boolean) => setActionItemDone(db, id, done))
+  ipcMain.handle('review:copy-prompt', async (_, roundId: number) => clipboard.writeText(await formatHandOff(db, roundId)))
   ipcMain.handle('review:update-item', (_, id: number, body: string) => updateActionItem(db, id, body))
   ipcMain.handle('review:delete-item', (_, id: number) => deleteActionItem(db, id))
   ipcMain.handle('viewed:list', (_, workspaceId: number, mergeBase: string, head?: string) =>

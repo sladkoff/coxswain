@@ -139,6 +139,8 @@ const migrations = [
   alter table entries add column head text;
   alter table review_rounds add column merge_base text;
   alter table review_rounds add column head text`,
+  // ADR 0019: an action item can be ticked done; a round whose items are all done is resolved.
+  `alter table action_items add column done_at text`,
 ]
 
 // ADR 0016: the tables as the migrations above leave them. Change this with every migration that changes a table.
@@ -205,6 +207,7 @@ export type Tables = {
     end_line: number | null
     code: string | null
     created_at: string
+    done_at: string | null
   }
 }
 

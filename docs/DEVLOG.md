@@ -3,6 +3,29 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-26 — Every round readable, resolved when its items are done
+
+### What works
+
+- **Every review round is reachable** ([ADR 0019](adr/0019-round-history-and-resolving.md),
+  [ticket 0001](tickets/0001-read-a-wrapped-up-round.md)). `listRounds` replaces `getRound`: every round, oldest
+  first, with its stream and action items. The Round bar steps through them with ‹ ›, the latest shown first and a
+  new round showing itself. *Show round* opens the selected round's action items and then its stream, each question
+  with its follow-ups and answers. #5311's round 3, wrapped up with no action items, can be read again.
+- **Done and resolved**: an action item has a *done* checkbox (`action_items.done_at`, migration 17). A round is
+  resolved once wrapped up with every item done, derived in `listRounds`, not stored. The bar says *wrapped up, N of
+  M done* or *resolved*.
+- **Copy as prompt** puts the round's open action items and its stream on the clipboard (`formatHandOff`, now
+  exported, written by the main process). Done items are left out of every hand-off, L4's too.
+- **Wrap up takes a round id**, so an earlier round can be wrapped up again.
+- ***Post to PR*** is a disabled placeholder on the bar.
+
+### Tech debt
+
+- `ponytail:` `listRounds` reads every entry of a workspace on each change to entries; page it if rounds pile up.
+- `ponytail:` *Post to PR* does nothing yet.
+- Wrapping up again loses which items were done.
+
 ## 2026-09-26 — Every agent run over ACP
 
 ### What works

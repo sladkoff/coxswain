@@ -53,10 +53,13 @@ const api = {
   deleteEntry: (id: number): Promise<void> => ipcRenderer.invoke('review:delete', id),
   askQuestion: (question: NewEntry): Promise<ReviewEntry> => ipcRenderer.invoke('review:ask', question),
   stopQuestion: (workspaceId: number): Promise<void> => ipcRenderer.invoke('review:stop', workspaceId),
-  // The latest review round with its action items; wrapping up drafts them and ends the round (ADR 0012).
-  getRound: (workspaceId: number): Promise<ReviewRound | null> => ipcRenderer.invoke('review:round', workspaceId),
-  wrapUp: (workspaceId: number): Promise<{ status: 'ok' } | { status: 'error'; message: string }> =>
-    ipcRenderer.invoke('review:wrap-up', workspaceId),
+  // Every review round with its stream and action items (ADR 0019); wrapping up drafts them and ends the round (ADR 0012).
+  listRounds: (workspaceId: number): Promise<ReviewRound[]> => ipcRenderer.invoke('review:rounds', workspaceId),
+  wrapUp: (roundId: number): Promise<{ status: 'ok' } | { status: 'error'; message: string }> =>
+    ipcRenderer.invoke('review:wrap-up', roundId),
+  setActionItemDone: (id: number, done: boolean): Promise<void> => ipcRenderer.invoke('review:item-done', id, done),
+  // Hand off outside coxswain: the round's open action items and its stream, on the clipboard.
+  copyHandOffPrompt: (roundId: number): Promise<void> => ipcRenderer.invoke('review:copy-prompt', roundId),
   updateActionItem: (id: number, body: string): Promise<void> => ipcRenderer.invoke('review:update-item', id, body),
   deleteActionItem: (id: number): Promise<void> => ipcRenderer.invoke('review:delete-item', id),
   onQuestionChat: (callback: (threadId: number, entry: ChatEntry) => void) => {

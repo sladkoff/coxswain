@@ -346,8 +346,7 @@ export function App() {
         {currentWorkspace && tab !== 'overview' && <Round
             key={`round-${currentWorkspace.id}`}
             workspace={currentWorkspace}
-            entries={entries}
-            handedOff={handedOff?.id === entries[0]?.reviewRoundId}
+            handedOffId={handedOff?.id}
             onHandOff={(r) => {
               setHandedOff(r)
               setAgentsOpen(true)

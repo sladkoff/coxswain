@@ -21,6 +21,9 @@ type Props = {
   onSent: () => void
 }
 
+// Done action items stay out of a hand-off (ADR 0019).
+const open = (r: ReviewRound) => r.actionItems.filter((i) => !i.doneAt).length
+
 export function Agents({ workspace, attached, handedOff, onDetach, onDetachRound, onSent }: Props) {
   const last = useQuery(core('listAgentSessions', workspace.id)).data?.at(-1)
   const transcript = useQuery({ ...core('readTranscript', last?.agentSessionId ?? ''), enabled: !!last }).data
@@ -119,7 +122,7 @@ export function Agents({ workspace, attached, handedOff, onDetach, onDetachRound
         {handedOff && (
           <div className="flex items-center gap-1 rounded-md bg-neutral-100 px-1.5 py-0.5 text-xs dark:bg-neutral-800">
             <span className="min-w-0 flex-1 truncate">
-              Round {handedOff.number} · {handedOff.actionItems.length} action item{handedOff.actionItems.length === 1 ? '' : 's'}
+              Round {handedOff.number} · {open(handedOff)} action item{open(handedOff) === 1 ? '' : 's'}
             </span>
             <button title="Remove from the message" className={muted} onClick={onDetachRound}>
               ✕

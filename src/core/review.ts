@@ -240,9 +240,19 @@ export type ActionItem = {
   startLine: number | null
   endLine: number | null
   code: string | null
+  doneAt: string | null
 }
-// The latest round, as its bar shows it. ponytail: earlier rounds, and a wrapped-up round's entries (ADR 0015), aren't reachable until rounds get a history (ticket 0001).
-export type ReviewRound = { id: number; number: number; createdAt: string; endedAt: string | null; actionItems: ActionItem[] }
+// A round with its whole stream and its action items, as its bar shows it (ADR 0019). Resolved: wrapped up, and every
+// action item done.
+export type ReviewRound = {
+  id: number
+  number: number
+  createdAt: string
+  endedAt: string | null
+  resolved: boolean
+  entries: Omit<ReviewEntry, 'state'>[]
+  actionItems: ActionItem[]
+}
 
 const itemColumns = [
   'id',
@@ -254,6 +264,7 @@ const itemColumns = [
   'start_line as startLine',
   'end_line as endLine',
   'code',
+  'done_at as doneAt',
 ] as const
 
 // A round's action items in order.
@@ -262,16 +273,25 @@ async function roundItems(db: Db, roundId: number): Promise<ActionItem[]> {
   return items.map((i) => ({ ...i, entryIds: JSON.parse(i.entryIds) }))
 }
 
-export async function getRound(db: Db, workspaceId: number): Promise<ReviewRound | null> {
+// Every round of the workspace, oldest first (ADR 0019).
+// ponytail: reads every entry of the workspace; page it if workspaces collect hundreds of rounds.
+export async function listRounds(db: Db, workspaceId: number): Promise<ReviewRound[]> {
   const rounds = await db
     .selectFrom('review_rounds')
     .select(['id', 'created_at as createdAt', 'ended_at as endedAt'])
     .where('workspace_id', '=', workspaceId)
     .orderBy('id')
     .execute()
-  const round = rounds.at(-1)
-  if (!round) return null
-  return { ...round, number: rounds.length, actionItems: await roundItems(db, round.id) }
+  return Promise.all(
+    rounds.map(async (r, i) => {
+      const [entries, actionItems] = await Promise.all([roundEntries(db, r.id), roundItems(db, r.id)])
+      return { ...r, number: i + 1, resolved: !!r.endedAt && actionItems.every((a) => a.doneAt), entries, actionItems }
+    }),
+  )
+}
+
+export async function setActionItemDone(db: Db, id: number, done: boolean) {
+  await db.updateTable('action_items').set({ done_at: done ? new Date().toISOString() : null }).where('id', '=', id).execute()
 }
 
 export async function updateActionItem(db: Db, id: number, body: string) {
@@ -300,11 +320,12 @@ function formatStream(entries: Omit<ReviewEntry, 'state'>[]): string {
     .join('\n\n')
 }
 
-// Hand off (glossary): a wrapped-up round's action items, with where they point, then the round's whole stream so the
-// agent has the reasoning behind them. Goes in front of an ask's message.
+// Hand off (glossary): a wrapped-up round's open action items, with where they point, then the round's whole stream so
+// the agent has the reasoning behind them. Goes in front of an ask's message, or on the clipboard (ADR 0019).
 // ponytail: a hand-off isn't recorded; action items don't know they were sent. Add a handed_off_at when it matters.
-async function formatHandOff(db: Db, roundId: number): Promise<string> {
-  const [entries, items] = await Promise.all([roundEntries(db, roundId), roundItems(db, roundId)])
+export async function formatHandOff(db: Db, roundId: number): Promise<string> {
+  const [entries, all] = await Promise.all([roundEntries(db, roundId), roundItems(db, roundId)])
+  const items = all.filter((i) => !i.doneAt)
   const list = items.map((item, i) => `${i + 1}. ${item.path ? `On ${describe(item)}\n` : ''}${item.body}`)
   return `Implement these action items from my review of this worktree's changes, in order:\n\n${list.join('\n\n')}
 
@@ -342,14 +363,14 @@ const wrapUpSchema = {
   required: ['items'],
 }
 
-// Wraps up the latest round (ADR 0012): drafts its action items from its entries and ends it. Again on an ended round,
-// replaces its action items.
-export async function wrapUp(db: Db, workspaceId: number): Promise<{ status: 'ok' } | { status: 'error'; message: string }> {
-  const round = await getRound(db, workspaceId)
+// Wraps up a round (ADR 0012): drafts its action items from its entries and ends it. Again on an ended round, replaces
+// its action items, done or not (ADR 0019).
+export async function wrapUp(db: Db, roundId: number): Promise<{ status: 'ok' } | { status: 'error'; message: string }> {
+  const round = await db.selectFrom('review_rounds').select(['id', 'workspace_id as workspaceId']).where('id', '=', roundId).executeTakeFirst()
   const entries = round ? await roundEntries(db, round.id) : []
   if (!round || !entries.length) return { status: 'error', message: 'Nothing to wrap up yet' }
   try {
-    const { answer } = await ask(await readyWorktree(db, workspaceId), `${wrapUpPrompt}\n\n${formatStream(entries)}`, wrapUpSchema, '', true, wrapUpSystem)
+    const { answer } = await ask(await readyWorktree(db, round.workspaceId), `${wrapUpPrompt}\n\n${formatStream(entries)}`, wrapUpSchema, '', true, wrapUpSystem)
     const items = (answer as { items?: { text: string; entries: number[] }[] } | undefined)?.items ?? []
     const byNumber = (n: number) => entries[n - 1] as (typeof entries)[number] | undefined
     // An item's anchor is its first cited entry's; an answer's or follow-up's is its question's.
