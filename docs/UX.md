@@ -22,7 +22,7 @@ changes and answer what's open. The chat shows it as a card (*Review sent to Cla
 
 *Guide*, next to *Commits* in the canvas's bar, opens a native menu: *Make a Guide*, *Make a Guide with Review*,
 then *No Guide* and every guide made so far (when, its head, *(stale)* once the PR moved on). The two *Make* items
-send a message to the agent pane's session, which makes the guide with coxswain's tools (ADR 0023); asking for one in
+put a message in the agent pane's composer, to edit and send; the agent pane's session makes the guide with coxswain's tools (ADR 0023); asking for one in
 the agent pane's own words does the same. A guide shows in *Changes* as soon as the agent starts it, and fills in as it
 adds to it: its groups in reading order, each with its title, how many files and its description above its first file
 diff, and each file note above its file diff; then the files in no group under *Not in the guide*; then the

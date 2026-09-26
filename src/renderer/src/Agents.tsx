@@ -14,9 +14,11 @@ const pane = 'border-neutral-200 dark:border-neutral-800'
 type Props = {
   workspace: Workspace
   onViewThread: (threadId: number) => void
+  // Replaces the composer's draft when it changes (the Guide menu's prompts), for the user to edit and send.
+  composerText?: { text: string }
 }
 
-export function Agents({ workspace, onViewThread }: Props) {
+export function Agents({ workspace, onViewThread, composerText }: Props) {
   const sessions = useQuery(core('listAgentSessions', workspace.id)).data ?? []
   // The agent session picked in the header; null is the latest, 'new' one not started yet.
   const [picked, setPicked] = useState<string | null>(null)
@@ -30,6 +32,12 @@ export function Agents({ workspace, onViewThread }: Props) {
   const [draft, setDraft] = useState('')
   const sessionRef = useRef(session)
   sessionRef.current = session
+  const composer = useRef<HTMLTextAreaElement>(null)
+  useEffect(() => {
+    if (!composerText) return
+    setDraft(composerText.text)
+    composer.current?.focus()
+  }, [composerText])
 
   // The shown agent session's transcript, once loaded or picked and again when a turn ends (the core says it changed), in
   // place of the entries streamed during the turn. Not while the turn runs: nothing refetches it then.
@@ -130,6 +138,7 @@ export function Agents({ workspace, onViewThread }: Props) {
       </div>
       <div className={`flex flex-col gap-1 border-t p-2 ${pane}`}>
         <textarea
+          ref={composer}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {

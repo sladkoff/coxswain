@@ -10,8 +10,8 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 - **Guides are agentic** ([ADR 0023](adr/0023-guides-made-by-the-agent-pane.md)). The agent pane's sessions get
   coxswain's MCP tools (`start_guide`, `add_group`, `add_explanation`, `add_finding`) from the local server that served
   the answer tool, at a path per workspace, allowed without asking. "Make me a guide" in the agent pane works; so do
-  *Make a Guide* and *Make a Guide with Review* in the canvas bar's new *Guide* menu (`requestGuide`, like
-  *Send all to agent*). How to guide is in `start_guide`'s result.
+  *Make a Guide* and *Make a Guide with Review* in the canvas bar's new *Guide* menu, which put the message in
+  the agent pane's composer for the user to edit and send (not sent right away, as ADR 0023 says). How to guide is in `start_guide`'s result.
 - **Guides show in *Changes*:** groups in reading order with title, description and file notes, *Not in the guide*,
   generated groups last. Explanations and findings are entries (new kinds) with a `guide_id`, shown as threads only
   with their guide; a reply is a note. *Send all to agent* leaves out the ones nobody replied to.

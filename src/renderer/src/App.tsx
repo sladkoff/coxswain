@@ -209,7 +209,8 @@ export function App() {
     })
     setCurrentGroup(passed.at(-1) ?? sections.findIndex((x) => x.shown.length))
   }
-  const [guideError, setGuideError] = useState<string | null>(null)
+  // A message for the agent pane's composer, from the Guide menu; a new object each time, so the same one fills it again.
+  const [composerText, setComposerText] = useState<{ text: string }>()
   const pickGuide = async () => {
     if (!currentWorkspace || !pr.commits) return
     const picked = await window.coxswain.showGuideMenu(currentWorkspace.id, guide?.id ?? null, pr.commits.head)
@@ -219,10 +220,8 @@ export function App() {
       setOpened(null)
       return
     }
-    // The agent makes it in the agent pane's session; the guide shows as soon as it starts it.
-    setGuideError(null)
-    const result = await window.coxswain.requestGuide(currentWorkspace.id, picked.make)
-    if (result.status === 'error') setGuideError(result.message)
+    // The user sends it from the agent pane; the guide shows as soon as the agent starts it.
+    setComposerText({ text: picked.prompt })
   }
   const pickCommit = (picked: Commit | null) => {
     setCommit(picked)
@@ -341,6 +340,7 @@ export function App() {
               key={currentWorkspace.id}
               workspace={currentWorkspace}
               onViewThread={viewThread}
+              composerText={composerText}
             />
           </div>
           <Splitter min={240} max={800} onResize={setAgentsWidth} />
@@ -373,7 +373,6 @@ export function App() {
               >
                 {guide ? `Guide · ${new Date(guide.createdAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}` : 'Guide'}
               </button>
-              {guideError && <span className="truncate text-red-600 dark:text-red-400">{guideError}</span>}
               <div className="flex-1" />
               <button
                 title="View options"

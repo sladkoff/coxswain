@@ -11,7 +11,6 @@ import {
 } from './agents'
 import type { Db } from './db'
 import { readTexts } from './git'
-import { guideRequest } from './guides'
 
 // ADR 0022: a workspace's entries (glossary): notes, questions and answers, threaded by parent_id; and the agent's
 // explanations and findings, which belong to a guide too (guideId, ADR 0023).
@@ -271,18 +270,6 @@ export async function sendReview(
   if (!threads) return { status: 'error', message: 'No threads to send' }
   const agentSessionId = await currentSession(db, workspaceId)
   return runAgentTurn(db, agentSessionId, prompt, handlers(agentSessionId))
-}
-
-// Asks the workspace's current agent session for a guide (ADR 0023), with findings if review, streaming the reply like
-// sendReview. The agent makes it with coxswain's tools.
-export async function requestGuide(
-  db: Db,
-  workspaceId: number,
-  review: boolean,
-  handlers: (agentSessionId: string) => Parameters<typeof runAgentTurn>[3],
-): Promise<TurnResult> {
-  const agentSessionId = await currentSession(db, workspaceId)
-  return runAgentTurn(db, agentSessionId, guideRequest(review), handlers(agentSessionId))
 }
 
 // Where a new comment goes, the composer's Comment/Agent toggle: to the agent (a question) or not (a note). Global.

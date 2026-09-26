@@ -87,9 +87,6 @@ const api = {
     ipcRenderer.invoke('reviewed:set', workspaceId, mergeBase, path, reviewed, head),
   // The workspace's guides, newest first (ADR 0023).
   listGuides: (workspaceId: number): Promise<Guide[]> => ipcRenderer.invoke('guides:list', workspaceId),
-  // Asks the agent pane's session for a guide, with findings if review; resolves when the agent's turn ends.
-  requestGuide: (workspaceId: number, review: boolean): Promise<TurnResult> =>
-    ipcRenderer.invoke('guides:request', workspaceId, review),
   // The composer's Comment/Agent toggle, kept for every comment box.
   getCommentToAgent: (): Promise<boolean> => ipcRenderer.invoke('settings:comment-to-agent'),
   setCommentToAgent: (toAgent: boolean): Promise<void> => ipcRenderer.invoke('settings:set-comment-to-agent', toAgent),
@@ -116,7 +113,7 @@ const api = {
   showThreadMenu: (can: { edit: boolean; send: boolean }): Promise<'edit' | 'delete' | 'send'> =>
     ipcRenderer.invoke('menus:thread', can),
   // The canvas's Guide menu: make one (make: with review), or the guide to show (null: none). Pending if dismissed.
-  showGuideMenu: (workspaceId: number, shown: number | null, prHead: string): Promise<{ make: boolean } | { show: number | null }> =>
+  showGuideMenu: (workspaceId: number, shown: number | null, prHead: string): Promise<{ prompt: string } | { show: number | null }> =>
     ipcRenderer.invoke('menus:guide', workspaceId, shown, prHead),
   onChanged: (callback: (change: Changed) => void) => {
     const listener = (_: unknown, change: Changed) => callback(change)

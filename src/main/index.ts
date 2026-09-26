@@ -22,10 +22,10 @@ import {
   readFileAt,
   readWorktreeFile,
 } from '../core/git'
-import { type Guide, listGuides, onGuideChange } from '../core/guides'
+import { type Guide, guideRequest, listGuides, onGuideChange } from '../core/guides'
 import { getCurrentUser, listPullRequests, listRepos } from '../core/github'
 import { listProjects, openProject } from '../core/projects'
-import { addNote, askQuestion, deleteEntry, editEntry, resolveThread, sendThread, getCommentToAgent, setCommentToAgent, listEntries, type NewEntry, requestGuide, sendReview, stopQuestion } from '../core/review'
+import { addNote, askQuestion, deleteEntry, editEntry, resolveThread, sendThread, getCommentToAgent, setCommentToAgent, listEntries, type NewEntry, sendReview, stopQuestion } from '../core/review'
 import { getSummaryModel, getTimeline, recordHead, setSummaryModel, summarise } from '../core/timeline'
 import { listReviewed, setReviewed } from '../core/reviewed'
 import type { Changed, NavigatorSettings, ViewSettings } from '../preload'
@@ -262,30 +262,16 @@ app.whenReady().then(() => {
       ),
   )
   ipcMain.handle('guides:list', (_, workspaceId: number) => listGuides(db, workspaceId))
-  // Asks the agent pane's session for a guide; the reply streams as agents:entry, like a message sent there.
-  ipcMain.handle('guides:request', async (e, workspaceId: number, review: boolean) => {
-    const send = (channel: string, ...args: unknown[]) => !e.sender.isDestroyed() && e.sender.send(channel, ...args)
-    const result = await requestGuide(db, workspaceId, review, (agentSessionId) => {
-      changed(e.sender, { workspaceId, what: 'transcript' }) // the session may be new
-      return {
-        onEntry: (entry) => send('agents:entry', agentSessionId, entry),
-        onPermission: (p) => permission(e.sender, () => send('agents:permission', agentSessionId, p)),
-      }
-    })
-    changed(e.sender, { workspaceId, what: 'worktree' })
-    changed(e.sender, { workspaceId, what: 'transcript' })
-    return result
-  })
-  // The canvas's Guide menu: make a guide, or pick which to show. Resolves only on a click, like the menus above.
+  // The canvas's Guide menu: a prompt for a guide, for the agent pane's composer, or which guide to show. Resolves only on a click, like the menus above.
   ipcMain.handle(
     'menus:guide',
     (e, workspaceId: number, shown: number | null, prHead: string) =>
       listGuides(db, workspaceId).then(
         (guides) =>
-          new Promise<{ make: boolean } | { show: number | null }>((resolve) =>
+          new Promise<{ prompt: string } | { show: number | null }>((resolve) =>
             Menu.buildFromTemplate([
-              { label: 'Make a Guide', click: () => resolve({ make: false }) },
-              { label: 'Make a Guide with Review', click: () => resolve({ make: true }) },
+              { label: 'Make a Guide', click: () => resolve({ prompt: guideRequest(false) }) },
+              { label: 'Make a Guide with Review', click: () => resolve({ prompt: guideRequest(true) }) },
               { type: 'separator' },
               { label: 'No Guide', type: 'radio', checked: shown === null, click: () => resolve({ show: null }) },
               ...guides.map((g: Guide) => ({
