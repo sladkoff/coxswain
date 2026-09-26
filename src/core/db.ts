@@ -1,5 +1,5 @@
-import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
-import { type Generated, Kysely, SqliteDialect } from 'kysely'
+import { DatabaseSync, type SQLInputValue } from "node:sqlite";
+import { type Generated, Kysely, SqliteDialect } from "kysely";
 
 // ADR 0005: one SQLite database, owned by the core. Append migrations; never edit one that has shipped.
 // The history up to here was squashed into the first one; databases made before it are refused (openDatabase).
@@ -63,69 +63,83 @@ const migrations = [
     created_at text not null,
     resolved_at text
   )`,
-]
+];
 
 // ADR 0016: the tables as the migrations above leave them. Change this with every migration that changes a table.
-type Side = 'old' | 'new'
+type Side = "old" | "new";
 type Tables = {
-  projects: { id: Generated<number>; owner: string; name: string; last_opened_at: string }
-  workspaces: { id: Generated<number>; project_id: number; pr_number: number; last_opened_at: string }
+  projects: { id: Generated<number>; owner: string; name: string; last_opened_at: string };
+  workspaces: {
+    id: Generated<number>;
+    project_id: number;
+    pr_number: number;
+    last_opened_at: string;
+  };
   agent_sessions: {
-    id: Generated<number>
-    workspace_id: number
-    agent: string
-    agent_session_id: string
-    created_at: string
-  }
-  reviewed_files: { workspace_id: number; path: string; fingerprint: string }
-  guides: { id: Generated<number>; workspace_id: number; base: string; head: string; groups: Generated<string>; created_at: string }
-  settings: { key: string; value: string }
+    id: Generated<number>;
+    workspace_id: number;
+    agent: string;
+    agent_session_id: string;
+    created_at: string;
+  };
+  reviewed_files: { workspace_id: number; path: string; fingerprint: string };
+  guides: {
+    id: Generated<number>;
+    workspace_id: number;
+    base: string;
+    head: string;
+    groups: Generated<string>;
+    created_at: string;
+  };
+  settings: { key: string; value: string };
   entries: {
-    id: Generated<number>
-    workspace_id: number
-    kind: 'note' | 'question' | 'answer' | 'explanation' | 'finding'
-    body: string
-    parent_id: number | null
-    guide_id: number | null
-    path: string | null
-    side: Side | null
-    start_line: number | null
-    end_line: number | null
-    code: string | null
-    base: string | null
-    head: string | null
-    created_at: string
-    resolved_at: Generated<string | null>
-  }
-}
+    id: Generated<number>;
+    workspace_id: number;
+    kind: "note" | "question" | "answer" | "explanation" | "finding";
+    body: string;
+    parent_id: number | null;
+    guide_id: number | null;
+    path: string | null;
+    side: Side | null;
+    start_line: number | null;
+    end_line: number | null;
+    code: string | null;
+    base: string | null;
+    head: string | null;
+    created_at: string;
+    resolved_at: Generated<string | null>;
+  };
+};
 
-export type Db = Kysely<Tables>
+export type Db = Kysely<Tables>;
 
 export function openDatabase(path: string): Db {
-  const db = new DatabaseSync(path)
-  db.exec('pragma foreign_keys = on')
-  const { user_version } = db.prepare('pragma user_version').get() as { user_version: number }
+  const db = new DatabaseSync(path);
+  db.exec("pragma foreign_keys = on");
+  const { user_version } = db.prepare("pragma user_version").get() as { user_version: number };
   if (user_version > migrations.length)
-    throw new Error(`${path} was made by an older coxswain whose migrations were squashed; move it away to start afresh`)
+    throw new Error(
+      `${path} was made by an older coxswain whose migrations were squashed; move it away to start afresh`,
+    );
   for (let i = user_version; i < migrations.length; i++) {
-    db.exec('begin')
-    db.exec(migrations[i])
-    db.exec(`pragma user_version = ${i + 1}`)
-    db.exec('commit')
+    db.exec("begin");
+    db.exec(migrations[i]);
+    db.exec(`pragma user_version = ${i + 1}`);
+    db.exec("commit");
   }
   // Kysely's SQLite dialect expects better-sqlite3's statements: parameters as one array, and a reader flag.
   const database = {
     close: () => db.close(),
     prepare: (query: string) => {
-      const stmt = db.prepare(query)
-      const args = (p: readonly unknown[]) => p as SQLInputValue[]
+      const stmt = db.prepare(query);
+      const args = (p: readonly unknown[]) => p as SQLInputValue[];
       return {
         reader: stmt.columns().length > 0,
         all: (p: readonly unknown[]) => stmt.all(...args(p)),
         run: (p: readonly unknown[]) => stmt.run(...args(p)),
         iterate: (p: readonly unknown[]) => stmt.iterate(...args(p)),
-      }
+      };
     },
-  }
-  return new Kysely<Tables>({ dialect: new SqliteDialect({ database }) })
+  };
+  return new Kysely<Tables>({ dialect: new SqliteDialect({ database }) });
 }

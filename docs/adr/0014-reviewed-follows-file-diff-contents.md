@@ -10,7 +10,7 @@ Accepted
 
 The canvas shows file diffs from different ranges: the live diff (merge base → worktree), a guide pinned to the
 PR head it was made at ([ADR 0023](0023-guides-made-by-the-agent-pane.md)), and a commit diff. An agent's turn can
-change dozens of files in the worktree. A file diff the user marked *Reviewed* should stay reviewed exactly as long
+change dozens of files in the worktree. A file diff the user marked _Reviewed_ should stay reviewed exactly as long
 as what they reviewed is unchanged, in whichever range it shows up.
 
 ## Decision

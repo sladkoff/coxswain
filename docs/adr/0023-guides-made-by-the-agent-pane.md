@@ -23,21 +23,21 @@ the agent's own thoughts. Reviewing is opt-in.
    session when it's opened, resumed or loaded, and allowed without asking (`mcp__coxswain`). Its tools:
    - `start_guide`: a new guide, pinned to the merge base → the PR head as coxswain last saw it. Returns the range, the
      changed files and how to make a good guide.
-   - `add_group`: appends a guide group (title, description, a file note per file, *generated* or not) to the
+   - `add_group`: appends a guide group (title, description, a file note per file, _generated_ or not) to the
      workspace's latest guide. Paths are checked against the guide's changed files; a file goes in one group.
    - `add_explanation`: an explanation (glossary) on lines of the guide's range.
    - `add_finding`: a finding (glossary) on lines, the agent's own concern or suggestion. Its description says to use
      it only when the user asked for a review.
-2. **Any message can make a guide.** "Make me a guide" works, since the tools are always there. *Guide* in the canvas's
-   bar also offers *Make a Guide* and *Make a Guide with Review*, which put a short message in the agent pane's
+2. **Any message can make a guide.** "Make me a guide" works, since the tools are always there. _Guide_ in the canvas's
+   bar also offers _Make a Guide_ and _Make a Guide with Review_, which put a short message in the agent pane's
    composer for the user to edit and send. How to guide lives in `start_guide`'s result, not in a setting.
-3. **Guides show in *Changes*.** A guide shown puts its groups in reading order (generated last, then *Not in the
-   guide*), with each group's title and description above its first file diff and each file note above its file diff.
+3. **Guides show in _Changes_.** A guide shown puts its groups in reading order (generated last, then _Not in the
+   guide_), with each group's title and description above its first file diff and each file note above its file diff.
    Explanations and findings are entries (kinds `explanation`, `finding`) with the guide's id, shown as threads
    between the lines only while their guide is shown, so the user can reply or send them back to the agent.
 4. **Guides stay pinned and are all kept.** A guide shows its range (merge base → head then), like a commit diff, not
-   the live worktree; once the PR head moves on it's *stale*. Every guide is kept and can be shown again from the
-   *Guide* menu, for going back or for debugging. The newest is shown when it appears, and on opening a workspace if
+   the live worktree; once the PR head moves on it's _stale_. Every guide is kept and can be shown again from the
+   _Guide_ menu, for going back or for debugging. The newest is shown when it appears, and on opening a workspace if
    it isn't stale.
 5. **Reviewed carries over between guides** for file diffs that didn't change
    ([ADR 0014](0014-reviewed-follows-file-diff-contents.md)).
@@ -49,7 +49,7 @@ the agent's own thoughts. Reviewing is opt-in.
 - **The agent writes the whole guide in one answer schema.** One call can't grow the guide as it reads; nothing shows
   until it's done, and a big PR won't fit one answer.
 - **Explanations as a guide field, not entries.** They'd need their own rendering and couldn't be replied to; entries
-  get threads, outdated handling and *Send to agent* for free.
+  get threads, outdated handling and _Send to agent_ for free.
 - **Show guides on the live diff.** Line numbers drift as the agent edits; the pinned range keeps explanations where
   they were written, and the user asked to keep guides pinned.
 

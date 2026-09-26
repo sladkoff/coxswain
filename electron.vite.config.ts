@@ -1,6 +1,6 @@
-import { defineConfig } from 'electron-vite'
-import react from '@vitejs/plugin-react'
-import tailwindcss from '@tailwindcss/vite'
+import { defineConfig } from "electron-vite";
+import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
   main: {},
@@ -8,6 +8,6 @@ export default defineConfig({
   renderer: {
     plugins: [react(), tailwindcss()],
     // The @pierre/diffs highlighting worker loads its grammars lazily, which needs ES module workers.
-    worker: { format: 'es' },
+    worker: { format: "es" },
   },
-})
+});

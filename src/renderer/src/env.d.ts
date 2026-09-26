@@ -1,7 +1,7 @@
-import type { CoxswainApi } from '../../preload'
+import type { CoxswainApi } from "../../preload";
 
 declare global {
   interface Window {
-    coxswain: CoxswainApi
+    coxswain: CoxswainApi;
   }
 }

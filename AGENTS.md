@@ -8,14 +8,14 @@ implement, and see the resulting diff. It is an Electron app, currently a proof 
 
 Read these before changing anything; they are the source of truth.
 
-| Doc | What it holds |
-|-----|---------------|
-| [docs/GOALS.md](docs/GOALS.md) | The goals (G1–G5) and non-goals. Work should serve a goal. |
+| Doc                                                  | What it holds                                                            |
+| ---------------------------------------------------- | ------------------------------------------------------------------------ |
+| [docs/GOALS.md](docs/GOALS.md)                       | The goals (G1–G5) and non-goals. Work should serve a goal.               |
 | [docs/context/coxswain.md](docs/context/coxswain.md) | The ubiquitous language: every term used in code, docs and conversation. |
-| [docs/UX.md](docs/UX.md) | The screen layout (L1–L4) and open UX questions. |
-| [docs/adr/](docs/adr/) | Architecture decisions, one numbered file each. |
-| [docs/DEVLOG.md](docs/DEVLOG.md) | What has been built so far and the tech debt we carry. |
-| [docs/tickets/](docs/tickets/) | Work still to do, one numbered file per ticket. |
+| [docs/UX.md](docs/UX.md)                             | The screen layout (L1–L4) and open UX questions.                         |
+| [docs/adr/](docs/adr/)                               | Architecture decisions, one numbered file each.                          |
+| [docs/DEVLOG.md](docs/DEVLOG.md)                     | What has been built so far and the tech debt we carry.                   |
+| [docs/tickets/](docs/tickets/)                       | Work still to do, one numbered file per ticket.                          |
 
 ## Development process
 
@@ -70,10 +70,12 @@ docs/           Goals, glossary, UX, ADRs, devlog, tickets
 pnpm install     # also downloads the Electron binary
 pnpm dev         # run with hot reload
 pnpm start       # build and run
-pnpm typecheck   # the only automated check so far
+pnpm typecheck   # type check
+pnpm lint        # oxlint
+pnpm format      # oxfmt, formats in place
 ```
 
 GitHub features need the GitHub CLI signed in: `gh auth login`.
 
-Before calling a change done, run `pnpm typecheck` and `pnpm build`, and check the change in the
+Before calling a change done, run `pnpm typecheck`, `pnpm lint`, `pnpm format` and `pnpm build`, and check the change in the
 running app.

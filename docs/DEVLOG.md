@@ -19,6 +19,8 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 - Small visual changes from unifying: the thread composer's Comment/Agent toggle is now the same segmented control as
   Diffs/Files; the guide's contents progress bar is green like the status bar's; ghost buttons all wash on hover.
   A thread's reply count now says "replies", not "replys".
+- **Lint and format:** `pnpm lint` (oxlint, default rules, clean) and `pnpm format` (oxfmt, default settings). The
+  whole repo, docs included, was formatted once.
 
 ### Tech debt
 
@@ -31,12 +33,12 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 - **The timeline is gone.** The Overview wasn't reachable since the tabs went, but opening a worktree still recorded
   each PR head as a phase and spent a Claude call summarising it. Removed: `core/timeline.ts`, `Overview.tsx`,
   GitHub's PR activity (`getPullRequestActivity`), `isAncestor` and `readFileDiff` in `git.ts`, the `timeline:` and
-  summary model IPC, Settings' *Change summaries*, and the `timeline` change kind. Opening a worktree now only opens it.
+  summary model IPC, Settings' _Change summaries_, and the `timeline` change kind. Opening a worktree now only opens it.
 - **Migrations are squashed** into one that makes today's schema. A database made before is refused with a message
   saying to move it away; migration numbers in the entries below refer to the old chain.
 - **Worktrees are named by PR number** (`worktrees/<owner>/<name>/pr-<number>/`), not the workspace's row ID, which
   a fresh database hands out again: a reset opened PR #1 as workspace 1 while the clone's worktree for its branch
-  sat at `…/2`, and git refused (*already used by worktree*). Opening a worktree now moves one that already holds the
+  sat at `…/2`, and git refused (_already used by worktree_). Opening a worktree now moves one that already holds the
   branch into place, local changes and all, after pruning registrations whose folder is gone.
 - **One-shot runs are gone** from `core/agents.ts`: the answer tool, and the `answer`, `tools`, `instructions`,
   `thinking`, `persist`, `model` and `mode` options. Every run is an agent pane turn, in auto mode on Claude Code's
@@ -45,10 +47,10 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
   are fixed.
 - **The docs say what holds now.** ADRs no longer keep history ([ADR 0001](adr/0001-record-architecture-decisions.md),
   AGENTS.md): 0007, 0009, 0010, 0011, 0012, 0019, 0020 and 0022 are deleted, their numbers left as gaps. 0005,
-  0008, 0013, 0015, 0018, 0021 and 0023 are rewritten without what they superseded; 0014 is now *Reviewed belongs
-  to a file diff's contents*. The done tickets are deleted, and tickets are deleted when done from now on. UX.md
+  0008, 0013, 0015, 0018, 0021 and 0023 are rewritten without what they superseded; 0014 is now _Reviewed belongs
+  to a file diff's contents_. The done tickets are deleted, and tickets are deleted when done from now on. UX.md
   describes the agent-first layout (L1 project column, L2 Navigator, L3 canvas, L4 agent pane); the glossary lost
-  *Viewer*, *Overview*, *Diff tab*, *Timeline*, *Phase*, *Change summary*, *Event* and *Context*.
+  _Viewer_, _Overview_, _Diff tab_, _Timeline_, _Phase_, _Change summary_, _Event_ and _Context_.
 
 ### Tech debt
 
@@ -61,32 +63,32 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 - **Guides are agentic** ([ADR 0023](adr/0023-guides-made-by-the-agent-pane.md)). The agent pane's sessions get
   coxswain's MCP tools (`start_guide`, `add_group`, `add_explanation`, `add_finding`) from the local server that served
   the answer tool, at a path per workspace, allowed without asking. "Make me a guide" in the agent pane works; so do
-  *Make a Guide* and *Make a Guide with Review* in the canvas bar's new *Guide* menu, which put the message in
+  _Make a Guide_ and _Make a Guide with Review_ in the canvas bar's new _Guide_ menu, which put the message in
   the agent pane's composer for the user to edit and send (not sent right away, as ADR 0023 says). How to guide is in `start_guide`'s result.
-- **Guides show in *Changes*:** groups in reading order with title, description and file notes, *Not in the guide*,
+- **Guides show in _Changes_:** groups in reading order with title, description and file notes, _Not in the guide_,
   generated groups last. Explanations and findings are entries (new kinds) with a `guide_id`, shown as threads only
-  with their guide; a reply is a note. *Send all to agent* leaves out the ones nobody replied to.
+  with their guide; a reply is a note. _Send all to agent_ leaves out the ones nobody replied to.
 - **Pinned and kept:** a guide shows its range (merge base → PR head then), like a commit; stale once the PR moves
-  on. Every guide stays in the *Guide* menu. The newest shows when it appears, and on opening if not stale.
+  on. Every guide stays in the _Guide_ menu. The newest shows when it appears, and on opening if not stale.
 - **The old pipeline is gone:** file summaries, grouping and describing calls, the guide prompt and model, `Guide.tsx`
   and the progress plumbing. Migration 20 drops `guides` and `file_summaries` (and their data), makes a new `guides`
-  table and rebuilds `entries`. The summary model moved to Settings > *Change summaries*; `ask` lives in `timeline.ts`.
+  table and rebuilds `entries`. The summary model moved to Settings > _Change summaries_; `ask` lives in `timeline.ts`.
 - **The guide's table of contents is back** (`GuideToc.tsx`, from the old Guide tab): left of the canvas while a
   guide shows, with viewed counts per group and in all, `✎` counts, the group being read marked, and click to jump.
   `countItems` no longer makes an empty count for explanations and findings (`✎ 0`).
-- **No tabs row over the canvas:** it only ever held *Changes*. The canvas's bar is now the top strip (and drags the
+- **No tabs row over the canvas:** it only ever held _Changes_. The canvas's bar is now the top strip (and drags the
   window); a tabs row comes back with a second thing to show.
-- **Commits is a pane, not a menu:** *Commits* in the canvas's bar opens a list on the left, in the Navigator's
+- **Commits is a pane, not a menu:** _Commits_ in the canvas's bar opens a list on the left, in the Navigator's
   place (one or the other), and a click picks the commit. `listCommits` replaces the `menus:commits` popup.
-- **Comment/Agent toggle** replaces the comment box's *Send to agent* checkbox, left of the send button. It's one
-  global preference in `settings` (`comment.to-agent`); a reply is always a note, so reply boxes have no toggle (*Send all to agent* sends threads afterwards).
-- **Thread ⋯ menu** replaces the thread's ✕: *Edit* (the first comment, the user's own; `editEntry`), *Delete*,
-  *Send to Agent* (`sendThread`: the latest note becomes a question and is asked like one, answer in the thread).
+- **Comment/Agent toggle** replaces the comment box's _Send to agent_ checkbox, left of the send button. It's one
+  global preference in `settings` (`comment.to-agent`); a reply is always a note, so reply boxes have no toggle (_Send all to agent_ sends threads afterwards).
+- **Thread ⋯ menu** replaces the thread's ✕: _Edit_ (the first comment, the user's own; `editEntry`), _Delete_,
+  _Send to Agent_ (`sendThread`: the latest note becomes a question and is asked like one, answer in the thread).
   `askQuestion` and `sendThread` share `ask` in the core and `asking` in the main process.
 - **Resolved threads:** a ✓ left of the ⋯ menu resolves and reopens. Migration 21 adds `entries.resolved_at`, set on
   the thread's first entry (`resolveThread`). A resolved thread folds to one line, is counted and labelled in the
-  bottom bar's list, and is left out of *Send all to agent*.
-- ***Viewed* is now *Reviewed*** (glossary): labels, `src/core/reviewed.ts`, `listReviewed`/`setReviewed`,
+  bottom bar's list, and is left out of _Send all to agent_.
+- **_Viewed_ is now _Reviewed_** (glossary): labels, `src/core/reviewed.ts`, `listReviewed`/`setReviewed`,
   `showReviewed`, the `reviewed:` IPC channels. Migration 22 renames `viewed_files` to `reviewed_files`. Accepted
   ADRs and older devlog entries keep the old word.
 - Tried on PR #1 of the test project: the agent called every tool, and the guide, two explanations and five findings
@@ -103,32 +105,32 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 
 ### What works
 
-- **No more tabs.** The *Overview*, *Guide* and *Diff* tabs are gone. Opening a PR shows the **agent pane**
+- **No more tabs.** The _Overview_, _Guide_ and _Diff_ tabs are gone. Opening a PR shows the **agent pane**
   (the old L4 chat) on the left, always visible and resizable, and the **canvas** on the right (glossary). For
-  now the canvas has one tab, *Changes* (the file diffs), in a tabs row above a bar with *Files*, *Commits* and the cog.
+  now the canvas has one tab, _Changes_ (the file diffs), in a tabs row above a bar with _Files_, _Commits_ and the cog.
 - **The canvas's bottom bar** sums up the review: threads (outdated, waiting on the agent), +/− lines, and files
   viewed with a progress bar. Its thread count opens a list of every thread; clicking one scrolls to it.
-  *Send all to agent* sends every thread in one message to the agent pane's session (`sendReview`), known in the
-  transcript by a `[Review · N threads]` header like a comment's, and shown as a card. *Show Viewed Files* now hides viewed file diffs on the canvas too, not only in the
-  Navigator; when all are viewed it says so, with *Show them*.
-- *View > Toggle Agents* (⌥⌘B) is gone, since the agent pane is always shown.
-- The agent pane's header no longer says *Claude Code*. A session picker there (*Session N · date*) shows any of the
-  workspace's agent sessions, not only the latest; *New session* next to it.
-- **Comments are threads.** The comment box on lines is a send button (Enter), a *Send to agent* checkbox and ✕ to
+  _Send all to agent_ sends every thread in one message to the agent pane's session (`sendReview`), known in the
+  transcript by a `[Review · N threads]` header like a comment's, and shown as a card. _Show Viewed Files_ now hides viewed file diffs on the canvas too, not only in the
+  Navigator; when all are viewed it says so, with _Show them_.
+- _View > Toggle Agents_ (⌥⌘B) is gone, since the agent pane is always shown.
+- The agent pane's header no longer says _Claude Code_. A session picker there (_Session N · date_) shows any of the
+  workspace's agent sessions, not only the latest; _New session_ next to it.
+- **Comments are threads.** The comment box on lines is a send button (Enter), a _Send to agent_ checkbox and ✕ to
   cancel. Every comment starts a thread with a reply box of the same shape, so a note can be answered too. Ticked, a
   comment is a question and the agent's answer lands in the thread; unticked, a note. No schema change: `parent_id`
   already threads entries, it just wasn't used for notes. A question asked in a thread is given the thread's notes
   since its last question (and the anchor, if the thread began as a note), since the agent session never saw them.
-  Note boxes and question threads are now one `ThreadBox`. The old *Send to agent* on a note (a chip in the agent
+  Note boxes and question threads are now one `ThreadBox`. The old _Send to agent_ on a note (a chip in the agent
   pane's message box, once only) is gone with its plumbing (`noteIds`, `formatAsk`'s notes); reply with the box
   ticked instead. `entries.sent_at` is no longer written or read.
 - **Comments go to the agent pane** ([ADR 0021](adr/0021-comments-go-to-the-agent-pane.md)): a question is a turn
-  in the workspace's current agent session, not a hidden per-round one. The agent chat shows it as a card (*Comment
-  on `a.ts:3` sent to Claude*, the comment, *View thread*, which scrolls the canvas to the thread); the reply streams
+  in the workspace's current agent session, not a hidden per-round one. The agent chat shows it as a card (_Comment
+  on `a.ts:3` sent to Claude_, the comment, _View thread_, which scrolls the canvas to the thread); the reply streams
   to both and is kept as the thread's answer. The card comes from a header line in the prompt, read back from the
   transcript (`withComment` in `core/agents.ts`).
 - **No more review rounds** (ADR 0022): entries belong to their workspace. Rounds,
-  wrap up, action items, hand-off and *Copy as prompt* are gone from the core, IPC and UI (`Round.tsx` deleted; round
+  wrap up, action items, hand-off and _Copy as prompt_ are gone from the core, IPC and UI (`Round.tsx` deleted; round
   events left the timeline and action items the change summaries). Migration 19 rebuilds `entries` with
   `workspace_id` and `agent_sessions` without `review_round_id`, and drops `action_items` and `review_rounds`; ran
   on the real database with its 17 entries kept. `ask`'s `instructions` parameter went with wrap up.
@@ -136,8 +138,8 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 ### Tech debt
 
 - `ponytail:` the comment card is parsed from the prompt's header line; store sent comments by turn if it gets in the way.
-- `ponytail:` *View thread* stops at the file for an outdated thread, which isn't between the lines.
-- The agent pane shows no *Working…* during a comment's turn, and a comment fails if the pane's own turn is running.
+- `ponytail:` _View thread_ stops at the file for an outdated thread, which isn't between the lines.
+- The agent pane shows no _Working…_ during a comment's turn, and a comment fails if the pane's own turn is running.
 - `ponytail:` every entry a workspace ever had is listed; nothing archives old ones.
 
 ## 2026-09-26 — The Overview's timeline
@@ -145,16 +147,16 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 ### What works
 
 - **The Overview is a timeline** (ADR 0020): the PR's title, author and GitHub link,
-  then its phases, newest first, each with its events, newest first too. Terms (*timeline*, *phase*, *change summary*, *event*,
-  *context*) are in the glossary; the layout is in UX.md.
+  then its phases, newest first, each with its events, newest first too. Terms (_timeline_, _phase_, _change summary_, _event_,
+  _context_) are in the glossary; the layout is in UX.md.
 - **Phases** (`phases` table, migration 18): every PR head `openWorktree` reads is passed to `recordHead`, which adds
   a phase when the head is new. `base` is the previous head if the new one builds on it (`isAncestor`), else the
-  merge base; the kind (*PR created*, *N new commits*, *Rebased*) is derived from it.
+  merge base; the kind (_PR created_, _N new commits_, _Rebased_) is derived from it.
 - **Change summaries** are made in the background right after a phase is recorded: one run on the guide's summary
   model with the phase's diff (cut like a guide's), its commits, the PR's description, earlier phases' intents and,
   for a push, the action items and GitHub reviews and comments since the previous phase. Stored as prose
   (`phases.summary`, migration 19, which drops the first try's separate `intent` and `why` columns); the prompt asks
-  for the intent and the why. *Regenerate* (or *Summarise*) makes one again.
+  for the intent and the why. _Regenerate_ (or _Summarise_) makes one again.
 - **`getTimeline`** puts it together on each read: phases with files, +/− lines and commits counted by git
   (`listCommits` now takes a head); every round's notes and questions (answers folded) and wrap-ups; GitHub's issue
   timeline (`getPullRequestActivity`, which replaces `getPullRequestOverview`): comments, reviews with their review
@@ -181,20 +183,20 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 - **Every review round is reachable** (ADR 0019,
   ticket 0001). `listRounds` replaces `getRound`: every round, oldest
   first, with its stream and action items. The Round bar steps through them with ‹ ›, the latest shown first and a
-  new round showing itself. *Show round* opens the selected round's action items and then its stream, each question
+  new round showing itself. _Show round_ opens the selected round's action items and then its stream, each question
   with its follow-ups and answers. #5311's round 3, wrapped up with no action items, can be read again.
-- **Done and resolved**: an action item has a *done* checkbox (`action_items.done_at`, migration 17). A round is
-  resolved once wrapped up with every item done, derived in `listRounds`, not stored. The bar says *wrapped up, N of
-  M done* or *resolved*.
+- **Done and resolved**: an action item has a _done_ checkbox (`action_items.done_at`, migration 17). A round is
+  resolved once wrapped up with every item done, derived in `listRounds`, not stored. The bar says _wrapped up, N of
+  M done_ or _resolved_.
 - **Copy as prompt** puts the round's open action items and its stream on the clipboard (`formatHandOff`, now
   exported, written by the main process). Done items are left out of every hand-off, L4's too.
 - **Wrap up takes a round id**, so an earlier round can be wrapped up again.
-- ***Post to PR*** is a disabled placeholder on the bar.
+- _**Post to PR**_ is a disabled placeholder on the bar.
 
 ### Tech debt
 
 - `ponytail:` `listRounds` reads every entry of a workspace on each change to entries; page it if rounds pile up.
-- `ponytail:` *Post to PR* does nothing yet.
+- `ponytail:` _Post to PR_ does nothing yet.
 - Wrapping up again loses which items were done.
 
 ## 2026-09-26 — Every agent run over ACP
@@ -214,7 +216,7 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 - **Options are data**: the Claude record maps `tools: 'none'` to `tools: []` and `strictMcpConfig`, `instructions` to
   `systemPrompt`, `thinking: false` to `{ type: 'disabled' }`, `persist: false` to `persistSession: false`, and `mode`
   to the `auto` or `default` permission mode (`session/set_mode`). The model is set with `session/set_config_option`
-  after `session/new`: the adapter prefers the user's settings over a `_meta` model. Without one, the agent's *default*
+  after `session/new`: the adapter prefers the user's settings over a `_meta` model. Without one, the agent's _default_
   option. Aliases (`haiku`) match an option
   by value, description or name. One-shot runs close their session after (`session/close`); otherwise their Claude
   Code processes stay.
@@ -241,7 +243,7 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 ### Tech debt
 
 - **A model in the user's settings is ignored** (`ponytail:` in `openSession`): a run without a model gets the agent's
-  own *default* (Opus 5.5 here). Left to itself the adapter resolves the settings model differently from Claude Code:
+  own _default_ (Opus 5.5 here). Left to itself the adapter resolves the settings model differently from Claude Code:
   `"opus[1m]"` became Opus 4.8, which made a guide 216 s. The 1M-context variant isn't offered by the adapter.
 - **An agent session never sent a message can't be resumed after a restart** (`ponytail:` on `startAgentSession`):
   its first message fails. Only happens if the first turn fails before it's sent.
@@ -316,8 +318,8 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 
 ### What works
 
-- **Send to agent** on a wrapped-up round's bar puts the round in L4's message box (*Round N · N
-  action items*, ✕ to take it out). The next message is an ask whose prompt is the action items in
+- **Send to agent** on a wrapped-up round's bar puts the round in L4's message box (_Round N · N
+  action items_, ✕ to take it out). The next message is an ask whose prompt is the action items in
   order, each with its anchor and code, then the round's whole numbered stream (notes, questions,
   answers) as context, then the notes attached and the user's text (`formatHandOff` in `review.ts`;
   `formatStream` is shared with wrap-up). It goes to L4's current agent session, so it shows there.
@@ -335,24 +337,24 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
   React never deleted the old Guide's DOM. Found by driving a second instance over the Chrome
   DevTools protocol (`--remote-debugging-port`); checked the same way after the fix: one Guide on
   Guide, none on Diff or Overview.
-- **Commits in the Diff tab**: *Commits* next to *Files* opens a native menu of the commits from
+- **Commits in the Diff tab**: _Commits_ next to _Files_ opens a native menu of the commits from
   the merge base to HEAD (`listCommits`); picking one shows its commit diff (first parent → commit;
   `listChangedFiles` takes a `head`, and the Viewer reads the new side at it). Checked on #5311: a
   commit's 80 files match `git diff`, and the button shows. The menu itself wasn't clicked (a native
   menu can't be driven over the DevTools protocol).
-- **The guide is made on request**: without a stored guide, the Guide tab shows *Create guide*
+- **The guide is made on request**: without a stored guide, the Guide tab shows _Create guide_
   instead of starting one on open. A guide already being made still shows its progress.
-- **A guide to one commit**: *Create guide* and *Regenerate* first open the Commits menu, *All
-  Changes* or one commit. A commit guide is made from its commit diff (migration 13: `guides.head`,
+- **A guide to one commit**: _Create guide_ and _Regenerate_ first open the Commits menu, _All
+  Changes_ or one commit. A commit guide is made from its commit diff (migration 13: `guides.head`,
   with `merge_base` the commit's parent; `readFileDiff` and `diffFingerprints` take a `head`), and the
-  Guide tab shows it with that commit's file diffs, its header saying *Commit abc1234* or *All
-  changes*. The tab shows the latest guide of either kind. Checked with a hand-made commit guide on a
-  copy of the database: the commit's 80 files, 2 in its group and 78 under *Not in the guide*.
+  Guide tab shows it with that commit's file diffs, its header saying _Commit abc1234_ or _All
+  changes_. The tab shows the latest guide of either kind. Checked with a hand-made commit guide on a
+  copy of the database: the commit's 80 files, 2 in its group and 78 under _Not in the guide_.
 - Dropdown buttons have no ▾.
 - **Guides are pinned to the PR head** ([ADR 0014](adr/0014-reviewed-follows-file-diff-contents.md)): a new
   guide to all changes covers the merge base → the PR head (migration 14: `guides.kind`, and `head`
   set for both kinds) and reads its file diffs there, so an agent's local edits don't show in it.
-  When the PR head moves on, an amber bar says the guide is stale, with *Regenerate*. **Viewed
+  When the PR head moves on, an amber bar says the guide is stale, with _Regenerate_. **Viewed
   belongs to file diff contents**: in a pinned guide it's read at the guide's head
   (`diffFingerprints`, one `git cat-file --batch`), in the Diff tab from the worktree; `viewed_files`
   keeps a row per fingerprint. File summaries use the same fingerprint. Checked on a copy of the
@@ -363,7 +365,7 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
   ([ADR 0015](adr/0015-entries-pinned-and-outdated.md)). Migration 15: `entries.base`/`head` and
   `review_rounds.merge_base`/`head`. `listEntries` takes the view's range and gives each entry a
   state: current (its lines still read as its code), outdated, or wrapped-up. Only current entries
-  show between the lines and in the ✎ counts; a file diff's header opens its *N outdated*. A
+  show between the lines and in the ✎ counts; a file diff's header opens its _N outdated_. A
   wrapped-up round's entries leave the views; the Round bar still counts them. Prompts say "as at
   commit abc1234" for entries made on a pinned range.
 
@@ -373,7 +375,7 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
   sent, and the button offers it again. Add `handed_off_at` when it matters.
 - **All items or none**: no picking single items; delete the others in the draft first.
 - **Notes on a commit diff** keep the commit's line numbers but say "as in the worktree then", and
-  *Viewed* in a commit diff marks the file viewed for all changes (`ponytail:` on the Viewer's
+  _Viewed_ in a commit diff marks the file viewed for all changes (`ponytail:` on the Viewer's
   `head`). Anchor entries to the commit if that misleads.
 - **A wrapped-up round with no action items can't be read again** (ADR 0015 hides wrapped-up rounds):
   ticket 0001.
@@ -408,7 +410,7 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 ### Tech debt
 
 - **The icon is set at runtime** (`ponytail:` in `src/main/index.ts`), because there's no packaging
-  yet. The menu bar still says *Electron*, and the Dock shows Electron's icon for a moment at launch.
+  yet. The menu bar still says _Electron_, and the Dock shows Electron's icon for a moment at launch.
   Build an `.icns` into the app bundle when we package.
 
 ## 2026-09-25 — Review rounds
@@ -418,22 +420,22 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 Not checked in the app yet: the user tests it.
 
 - **Review rounds of entries replace local comments** (ADR 0011).
-  Glossary first: *note*, *question*, *answer*, *thread*, *anchor*, *review round*; *comment* now
-  means GitHub only; *local comment*, *imported comment*, *import* and *publish* are gone (*post*
+  Glossary first: _note_, _question_, _answer_, _thread_, _anchor_, _review round_; _comment_ now
+  means GitHub only; _local comment_, _imported comment_, _import_ and _publish_ are gone (_post_
   replaces publish).
 - Migration 11: `review_rounds` and `entries` (kind, body, `parent_id`, optional anchor); old comments
   and the agent sessions asked from them are dropped; `agent_sessions` rebuilt with
   `review_round_id` in place of `comment_id`. Checked from a copy of a version 10 database.
-- `src/core/comments.ts` is now `src/core/review.ts`. The gutter box says *Note* where it said
-  *Comment*.
+- `src/core/comments.ts` is now `src/core/review.ts`. The gutter box says _Note_ where it said
+  _Comment_.
 - **Questions share one agent session per round**, so a question knows the earlier ones. They run
   read-only (`--permission-mode default`, so edits are refused), and the reply is saved as an answer
   entry when the turn ends. Follow-ups are questions in the same thread.
 - **Counts of notes and questions** (`✎ N`, hover for how many of each) on changed files in the
   Navigator, tree and list, and on groups in the Guide's table of contents (`countItems` in `ui.tsx`).
   A question's follow-ups and answers don't count; the thread does.
-- **Wrap up** (ADR 0012): a bar at the bottom of *Guide* and
-  *Diff* shows the round (*Round N*, its notes and questions) and *Wrap up*, which sends the round's
+- **Wrap up** (ADR 0012): a bar at the bottom of _Guide_ and
+  _Diff_ shows the round (_Round N_, its notes and questions) and _Wrap up_, which sends the round's
   numbered stream to one `claude -p` with a schema and no tools (`runClaude`, now exported from
   `guides.ts`) and stores the action items it drafts (migration 12: `action_items`,
   `review_rounds.ended_at`). The draft opens above the bar to edit or delete items. Wrapping up ends
@@ -449,13 +451,13 @@ Not checked in the app yet: the user tests it.
 - **Only the latest round is reachable**: once a new round starts, the last one's entries and action
   items leave the UI (`ponytail:` on `ReviewRound`).
 - **The wrap-up prompt is fixed** and uses Claude Code's default model, not in Settings like the
-  guide's. No *Stop* while it runs.
-- **Hand-off isn't built**: action items can't be implemented or posted yet. (Paid off for agents in *Hand off a round to the agent*.)
-- **Questions run one at a time per round**: a second while one runs gets *A turn is already running*.
+  guide's. No _Stop_ while it runs.
+- **Hand-off isn't built**: action items can't be implemented or posted yet. (Paid off for agents in _Hand off a round to the agent_.)
+- **Questions run one at a time per round**: a second while one runs gets _A turn is already running_.
   Queue them if it gets in the way.
 - **Tool calls in a thread show only while streaming**; an answer keeps only the agent's text, and a
   stopped or failed turn leaves no answer.
-- **Only changed files show counts** in the Navigator: in *Files*, a note on an unchanged file (made
+- **Only changed files show counts** in the Navigator: in _Files_, a note on an unchanged file (made
   from a whole file) has no row decoration.
 - No UI yet for a round's whole stream, floating entries, action items or GitHub comments (UX open
   question 3).
@@ -471,13 +473,13 @@ Not checked in the app yet: the user runs the first guide with it.
   the prompt (`readFileDiff`, cut to 300 lines) and every `claude -p` runs with no tools and a short
   system prompt of its own in place of Claude Code's.
 - **Summaries are cached** in `file_summaries` (migration 10) by file diff fingerprint, so
-  *Regenerate* and a PR that moved on only summarise changed files. Every file is summarised now,
+  _Regenerate_ and a PR that moved on only summarise changed files. Every file is summarised now,
   small PRs too, in batches of at most 25 files or 1200 lines, 16 at once.
 - **Grouping answers with file numbers**, not paths, and no descriptions; files it leaves out go in
-  *Other changes*.
-- **Groups are described in parallel after grouping**, each with a description and a *file note* per
+  _Other changes_.
+- **Groups are described in parallel after grouping**, each with a description and a _file note_ per
   file diff (glossary), shown above the file diff. The guide shows as soon as it's grouped, groups
-  read *Describing…* until theirs arrives, and the top counts the groups described.
+  read _Describing…_ until theirs arrives, and the top counts the groups described.
 - **How long a guide took** is stored (`started_at`, `finished_at`, migration 9) and shown at the top
   of the tab; the main process logs each phase's seconds and how many summaries were reused.
 - The default guide prompt now asks for file notes too; Settings says what each model does.
@@ -490,17 +492,17 @@ Not checked in the app yet: the user runs the first guide with it.
   in the background over a diff of 1000+ files. `usePullRequest` now only returns data for the current
   workspace.
 - **Notes don't mention file numbers**: one said "file 106"; the prompts now say to name files by path.
-- **Guide tags**: grouping may tag a group *generated* (glossary); the default prompt asks for
+- **Guide tags**: grouping may tag a group _generated_ (glossary); the default prompt asks for
   lockfiles, generated clients, snapshots and build output to go in such groups. They're sorted last
-  (in the core, and in the tab after *Not in the guide*) and low-lighted. Old guides have no tags.
+  (in the core, and in the tab after _Not in the guide_) and low-lighted. Old guides have no tags.
 - **Scrolling file diffs no longer freezes** (Diff and Guide tabs): `@pierre/diffs` highlighted each
   file diff on the main thread as it scrolled into range. It now runs in the library's worker pool
   (`WorkerPoolContextProvider` in `main.tsx`, ES module workers in `electron.vite.config.ts`).
 - **Long lines wrap** in file diffs and files, instead of scrolling sideways (`overflow: 'wrap'` in
   `Viewer.tsx`; the library's virtualizer measures wrapped lines).
-- **View options in the tab's bar**: on *Guide* and *Diff*, a cog opens a native menu with *Unified*
-  or *Split* file diffs and *Show Viewed Files*. That setting moved there from the Navigator's cog
-  menu and the Guide's *Show viewed* button, so the two now share it. It resets on restart
+- **View options in the tab's bar**: on _Guide_ and _Diff_, a cog opens a native menu with _Unified_
+  or _Split_ file diffs and _Show Viewed Files_. That setting moved there from the Navigator's cog
+  menu and the Guide's _Show viewed_ button, so the two now share it. It resets on restart
   (`ponytail:` in `App.tsx`), like the Navigator's settings.
 - **Guide text renders as Markdown**: group titles (inline), descriptions and file notes, with one
   readable style for descriptions and notes and more space between groups. The Markdown setup is
@@ -511,7 +513,7 @@ Not checked in the app yet: the user runs the first guide with it.
 - Paid off: summaries weren't cached.
 - **Batch sizes, cut-offs and parallelism are fixed guesses** (`ponytail:` in `guides.ts`): 300 lines
   per diff, 25 files or 1200 lines per batch, 3000 lines per group, 16 calls at once.
-- Paid off: rules for generated files, now the *generated* guide tag. A saved custom guide prompt
+- Paid off: rules for generated files, now the _generated_ guide tag. A saved custom guide prompt
   doesn't get the new sentence; the schema's description of the tag still tells the agent.
 - **An unfinished guide** (the app quit while describing) stays so until regenerated.
 - **The progress bar's split** between summarising and grouping (50/50) and its pace are new guesses.
@@ -527,19 +529,19 @@ Not checked in the app yet: the user runs the first guide with it.
   JSON schema). No diff goes in the prompt: agents get the file list and read diffs themselves with
   `git diff` (read-only tools, no MCP servers). A big PR is cut into batches of files, summarised by
   up to eight agents at once on the summary model (`haiku`), then one agent groups the summaries. The guide's groups show one after another: title, a short
-  description of what to look at, then the group's file diffs, the same Viewer as in *Diff*
-  (comments, *Ask agent*, Viewed). A group's *Viewed* checkbox marks all its file diffs. Viewed file
-  diffs and fully viewed groups are hidden, with *Show viewed* to bring them back. A table of
+  description of what to look at, then the group's file diffs, the same Viewer as in _Diff_
+  (comments, _Ask agent_, Viewed). A group's _Viewed_ checkbox marks all its file diffs. Viewed file
+  diffs and fully viewed groups are hidden, with _Show viewed_ to bring them back. A table of
   contents on the left lists the groups with their viewed counts and a bar for the whole guide,
-  follows the scroll, and jumps to a group on click. Its width is fixed (`ponytail:` in `Guide.tsx`). Files the guide doesn't mention show last under *Not in the guide*. *Regenerate* makes
+  follows the scroll, and jumps to a group on click. Its width is fixed (`ponytail:` in `Guide.tsx`). Files the guide doesn't mention show last under _Not in the guide_. _Regenerate_ makes
   a new one. Leaving the tab while it's being made and coming back waits for the same run.
 - **Guides are stored** (`guides`, migration 7) with the merge base and the model that made them,
   shown at the top of the tab. Checked in the app: #5284 got five groups from
   `claude-opus-5-5[1m]`, and showed again at once after a restart.
-- **Settings > Guide**: the guide prompt (with *Reset*), the model (empty is Claude Code's
+- **Settings > Guide**: the guide prompt (with _Reset_), the model (empty is Claude Code's
   default) and the summary model, stored in a new `settings` table (migration 8).
-- **Stacked file diffs read their files only when scrolled near the screen**, in both *Diff* and
-  *Guide*. Before, a big PR (#5311, 297 files) started ~600 `git` processes at once and every other
+- **Stacked file diffs read their files only when scrolled near the screen**, in both _Diff_ and
+  _Guide_. Before, a big PR (#5311, 297 files) started ~600 `git` processes at once and every other
   call, like switching tabs or workspaces, queued behind them.
 - The agents are told to run `git diff --no-ext-diff`, since one repo's `.gitattributes` sends CSV to
   `daff`, which isn't always installed. A first version put the patch in the prompt and failed on it.
@@ -548,12 +550,12 @@ Not checked in the app yet: the user runs the first guide with it.
 
 - **Groups are whole file diffs**, not hunks (UX open question 2).
 - **Summaries aren't cached**, and batch sizes and parallelism are fixed (`ponytail:` in
-  `guides.ts`): *Regenerate* summarises everything again. Cache by `diffFingerprint` when that hurts.
+  `guides.ts`): _Regenerate_ summarises everything again. Cache by `diffFingerprint` when that hurts.
 - **The progress bar is approximate**: the core reports batches summarised and when grouping
   starts (`guides:progress`); between those the bar creeps on at a guessed pace (`Guide.tsx`), and
   the split between summarising and grouping (60/40) is a guess from one PR.
 - **A guide from another merge base is hidden, not marked outdated**, and files changed since
-  only show under *Not in the guide*.
+  only show under _Not in the guide_.
 - **Two app instances make two guides**: runs are shared per process only.
 - **A file diff still loading shows its path at a guessed height**, so scrolling to a file can land a
   bit off until the ones above it have loaded (the old `ponytail:` in `App.tsx`, now smaller).
@@ -562,15 +564,15 @@ Not checked in the app yet: the user runs the first guide with it.
 
 ### What works
 
-- **Tabs in L3:** *Overview*, *Guide* and *Diff*. A workspace opens on *Overview*: the PR's title
+- **Tabs in L3:** _Overview_, _Guide_ and _Diff_. A workspace opens on _Overview_: the PR's title
   and its description as Markdown (`getPullRequestOverview`). Cached in memory per workspace, so the
   tab shows at once and refreshes in the background.
-  *Guide* says "Coming soon". *Diff* shows every changed file's diff one after another in one
-  scroll, with the Navigator on its left, shown with the *Files N* toggle in the tab's bar; picking a changed file there scrolls to
-  it, and a file picked in *Files* shows in place of the file diffs. The Diff tab stays mounted
+  _Guide_ says "Coming soon". _Diff_ shows every changed file's diff one after another in one
+  scroll, with the Navigator on its left, shown with the _Files N_ toggle in the tab's bar; picking a changed file there scrolls to
+  it, and a file picked in _Files_ shows in place of the file diffs. The Diff tab stays mounted
   while another tab shows, so the file diffs and Navigator keep their state. A second bar under the tabs is there for each tab's options, empty so far.
-- **The Navigator and L4 start hidden**; ⌘B (*View > Toggle Navigator*) toggles the Navigator too.
-  L4's button moved from its header to the right of each tab's bar, as an *Agent* toggle like *Files*.
+- **The Navigator and L4 start hidden**; ⌘B (_View > Toggle Navigator_) toggles the Navigator too.
+  L4's button moved from its header to the right of each tab's bar, as an _Agent_ toggle like _Files_.
 
 ### Tech debt
 
@@ -595,24 +597,24 @@ coxswain, before importing any GitHub comments.
 - **Local comments are stored** (`comments` table, migration 4) with path, side (`old` = merge base,
   `new` = worktree), line range, the code as it was, and the text. They show inline and survive
   restarts. They can be deleted.
-- **Asks.** *Send to agent* puts a comment in the L4 message box as a chip; several can be collected.
+- **Asks.** _Send to agent_ puts a comment in the L4 message box as a chip; several can be collected.
   On send, the core puts each comment in front of the message (file, lines, side, the code in a
-  fence, the comment) and marks them sent; they then show *Sent to agent* inline.
+  fence, the comment) and marks them sent; they then show _Sent to agent_ inline.
 - **Agent replies render as Markdown** in L4 (`react-markdown` + `remark-gfm`: lists, tables,
   code, links). Links open in the browser; the app window never navigates.
-- **Ask agent from a comment.** The comment box has *Ask agent* (⇧⌘Enter): it saves the comment
+- **Ask agent from a comment.** The comment box has _Ask agent_ (⇧⌘Enter): it saves the comment
   and starts an agent session tied to it (`agent_sessions.comment_id`, migration 6), with the
   comment as the first turn. Replies stream into the comment's thread in the Viewer, and the user
   can answer there. L4 leaves these sessions out. The Viewer now keeps showing the file while it
-  rereads after a turn, instead of flashing *Loading…*. Checked in the app: an ask and a follow-up.
-- **Viewed files.** A *Viewed* checkbox in a file diff's header; the Navigator hides viewed files, says
-  "N of M viewed", and has a cog button with a native menu: *Show Viewed Files* (then shown with a
-  ✓), and *As Tree* / *As List* for the changed files. Stored per workspace (`viewed_files`, migration 5) with a fingerprint of the
+  rereads after a turn, instead of flashing _Loading…_. Checked in the app: an ask and a follow-up.
+- **Viewed files.** A _Viewed_ checkbox in a file diff's header; the Navigator hides viewed files, says
+  "N of M viewed", and has a cog button with a native menu: _Show Viewed Files_ (then shown with a
+  ✓), and _As Tree_ / _As List_ for the changed files. Stored per workspace (`viewed_files`, migration 5) with a fingerprint of the
   file diff (merge base + worktree file), so a file becomes unviewed when an agent or new PR commits
   change it. Checked in the app on #5284.
-- **The Agents pane can be hidden**: a button in its header, *View > Toggle Agents* (⌥⌘B), and a
+- **The Agents pane can be hidden**: a button in its header, _View > Toggle Agents_ (⌥⌘B), and a
   button in L3's top bar to show it again. It stays mounted while hidden, so a running turn keeps
-  going and still reloads the diff. *Send to agent* shows it.
+  going and still reloads the diff. _Send to agent_ shows it.
 - **Resizable panes.** Drag the border between L2 and L3, or L3 and L4, to resize. L3 takes the
   rest.
 - Checked in the app on a private repo #5291: comment on lines 3–5, send with an instruction,
@@ -620,7 +622,7 @@ coxswain, before importing any GitHub comments.
 
 ### Tech debt
 
-- **Viewed isn't synced with GitHub's** *Viewed* checkbox; it's local only, and also covers local
+- **Viewed isn't synced with GitHub's** _Viewed_ checkbox; it's local only, and also covers local
   changes, which GitHub doesn't see.
 - **The ✓ in the Navigator is redrawn by resetting the rows' git status** (`ponytail:` in
   `Navigator.tsx`), since `@pierre/trees` has no call to refresh decorations.
@@ -652,7 +654,7 @@ coxswain, before importing any GitHub comments.
 
 Each project now has its own clone and each workspace a PR worktree, per
 [ADR 0008](adr/0008-clones-and-pr-worktrees.md). Agent sessions work in the worktree and may edit
-files there, and *Diffs* shows what they changed. That's the first full loop for G4: ask the agent,
+files there, and _Diffs_ shows what they changed. That's the first full loop for G4: ask the agent,
 see its diff. G1 is ticked.
 
 ### What works
@@ -666,12 +668,12 @@ see its diff. G1 is ticked.
 - **Switching is local.** A worktree opened before shows at once (150–400 ms, measured) from what the
   core remembers; the GitHub check and fetch (~2.5 s) run in the background and only redraw if the PR
   moved. Offline, the worktree still shows, with a notice.
-- **Navigator and Viewer read the worktree.** *Diffs* is `git diff <merge base>` against the
-  worktree plus untracked files (renames detected); *Files* is `git ls-files`; the Viewer's old side
+- **Navigator and Viewer read the worktree.** _Diffs_ is `git diff <merge base>` against the
+  worktree plus untracked files (renames detected); _Files_ is `git ls-files`; the Viewer's old side
   is `git show <merge base>:<path>`, its new side the file on disk. Both reload after every agent
   turn.
 - **Agents edit files** in their worktree (`--permission-mode acceptEdits`). Checked in the app: a
-  33-second first open of a private repo #5284, then an agent-written file showed up in *Diffs*
+  33-second first open of a private repo #5284, then an agent-written file showed up in _Diffs_
   next to the PR's 12 files.
 - The core resolves every path and ref itself from workspace and project IDs; file paths from the
   UI can't leave the worktree, and commits must be full SHAs.
@@ -679,10 +681,10 @@ see its diff. G1 is ticked.
 ### Tech debt
 
 Paid off from the proof of concept: per-file GitHub API reads for trees and files, GitHub's
-truncated trees and 3000-file limit on *Diffs*, the missing clone and worktree paths, and the empty
+truncated trees and 3000-file limit on _Diffs_, the missing clone and worktree paths, and the empty
 agent folder.
 
-- **PR and local changes look the same** in *Diffs* ([UX](UX.md) open question 5).
+- **PR and local changes look the same** in _Diffs_ ([UX](UX.md) open question 5).
 - **Fork PRs** show an error; they need a fork remote (`ponytail:` in `git.ts`).
 - **No cleanup.** Worktrees, their branches and clones stay on disk forever; removing workspaces and
   projects isn't built.
@@ -709,9 +711,9 @@ PR's code yet, because there is still no clone.
 ### What works
 
 - **Chat in L4.** Type a message, press Enter; the agent's text and each tool it uses (one line,
-  e.g. `⏺ Bash pwd`) appear as they arrive. *Stop* kills a running turn.
+  e.g. `⏺ Bash pwd`) appear as they arrive. _Stop_ kills a running turn.
 - **Agent sessions per workspace.** The first message creates one (`agent_sessions` table, migration
-  3). *New session* starts another with the next message. Switching workspaces shows that
+  3). _New session_ starts another with the next message. Switching workspaces shows that
   workspace's latest agent session.
 - **Resume after restart.** The transcript is read back from Claude Code's own
   `~/.claude/projects/*/<session ID>.jsonl`, and the next turn resumes with `--resume`.
@@ -719,11 +721,11 @@ PR's code yet, because there is still no clone.
 
 ### How it's put together
 
-| Where | What |
-|-------|------|
-| `src/core/agents.ts` | Agent sessions in SQLite, `runTurn` (spawns `claude -p … --output-format stream-json`), `readTranscript`, `stopTurn`. One parser for stream and transcript lines. |
-| `src/main/index.ts` | `agents:*` handlers; chat entries go to the window as `agents:entry` events. |
-| `src/renderer/src/Agents.tsx` | The L4 chat pane. |
+| Where                         | What                                                                                                                                                              |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/core/agents.ts`          | Agent sessions in SQLite, `runTurn` (spawns `claude -p … --output-format stream-json`), `readTranscript`, `stopTurn`. One parser for stream and transcript lines. |
+| `src/main/index.ts`           | `agents:*` handlers; chat entries go to the window as `agents:entry` events.                                                                                      |
+| `src/renderer/src/Agents.tsx` | The L4 chat pane.                                                                                                                                                 |
 
 ### Tech debt
 
@@ -770,22 +772,22 @@ GitHub features need the GitHub CLI signed in (`gh auth login`), per
   repositories (paged, searchable). Picking a repository adds it as a project and makes it current.
 - **Workspaces.** `+` under the project icon lists the repository's open PRs; picking one adds a
   workspace. Workspace icons sit in L1 in the order they were added, the current one marked.
-- **Navigator** (L2). A *Diffs / Files* toggle: the PR's changed files as a tree with status and
+- **Navigator** (L2). A _Diffs / Files_ toggle: the PR's changed files as a tree with status and
   +/− lines, or the whole tree at the PR's head with changed folders marked.
-- **Viewer** (L3). Selecting a file in *Diffs* shows its file diff side by side (merge base vs head,
-  as GitHub shows it); selecting one in *Files* shows the whole file.
+- **Viewer** (L3). Selecting a file in _Diffs_ shows its file diff side by side (merge base vs head,
+  as GitHub shows it); selecting one in _Files_ shows the whole file.
 - **Storage.** Projects and workspaces persist in SQLite, with migrations from the start.
 
 L4 (agents) is an empty placeholder (since filled; see the entry above).
 
 ### How it's put together
 
-| Where | What |
-|-------|------|
-| `src/core/` | The UI-free core ([ADR 0002](adr/0002-standalone-electron-app.md)): `github.ts` (Octokit, token from `gh`), `db.ts` (SQLite and migrations), `projects.ts`, `workspaces.ts`. |
-| `src/main/index.ts` | Electron main process: window, native menu, and one `ipcMain.handle` per core function. |
-| `src/preload/index.ts` | The single typed interface the UI uses to reach the core (`window.coxswain`). |
-| `src/renderer/src/` | React UI. `App.tsx` holds the screen state; one file per screen or pane (`Navigator`, `Viewer`, `Projects`, `NewWorkspace`, `Settings`, `Onboarding`); `ui.tsx` has shared pieces. |
+| Where                  | What                                                                                                                                                                               |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/core/`            | The UI-free core ([ADR 0002](adr/0002-standalone-electron-app.md)): `github.ts` (Octokit, token from `gh`), `db.ts` (SQLite and migrations), `projects.ts`, `workspaces.ts`.       |
+| `src/main/index.ts`    | Electron main process: window, native menu, and one `ipcMain.handle` per core function.                                                                                            |
+| `src/preload/index.ts` | The single typed interface the UI uses to reach the core (`window.coxswain`).                                                                                                      |
+| `src/renderer/src/`    | React UI. `App.tsx` holds the screen state; one file per screen or pane (`Navigator`, `Viewer`, `Projects`, `NewWorkspace`, `Settings`, `Onboarding`); `ui.tsx` has shared pieces. |
 
 Stack: Electron 44, electron-vite 5, React 19, TypeScript 7, Tailwind 4, `@pierre/trees` and
 `@pierre/diffs` (pinned exactly), `@octokit/core`, `node:sqlite` (built into Electron's Node 24, so
@@ -847,5 +849,5 @@ code are found with `grep -rn "ponytail:" src`.
 
 **Docs**
 
-- [ADR 0005](adr/0005-local-data-storage.md) still says *session* for what the glossary now calls a
-  *workspace*. Accepted ADRs aren't edited; a later ADR touching storage should use the new term.
+- [ADR 0005](adr/0005-local-data-storage.md) still says _session_ for what the glossary now calls a
+  _workspace_. Accepted ADRs aren't edited; a later ADR touching storage should use the new term.

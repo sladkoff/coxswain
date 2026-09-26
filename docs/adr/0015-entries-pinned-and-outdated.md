@@ -22,7 +22,7 @@ the PR gets pushes. A comment shown next to lines it is no longer about misleads
 3. **An entry is current in a view while the lines at its anchor read exactly as its stored code**, on the side
    it's on in that view (the new side at the view's head or the worktree, the old side at its base). Otherwise it's
    **outdated** (glossary). No search for code that moved. A reply or answer takes its thread's state.
-4. **Only current entries go between the lines** and into the ✎ counts. A file diff's header says *N outdated*,
+4. **Only current entries go between the lines** and into the ✎ counts. A file diff's header says _N outdated_,
    which opens them above the file diff with the code they were about.
 5. The core works the states out (`listEntries` with the view's base and head), reading each file once.
 

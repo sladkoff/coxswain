@@ -1,107 +1,117 @@
-import { useQuery } from '@tanstack/react-query'
-import { useEffect, useRef, useState } from 'react'
-import type { AgentSession, ChatEntry, Permission } from '../../core/agents'
-import type { Workspace } from '../../core/workspaces'
-import { Entry, TurnStatus } from './ChatEntry'
-import { Button } from './components/button'
-import { TextArea } from './components/field'
-import { cn, divider, muted, noDrag, titleBar } from './components/styles'
-import { shortDateTime } from './format'
-import { core } from './queries'
+import { useQuery } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
+import type { AgentSession, ChatEntry, Permission } from "../../core/agents";
+import type { Workspace } from "../../core/workspaces";
+import { Entry, TurnStatus } from "./ChatEntry";
+import { Button } from "./components/button";
+import { TextArea } from "./components/field";
+import { cn, divider, muted, noDrag, titleBar } from "./components/styles";
+import { shortDateTime } from "./format";
+import { core } from "./queries";
 
 // L4: a chat with one of the workspace's agent sessions, the latest unless another is picked in the header. A new
 // session starts with its first message.
 // ponytail: comments still go to the latest session, not the one shown; pass the shown one to ask and sendReview if that
 // confuses.
 type Props = {
-  workspace: Workspace
-  onViewThread: (threadId: number) => void
+  workspace: Workspace;
+  onViewThread: (threadId: number) => void;
   // Replaces the composer's draft when it changes (the Guide menu's prompts), for the user to edit and send.
-  composerText?: { text: string }
-}
+  composerText?: { text: string };
+};
 
 export function Agents({ workspace, onViewThread, composerText }: Props) {
-  const sessions = useQuery(core('listAgentSessions', workspace.id)).data ?? []
+  const sessions = useQuery(core("listAgentSessions", workspace.id)).data ?? [];
   // The agent session picked in the header; null is the latest, 'new' one not started yet.
-  const [picked, setPicked] = useState<string | null>(null)
-  const last = picked ? sessions.find((s) => s.agentSessionId === picked) : sessions.at(-1)
-  const transcript = useQuery({ ...core('readTranscript', last?.agentSessionId ?? ''), enabled: !!last }).data
-  const [session, setSession] = useState<AgentSession | null>(last ?? null)
-  const [entries, setEntries] = useState<ChatEntry[]>(transcript ?? [])
-  const [running, setRunning] = useState(false)
-  const [permission, setPermission] = useState<Permission | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [draft, setDraft] = useState('')
-  const sessionRef = useRef(session)
-  sessionRef.current = session
-  const composer = useRef<HTMLTextAreaElement>(null)
+  const [picked, setPicked] = useState<string | null>(null);
+  const last = picked ? sessions.find((s) => s.agentSessionId === picked) : sessions.at(-1);
+  const transcript = useQuery({
+    ...core("readTranscript", last?.agentSessionId ?? ""),
+    enabled: !!last,
+  }).data;
+  const [session, setSession] = useState<AgentSession | null>(last ?? null);
+  const [entries, setEntries] = useState<ChatEntry[]>(transcript ?? []);
+  const [running, setRunning] = useState(false);
+  const [permission, setPermission] = useState<Permission | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
+  const composer = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
-    if (!composerText) return
-    setDraft(composerText.text)
-    composer.current?.focus()
-  }, [composerText])
+    if (!composerText) return;
+    setDraft(composerText.text);
+    composer.current?.focus();
+  }, [composerText]);
 
   // The shown agent session's transcript, once loaded or picked and again when a turn ends (the core says it changed), in
   // place of the entries streamed during the turn. Not while the turn runs: nothing refetches it then.
   useEffect(() => {
-    if (!last || !transcript) return
-    setSession(last)
-    setEntries(transcript)
-  }, [transcript, picked])
+    if (!last || !transcript) return;
+    setSession(last);
+    setEntries(transcript);
+  }, [transcript, picked]);
 
   useEffect(() => {
     const offEntry = window.coxswain.onChatEntry((id, entry) => {
-      if (id === sessionRef.current?.agentSessionId) setEntries((e) => [...e, entry])
-    })
+      if (id === sessionRef.current?.agentSessionId) setEntries((e) => [...e, entry]);
+    });
     const offPermission = window.coxswain.onPermission((id, p) => {
-      if (id === sessionRef.current?.agentSessionId) setPermission(p)
-    })
+      if (id === sessionRef.current?.agentSessionId) setPermission(p);
+    });
     return () => {
-      offEntry()
-      offPermission()
-    }
-  }, [])
+      offEntry();
+      offPermission();
+    };
+  }, []);
 
-  const bottom = useRef<HTMLDivElement>(null)
+  const bottom = useRef<HTMLDivElement>(null);
   // Braces matter: Chromium's scrollIntoView returns a promise, which React would take for a cleanup function.
   useEffect(() => {
-    bottom.current?.scrollIntoView()
-  }, [entries, running, permission])
+    bottom.current?.scrollIntoView();
+  }, [entries, running, permission]);
 
   const send = async () => {
-    const message = draft.trim()
-    if (!message || running) return
-    const current = session ?? (await window.coxswain.startAgentSession(workspace.id))
-    sessionRef.current = current
-    setPicked(current.agentSessionId)
-    setSession(current)
-    setDraft('')
-    setError(null)
-    setRunning(true)
-    const result = await window.coxswain.runTurn(current.agentSessionId, message)
-    setRunning(false)
-    setPermission(null)
-    if (result.status === 'error') setError(result.message)
-  }
+    const message = draft.trim();
+    if (!message || running) return;
+    const current = session ?? (await window.coxswain.startAgentSession(workspace.id));
+    sessionRef.current = current;
+    setPicked(current.agentSessionId);
+    setSession(current);
+    setDraft("");
+    setError(null);
+    setRunning(true);
+    const result = await window.coxswain.runTurn(current.agentSessionId, message);
+    setRunning(false);
+    setPermission(null);
+    if (result.status === "error") setError(result.message);
+  };
 
   const newSession = () => {
-    setPicked('new')
-    setSession(null)
-    setEntries([])
-    setError(null)
-  }
+    setPicked("new");
+    setSession(null);
+    setEntries([]);
+    setError(null);
+  };
 
   return (
     <>
-      <div className={cn(titleBar, 'justify-end gap-1 border-b pr-2 pl-8', divider)}>
-        <SessionPicker sessions={sessions} current={session} disabled={running} onPick={setPicked} />
-        <Button className={cn('text-xs', noDrag)} disabled={running} onClick={newSession}>
+      <div className={cn(titleBar, "justify-end gap-1 border-b pr-2 pl-8", divider)}>
+        <SessionPicker
+          sessions={sessions}
+          current={session}
+          disabled={running}
+          onPick={setPicked}
+        />
+        <Button className={cn("text-xs", noDrag)} disabled={running} onClick={newSession}>
           New session
         </Button>
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2">
         {entries.length === 0 && !running && (
-          <div className={cn('m-auto text-xs', muted)}>Ask Claude Code something to start an agent session</div>
+          <div className={cn("m-auto text-xs", muted)}>
+            Ask Claude Code something to start an agent session
+          </div>
         )}
         {entries.map((e, i) => (
           <Entry key={i} entry={e} onViewThread={onViewThread} />
@@ -111,13 +121,13 @@ export function Agents({ workspace, onViewThread, composerText }: Props) {
           permission={permission}
           error={error}
           onAnswer={(optionId) => {
-            window.coxswain.answerPermission(permission!.id, optionId)
-            setPermission(null)
+            window.coxswain.answerPermission(permission!.id, optionId);
+            setPermission(null);
           }}
         />
         <div ref={bottom} />
       </div>
-      <div className={cn('flex flex-col gap-1 border-t p-2', divider)}>
+      <div className={cn("flex flex-col gap-1 border-t p-2", divider)}>
         <TextArea
           ref={composer}
           value={draft}
@@ -128,28 +138,36 @@ export function Agents({ workspace, onViewThread, composerText }: Props) {
           className="text-sm"
         />
         {running && session && (
-          <Button className="self-end text-xs" onClick={() => window.coxswain.stopTurn(session.agentSessionId)}>
+          <Button
+            className="self-end text-xs"
+            onClick={() => window.coxswain.stopTurn(session.agentSessionId)}
+          >
             Stop
           </Button>
         )}
       </div>
     </>
-  )
+  );
 }
 
 // The header's pick of agent session: each by when it started, and the new one not started yet.
-function SessionPicker(props: { sessions: AgentSession[]; current: AgentSession | null; disabled: boolean; onPick: (id: string) => void }) {
-  const { sessions, current } = props
-  if (!sessions.length) return null
+function SessionPicker(props: {
+  sessions: AgentSession[];
+  current: AgentSession | null;
+  disabled: boolean;
+  onPick: (id: string) => void;
+}) {
+  const { sessions, current } = props;
+  if (!sessions.length) return null;
   return (
     <select
-      className={cn('text-xs', noDrag)}
+      className={cn("text-xs", noDrag)}
       disabled={props.disabled}
-      value={current?.agentSessionId ?? ''}
+      value={current?.agentSessionId ?? ""}
       onChange={(e) => props.onPick(e.target.value)}
     >
       {!sessions.some((s) => s.agentSessionId === current?.agentSessionId) && (
-        <option value={current?.agentSessionId ?? ''}>New session</option>
+        <option value={current?.agentSessionId ?? ""}>New session</option>
       )}
       {sessions.map((s, i) => (
         <option key={s.agentSessionId} value={s.agentSessionId}>
@@ -157,5 +175,5 @@ function SessionPicker(props: { sessions: AgentSession[]; current: AgentSession 
         </option>
       ))}
     </select>
-  )
+  );
 }

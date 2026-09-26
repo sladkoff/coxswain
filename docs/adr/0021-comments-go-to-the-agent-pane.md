@@ -11,7 +11,7 @@ Accepted
 coxswain's layout is agent-first: the agent pane on the left, the canvas on the right (UX.md). Every comment is a
 thread, and a comment can be sent to the agent. The agent the user talks to in the agent pane should see those
 comments, so there is one agent with one context per workspace. The user wants comments sent to the agent to show
-in the agent chat as a card (*Comment on `a.ts:3` sent to Claude*, the comment, *View thread*), and the agent's
+in the agent chat as a card (_Comment on `a.ts:3` sent to Claude_, the comment, _View thread_), and the agent's
 reply attached to the thread.
 
 ## Decision
@@ -25,7 +25,7 @@ reply attached to the thread.
    stays the only record of the chat (ADR 0005).
 3. **The reply streams to both** the thread and the agent pane, and its text is kept as an answer entry in the
    thread. A tool use to approve is asked in the thread.
-4. ***Send all to agent*** sends every thread in one message, the same way, under a `[Review · N threads]` header,
+4. _**Send all to agent**_ sends every thread in one message, the same way, under a `[Review · N threads]` header,
    shown as a card too. Explanations and findings nobody replied to, and resolved threads, are left out.
 
 ## Alternatives considered
@@ -38,6 +38,6 @@ reply attached to the thread.
 ## Consequences
 
 - One agent per workspace sees the whole review; it can change files when asked in a comment.
-- A comment sent while the agent pane's turn runs fails with *A turn is already running*, shown in the thread.
+- A comment sent while the agent pane's turn runs fails with _A turn is already running_, shown in the thread.
 - A comment can't go to a session other than the latest.
-- The agent pane doesn't show *Working…* for a comment's turn; it streams in, and the thread shows *Working…*.
+- The agent pane doesn't show _Working…_ for a comment's turn; it streams in, and the thread shows _Working…_.

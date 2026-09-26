@@ -28,9 +28,9 @@ clones go (`~/coxswain/repos/<owner>/<name>/`) and that git runs with the user's
    be pushed to the PR. PRs from forks aren't supported yet.
 5. **Opening a workspace fetches.** If the PR's head branch moved and the worktree has no local
    changes, it is fast-forwarded. Otherwise it is left alone and the user is told.
-6. **The worktree is the source for the Navigator and Viewer.** *Diffs* compares the worktree,
+6. **The worktree is the source for the Navigator and Viewer.** _Diffs_ compares the worktree,
    including uncommitted and untracked files, with the PR's merge base, so an agent's changes show up
-   there. *Files* lists the worktree; the Viewer reads the new side from the worktree and the old side
+   there. _Files_ lists the worktree; the Viewer reads the new side from the worktree and the old side
    with `git show`. PR metadata, the list of PRs and comments still come from the GitHub API.
 7. **Git never prompts.** It runs with `GIT_TERMINAL_PROMPT=0`, so missing credentials fail with a
    message instead of hanging.
@@ -51,7 +51,7 @@ clones go (`~/coxswain/repos/<owner>/<name>/`) and that git runs with the user's
 
 - The first open of a workspace waits for its clone; very large repositories take a while.
 - Reading an old file version may go to the network the first time (blobless clone).
-- *Diffs* shows the PR's changes and the local changes together; telling them apart is open.
+- _Diffs_ shows the PR's changes and the local changes together; telling them apart is open.
 - Fork PRs need a remote for the fork and depend on the author allowing edits from maintainers.
 - An agent can rewrite any file in the worktree, uncommitted. Git shows what it did, but there is no
   undo in coxswain yet.
