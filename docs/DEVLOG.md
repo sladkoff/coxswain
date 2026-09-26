@@ -3,6 +3,61 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-26 — Every agent run over ACP
+
+### What works
+
+- **Every agent run is an ACP session** ([ADR 0018](adr/0018-agents-over-acp.md),
+  [ticket 0004](tickets/0004-agent-sessions-over-acp.md)). `src/core/agents.ts` is the only place that starts an agent:
+  `run(agent, options, handlers)` for a turn, `newSession` for an agent session stored before its first message,
+  `history` for its transcript, `cancel` to stop a turn. L4's agent sessions, a round's questions, the three guide steps
+  (`ask` in `guides.ts`) and wrap-up all call it; `runClaude`, the `claude -p` spawns, `transcriptPath`,
+  `readTranscript`'s file reading and `stopGuides` are gone.
+- **One adapter process** (`@agentclientprotocol/claude-agent-acp` 0.81.2, run by Electron as Node, with
+  `@agentclientprotocol/sdk` 1.5.0), started on first use with `CLAUDE_CODE_EXECUTABLE` set to the `claude` on `PATH`.
+  An adapter that exits is started again by the next run, which resumes its session there (checked). Quitting stops it,
+  which ends every run.
+- **Options are data**: the Claude record maps `tools: 'none'` to `tools: []` and `strictMcpConfig`, `instructions` to
+  `systemPrompt`, `thinking: false` to `{ type: 'disabled' }`, `persist: false` to `persistSession: false`, and `mode`
+  to the `auto` or `default` permission mode (`session/set_mode`). The model is set with `session/set_config_option`
+  after `session/new`: the adapter prefers the user's settings over a `_meta` model. Without one, the agent's *default*
+  option. Aliases (`haiku`) match an option
+  by value, description or name. One-shot runs close their session after (`session/close`); otherwise their Claude
+  Code processes stay.
+- **Answer tool**: a localhost HTTP MCP server on a free port, a random path per run, one `answer` tool with the run's
+  schema, allowed through `allowedTools`. Arguments are checked against the schema (`mismatch`); a misfit goes back to
+  the agent as a tool error. The first fit ends the turn (`session/cancel`) and resolves the run.
+- **Permission prompts** in L4 and in a question's thread (`PermissionPrompt` in `Agents.tsx`), with the options the
+  agent sends; the pick goes back through `answerPermission`. L4 runs in auto mode, so only what the classifier would
+  block asks; questions run in default mode with every tool, so edits and most commands ask. One-shot runs reject every
+  request. A stopped turn or a closed window cancels a waiting prompt.
+- **Chat entries from ACP updates**: streamed text is held until the next tool or the turn's end, so it arrives
+  whole as before; a tool's line takes its title from the update that carries the input (`Bash git status`); a
+  subagent's updates are left out. `ChatEntry` and the IPC shape are unchanged.
+- The agent picks the session ID (`session/new`). Sessions made before load by their stored ID: #5311's 273-entry hand-off
+  session replays in L4.
+- Checked in a second instance on a copy of the database: L4 shows the old session's history; a new session runs a
+  turn with a Bash call; a question gets its answer in its own session; guides and wrap-up run. In a scratch run
+  against the adapter: 16 one-shot runs at once in 4.4 s, a permission request reaches the handler and its rejection
+  reaches the agent, a session resumes after the adapter restarts. Not checked in the window: the permission prompt
+  itself (the classifier in the session that drove the app wouldn't let it provoke one).
+- **Guide timing on #5311** (279 files), same model (Opus 5.5) and summary cache, old `claude -p` → ACP: all summaries
+  reused 62 s → 61 s (grouped 24 → 27 s, described 38 → 34 s); 56 files to summarise 89 s → 77 s.
+
+### Tech debt
+
+- **A model in the user's settings is ignored** (`ponytail:` in `openSession`): a run without a model gets the agent's
+  own *default* (Opus 5.5 here). Left to itself the adapter resolves the settings model differently from Claude Code:
+  `"opus[1m]"` became Opus 4.8, which made a guide 216 s. The 1M-context variant isn't offered by the adapter.
+- **An agent session never sent a message can't be resumed after a restart** (`ponytail:` on `startAgentSession`):
+  its first message fails. Only happens if the first turn fails before it's sent.
+- **The answer schema check is hand-written** (`ponytail:` on `mismatch`) for the keywords our schemas use.
+- The adapter logs every session's phases to the main process's stderr, and the SDK warns once per answer run that
+  `allowedTools` shadows `canUseTool`. Noise, not errors.
+- Codex (`@zed-industries/codex-acp`) is a second agent record, not added yet.
+- Paid off: "Blocked tools can't be approved" (the `ponytail:` on `runTurn`), and depending on Claude Code's
+  stream-json and transcript formats.
+
 ## 2026-09-25 — Data fetching with TanStack Query
 
 ### What works

@@ -101,25 +101,33 @@ export function App() {
     [currentWorkspace?.id, mergeBase],
   )
   // Questions' turns by thread, kept here so they outlive the Viewer showing them. The reply streams in as chat
-  // entries; once the turn ends it's an answer entry.
+  // entries; once the turn ends it's an answer entry. A tool use to approve waits in permission until answered.
   const [turns, setTurns] = useState<Record<number, Turn>>({})
   useEffect(() => {
     const offChat = window.coxswain.onQuestionChat((id, c) =>
-      setTurns((t) => ({ ...t, [id]: { running: true, error: null, live: [...(t[id]?.live ?? []), c] } })),
+      setTurns((t) => ({ ...t, [id]: { running: true, error: null, live: [...(t[id]?.live ?? []), c], permission: t[id]?.permission ?? null } })),
+    )
+    const offPermission = window.coxswain.onQuestionPermission((id, permission) =>
+      setTurns((t) => ({ ...t, [id]: { running: true, error: null, live: t[id]?.live ?? [], permission } })),
     )
     // The answer entry comes with the core's change event, just before this.
     const offEnd = window.coxswain.onQuestionEnd((id, result) =>
-      setTurns((t) => ({ ...t, [id]: { running: false, error: result.status === 'error' ? result.message : null, live: [] } })),
+      setTurns((t) => ({ ...t, [id]: { running: false, error: result.status === 'error' ? result.message : null, live: [], permission: null } })),
     )
     return () => {
       offChat()
+      offPermission()
       offEnd()
     }
+  }, [])
+  const answerPermission = useCallback((threadId: number, id: string, optionId: string) => {
+    window.coxswain.answerPermission(id, optionId)
+    setTurns((t) => ({ ...t, [threadId]: { ...t[threadId], permission: null } }))
   }, [])
   const ask = useCallback(async (q: NewEntry) => {
     const question = await window.coxswain.askQuestion(q)
     const id = question.parentId ?? question.id
-    setTurns((t) => ({ ...t, [id]: { running: true, error: null, live: t[id]?.live ?? [] } }))
+    setTurns((t) => ({ ...t, [id]: { running: true, error: null, live: t[id]?.live ?? [], permission: t[id]?.permission ?? null } }))
     changed({ workspaceId: q.workspaceId, what: 'entries' })
   }, [])
   // L3's tabs. `opened` is a whole file picked in Files, shown in the Diff tab in place of the file diffs.
@@ -171,6 +179,7 @@ export function App() {
     onViewedChange: markViewed,
     turns,
     onAsk: ask,
+    onAnswerPermission: answerPermission,
     diffStyle: viewSettings.diffStyle,
   })
 

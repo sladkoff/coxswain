@@ -2,18 +2,19 @@ import type { DiffLineAnnotation, LineAnnotation, SelectedLineRange } from '@pie
 import { File, MultiFileDiff } from '@pierre/diffs/react'
 import { useQuery } from '@tanstack/react-query'
 import { memo, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
-import type { ChatEntry } from '../../core/agents'
+import type { ChatEntry, Permission } from '../../core/agents'
 import type { ChangedFile, FileText } from '../../core/git'
 import type { NewEntry, ReviewEntry } from '../../core/review'
 import type { Workspace } from '../../core/workspaces'
-import { Entry } from './Agents'
+import { Entry, PermissionPrompt } from './Agents'
 import { changed, core } from './queries'
 import { button, muted, primaryButton, ProblemMessage, Prose } from './ui'
 
 // What the Viewer shows: the file diff of a changed file, or a whole file as it is in the worktree.
 export type Opened = { kind: 'diff'; file: ChangedFile } | { kind: 'file'; path: string }
-// A question's turn in a thread: the reply streamed so far (live) until it's saved as an answer entry.
-export type Turn = { running: boolean; error: string | null; live: ChatEntry[] }
+// A question's turn in a thread: the reply streamed so far (live) until it's saved as an answer entry, and a tool use
+// waiting for the user's approval.
+export type Turn = { running: boolean; error: string | null; live: ChatEntry[]; permission: Permission | null }
 type Ask = (question: NewEntry) => void
 
 type Draft = { side: 'old' | 'new'; startLine: number; endLine: number }
@@ -36,6 +37,7 @@ type Props = {
   onViewedChange: (path: string, viewed: boolean) => void
   turns: Record<number, Turn> // by thread
   onAsk: Ask
+  onAnswerPermission: (threadId: number, id: string, optionId: string) => void
   diffStyle: 'unified' | 'split'
   // One of several file diffs one after another: the parent scrolls, not the Viewer.
   stacked?: boolean
@@ -185,6 +187,7 @@ export const Viewer = memo(function Viewer(props: Props) {
         turn={props.turns[entry.id]}
         onReply={(body) => props.onAsk({ workspaceId: workspace.id, body, parentId: entry.id })}
         onStop={() => window.coxswain.stopQuestion(workspace.id)}
+        onAnswerPermission={(id, optionId) => props.onAnswerPermission(entry.id, id, optionId)}
         onRemove={() => remove(entry)}
       />
     ) : null
@@ -327,11 +330,12 @@ type ThreadBoxProps = {
   turn: Turn | undefined
   onReply: (body: string) => void
   onStop: () => void
+  onAnswerPermission: (id: string, optionId: string) => void
   onRemove: () => void
 }
 
 // A thread: the question, its follow-ups and answers, the reply streaming in while a turn runs, and a box to follow up.
-function ThreadBox({ question: q, replies, turn, onReply, onStop, onRemove }: ThreadBoxProps) {
+function ThreadBox({ question: q, replies, turn, onReply, onStop, onAnswerPermission, onRemove }: ThreadBoxProps) {
   const [reply, setReply] = useState('')
   const running = turn?.running ?? false
   const send = () => {
@@ -355,7 +359,11 @@ function ThreadBox({ question: q, replies, turn, onReply, onStop, onRemove }: Th
             ),
           )}
           {turn?.live.filter((c) => c.kind !== 'user').map((c, i) => <Entry key={`live${i}`} entry={c} />)}
-          {running && <div className={`text-xs ${muted}`}>Working…</div>}
+          {turn?.permission ? (
+            <PermissionPrompt permission={turn.permission} onAnswer={(optionId) => onAnswerPermission(turn.permission!.id, optionId)} />
+          ) : (
+            running && <div className={`text-xs ${muted}`}>Working…</div>
+          )}
           {turn?.error && <div className="text-xs text-red-600 select-text dark:text-red-400">{turn.error}</div>}
         </div>
         {running ? (

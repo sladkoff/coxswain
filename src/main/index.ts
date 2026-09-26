@@ -3,11 +3,12 @@ import { join } from 'node:path'
 import icon from '../../resources/icon.png?asset'
 import {
   agentSessionWorkspace,
+  answerPermission,
   listAgentSessions,
   readTranscript,
-  runTurn,
+  runAgentTurn,
   startAgentSession,
-  stopAllTurns,
+  stopAgents,
   stopTurn,
 } from '../core/agents'
 import { openDatabase } from '../core/db'
@@ -22,7 +23,7 @@ import {
   readFileAt,
   readWorktreeFile,
 } from '../core/git'
-import { createGuide, getGuide, getGuideSettings, type GuideSettingsChange, setGuideSettings, stopGuides } from '../core/guides'
+import { createGuide, getGuide, getGuideSettings, type GuideSettingsChange, setGuideSettings } from '../core/guides'
 import { getCurrentUser, getPullRequestOverview, listPullRequests, listRepos } from '../core/github'
 import { listProjects, openProject } from '../core/projects'
 import {
@@ -150,14 +151,20 @@ app.whenReady().then(() => {
   )
   ipcMain.handle('agents:list', (_, workspaceId: number) => listAgentSessions(db, workspaceId))
   ipcMain.handle('agents:start', (_, workspaceId: number) => startAgentSession(db, workspaceId))
-  ipcMain.handle('agents:transcript', (_, agentSessionId: string) => readTranscript(agentSessionId))
+  ipcMain.handle('agents:transcript', (_, agentSessionId: string) => readTranscript(db, agentSessionId))
   ipcMain.handle('review:list', (_, workspaceId: number, base: string, head?: string) => listEntries(db, workspaceId, base, head))
   ipcMain.handle('review:add-note', (_, note: NewEntry) => addNote(db, note))
   ipcMain.handle('review:delete', (_, id: number) => deleteEntry(db, id))
-  // Returns the question once saved; the reply streams as review:chat and the turn's end comes as review:turn-end.
+  // Returns the question once saved; the reply streams as review:chat, a tool use to approve comes as
+  // review:permission, and the turn's end as review:turn-end.
   ipcMain.handle('review:ask', async (e, question: NewEntry) => {
     const send = (channel: string, ...args: unknown[]) => !e.sender.isDestroyed() && e.sender.send(channel, ...args)
-    const asked = await askQuestion(db, question, (threadId, entry) => send('review:chat', threadId, entry))
+    const asked = await askQuestion(
+      db,
+      question,
+      (threadId, entry) => send('review:chat', threadId, entry),
+      (threadId, p) => permission(e.sender, () => send('review:permission', threadId, p)),
+    )
     const threadId = asked.question.parentId ?? asked.question.id
     asked.turn.then((result) => {
       changed(e.sender, { workspaceId: question.workspaceId, what: 'entries' }) // the answer
@@ -180,8 +187,10 @@ app.whenReady().then(() => {
     const workspaceId = await agentSessionWorkspace(db, agentSessionId)
     const prompt = await formatAsk(db, noteIds, message, roundId)
     changed(e.sender, { workspaceId, what: 'entries' }) // the notes are marked sent
-    const result = await runTurn(db, agentSessionId, prompt, {}, (entry) => {
-      if (!e.sender.isDestroyed()) e.sender.send('agents:entry', agentSessionId, entry)
+    const send = (channel: string, ...args: unknown[]) => !e.sender.isDestroyed() && e.sender.send(channel, ...args)
+    const result = await runAgentTurn(db, agentSessionId, prompt, {
+      onEntry: (entry) => send('agents:entry', agentSessionId, entry),
+      onPermission: (p) => permission(e.sender, () => send('agents:permission', agentSessionId, p)),
     })
     changed(e.sender, { workspaceId, what: 'worktree' })
     changed(e.sender, { workspaceId, what: 'transcript' })
@@ -243,16 +252,23 @@ app.whenReady().then(() => {
   ipcMain.handle('guides:settings', () => getGuideSettings(db))
   ipcMain.handle('guides:set-settings', (_, s: GuideSettingsChange) => setGuideSettings(db, s))
   ipcMain.handle('agents:stop-turn', (_, agentSessionId: string) => stopTurn(agentSessionId))
+  ipcMain.handle('agents:answer-permission', (_, id: string, optionId: string | null) => answerPermission(id, optionId))
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
 })
 
-app.on('will-quit', () => {
-  stopAllTurns()
-  stopGuides()
-})
+// Shows a permission request and waits for the user's pick, which comes back through agents:answer-permission. A
+// closed window can't answer, so the request is cancelled.
+function permission(to: WebContents, show: () => void): Promise<string | null> {
+  if (to.isDestroyed()) return Promise.resolve(null)
+  show()
+  return new Promise((resolve) => to.once('destroyed', () => resolve(null)))
+}
+
+// Stopping the adapters ends every turn and guide still running.
+app.on('will-quit', stopAgents)
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()

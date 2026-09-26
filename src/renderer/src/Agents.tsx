@@ -1,10 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
-import type { AgentSession, ChatEntry } from '../../core/agents'
+import type { AgentSession, ChatEntry, Permission } from '../../core/agents'
 import type { ReviewEntry, ReviewRound } from '../../core/review'
 import type { Workspace } from '../../core/workspaces'
 import { core } from './queries'
-import { button, muted, Prose } from './ui'
+import { button, muted, primaryButton, Prose } from './ui'
 
 const pane = 'border-neutral-200 dark:border-neutral-800'
 
@@ -27,6 +27,7 @@ export function Agents({ workspace, attached, handedOff, onDetach, onDetachRound
   const [session, setSession] = useState<AgentSession | null>(last ?? null)
   const [entries, setEntries] = useState<ChatEntry[]>(transcript ?? [])
   const [running, setRunning] = useState(false)
+  const [permission, setPermission] = useState<Permission | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
   const sessionRef = useRef(session)
@@ -40,19 +41,24 @@ export function Agents({ workspace, attached, handedOff, onDetach, onDetachRound
     setEntries(transcript)
   }, [transcript])
 
-  useEffect(
-    () =>
-      window.coxswain.onChatEntry((id, entry) => {
-        if (id === sessionRef.current?.agentSessionId) setEntries((e) => [...e, entry])
-      }),
-    [],
-  )
+  useEffect(() => {
+    const offEntry = window.coxswain.onChatEntry((id, entry) => {
+      if (id === sessionRef.current?.agentSessionId) setEntries((e) => [...e, entry])
+    })
+    const offPermission = window.coxswain.onPermission((id, p) => {
+      if (id === sessionRef.current?.agentSessionId) setPermission(p)
+    })
+    return () => {
+      offEntry()
+      offPermission()
+    }
+  }, [])
 
   const bottom = useRef<HTMLDivElement>(null)
   // Braces matter: Chromium's scrollIntoView returns a promise, which React would take for a cleanup function.
   useEffect(() => {
     bottom.current?.scrollIntoView()
-  }, [entries, running])
+  }, [entries, running, permission])
 
   const send = async () => {
     const message = draft.trim()
@@ -68,6 +74,7 @@ export function Agents({ workspace, attached, handedOff, onDetach, onDetachRound
     onSent()
     const result = await turn
     setRunning(false)
+    setPermission(null)
     if (result.status === 'error') setError(result.message)
   }
 
@@ -94,7 +101,17 @@ export function Agents({ workspace, attached, handedOff, onDetach, onDetachRound
         {entries.map((e, i) => (
           <Entry key={i} entry={e} />
         ))}
-        {running && <div className={`text-xs ${muted}`}>Working…</div>}
+        {permission ? (
+          <PermissionPrompt
+            permission={permission}
+            onAnswer={(optionId) => {
+              window.coxswain.answerPermission(permission.id, optionId)
+              setPermission(null)
+            }}
+          />
+        ) : (
+          running && <div className={`text-xs ${muted}`}>Working…</div>
+        )}
         {error && <div className="text-xs text-red-600 select-text dark:text-red-400">{error}</div>}
         <div ref={bottom} />
       </div>
@@ -146,6 +163,24 @@ export function Agents({ workspace, attached, handedOff, onDetach, onDetachRound
         )}
       </div>
     </>
+  )
+}
+
+// A tool use the agent asks to make, which auto mode (or a question's default mode) wouldn't allow by itself, with the
+// agent's options (ADR 0018, 8). The turn waits until one is picked, or it's stopped.
+export function PermissionPrompt({ permission, onAnswer }: { permission: Permission; onAnswer: (optionId: string) => void }) {
+  return (
+    <div className="flex shrink-0 flex-col gap-1.5 rounded-md border border-neutral-300 p-1.5 text-xs dark:border-neutral-700">
+      <span>Claude Code wants to:</span>
+      <div className="max-h-24 overflow-y-auto font-mono whitespace-pre-wrap select-text [overflow-wrap:anywhere]">{permission.title}</div>
+      <div className="flex flex-wrap justify-end gap-1">
+        {permission.options.map((o) => (
+          <button key={o.id} className={`${o.kind === 'allow_once' ? primaryButton : button} text-xs`} onClick={() => onAnswer(o.id)}>
+            {o.name}
+          </button>
+        ))}
+      </div>
+    </div>
   )
 }
 

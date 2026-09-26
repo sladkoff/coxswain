@@ -67,7 +67,10 @@ then the workspace's files, the work in the middle and the agents on the right.
   message box, and shows *Sent to agent* once an ask included it. *Ask agent* (⇧⌘Enter) asks a
   question about those lines in the round's agent session, which knows the round's earlier questions:
   the reply streams into the question's thread between the lines, with each tool used as one line,
-  and is kept as an answer when the turn ends. A box under it asks a follow-up. The round's questions
+  and is kept as an answer when the turn ends. A box under it asks a follow-up. A tool use that would
+  change something (a file edit, most shell commands) stops the turn with a permission prompt in the
+  thread: what the agent wants to run and the agent's options (*Yes*, *No*, sometimes *Always*); the
+  turn carries on once one is picked, or ends with *Stop*. The round's questions
   run one at a time. These agent sessions don't show in L4.
 
   At the bottom of *Guide* and *Diff*, once the round has an entry, a bar for the **review round**:
@@ -106,7 +109,9 @@ then the workspace's files, the work in the middle and the agents on the right.
   its turns, with each tool the agent used as one line, and a message box at the bottom (Enter
   sends, Shift+Enter adds a line). Notes sent from L3 sit above the message box as chips, can be
   removed, and go in front of the next message, making it an ask. *New session* in the header starts another agent session with
-  the next message; a running turn can be stopped.
+  the next message; a running turn can be stopped. When the agent wants a tool that auto mode would block, a
+  permission prompt takes the place of *Working…*: *Claude Code wants to:*, the command or file, and the agent's
+  options as buttons (*Yes*, *Always*, *No*); the turn waits until one is picked.
 
 ## Across all levels
 

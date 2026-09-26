@@ -20,7 +20,7 @@ listed at the end.
 | **Review round** | One pass of the user over a workspace's diff: a stream of entries in the order they were made. Ends when wrapped up; the next entry starts a new round. A workspace has any number of rounds over time; the latest is the current one. Its questions share one agent session, so each question knows the earlier ones. The UI says *Round* ("Round 2") and never shows the word *entry*. | *Agent session*: a round has one for its questions but is not one. GitHub's *review*: a set of comments posted at once. |
 | **Entry** | One item in a review round: a note, a question or an answer. Has an anchor, or floats on the round. Records the view it was written in: a guide's or commit diff's range, or the worktree. Shows between the lines only while it's current; once its round is wrapped up it leaves the views. | *Chat entry*: a line of an agent session's transcript in L4. |
 | **Note** | An entry written by the user: what should happen here ("change this to do xyz"). Private. Notes are what you give to agents, and what may later be posted as comments. | *File note*: the guide's one sentence on a file diff, written by an agent. *Comment*. |
-| **Question** | An entry asking the round's agent session about its anchor ("what is this?"), or a follow-up to one. Never changes code. | *Ask*: an ask in L4 may change code; a question doesn't. |
+| **Question** | An entry asking the round's agent session about its anchor ("what is this?"), or a follow-up to one. Not meant to change code: any tool use that would asks the user in the thread first (a permission prompt). | *Ask*: an ask in L4 may change code; a question doesn't. |
 | **Answer** | An entry holding the agent's reply to a question. | |
 | **Thread** | A question with its follow-ups and answers, shown between the lines at its anchor. | *Review round*: the round holds every entry; a thread is the part about one anchor. |
 | **Anchor** | Where an entry points: a line range on one side of a file diff, with the code as it was then. Line numbers drift as the worktree changes; the code doesn't. | |
@@ -51,6 +51,7 @@ listed at the end.
 | **User** | A GitHub account. Authors PRs and comments, reviews PRs. The *current user* is whoever is signed in to coxswain. | *Agent*: agent changes are made by a user's agent, but commits and comments show a user. |
 | **Agent session** | One run of a local coding agent (Claude Code or Codex) in one worktree: the ask that started it, its transcript and its resulting changes or answer. | *Agent*: the tool (Claude Code, Codex); an agent session is one use of it. |
 | **Turn** | One message from the user to an agent session and the agent's reply to it, including the tools the agent used on the way. | *Ask*: an ask starts an agent session; later messages in it are further turns. A question is one turn of its round's agent session. |
+| **Permission prompt** | An agent's request to use a tool it isn't allowed to use on its own, shown in L4 or in a question's thread with the agent's options (e.g. *Yes*, *Always*, *No*). The turn waits for the user's pick. In L4 only what auto mode would block asks; in a thread, anything that would change something. | *Ask*: the user's message to an agent; a permission prompt is the agent asking the user. |
 
 ## How they relate
 

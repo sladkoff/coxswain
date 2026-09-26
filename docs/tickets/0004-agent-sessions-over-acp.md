@@ -2,7 +2,7 @@
 
 ## Status
 
-Open.
+Done.
 
 ## Goal
 

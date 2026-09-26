@@ -1,4 +1,4 @@
-import { type ChildProcess, spawn } from 'node:child_process'
+import { run } from './agents'
 import type { Db } from './db'
 import { type ChangedFile, diffFingerprints, listChangedFiles, openedWorktree, readFileDiff } from './git'
 
@@ -52,7 +52,7 @@ groups of their own, tagged "generated".`
 
 // Claude Code's own system prompt is for coding; replaced, since everything these calls need is in the message.
 const systemPrompt =
-  'You help a reviewer read a pull request. Everything you need is in the message; you have no tools. Answer in the structured format asked for.'
+  'You help a reviewer read a pull request. Everything you need is in the message; you have no tools but the answer tool.'
 
 // The answers' shapes, which the user can't change. Files are referred to by their number in the prompt, which
 // is much less to write than their paths.
@@ -177,7 +177,6 @@ export async function getGuide(db: Db, workspaceId: number, mergeBase: string): 
 // Guides being made, by workspace, so opening the Guide tab again waits for the same one and hears its progress.
 type Run = { result: Promise<GuideResult>; progress: GuideProgress; listeners: Set<(p: GuideProgress) => void> }
 const making = new Map<number, Run>()
-const children = new Set<ChildProcess>()
 
 // Asks Claude Code for a new guide to the workspace's diff and stores it. Takes a while (tens of seconds, minutes
 // for a big PR); the guide is stored and reported once grouped, and filled in as its groups are described.
@@ -276,8 +275,8 @@ async function make(
       "You are summarising part of a pull request for a reviewer. For each file below, write one short sentence saying what changed in it (and why, if the diff shows it). Don't review; be brief. Answer with each file's number; in the summaries, name files by path, never by number.",
       `Files (number, status, lines added and removed, path), each with its diff:\n\n${(await Promise.all(batch.map(withDiff))).join('\n\n')}`,
     ].join('\n\n')
-    const out = await runClaude(cwd, prompt, summarySchema, settings.summaryModel, false).catch(() => null)
-    const answers = (out?.structured as { files?: { file: number; summary: string }[] } | undefined)?.files ?? []
+    const out = await ask(cwd, prompt, summarySchema, settings.summaryModel, false).catch(() => null)
+    const answers = (out?.answer as { files?: { file: number; summary: string }[] } | undefined)?.files ?? []
     for (const a of answers) {
       const f = batch.find((g) => number.get(g.path) === a.file)
       if (!f) continue
@@ -292,7 +291,7 @@ async function make(
   // 2. Group: one agent sorts all files into titled groups from the summaries, answering with file numbers only.
   report({ phase: 'grouping', done: 0, total: 1, guide: null })
   const listed = files.map((f) => (summaries.has(f.path) ? `${line(f)}: ${summaries.get(f.path)}` : line(f)))
-  const grouped = await runClaude(
+  const grouped = await ask(
     cwd,
     [
       settings.prompt,
@@ -302,7 +301,7 @@ async function make(
     groupSchema,
     settings.model,
   )
-  const answer = (grouped.structured as { groups?: { title: string; files: number[]; tags?: string[] }[] } | undefined)?.groups
+  const answer = (grouped.answer as { groups?: { title: string; files: number[]; tags?: string[] }[] } | undefined)?.groups
   if (!answer) return { status: 'error', message: 'Claude Code gave no guide' }
   // Keep only numbers of changed files, each in its first group, and drop groups left empty. Files the agent left
   // out go in a last group of their own.
@@ -365,8 +364,8 @@ async function make(
         `Now write group ${i + 1}, "${group.title}": its description, and a note on each of its files. Answer with each file's number; in the description and notes, name files by path, never by number: the reader doesn't see the numbers.`,
         `Its files (number, status, lines added and removed, path), each with its diff:\n\n${parts.join('\n\n')}`,
       ].join('\n\n')
-      const out = await runClaude(cwd, prompt, describeSchema, settings.model).catch(() => null)
-      const d = out?.structured as { description?: string; files?: { file: number; note: string }[] } | undefined
+      const out = await ask(cwd, prompt, describeSchema, settings.model).catch(() => null)
+      const d = out?.answer as { description?: string; files?: { file: number; note: string }[] } | undefined
       if (d?.description) {
         const notes: Record<string, string> = {}
         for (const n of d.files ?? []) {
@@ -402,42 +401,11 @@ async function inParallel<T>(items: T[], n: number, fn: (item: T) => Promise<voi
   await Promise.all(Array.from({ length: Math.min(n, items.length) }, worker))
 }
 
-// One `claude -p` with a JSON schema; resolves with its structured output and the model that did most of the work.
-// ponytail: relies on PATH to find `claude`, like runTurn.
-// One turn, no tools (ADR 0010): the diffs are in the prompt. No MCP servers and Claude Code's system prompt replaced,
-// so each call doesn't pay for tool definitions and instructions it won't use. thinking: false for summaries, one
-// sentence per file read straight off the diff, where thinking cost about as many tokens as the answer.
-// system: in place of the guides' own system prompt, e.g. for a wrap-up (ADR 0012).
-export async function runClaude(cwd: string, prompt: string, schema: object, model: string, thinking = true, system = systemPrompt) {
-  const args = ['-p', '--output-format', 'json', '--json-schema', JSON.stringify(schema), '--strict-mcp-config']
-  args.push('--tools', '', '--system-prompt', system)
-  if (model) args.push('--model', model)
-  const env = thinking ? process.env : { ...process.env, MAX_THINKING_TOKENS: '0' }
-  const child = spawn('claude', args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] })
-  children.add(child)
-  child.stdin.end(prompt) // on stdin: a long prompt doesn't fit in the arguments
-  let stdout = ''
-  let stderr = ''
-  child.stdout.on('data', (d) => (stdout += d))
-  child.stderr.on('data', (d) => (stderr += d))
-  const code = await new Promise<number | null>((done, fail) => {
-    child.on('error', (e) =>
-      fail((e as NodeJS.ErrnoException).code === 'ENOENT' ? new Error('Claude Code (claude) is not installed or not on PATH') : e),
-    )
-    child.on('close', done)
-  }).finally(() => children.delete(child))
-
-  let out: { is_error?: boolean; result?: string; structured_output?: unknown; modelUsage?: Record<string, { outputTokens?: number }> }
-  try {
-    out = JSON.parse(stdout)
-  } catch {
-    throw new Error(stderr.trim() || `claude exited with ${code}`)
-  }
-  if (out.is_error) throw new Error(out.result || 'Claude Code failed')
-  const usage = Object.entries(out.modelUsage ?? {}).sort(([, a], [, b]) => (b.outputTokens ?? 0) - (a.outputTokens ?? 0))
-  return { structured: out.structured_output, model: usage[0]?.[0] ?? null }
-}
-
-export function stopGuides() {
-  for (const child of children) child.kill()
+// One one-shot run with an answer schema (ADR 0018); resolves with the answer and the model the session ran on.
+// One turn, no tools (ADR 0010): the diffs are in the prompt. No MCP servers but the answer tool, and Claude Code's
+// system prompt replaced, so each call doesn't pay for tool definitions and instructions it won't use. thinking: false
+// for summaries, one sentence per file read straight off the diff, where thinking cost about as many tokens as the
+// answer. instructions: in place of the guides' own system prompt, e.g. for a wrap-up (ADR 0012).
+export function ask(cwd: string, prompt: string, answer: object, model: string, thinking = true, instructions = systemPrompt) {
+  return run('claude', { cwd, prompt, answer, model, thinking, instructions, tools: 'none', persist: false })
 }

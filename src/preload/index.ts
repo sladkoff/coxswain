@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { AgentSession, ChatEntry, TurnResult } from '../core/agents'
+import type { AgentSession, ChatEntry, Permission, TurnResult } from '../core/agents'
 import type { ChangedFileList, CloneResult, Commit, FileText, FileTreeResult, WorktreeResult } from '../core/git'
 import type { CurrentUser, PullRequestList, PullRequestOverview, RepoPage } from '../core/github'
 import type { Guide, GuideProgress, GuideResult, GuideSettings, GuideSettingsChange } from '../core/guides'
@@ -64,6 +64,11 @@ const api = {
     ipcRenderer.on('review:chat', listener)
     return () => void ipcRenderer.off('review:chat', listener)
   },
+  onQuestionPermission: (callback: (threadId: number, permission: Permission) => void) => {
+    const listener = (_: unknown, id: number, p: Permission) => callback(id, p)
+    ipcRenderer.on('review:permission', listener)
+    return () => void ipcRenderer.off('review:permission', listener)
+  },
   onQuestionEnd: (callback: (threadId: number, result: TurnResult) => void) => {
     const listener = (_: unknown, id: number, result: TurnResult) => callback(id, result)
     ipcRenderer.on('review:turn-end', listener)
@@ -88,6 +93,13 @@ const api = {
   setGuideSettings: (settings: GuideSettingsChange): Promise<void> =>
     ipcRenderer.invoke('guides:set-settings', settings),
   stopTurn: (agentSessionId: string): Promise<void> => ipcRenderer.invoke('agents:stop-turn', agentSessionId),
+  onPermission: (callback: (agentSessionId: string, permission: Permission) => void) => {
+    const listener = (_: unknown, id: string, p: Permission) => callback(id, p)
+    ipcRenderer.on('agents:permission', listener)
+    return () => void ipcRenderer.off('agents:permission', listener)
+  },
+  // The user's pick for a permission request, in L4 or a question's thread; null cancels it.
+  answerPermission: (id: string, optionId: string | null): Promise<void> => ipcRenderer.invoke('agents:answer-permission', id, optionId),
   onChatEntry: (callback: (agentSessionId: string, entry: ChatEntry) => void) => {
     const listener = (_: unknown, id: string, entry: ChatEntry) => callback(id, entry)
     ipcRenderer.on('agents:entry', listener)

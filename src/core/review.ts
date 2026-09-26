@@ -1,9 +1,7 @@
-import { randomUUID } from 'node:crypto'
-import { type ChatEntry, runTurn, stopTurn, type TurnResult } from './agents'
+import { type ChatEntry, newSession, type Permission, readyWorktree, type RunOptions, runTurn, stopTurn, type TurnResult } from './agents'
 import type { Db } from './db'
-import { readTexts, worktreePath } from './git'
-import { runClaude } from './guides'
-import { getWorkspaceRepo } from './workspaces'
+import { readTexts } from './git'
+import { ask } from './guides'
 
 // ADR 0011: a review round is a stream of entries (glossary): notes, questions and answers.
 // An entry's anchor is a line range of a file; side 'old' is the merge base (removed lines in a diff), 'new' the
@@ -170,24 +168,21 @@ export async function formatAsk(db: Db, noteIds: number[], message: string, roun
   return [...parts, message.trim()].filter(Boolean).join('\n\n')
 }
 
+// Questions may use every tool, but whatever would change something asks the user in the thread (ADR 0018, 8).
+const questionOptions: Pick<RunOptions, 'tools' | 'mode'> = { tools: 'all', mode: 'ask' }
+
 // The round's agent session for its questions (ADR 0011), made with its first question.
-async function questionSession(db: Db, roundId: number): Promise<{ agentSessionId: string; first: boolean }> {
+async function questionSession(db: Db, roundId: number, workspaceId: number): Promise<{ agentSessionId: string; first: boolean }> {
   const row = await db
     .selectFrom('agent_sessions')
     .select('agent_session_id as id')
     .where('review_round_id', '=', roundId)
     .executeTakeFirst()
   if (row) return { agentSessionId: row.id, first: false }
-  const id = randomUUID()
+  const id = await newSession('claude', { cwd: await readyWorktree(db, workspaceId), ...questionOptions })
   await db
     .insertInto('agent_sessions')
-    .columns(['workspace_id', 'agent', 'agent_session_id', 'created_at', 'review_round_id'])
-    .expression((eb) =>
-      eb
-        .selectFrom('review_rounds')
-        .select(['workspace_id', eb.val('claude').as('agent'), eb.val(id).as('agent_session_id'), eb.val(new Date().toISOString()).as('created_at'), 'id'])
-        .where('id', '=', roundId),
-    )
+    .values({ workspace_id: workspaceId, agent: 'claude', agent_session_id: id, created_at: new Date().toISOString(), review_round_id: roundId })
     .execute()
   return { agentSessionId: id, first: true }
 }
@@ -202,15 +197,19 @@ export async function askQuestion(
   db: Db,
   e: NewEntry,
   onChat: (threadId: number, entry: ChatEntry) => void,
+  onPermission: (threadId: number, p: Permission) => Promise<string | null>,
 ): Promise<{ question: ReviewEntry; turn: Promise<TurnResult> }> {
   const question = await addEntry(db, await currentRound(db, e.workspaceId, e.anchor), 'question', e)
   const threadId = question.parentId ?? question.id
-  const { agentSessionId, first } = await questionSession(db, question.reviewRoundId)
+  const { agentSessionId, first } = await questionSession(db, question.reviewRoundId, e.workspaceId)
   const prompt = (first ? preamble : '') + (question.path ? `About ${describe(question)}\n${question.body}` : question.body)
   const texts: string[] = []
-  const turn = runTurn(db, agentSessionId, prompt, { readOnly: true }, (c) => {
-    if (c.kind === 'text') texts.push(c.text)
-    onChat(threadId, c)
+  const turn = runTurn(db, agentSessionId, prompt, questionOptions, {
+    onEntry: (c) => {
+      if (c.kind === 'text') texts.push(c.text)
+      onChat(threadId, c)
+    },
+    onPermission: (p) => onPermission(threadId, p),
   }).then(async (result) => {
     if (result.status === 'ok' && texts.length)
       await addEntry(db, question.reviewRoundId, 'answer', { body: texts.join('\n\n'), parentId: threadId })
@@ -316,7 +315,7 @@ ${formatStream(entries)}`
 }
 
 const wrapUpSystem =
-  'You help a reviewer finish reviewing a pull request. Everything you need is in the message; you have no tools. Answer in the structured format asked for.'
+  'You help a reviewer finish reviewing a pull request. Everything you need is in the message; you have no tools but the answer tool.'
 
 const wrapUpPrompt = `Below is my review round of a pull request: my notes and questions, and your answers, numbered, in the
 order I made them. Draft the action items: the changes to make to the code because of this review. Each item
@@ -350,16 +349,8 @@ export async function wrapUp(db: Db, workspaceId: number): Promise<{ status: 'ok
   const entries = round ? await roundEntries(db, round.id) : []
   if (!round || !entries.length) return { status: 'error', message: 'Nothing to wrap up yet' }
   try {
-    const { owner, name } = await getWorkspaceRepo(db, workspaceId)
-    const { structured } = await runClaude(
-      worktreePath(owner, name, workspaceId),
-      `${wrapUpPrompt}\n\n${formatStream(entries)}`,
-      wrapUpSchema,
-      '',
-      true,
-      wrapUpSystem,
-    )
-    const items = (structured as { items?: { text: string; entries: number[] }[] } | undefined)?.items ?? []
+    const { answer } = await ask(await readyWorktree(db, workspaceId), `${wrapUpPrompt}\n\n${formatStream(entries)}`, wrapUpSchema, '', true, wrapUpSystem)
+    const items = (answer as { items?: { text: string; entries: number[] }[] } | undefined)?.items ?? []
     const byNumber = (n: number) => entries[n - 1] as (typeof entries)[number] | undefined
     // An item's anchor is its first cited entry's; an answer's or follow-up's is its question's.
     const anchorOf = (cited: typeof entries) =>
