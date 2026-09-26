@@ -10,13 +10,14 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 - **The timeline is gone.** The Overview wasn't reachable since the tabs went, but opening a worktree still recorded
   each PR head as a phase and spent a Claude call summarising it. Removed: `core/timeline.ts`, `Overview.tsx`,
   GitHub's PR activity (`getPullRequestActivity`), `isAncestor` and `readFileDiff` in `git.ts`, the `timeline:` and
-  summary model IPC, Settings' *Change summaries*, and the `timeline` change kind. Migration 23 drops `phases` and the
-  `summary.model` setting. Opening a worktree now only opens it.
+  summary model IPC, Settings' *Change summaries*, and the `timeline` change kind. Opening a worktree now only opens it.
+- **Migrations are squashed** into one that makes today's schema. A database made before is refused with a message
+  saying to move it away; migration numbers in the entries below refer to the old chain.
 - **One-shot runs are gone** from `core/agents.ts`: the answer tool, and the `answer`, `tools`, `instructions`,
   `thinking`, `persist`, `model` and `mode` options. Every run is an agent pane turn, in auto mode on Claude Code's
   default model. The MCP server stays for the guide tools. `runAgentTurn` is now `runTurn`.
 - Exports used only in their own file are no longer exported. Stale comments naming the Diff tab or deleted ADRs
-  are fixed; migration labels in `db.ts` (and in the entries below) were one too high and now match `user_version`.
+  are fixed.
 - **The docs say what holds now.** ADRs no longer keep history ([ADR 0001](adr/0001-record-architecture-decisions.md),
   AGENTS.md): 0007, 0009, 0010, 0011, 0012, 0019, 0020 and 0022 are deleted, their numbers left as gaps. 0005,
   0008, 0013, 0015, 0018, 0021 and 0023 are rewritten without what they superseded; 0014 is now *Reviewed belongs
