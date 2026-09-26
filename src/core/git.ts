@@ -34,9 +34,10 @@ export type WorktreeResult =
 
 const root = join(homedir(), 'coxswain')
 const repoPath = (owner: string, name: string) => join(root, 'repos', owner, name)
-// ADR 0005: worktrees go in ~/coxswain/worktrees/<project>/<workspace>/.
-export const worktreePath = (owner: string, name: string, workspaceId: number) =>
-  join(root, 'worktrees', owner, name, String(workspaceId))
+// ADR 0005: worktrees go in ~/coxswain/worktrees/<owner>/<name>/pr-<number>/. Named by the PR, not the workspace's
+// row ID, so a database made afresh finds the same folder and never another PR's.
+export const worktreePath = (owner: string, name: string, prNumber: number) =>
+  join(root, 'worktrees', owner, name, `pr-${prNumber}`)
 
 class GitError extends Error {}
 
@@ -103,8 +104,8 @@ const lastOpened = new Map<number, { head: string; mergeBase: string }>()
 // What openWorktree last said, if the worktree is still there; null when it has to be opened properly.
 export async function openedBefore(db: Db, workspaceId: number): Promise<WorktreeResult | null> {
   const last = lastOpened.get(workspaceId)
-  const { owner, name } = await getWorkspaceRepo(db, workspaceId)
-  if (!last || !existsSync(join(worktreePath(owner, name, workspaceId), '.git'))) return null
+  const { owner, name, prNumber } = await getWorkspaceRepo(db, workspaceId)
+  if (!last || !existsSync(join(worktreePath(owner, name, prNumber), '.git'))) return null
   return { status: 'ok', ...last, notice: null }
 }
 
@@ -120,7 +121,7 @@ export async function openWorktree(db: Db, workspaceId: number): Promise<Worktre
 
   return withGit(async () => {
     const repo = repoPath(owner, name)
-    const path = worktreePath(owner, name, workspaceId)
+    const path = worktreePath(owner, name, prNumber)
     const branch = pr.headRef
     const upstream = `origin/${branch}`
     await git(repo, ['fetch', 'origin', `+refs/heads/${branch}:refs/remotes/${upstream}`])
@@ -130,6 +131,16 @@ export async function openWorktree(db: Db, workspaceId: number): Promise<Worktre
     if (!existsSync(join(path, '.git'))) {
       if (existsSync(path) && readdirSync(path).length)
         throw new GitError(`${path} exists and isn't a worktree; move it away and reopen the workspace`)
+      // A worktree elsewhere may hold the branch already, e.g. one named by an older coxswain or a database made
+      // since: move it here, local changes and all. Registrations whose folder is gone are dropped first.
+      await git(repo, ['worktree', 'prune'])
+      const holder = (await gitText(repo, ['worktree', 'list', '--porcelain']))
+        .split('\n\n')
+        .find((w) => w.split('\n').includes(`branch refs/heads/${branch}`))
+        ?.match(/^worktree (.+)$/m)?.[1]
+      if (holder && holder !== repo) await git(repo, ['worktree', 'move', holder, path])
+    }
+    if (!existsSync(join(path, '.git'))) {
       const hasBranch = await git(repo, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`]).then(
         () => true,
         () => false,
@@ -158,8 +169,8 @@ export async function openWorktree(db: Db, workspaceId: number): Promise<Worktre
 }
 
 async function openedWorktree(db: Db, workspaceId: number): Promise<string> {
-  const { owner, name } = await getWorkspaceRepo(db, workspaceId)
-  const path = worktreePath(owner, name, workspaceId)
+  const { owner, name, prNumber } = await getWorkspaceRepo(db, workspaceId)
+  const path = worktreePath(owner, name, prNumber)
   if (!existsSync(join(path, '.git'))) throw new GitError('The worktree is not ready yet')
   return path
 }

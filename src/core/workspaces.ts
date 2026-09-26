@@ -1,7 +1,7 @@
 import type { Db } from './db'
 
 // A workspace is a unit of work in a project; for now always a PR being reviewed.
-// Its worktree's path follows from its IDs (git.ts worktreePath), so it isn't stored.
+// Its worktree's path follows from its repository and PR number (git.ts worktreePath), so it isn't stored.
 // ponytail: add a kind column when local iterations arrive.
 export type Workspace = { id: number; projectId: number; prNumber: number; lastOpenedAt: string }
 

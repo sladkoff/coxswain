@@ -13,6 +13,10 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
   summary model IPC, Settings' *Change summaries*, and the `timeline` change kind. Opening a worktree now only opens it.
 - **Migrations are squashed** into one that makes today's schema. A database made before is refused with a message
   saying to move it away; migration numbers in the entries below refer to the old chain.
+- **Worktrees are named by PR number** (`worktrees/<owner>/<name>/pr-<number>/`), not the workspace's row ID, which
+  a fresh database hands out again: a reset opened PR #1 as workspace 1 while the clone's worktree for its branch
+  sat at `…/2`, and git refused (*already used by worktree*). Opening a worktree now moves one that already holds the
+  branch into place, local changes and all, after pruning registrations whose folder is gone.
 - **One-shot runs are gone** from `core/agents.ts`: the answer tool, and the `answer`, `tools`, `instructions`,
   `thinking`, `persist`, `model` and `mode` options. Every run is an agent pane turn, in auto mode on Claude Code's
   default model. The MCP server stays for the guide tools. `runAgentTurn` is now `runTurn`.

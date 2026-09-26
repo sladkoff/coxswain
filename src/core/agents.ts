@@ -373,8 +373,8 @@ export async function agentSessionWorkspace(db: Db, agentSessionId: string): Pro
 }
 
 async function readyWorktree(db: Db, workspaceId: number): Promise<string> {
-  const { owner, name } = await getWorkspaceRepo(db, workspaceId)
-  const cwd = worktreePath(owner, name, workspaceId)
+  const { owner, name, prNumber } = await getWorkspaceRepo(db, workspaceId)
+  const cwd = worktreePath(owner, name, prNumber)
   if (!existsSync(join(cwd, '.git'))) throw new Error('The worktree is not ready yet')
   return cwd
 }
