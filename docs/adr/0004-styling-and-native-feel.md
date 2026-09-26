@@ -28,7 +28,8 @@ slightly wrong.
   `prefers-color-scheme`, the user's accent colour from `systemPreferences.getAccentColor()` as a
   CSS variable, and the reduced-motion and high-contrast settings.
 - **Components: shadcn/ui with Tailwind.** shadcn/ui copies its components (built on Radix) into
-  our repository, so we own and restyle them.
+  our repository, so we own and restyle them. Until it's set up, `src/renderer/src/components/`
+  holds our own few controls, named and shaped like shadcn's so each can be swapped for its copy.
 - **Desktop conventions**, applied throughout:
   - the default arrow cursor on buttons, not the pointing hand;
   - no text selection on buttons and toolbars, only on code and content;

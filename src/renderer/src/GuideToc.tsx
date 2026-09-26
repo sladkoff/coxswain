@@ -1,7 +1,10 @@
 import type { ChangedFile } from '../../core/git'
 import type { GuideGroup } from '../../core/guides'
 import type { ReviewEntry } from '../../core/review'
-import { countItems, itemsTitle, muted, Prose } from './ui'
+import { ProgressBar } from './components/layout'
+import { cn, divider, muted, selectable } from './components/styles'
+import { Prose } from './components/text'
+import { countItems, itemsTitle } from './format'
 
 // A guide group as the canvas shows it: its file diffs; group null is the files in no group.
 type GuideSection = { group: GuideGroup | null; diffs: { file: ChangedFile }[] }
@@ -23,11 +26,9 @@ export function GuideToc({ sections, reviewed, entries, current, onPick }: Props
   const reviewedCount = all.filter((d) => reviewed.includes(d.file.path)).length
   const items = countItems(entries)
   return (
-    <nav className="flex w-60 shrink-0 flex-col gap-2 overflow-y-auto border-r border-neutral-200 p-3 text-xs dark:border-neutral-800">
+    <nav className={cn('flex w-60 shrink-0 flex-col gap-2 overflow-y-auto border-r p-3 text-xs', divider)}>
       <div className="flex flex-col gap-1">
-        <div className="h-1 overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-800">
-          <div className="h-full bg-neutral-500 dark:bg-neutral-400" style={{ width: `${(100 * reviewedCount) / (all.length || 1)}%` }} />
-        </div>
+        <ProgressBar value={reviewedCount} max={all.length} />
         <span className={muted}>
           {reviewedCount} of {all.length} reviewed
         </span>
@@ -47,7 +48,7 @@ export function GuideToc({ sections, reviewed, entries, current, onPick }: Props
           <button
             key={i}
             onClick={() => onPick(i)}
-            className={`flex items-baseline gap-2 rounded px-1.5 py-1 text-left ${i === current ? 'bg-neutral-200 dark:bg-neutral-700' : 'hover:bg-neutral-100 dark:hover:bg-neutral-800'} ${done || s.group?.tags.includes('generated') ? muted : ''}`}
+            className={cn('flex items-baseline gap-2 rounded px-1.5 py-1 text-left', selectable(i === current), (done || s.group?.tags.includes('generated')) && muted)}
           >
             <span className="min-w-0 flex-1">{s.group ? <Prose inline>{s.group.title}</Prose> : 'Not in the guide'}</span>
             {itemCount > 0 && (
@@ -55,7 +56,7 @@ export function GuideToc({ sections, reviewed, entries, current, onPick }: Props
                 ✎ {itemCount}
               </span>
             )}
-            <span className={`shrink-0 tabular-nums ${muted}`}>{done ? '✓' : `${n}/${s.diffs.length}`}</span>
+            <span className={cn('shrink-0 tabular-nums', muted)}>{done ? '✓' : `${n}/${s.diffs.length}`}</span>
           </button>
         )
       })}

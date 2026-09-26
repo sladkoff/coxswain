@@ -6,9 +6,12 @@ import type { ChatEntry, Permission } from '../../core/agents'
 import type { ChangedFile, FileText } from '../../core/git'
 import type { NewEntry, ReviewEntry } from '../../core/review'
 import type { Workspace } from '../../core/workspaces'
-import { Entry, PermissionPrompt } from './Agents'
-import { changed, core, queryClient } from './queries'
-import { button, muted, primaryButton, ProblemMessage, Prose, SendIcon } from './ui'
+import { Button } from './components/button'
+import { Centered } from './components/layout'
+import { cn, divider, muted } from './components/styles'
+import { ProblemMessage } from './components/text'
+import { changed, core } from './queries'
+import { type Draft, DraftBox, lines, ThreadBox } from './Thread'
 
 // What the Viewer shows: the file diff of a changed file, or a whole file as it is in the worktree.
 export type Opened = { kind: 'diff'; file: ChangedFile } | { kind: 'file'; path: string }
@@ -17,7 +20,6 @@ export type Opened = { kind: 'diff'; file: ChangedFile } | { kind: 'file'; path:
 export type Turn = { running: boolean; error: string | null; live: ChatEntry[]; permission: Permission | null }
 type Ask = (question: NewEntry | { workspaceId: number; threadId: number }) => void
 
-type Draft = { side: 'old' | 'new'; startLine: number; endLine: number }
 // What an inline box between the lines shows: an entry with its thread, or the form for a new one.
 // One object type, not a union: the library's annotation types distribute over unions.
 type Box = { entry?: ReviewEntry; draft?: Draft }
@@ -133,7 +135,7 @@ export const Viewer = memo(function Viewer(props: Props) {
     // Roughly the file diff's height, so scrolling to a file further down lands near it.
     const height = 44 + 20 * Math.min(opened.file.additions + opened.file.deletions + 6, 200)
     return (
-      <div ref={placeholder} style={{ height }} className={`border-b border-neutral-200 px-3 py-2 text-xs dark:border-neutral-800 ${muted}`}>
+      <div ref={placeholder} style={{ height }} className={cn('border-b px-3 py-2 text-xs', divider, muted)}>
         {path}
       </div>
     )
@@ -201,20 +203,7 @@ export const Viewer = memo(function Viewer(props: Props) {
 
   return (
     <div className={props.stacked ? 'select-text' : 'min-h-0 flex-1 overflow-auto select-text'}>
-      {showOutdated && opened.kind === 'diff' && (
-        <div className="border-b border-neutral-200 bg-neutral-50 py-1 dark:border-neutral-800 dark:bg-neutral-950">
-          {outdated.map((e) => (
-            <div key={e.id} className="mx-2 mt-1">
-              <div className={`px-2 text-xs ${muted}`}>
-                Outdated · {lines(e.startLine!, e.endLine!)}
-                {e.side === 'old' && ', removed'}: the code it was about has changed.
-              </div>
-              <pre className="mx-2 mt-1 overflow-x-auto rounded bg-neutral-100 p-1.5 font-mono text-xs dark:bg-neutral-800">{e.code}</pre>
-              {render({ entry: e })}
-            </div>
-          ))}
-        </div>
-      )}
+      {showOutdated && opened.kind === 'diff' && <OutdatedThreads entries={outdated} renderThread={(entry) => render({ entry })} />}
       {opened.kind === 'file' ? (
         <File<Box>
           file={files.new}
@@ -232,25 +221,12 @@ export const Viewer = memo(function Viewer(props: Props) {
           lineAnnotations={annotations.diff}
           renderAnnotation={(a) => render(a.metadata)}
           renderHeaderMetadata={() => (
-            <div className="flex items-center gap-2">
-              {outdated.length > 0 && (
-                <button
-                  title="Notes and questions about code that has changed since"
-                  className={`font-sans text-xs ${muted} hover:text-neutral-900 dark:hover:text-neutral-100`}
-                  onClick={() => setShowOutdated((s) => !s)}
-                >
-                  {outdated.length} outdated
-                </button>
-              )}
-              <label className="flex items-center gap-1 font-sans text-xs select-none">
-                <input
-                  type="checkbox"
-                  checked={props.reviewed.includes(path)}
-                  onChange={(e) => props.onReviewedChange(path, e.target.checked)}
-                />
-                Reviewed
-              </label>
-            </div>
+            <DiffHeaderActions
+              outdated={outdated.length}
+              onToggleOutdated={() => setShowOutdated((s) => !s)}
+              reviewed={props.reviewed.includes(path)}
+              onReviewedChange={(on) => props.onReviewedChange(path, on)}
+            />
           )}
         />
       )}
@@ -258,241 +234,43 @@ export const Viewer = memo(function Viewer(props: Props) {
   )
 })
 
-const lines = (start: number, end: number) => (start === end ? `Line ${start}` : `Lines ${start}–${end}`)
-const box = 'm-2 flex flex-col gap-1.5 rounded-md border border-neutral-300 bg-white p-2 font-sans text-sm dark:border-neutral-700 dark:bg-neutral-900'
 
-type DraftBoxProps = { draft: Draft; onSend: (body: string, toAgent: boolean) => void; onCancel: () => void }
-
-// A new thread on the lines picked.
-function DraftBox({ draft, onSend, onCancel }: DraftBoxProps) {
-  const [start, end] = [draft.startLine, draft.endLine].sort((a, b) => a - b)
+// Above a file diff: its threads about code that has changed since (ADR 0015), each with the code it was about.
+function OutdatedThreads({ entries, renderThread }: { entries: ReviewEntry[]; renderThread: (e: ReviewEntry) => ReactNode }) {
   return (
-    <div className={box}>
-      <div className={`flex items-center justify-between text-xs ${muted}`}>
-        <span>{lines(start, end)}</span>
-        <button title="Cancel (Esc)" className="hover:text-neutral-900 dark:hover:text-neutral-100" onClick={onCancel}>
-          ✕
-        </button>
-      </div>
-      <Composer autoFocus rows={3} placeholder="Comment" onSend={onSend} onCancel={onCancel} />
+    <div className={cn('border-b bg-neutral-50 py-1 dark:bg-neutral-950', divider)}>
+      {entries.map((e) => (
+        <div key={e.id} className="mx-2 mt-1">
+          <div className={cn('px-2 text-xs', muted)}>
+            Outdated · {lines(e.startLine!, e.endLine!)}
+            {e.side === 'old' && ', removed'}: the code it was about has changed.
+          </div>
+          <pre className="mx-2 mt-1 overflow-x-auto rounded bg-neutral-100 p-1.5 font-mono text-xs dark:bg-neutral-800">{e.code}</pre>
+          {renderThread(e)}
+        </div>
+      ))}
     </div>
   )
 }
 
-type ComposerProps = {
-  autoFocus?: boolean
-  rows: number
-  placeholder: string
-  reply?: boolean // a reply is always a note: no Comment/Agent toggle
-  onSend: (body: string, toAgent: boolean) => void
-  onCancel?: () => void
-}
-
-// A comment's text, then the Comment/Agent toggle and the send button on the right. Enter sends, Shift+Enter adds a line.
-function Composer(props: ComposerProps) {
-  const [body, setBody] = useState('')
-  // A global preference (every composer shares it), so the query is updated at once, then stored.
-  const saved = useQuery(core('getCommentToAgent')).data ?? false
-  const toAgent = !props.reply && saved
-  const setToAgent = (on: boolean) => {
-    queryClient.setQueryData(core('getCommentToAgent').queryKey, on)
-    void window.coxswain.setCommentToAgent(on)
-  }
-  // autoFocus loses to the gutter button, which takes focus when the drag that opened the box ends.
-  const input = useRef<HTMLTextAreaElement>(null)
-  useEffect(() => {
-    if (!props.autoFocus) return
-    const t = setTimeout(() => input.current?.focus())
-    return () => clearTimeout(t)
-  }, [])
-  const send = () => {
-    if (!body.trim()) return
-    props.onSend(body.trim(), toAgent)
-    setBody('')
-  }
+// On a file diff's header: how many outdated threads (a click shows them) and the Reviewed checkbox.
+function DiffHeaderActions(props: { outdated: number; onToggleOutdated: () => void; reviewed: boolean; onReviewedChange: (on: boolean) => void }) {
   return (
-    <>
-      <textarea
-        ref={input}
-        value={body}
-        onChange={(e) => setBody(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Escape') props.onCancel?.()
-          if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault()
-            send()
-          }
-        }}
-        rows={props.rows}
-        placeholder={`${props.placeholder} (Enter to send)`}
-        className="resize-none rounded-md border border-neutral-300 bg-transparent p-1.5 outline-none focus:border-neutral-500 dark:border-neutral-700"
-      />
-      <div className="flex items-center justify-end gap-2">
-        {!props.reply && (
-          <div className="flex rounded-md border border-neutral-300 p-0.5 text-xs dark:border-neutral-700">
-            {([false, true] as const).map((on) => (
-              <button
-                key={String(on)}
-                title={on ? 'Send to the agent, who answers in the thread' : 'Leave a comment for yourself'}
-                className={`rounded px-2 py-0.5 ${toAgent === on ? 'bg-neutral-200 dark:bg-neutral-700' : 'text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800'}`}
-                onClick={() => setToAgent(on)}
-              >
-                {on ? 'Agent' : 'Comment'}
-              </button>
-            ))}
-          </div>
-        )}
-        <button title="Send (Enter)" className={`${primaryButton} disabled:opacity-50`} disabled={!body.trim()} onClick={send}>
-          <SendIcon />
-        </button>
-      </div>
-    </>
-  )
-}
-
-type ThreadBoxProps = {
-  root: ReviewEntry // the thread's first note or question
-  replies: ReviewEntry[] // notes, follow-up questions and answers, in order
-  turn: Turn | undefined
-  onReply: (body: string, toAgent: boolean) => void
-  onStop: () => void
-  onAnswerPermission: (id: string, optionId: string) => void
-  onEdit: (body: string) => void // the first comment's text
-  onResolve: (resolved: boolean) => void // false: reopen
-  onRemove: () => void
-  onSend: () => void // the latest note, to the agent
-}
-
-// A thread: its first entry, the replies and answers, the reply streaming in while a turn runs, and a box to reply.
-// Its ⋯ menu edits the first comment (the user's own only), deletes the thread, or sends its latest note to the agent.
-// Resolved, it folds to its header and first comment until reopened.
-function ThreadBox({ root, replies, turn, onReply, onStop, onAnswerPermission, onEdit, onResolve, onRemove, onSend }: ThreadBoxProps) {
-  const running = turn?.running ?? false
-  const [editing, setEditing] = useState(false)
-  const lastOwn = [root, ...replies].findLast((e) => e.kind === 'note' || e.kind === 'question')
-  const menu = async () => {
-    const picked = await window.coxswain.showThreadMenu({
-      edit: root.kind === 'note' || root.kind === 'question',
-      send: !running && lastOwn?.kind === 'note',
-    })
-    if (picked === 'edit') setEditing(true)
-    if (picked === 'delete') onRemove()
-    if (picked === 'send') onSend()
-  }
-  return (
-    <div id={`thread:${root.id}`} className={box}>
-      <div className={`flex items-center gap-2 text-xs ${muted}`}>
-        <span className="shrink-0">{lines(root.startLine!, root.endLine!)}</span>
-        {root.resolvedAt ? (
-          <span className="min-w-0 flex-1 truncate">Resolved · {root.body}</span>
-        ) : (
-          <div className="flex-1" />
-        )}
-        <button
-          title={root.resolvedAt ? 'Resolved: click to reopen' : 'Resolve: mark the thread done; it folds to one line'}
-          disabled={running}
-          className={`rounded px-1 hover:bg-neutral-100 disabled:opacity-50 dark:hover:bg-neutral-800 ${root.resolvedAt ? 'text-green-600' : 'hover:text-neutral-900 dark:hover:text-neutral-100'}`}
-          onClick={() => onResolve(!root.resolvedAt)}
+    <div className="flex items-center gap-2">
+      {props.outdated > 0 && (
+        <Button
+          variant="ghost"
+          title="Notes and questions about code that has changed since"
+          className={cn('px-1 font-sans text-xs', muted)}
+          onClick={props.onToggleOutdated}
         >
-          ✓
-        </button>
-        <button title="Edit, delete or send to the agent" className="rounded px-1 hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-neutral-800 dark:hover:text-neutral-100" onClick={menu}>
-          ⋯
-        </button>
-      </div>
-      {(!root.resolvedAt || editing) && (
-        <>
-          <div className="flex max-h-96 flex-col gap-1.5 overflow-y-auto">
-            {editing ? (
-              <EditBox
-                body={root.body}
-                onSave={(body) => {
-                  onEdit(body)
-                  setEditing(false)
-                }}
-                onCancel={() => setEditing(false)}
-              />
-            ) : (
-              <Comment entry={root} />
-            )}
-            {replies.map((e) => <Comment key={e.id} entry={e} />)}
-            {turn?.live.filter((c) => c.kind !== 'user').map((c, i) => <Entry key={`live${i}`} entry={c} />)}
-            {turn?.permission ? (
-              <PermissionPrompt permission={turn.permission} onAnswer={(optionId) => onAnswerPermission(turn.permission!.id, optionId)} />
-            ) : (
-              running && <div className={`text-xs ${muted}`}>Working…</div>
-            )}
-            {turn?.error && <div className="text-xs text-red-600 select-text dark:text-red-400">{turn.error}</div>}
-          </div>
-          {running ? (
-            <button className={`${button} self-end text-xs`} onClick={onStop}>
-              Stop
-            </button>
-          ) : (
-            <div className="flex flex-col gap-1.5 border-t border-neutral-200 pt-1.5 dark:border-neutral-800">
-              <Composer rows={1} placeholder="Reply" reply onSend={onReply} />
-            </div>
-          )}
-        </>
+          {props.outdated} outdated
+        </Button>
       )}
+      <label className="flex items-center gap-1 font-sans text-xs select-none">
+        <input type="checkbox" checked={props.reviewed} onChange={(e) => props.onReviewedChange(e.target.checked)} />
+        Reviewed
+      </label>
     </div>
   )
-}
-
-// A comment's text being edited in place: Enter saves, Esc cancels, Shift+Enter adds a line.
-function EditBox(props: { body: string; onSave: (body: string) => void; onCancel: () => void }) {
-  const [body, setBody] = useState(props.body)
-  const save = () => (body.trim() ? props.onSave(body) : props.onCancel())
-  return (
-    <div className="flex flex-col gap-1.5">
-      <textarea
-        autoFocus
-        value={body}
-        onChange={(e) => setBody(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Escape') props.onCancel()
-          if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault()
-            save()
-          }
-        }}
-        rows={3}
-        className="resize-none rounded-md border border-neutral-300 bg-transparent p-1.5 outline-none focus:border-neutral-500 dark:border-neutral-700"
-      />
-      <div className="flex justify-end gap-1.5 text-xs">
-        <button className={button} onClick={props.onCancel}>
-          Cancel
-        </button>
-        <button className={primaryButton} onClick={save}>
-          Save
-        </button>
-      </div>
-    </div>
-  )
-}
-
-// Who wrote an entry the agent wrote, and why (glossary).
-const agentLabels: Partial<Record<ReviewEntry['kind'], string>> = { answer: 'Agent', explanation: 'Guide', finding: 'Finding' }
-
-// One entry of a thread: the user's (a question marked as sent to the agent), or the agent's: an answer, an
-// explanation or a finding.
-function Comment({ entry: e }: { entry: ReviewEntry }) {
-  const label = agentLabels[e.kind]
-  if (label)
-    return (
-      <div className="markdown select-text [overflow-wrap:anywhere]">
-        <span className={`text-xs ${e.kind === 'finding' ? 'text-amber-600 dark:text-amber-400' : muted}`}>{label}</span>
-        <Prose>{e.body}</Prose>
-      </div>
-    )
-  return (
-    <div className="whitespace-pre-wrap select-text [overflow-wrap:anywhere]">
-      <span className={`block text-xs ${muted}`}>{e.kind === 'question' ? 'You → agent' : 'You'}</span>
-      {e.body}
-    </div>
-  )
-}
-
-function Centered({ children }: { children: ReactNode }) {
-  return <div className={`flex flex-1 items-center justify-center text-xs ${muted}`}>{children}</div>
 }

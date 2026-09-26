@@ -5,7 +5,11 @@ import type { ChangedFile } from '../../core/git'
 import type { Workspace } from '../../core/workspaces'
 import type { NavigatorSettings } from '../../preload'
 import type { ReviewEntry } from '../../core/review'
-import { Cog, countItems, type ItemCount, itemsTitle, ProblemMessage, muted } from './ui'
+import { Button } from './components/button'
+import { CogIcon } from './components/icons'
+import { cn, muted } from './components/styles'
+import { ProblemMessage } from './components/text'
+import { countItems, type ItemCount, itemsTitle } from './format'
 import { core } from './queries'
 import type { PullRequestData } from './usePullRequest'
 
@@ -38,26 +42,27 @@ export function Navigator({ workspace, pr, view, reviewed, showReviewed, entries
       </div>
     )
   const paths = view === 'diffs' ? pr.changed?.map((f) => f.path) : tree
-  if (!pr.commits) return <div className={`p-2 text-xs ${muted}`}>Preparing the worktree (the first time clones the repository)…</div>
-  if (!pr.changed || !paths) return <div className={`p-2 text-xs ${muted}`}>Loading…</div>
-  if (paths.length === 0) return <div className={`p-2 text-xs ${muted}`}>No changed files</div>
+  if (!pr.commits) return <Notice>Preparing the worktree (the first time clones the repository)…</Notice>
+  if (!pr.changed || !paths) return <Notice>Loading…</Notice>
+  if (paths.length === 0) return <Notice>No changed files</Notice>
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {pr.notice && <div className={`px-2 py-1 text-xs ${muted}`}>{pr.notice}</div>}
+      {pr.notice && <div className={cn('px-2 py-1 text-xs', muted)}>{pr.notice}</div>}
       {view === 'diffs' && (
-        <div className={`flex items-center justify-between px-2 py-1 text-xs ${muted}`}>
+        <div className={cn('flex items-center justify-between px-2 py-1 text-xs', muted)}>
           <span>
             {pr.changed.filter((f) => reviewed.includes(f.path)).length} of {pr.changed.length} reviewed
             {!showReviewed && reviewed.length > 0 && ', hidden'}
           </span>
-          <button
+          <Button
+            variant="ghost"
             title="View options"
-            className="rounded p-0.5 hover:bg-neutral-200 dark:hover:bg-neutral-800"
+            className="p-0.5"
             onClick={async () => setSettings(await window.coxswain.showNavigatorMenu(settings))}
           >
-            <Cog />
-          </button>
+            <CogIcon />
+          </Button>
         </div>
       )}
       {/* Remounts on a new list: the tree takes its paths only when created. A refetch with the same paths keeps
@@ -76,6 +81,8 @@ export function Navigator({ workspace, pr, view, reviewed, showReviewed, entries
     </div>
   )
 }
+
+const Notice = ({ children }: { children: string }) => <div className={cn('p-2 text-xs', muted)}>{children}</div>
 
 // A number per loaded list, so a reload (a new array) remounts the tree.
 const ids = new WeakMap<object, number>()

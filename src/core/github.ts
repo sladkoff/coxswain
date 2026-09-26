@@ -19,7 +19,7 @@ export type Repo = {
   pushedAt: string | null
 }
 
-type PullRequest = {
+export type PullRequest = {
   number: number
   title: string
   author: string | null

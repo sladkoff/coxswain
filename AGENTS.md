@@ -50,7 +50,9 @@ Keeping the docs current is part of every change, not a follow-up.
   ([ADR 0003](docs/adr/0003-diff-view-and-file-tree.md)), pinned to exact versions.
 - **Desktop conventions** from [ADR 0004](docs/adr/0004-styling-and-native-feel.md): native menus
   and dialogs, system font and theme, default cursor, no text selection outside content, dense
-  layout.
+  layout. Screens build from the shared controls in `src/renderer/src/components/` (Button,
+  ToggleButton, SegmentedControl, Input, TextArea, Card, Screen, …) and the tokens in its
+  `styles.ts`; don't hand-roll a control that one of them covers.
 
 ## Layout
 
@@ -58,7 +60,7 @@ Keeping the docs current is part of every change, not a follow-up.
 src/core/       UI-free core: GitHub, SQLite, projects, workspaces
 src/main/       Electron main process: window, menu, IPC handlers
 src/preload/    The typed interface between UI and core
-src/renderer/   React UI: one file per screen or pane
+src/renderer/   React UI: one file per screen or pane; shared controls and styles in components/
 docs/           Goals, glossary, UX, ADRs, devlog, tickets
 ```
 

@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react'
 import type { GitHubProblem, Repo } from '../../core/github'
 import type { Project } from '../../core/projects'
-import { button, ProblemMessage, muted, ScreenHeader } from './ui'
+import { Button } from './components/button'
+import { Input } from './components/field'
+import { ListRow, ProblemCard, Screen } from './components/layout'
+import { cn, muted } from './components/styles'
 
 type Props = {
   projects: Project[]
@@ -10,8 +13,7 @@ type Props = {
   onClose: () => void
 }
 
-const row = 'block w-full rounded-md px-2 py-2 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800'
-const heading = `mt-4 mb-1 px-2 text-xs font-medium ${muted}`
+const heading = cn('mt-4 mb-1 px-2 text-xs font-medium', muted)
 
 export function Projects({ projects, current, onSelect, onClose }: Props) {
   const [repos, setRepos] = useState<Repo[]>([])
@@ -41,70 +43,55 @@ export function Projects({ projects, current, onSelect, onClose }: Props) {
     : repos
 
   return (
-    <div className="flex h-full flex-col select-none text-sm">
-      <ScreenHeader title="Projects" onClose={onClose} />
+    <Screen title="Projects" onClose={onClose} className="max-w-2xl">
+      <Input
+        autoFocus
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Search projects and GitHub repositories"
+        className="mb-3"
+      />
 
-      <div className="mx-auto flex min-h-0 w-full max-w-2xl flex-1 flex-col p-6">
-        <input
-          autoFocus
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search projects and GitHub repositories"
-          className="mb-3 rounded-md border border-neutral-300 bg-transparent px-3 py-1.5 outline-none focus:border-neutral-500 dark:border-neutral-700"
-        />
+      {problem && <ProblemCard problem={problem} onRetry={loadMore} />}
 
-        {problem && (
-          <div className="flex items-center gap-3 rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
-            <ProblemMessage problem={problem} />
-            <button className={`${button} ml-auto shrink-0`} onClick={loadMore}>
-              Try again
-            </button>
-          </div>
+      <div className="-mx-2 min-h-0 flex-1 overflow-y-auto">
+        {shownProjects.length > 0 && (
+          <>
+            <div className={heading}>Your projects</div>
+            {shownProjects.map((p) => (
+              <ListRow key={p.id} onClick={() => onSelect(`${p.owner}/${p.name}`)}>
+                <span className="font-medium">
+                  {p.owner}/{p.name}
+                </span>
+                {p.id === current?.id && <span className={cn('ml-2 text-xs', muted)}>Current</span>}
+              </ListRow>
+            ))}
+          </>
         )}
 
-        <div className="-mx-2 min-h-0 flex-1 overflow-y-auto">
-          {shownProjects.length > 0 && (
-            <>
-              <div className={heading}>Your projects</div>
-              {shownProjects.map((p) => (
-                <button key={p.id} className={row} onClick={() => onSelect(`${p.owner}/${p.name}`)}>
-                  <span className="font-medium">
-                    {p.owner}/{p.name}
-                  </span>
-                  {p.id === current?.id && <span className={`ml-2 text-xs ${muted}`}>Current</span>}
-                </button>
-              ))}
-            </>
-          )}
-
-          <div className={heading}>GitHub repositories</div>
-          {shownRepos.map((r) => (
-            <button key={r.id} className={row} onClick={() => onSelect(r.fullName)}>
-              <div className="flex items-center gap-2">
-                <span className="font-medium">{r.fullName}</span>
-                {r.private && <span className={`text-xs ${muted}`}>Private</span>}
-                {r.pushedAt && (
-                  <span className={`ml-auto text-xs ${muted}`}>{new Date(r.pushedAt).toLocaleDateString()}</span>
-                )}
-              </div>
-              {r.description && <div className={`truncate ${muted}`}>{r.description}</div>}
-            </button>
-          ))}
-          {!problem && (
-            <div className={`py-3 text-center ${muted}`}>
-              {loading ? (
-                'Loading…'
-              ) : hasMore ? (
-                <button className={button} onClick={loadMore}>
-                  Load more
-                </button>
-              ) : (
-                `${repos.length} repositories`
-              )}
-            </div>
-          )}
-        </div>
+        <div className={heading}>GitHub repositories</div>
+        {shownRepos.map((r) => (
+          <RepoRow key={r.id} repo={r} onClick={() => onSelect(r.fullName)} />
+        ))}
+        {!problem && (
+          <div className={cn('py-3 text-center', muted)}>
+            {loading ? 'Loading…' : hasMore ? <Button onClick={loadMore}>Load more</Button> : `${repos.length} repositories`}
+          </div>
+        )}
       </div>
-    </div>
+    </Screen>
+  )
+}
+
+function RepoRow({ repo: r, onClick }: { repo: Repo; onClick: () => void }) {
+  return (
+    <ListRow onClick={onClick}>
+      <div className="flex items-center gap-2">
+        <span className="font-medium">{r.fullName}</span>
+        {r.private && <span className={cn('text-xs', muted)}>Private</span>}
+        {r.pushedAt && <span className={cn('ml-auto text-xs', muted)}>{new Date(r.pushedAt).toLocaleDateString()}</span>}
+      </div>
+      {r.description && <div className={cn('truncate', muted)}>{r.description}</div>}
+    </ListRow>
   )
 }

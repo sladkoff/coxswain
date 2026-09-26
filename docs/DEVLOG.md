@@ -3,6 +3,27 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-27 — Shared components
+
+### What works
+
+- **Controls come from one place.** `src/renderer/src/components/`: `Button` (default, primary, ghost, link),
+  `ToggleButton`, `SegmentedControl`, `Input`, `TextArea` (Enter submits, Esc cancels), `Screen`, `Card`,
+  `ProblemCard`, `ListRow`, `Centered`, `ProgressBar`, `Splitter`, `Prose`, `ErrorText`, `ProblemMessage` and the
+  icons, with the shared tokens (`muted`, `divider`, `selectable`, `titleBar`, `cn`) in `styles.ts`. `ui.tsx` is gone;
+  its counting helpers are in `format.ts`.
+- **Bespoke parts have their own components:** `WorkspaceRail`, `CanvasBar`, `StatusBar`, `GuideGroupHeader` and
+  `GuideFileNote` out of `App.tsx`; `ThreadBox`, `DraftBox` and the composer in `Thread.tsx` out of `Viewer.tsx`; chat
+  entries, `PermissionPrompt` and `TurnStatus` (shared by the agent pane and threads) in `ChatEntry.tsx` out of
+  `Agents.tsx`.
+- Small visual changes from unifying: the thread composer's Comment/Agent toggle is now the same segmented control as
+  Diffs/Files; the guide's contents progress bar is green like the status bar's; ghost buttons all wash on hover.
+  A thread's reply count now says "replies", not "replys".
+
+### Tech debt
+
+- `cn` joins classes without resolving conflicts (`ponytail:` in `styles.ts`); add tailwind-merge with shadcn.
+
 ## 2026-09-27 — Cleanup: no timeline, docs as they stand
 
 ### What works
@@ -804,7 +825,7 @@ code are found with `grep -rn "ponytail:" src`.
 
 **UI**
 
-- shadcn/ui isn't set up (ADR 0004); the few controls are hand-rolled with Tailwind.
+- shadcn/ui isn't set up (ADR 0004); `src/renderer/src/components/` holds our own controls until it is.
 - Keyboard use stops at ⌘, (Settings), Esc (close a screen) and the tree's own arrow keys; there
   are no shortcuts for the rest and no ⌘K, which [UX](UX.md) requires everywhere.
 - ADR 0004's system accent colour, reduced motion and high contrast aren't wired up.

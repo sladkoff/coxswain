@@ -1,12 +1,17 @@
 import { Virtualizer } from '@pierre/diffs/react'
 import { useQuery } from '@tanstack/react-query'
-import { type ReactNode, type UIEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { type UIEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangedFile, Commit } from '../../core/git'
 import type { GuideGroup } from '../../core/guides'
 import type { NewEntry, ReviewEntry } from '../../core/review'
 import type { Workspace } from '../../core/workspaces'
 import { Agents } from './Agents'
+import { CanvasBar } from './CanvasBar'
 import { Commits } from './Commits'
+import { Button, SegmentedControl } from './components/button'
+import { Centered, Splitter, viewerMin } from './components/layout'
+import { cn, divider, muted, titleBar } from './components/styles'
+import { GuideFileNote, GuideGroupHeader } from './GuideGroup'
 import { GuideToc } from './GuideToc'
 import { Navigator, type NavigatorView } from './Navigator'
 import { NewWorkspace } from './NewWorkspace'
@@ -14,13 +19,12 @@ import { Onboarding } from './Onboarding'
 import { Projects } from './Projects'
 import { changed, core, markReviewed as mark, queryClient } from './queries'
 import { Settings } from './Settings'
+import { StatusBar } from './StatusBar'
 import { usePullRequest } from './usePullRequest'
 import type { ViewSettings } from '../../preload'
-import { Cog, Prose, Splitter, viewerMin } from './ui'
 import { type Opened, type Turn, Viewer } from './Viewer'
+import { WorkspaceRail } from './WorkspaceRail'
 
-const pane = 'border-neutral-200 dark:border-neutral-800'
-const muted = 'text-xs text-neutral-500'
 // Stable empty lists: a new [] each render would redraw the memoised Viewers.
 const noEntries: ReviewEntry[] = []
 const noPaths: string[] = []
@@ -285,57 +289,20 @@ export function App() {
   return (
     // Side panes keep their dragged width but shrink with the window before the Viewer goes below viewerMin.
     <div className="flex h-full select-none overflow-hidden text-sm">
-      <div className={`flex flex-col ${pane}`}>
-        {/* The bar drags the window; the macOS window buttons reach past it into L3's, so the border starts below it. */}
-        <div className={`h-10 shrink-0 border-b [-webkit-app-region:drag] ${pane}`} />
-        <div className={`flex min-h-0 flex-1 border-r ${pane}`}>
-          <div className="flex w-12 flex-col items-center gap-2 py-2">
-            {/* The current project, like a Discord server icon. Opens the list to switch or add projects. */}
-            <button
-              title={`${current.owner}/${current.name}${cloning ? ' (cloning…)' : ''}: switch or add project`}
-              onClick={() => setScreen('projects')}
-              className={`${cloning ? 'animate-pulse' : ''} flex size-7 items-center justify-center rounded-md bg-neutral-800 text-xs font-semibold text-white dark:bg-neutral-200 dark:text-neutral-900`}
-            >
-              {current.name[0].toUpperCase()}
-            </button>
-            <div className="h-px w-5 bg-neutral-200 dark:bg-neutral-800" />
-            {/* The project's workspaces; the pill on the left marks the current one. */}
-            {workspaces.map((w) => {
-              const selected = w.id === currentWorkspace?.id
-              return (
-                <div key={w.id} className="relative flex w-full justify-center">
-                  {selected && (
-                    <span className="absolute top-1 left-0 h-5 w-1 rounded-r bg-neutral-900 dark:bg-neutral-100" />
-                  )}
-                  <button
-                    title={`PR #${w.prNumber}`}
-                    onClick={() => selectWorkspace(w.prNumber)}
-                    className={`flex h-7 w-10 items-center justify-center rounded-md text-[10px] font-medium ${
-                      selected
-                        ? 'bg-neutral-300 text-neutral-900 dark:bg-neutral-600 dark:text-white'
-                        : 'bg-neutral-100 text-neutral-500 hover:bg-neutral-200 dark:bg-neutral-800/60 dark:hover:bg-neutral-800'
-                    }`}
-                  >
-                    #{w.prNumber}
-                  </button>
-                </div>
-              )
-            })}
-            <button
-              title="New workspace"
-              onClick={() => setScreen('new-workspace')}
-              className="flex size-7 items-center justify-center rounded-md text-base text-neutral-500 hover:bg-neutral-200 dark:hover:bg-neutral-800"
-            >
-              +
-            </button>
-          </div>
-        </div>
-      </div>
+      <WorkspaceRail
+        project={current}
+        cloning={cloning}
+        workspaces={workspaces}
+        current={currentWorkspace}
+        onProjects={() => setScreen('projects')}
+        onSelect={selectWorkspace}
+        onNew={() => setScreen('new-workspace')}
+      />
 
       {currentWorkspace && (
         <>
           {/* The agent pane, always shown for a workspace. */}
-          <div style={{ width: agentsWidth }} className={`flex min-w-60 flex-col border-r ${pane}`}>
+          <div style={{ width: agentsWidth }} className={cn('flex min-w-60 flex-col border-r', divider)}>
             <Agents
               key={currentWorkspace.id}
               workspace={currentWorkspace}
@@ -349,48 +316,27 @@ export function App() {
 
       {/* The canvas: what the agent and the human look at together. For now, the workspace's file diffs. */}
       <div style={{ minWidth: viewerMin }} className="flex min-w-0 flex-1 flex-col">
-        {/* The canvas's bar: the diffs' options. It also drags the window, so it lines up with the agent pane's.
-            ponytail: no tabs row until the canvas shows a second thing. */}
-        <div className={`flex h-10 shrink-0 items-center gap-1 border-b px-2 text-xs [-webkit-app-region:drag] [&_button]:[-webkit-app-region:no-drag] ${pane}`}>
-          {currentWorkspace && (
-            <div className="flex flex-1 items-center gap-1">
-              <BarToggle title="Show or hide the files (⌘B)" on={leftPane === 'files'} onClick={() => toggleLeftPane('files')}>
-                Files {diffPr.changed?.length ?? ''}
-              </BarToggle>
-              <button
-                title="Show or hide the commits, to see one commit's changes"
-                disabled={!pr.commits}
-                className={`max-w-80 truncate rounded px-2 py-0.5 ${leftPane === 'commits' || commit ? 'bg-neutral-200 dark:bg-neutral-700' : 'text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800'}`}
-                onClick={() => toggleLeftPane('commits')}
-              >
-                {commit ? `${commit.sha.slice(0, 7)} ${commit.subject}` : 'Commits'}
-              </button>
-              <button
-                title="Make a guide, or pick the guide to show"
-                disabled={!pr.commits}
-                className={`rounded px-2 py-0.5 ${guide ? 'bg-neutral-200 dark:bg-neutral-700' : 'text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800'}`}
-                onClick={pickGuide}
-              >
-                {guide ? `Guide · ${new Date(guide.createdAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}` : 'Guide'}
-              </button>
-              <div className="flex-1" />
-              <button
-                title="View options"
-                className="rounded p-1 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
-                onClick={async () => setViewSettings(await window.coxswain.showViewMenu(viewSettings))}
-              >
-                <Cog />
-              </button>
-            </div>
-          )}
-        </div>
+        {currentWorkspace ? (
+          <CanvasBar
+            files={diffPr.changed?.length}
+            leftPane={leftPane}
+            onToggleLeftPane={toggleLeftPane}
+            ready={!!pr.commits}
+            commit={commit}
+            guide={guide}
+            onGuide={pickGuide}
+            onViewOptions={async () => setViewSettings(await window.coxswain.showViewMenu(viewSettings))}
+          />
+        ) : (
+          <div className={cn(titleBar, 'border-b', divider)} />
+        )}
         {!currentWorkspace ? (
-          <div className={`flex flex-1 items-center justify-center ${muted}`}>No workspace. Start one with +</div>
+          <Centered>No workspace. Start one with +</Centered>
         ) : (
           <div className="flex min-h-0 flex-1">
             {leftPane && (
               <>
-                <div style={{ width: leftWidth }} className={`flex min-w-60 flex-col border-r ${pane}`}>
+                <div style={{ width: leftWidth }} className={cn('flex min-w-60 flex-col border-r', divider)}>
                   {leftPane === 'commits' ? (
                     pr.commits && (
                       <Commits workspaceId={currentWorkspace.id} mergeBase={pr.commits.mergeBase} current={commit} onPick={pickCommit} />
@@ -398,7 +344,14 @@ export function App() {
                   ) : (
                     <>
                       <div className="flex shrink-0 justify-end px-2 pt-1.5">
-                        <ViewToggle view={view} onChange={setView} />
+                        <SegmentedControl
+                          value={view}
+                          onChange={setView}
+                          options={[
+                            { value: 'diffs', label: 'Diffs' },
+                            { value: 'files', label: 'Files' },
+                          ]}
+                        />
                       </div>
                       <Navigator key={currentWorkspace.id} workspace={currentWorkspace} pr={diffPr} view={view} reviewed={reviewed} showReviewed={viewSettings.showReviewed} entries={entries} onOpen={open} />
                     </>
@@ -412,42 +365,33 @@ export function App() {
             )}
             <div style={{ minWidth: viewerMin }} className="flex min-w-0 flex-1 flex-col" onScrollCapture={onCanvasScroll}>
               {!pr.commits || !diffDiffs || !shownDiffs ? (
-                <div className={`flex flex-1 items-center justify-center ${muted}`}>Loading…</div>
+                <Centered>Loading…</Centered>
               ) : showFile ? (
                 <Viewer opened={opened} {...viewerProps(currentWorkspace, pr.commits.mergeBase)} />
               ) : (
                 // Only the lines on screen are drawn. ponytail: every file is still read from disk up front.
                 <Virtualizer className="min-h-0 flex-1 overflow-auto">
                   {shownDiffs.length === 0 && (
-                    <div className={`p-4 text-xs ${muted}`}>
+                    <div className={cn('p-4 text-xs', muted)}>
                       {diffDiffs.length ? (
                         <>
                           All {diffDiffs.length} files reviewed.{' '}
-                          <button className="underline" onClick={() => setViewSettings((s) => ({ ...s, showReviewed: true }))}>
+                          <Button variant="link" onClick={() => setViewSettings((s) => ({ ...s, showReviewed: true }))}>
                             Show them
-                          </button>
+                          </Button>
                         </>
                       ) : (
                         'No changes'
                       )}
                     </div>
                   )}
-                  {/* Stale (ADR 0023): the PR moved on since the guide was made. The guide stays as it was. */}
-                  {guide && guide.head !== pr.commits.head && (
-                    <div className="border-b border-amber-200 bg-amber-50 px-4 py-1.5 text-xs dark:border-amber-900 dark:bg-amber-950">
-                      The PR has new commits since this guide. It still shows the PR as it was.
-                    </div>
-                  )}
+                  {guide && guide.head !== pr.commits.head && <StaleGuideNotice />}
                   {(sections ?? [{ group: undefined, diffs: diffDiffs, shown: shownDiffs }]).map((x, i) => x.shown.length > 0 && (
                     <section key={i} id={`guide-group-${i}`} className={x.group?.tags.includes('generated') ? 'opacity-60' : ''}>
-                      {x.group !== undefined && <GroupHeader group={x.group} files={x.diffs.length} reviewed={x.diffs.length - x.shown.length} />}
+                      {x.group !== undefined && <GuideGroupHeader group={x.group} files={x.diffs.length} reviewed={x.diffs.length - x.shown.length} />}
                       {x.shown.map((d) => (
                         <div key={d.file.path} id={`diff:${d.file.path}`}>
-                          {x.group?.notes[d.file.path] && (
-                            <div className={`px-4 pt-3 pb-2 select-text ${prose}`}>
-                              <Prose>{x.group.notes[d.file.path]}</Prose>
-                            </div>
-                          )}
+                          {x.group?.notes[d.file.path] && <GuideFileNote>{x.group.notes[d.file.path]}</GuideFileNote>}
                           <Viewer stacked opened={d} {...viewerProps(currentWorkspace, range?.base ?? pr.commits!.mergeBase, range?.head)} />
                         </div>
                       ))}
@@ -473,162 +417,12 @@ export function App() {
   )
 }
 
-// A group's description and its file notes: readable text, at a line length that's easy to follow.
-const prose = 'markdown max-w-[80ch] text-[13px] leading-relaxed text-neutral-700 [overflow-wrap:anywhere] dark:text-neutral-300'
 
-// Above a guide group's file diffs: its title, how many files, and its description. group null: the files in no group.
-function GroupHeader(props: { group: GuideGroup | null; files: number; reviewed: number }) {
-  const g = props.group
+// Stale (ADR 0023): the PR moved on since the guide was made. The guide stays as it was.
+function StaleGuideNotice() {
   return (
-    <div className="flex flex-col gap-1.5 px-4 pt-6 pb-3 select-text">
-      <h2 className="text-base font-semibold">{g ? <Prose inline>{g.title}</Prose> : 'Not in the guide'}</h2>
-      <div className={muted}>
-        {g?.tags.includes('generated') && 'Generated · '}
-        {count(props.files, 'file')}
-        {props.reviewed > 0 && `, ${props.reviewed} reviewed`}
-      </div>
-      {g?.description && (
-        <div className={prose}>
-          <Prose>{g.description}</Prose>
-        </div>
-      )}
-    </div>
-  )
-}
-
-const count = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
-
-// The canvas's bottom bar: the review at a glance. Threads, with how many are outdated or waiting on the agent, how
-// many of the file diffs on screen are reviewed, and their lines. The thread count opens every thread above the bar.
-type StatusBarProps = {
-  workspaceId: number
-  entries: ReviewEntry[]
-  files: ChangedFile[]
-  reviewed: string[]
-  turns: Record<number, Turn>
-  onViewThread: (threadId: number) => void
-}
-
-function StatusBar(props: StatusBarProps) {
-  const [open, setOpen] = useState(false)
-  // Sending every thread to the agent pane's session; the agent's reply shows there.
-  const [sending, setSending] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const sendAll = async () => {
-    setSending(true)
-    setError(null)
-    const result = await window.coxswain.sendReview(props.workspaceId)
-    setSending(false)
-    if (result.status === 'error') setError(result.message)
-  }
-  const threads = props.entries.filter((e) => e.path && !e.parentId)
-  const outdated = threads.filter((e) => e.state === 'outdated').length
-  const resolved = threads.filter((e) => e.resolvedAt).length
-  const which = [outdated && `${outdated} outdated`, resolved && `${resolved} resolved`].filter(Boolean)
-  const answering = threads.filter((e) => props.turns[e.id]?.running).length
-  const reviewed = props.files.filter((f) => props.reviewed.includes(f.path)).length
-  const add = props.files.reduce((n, f) => n + f.additions, 0)
-  const del = props.files.reduce((n, f) => n + f.deletions, 0)
-  const parts = [
-    count(threads.length, 'thread') + (which.length ? ` (${which.join(', ')})` : ''),
-    answering ? `${answering} waiting on the agent` : '',
-  ].filter(Boolean)
-  return (
-    <div className={`flex max-h-[50%] shrink-0 flex-col border-t text-xs ${pane}`}>
-      {open && (
-        <div className={`flex min-h-0 flex-col overflow-y-auto border-b py-1 ${pane}`}>
-          {threads.length === 0 && <div className={`px-2 py-1 ${muted}`}>No threads yet. Click a line's gutter to start one.</div>}
-          {threads.map((t) => (
-            <ThreadRow
-              key={t.id}
-              root={t}
-              replies={props.entries.filter((e) => e.parentId === t.id)}
-              answering={!!props.turns[t.id]?.running}
-              onClick={() => props.onViewThread(t.id)}
-            />
-          ))}
-        </div>
-      )}
-      <div className={`flex h-8 shrink-0 items-center gap-3 px-2 ${muted}`}>
-        <button
-          title={open ? 'Hide the threads' : 'Show all threads'}
-          className="flex min-w-0 items-center gap-1 rounded px-1 py-0.5 hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
-          onClick={() => setOpen((o) => !o)}
-        >
-          <span>{open ? '▾' : '▴'}</span>
-          <span className="truncate">{parts.join(' · ')}</span>
-        </button>
-        <button
-          title="Send every thread to the agent in one message"
-          className="rounded px-1.5 py-0.5 hover:bg-neutral-100 hover:text-neutral-900 disabled:opacity-50 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
-          disabled={!threads.length || sending}
-          onClick={sendAll}
-        >
-          {sending ? 'Agent working…' : 'Send all to agent'}
-        </button>
-        {error && <span className="truncate text-red-600 dark:text-red-400">{error}</span>}
-        <div className="flex-1" />
-        <span className="tabular-nums">
-          <span className="text-green-600">+{add}</span> <span className="text-red-600">−{del}</span>
-        </span>
-        <div className="flex items-center gap-1.5 tabular-nums">
-          <div className="h-1 w-16 overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-800">
-            <div className="h-full bg-green-600" style={{ width: `${props.files.length ? (reviewed / props.files.length) * 100 : 0}%` }} />
-          </div>
-          {reviewed} of {count(props.files.length, 'file')} reviewed
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// One thread in the bar's list: where it is, its first comment, and how far it got. A click shows it on the canvas.
-function ThreadRow(props: { root: ReviewEntry; replies: ReviewEntry[]; answering: boolean; onClick: () => void }) {
-  const { root: t, replies } = props
-  const lines = t.startLine === t.endLine ? `${t.startLine}` : `${t.startLine}–${t.endLine}`
-  const answers = replies.filter((r) => r.kind === 'answer').length
-  const status = [
-    t.resolvedAt && 'resolved',
-    t.state === 'outdated' && 'outdated',
-    props.answering ? 'agent answering…' : answers ? count(answers, 'answer') : t.kind === 'question' && 'sent to agent',
-    replies.length - answers > 0 && count(replies.length - answers, 'reply'),
-  ].filter(Boolean)
-  return (
-    <button onClick={props.onClick} className="flex items-baseline gap-2 px-2 py-1 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800">
-      <span className={`shrink-0 font-mono ${muted}`}>
-        {t.path!.split('/').at(-1)}:{lines}
-      </span>
-      <span className="min-w-0 flex-1 truncate">{t.body}</span>
-      <span className={`shrink-0 ${muted}`}>{status.join(' · ')}</span>
-    </button>
-  )
-}
-
-// A toggle in the canvas's bar that shows or hides a pane.
-function BarToggle(props: { title: string; on: boolean; onClick: () => void; children: ReactNode }) {
-  return (
-    <button
-      title={props.title}
-      onClick={props.onClick}
-      className={`rounded px-2 py-0.5 ${props.on ? 'bg-neutral-200 dark:bg-neutral-700' : 'text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800'}`}
-    >
-      {props.children}
-    </button>
-  )
-}
-
-function ViewToggle({ view, onChange }: { view: NavigatorView; onChange: (view: NavigatorView) => void }) {
-  return (
-    <div className="flex rounded-md bg-neutral-100 p-0.5 text-xs dark:bg-neutral-800">
-      {(['diffs', 'files'] as const).map((v) => (
-        <button
-          key={v}
-          onClick={() => onChange(v)}
-          className={`rounded px-2 py-0.5 capitalize ${v === view ? 'bg-white shadow-sm dark:bg-neutral-600' : 'text-neutral-500'}`}
-        >
-          {v}
-        </button>
-      ))}
+    <div className="border-b border-amber-200 bg-amber-50 px-4 py-1.5 text-xs dark:border-amber-900 dark:bg-amber-950">
+      The PR has new commits since this guide. It still shows the PR as it was.
     </div>
   )
 }
