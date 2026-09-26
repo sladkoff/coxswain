@@ -10,15 +10,17 @@ Draft: only the main areas so far. Open questions are listed at the end.
 **Moving to an agent-first layout (prototype, 2026-09-26).** Opening a PR shows the agent pane on
 the left and the canvas on the right. The canvas is one explorer that both the agent and the human
 can annotate; what it can show is still to be decided. The agent will get tools to use the app
-(navigate the canvas, read what's on it). For now the canvas shows the file diffs (the old *Diff*
-tab) with the Navigator. The *Overview*, *Guide* and *Diff* tabs are gone, so
+(navigate the canvas, read what's on it). The canvas has a row of tabs at its top, one per thing it shows, and under it a bar with the current tab's
+options. For now its only tab is *Changes*: the file diffs (the old *Diff* tab) with the Navigator. The *Overview*, *Guide* and *Diff* tabs are gone, so
 the timeline and guides can't be reached; the L3 and L4 notes below describe the old layout until
 this settles.
 
 ```
 ┌──────────────────────────────┬──────────────────────────────────────────┐
-│ Claude Code    [New session] │ Files 3  Commits                     ⚙   │
+│ Claude Code    [New session] │ [Changes]                                │
 ├────┬─────────────────────────┼──────────────────────────────────────────┤
+│    │                         │ Files 3  Commits                     ⚙   │
+│    │                         ├──────────────────────────────────────────┤
 │ L1 │ Agent pane              │ Canvas                                   │
 │    │                         │                                          │
 │ P  │ agent chat              │  file diffs, with notes and questions    │

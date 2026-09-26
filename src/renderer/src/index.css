@@ -1,5 +1,10 @@
 @import 'tailwindcss';
 
+/* Native scrollbars, checkboxes and text fields follow the system theme (ADR 0004). */
+:root {
+  color-scheme: light dark;
+}
+
 html,
 body,
 #root {

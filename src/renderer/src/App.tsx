@@ -258,9 +258,16 @@ export function App() {
 
       {/* The canvas: what the agent and the human look at together. For now, the workspace's file diffs. */}
       <div style={{ minWidth: viewerMin }} className="flex min-w-0 flex-1 flex-col">
-        <div className={`flex h-10 shrink-0 items-center gap-1 border-b px-2 text-xs [-webkit-app-region:drag] ${pane}`}>
+        {/* The canvas's tabs, one per thing it shows. ponytail: only Changes so far; a tab state comes with the second. */}
+        <div className={`flex h-10 shrink-0 items-center gap-0.5 border-b px-2 [-webkit-app-region:drag] ${pane}`}>
           {currentWorkspace && (
-            <div className="flex flex-1 items-center gap-1 [-webkit-app-region:no-drag]">
+            <button className="rounded bg-neutral-200 px-2 py-0.5 text-xs [-webkit-app-region:no-drag] dark:bg-neutral-700">Changes</button>
+          )}
+        </div>
+        {/* The current tab's options; outside its scroll, so it stays put. */}
+        {currentWorkspace && (
+          <div className={`flex h-8 shrink-0 items-center gap-1 border-b px-2 text-xs ${pane}`}>
+            <div className="flex flex-1 items-center gap-1">
               <BarToggle title="Show or hide the files (⌘B)" on={navigatorOpen} onClick={() => setNavigatorOpen((o) => !o)}>
                 Files {diffPr.changed?.length ?? ''}
               </BarToggle>
@@ -281,8 +288,8 @@ export function App() {
                 <Cog />
               </button>
             </div>
-          )}
-        </div>
+          </div>
+        )}
         {!currentWorkspace ? (
           <div className={`flex flex-1 items-center justify-center ${muted}`}>No workspace. Start one with +</div>
         ) : (

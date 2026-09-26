@@ -9,7 +9,7 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 
 - **No more tabs.** The *Overview*, *Guide* and *Diff* tabs are gone. Opening a PR shows the **agent pane**
   (the old L4 chat) on the left, always visible and resizable, and the **canvas** on the right (glossary). For
-  now the canvas shows the file diffs, with *Files*, *Commits* and the cog in its bar.
+  now the canvas has one tab, *Changes* (the file diffs), in a tabs row above a bar with *Files*, *Commits* and the cog.
 - *View > Toggle Agents* (⌥⌘B) is gone, since the agent pane is always shown.
 - **Comments are threads.** The comment box on lines is a send button (Enter), a *Send to agent* checkbox and ✕ to
   cancel. Every comment starts a thread with a reply box of the same shape, so a note can be answered too. Ticked, a
