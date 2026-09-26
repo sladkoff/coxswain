@@ -24,7 +24,7 @@ import {
   readWorktreeFile,
 } from '../core/git'
 import { createGuide, getGuide, getGuideSettings, type GuideSettingsChange, setGuideSettings } from '../core/guides'
-import { getCurrentUser, getPullRequestOverview, listPullRequests, listRepos } from '../core/github'
+import { getCurrentUser, listPullRequests, listRepos } from '../core/github'
 import { listProjects, openProject } from '../core/projects'
 import {
   addNote,
@@ -41,9 +41,10 @@ import {
   updateActionItem,
   wrapUp,
 } from '../core/review'
+import { getTimeline, recordHead, summarise } from '../core/timeline'
 import { listViewed, setViewed } from '../core/viewed'
 import type { Changed, NavigatorSettings, ViewSettings } from '../preload'
-import { getWorkspaceRepo, listWorkspaces, openPullRequestWorkspace } from '../core/workspaces'
+import { listWorkspaces, openPullRequestWorkspace } from '../core/workspaces'
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -130,17 +131,28 @@ app.whenReady().then(() => {
   ipcMain.handle('github:current-user', () => getCurrentUser())
   ipcMain.handle('github:list-repos', (_, page: number) => listRepos(page))
   ipcMain.handle('github:list-pulls', (_, owner: string, name: string) => listPullRequests(owner, name))
-  ipcMain.handle('github:pull-overview', async (_, workspaceId: number) => {
-    const { owner, name, prNumber } = await getWorkspaceRepo(db, workspaceId)
-    return getPullRequestOverview(owner, name, prNumber)
-  })
+  ipcMain.handle('timeline:get', (_, workspaceId: number) => getTimeline(db, workspaceId))
+  ipcMain.handle('timeline:summarise', (e, workspaceId: number, phaseId: number) =>
+    summarise(db, phaseId, () => changed(e.sender, { workspaceId, what: 'timeline' })).then(
+      () => ({ status: 'ok' as const }),
+      (err) => ({ status: 'error' as const, message: (err as Error).message }),
+    ),
+  )
   ipcMain.handle('workspaces:list', (_, projectId: number) => listWorkspaces(db, projectId))
   ipcMain.handle('workspaces:open-pr', (_, projectId: number, prNumber: number) =>
     openPullRequestWorkspace(db, projectId, prNumber),
   )
   ipcMain.handle('git:clone', (_, projectId: number) => cloneProject(db, projectId))
   ipcMain.handle('git:opened-before', (_, workspaceId: number) => openedBefore(db, workspaceId))
-  ipcMain.handle('git:open-worktree', (_, workspaceId: number) => openWorktree(db, workspaceId))
+  // Every head read from GitHub goes on the timeline (ADR 0020), whose summaries are made in the background.
+  ipcMain.handle('git:open-worktree', async (e, workspaceId: number) => {
+    const opened = await openWorktree(db, workspaceId)
+    if (opened.status === 'ok')
+      recordHead(db, workspaceId, opened.head, opened.mergeBase, () => changed(e.sender, { workspaceId, what: 'timeline' })).catch((err) =>
+        console.error('recording the PR head:', err),
+      )
+    return opened
+  })
   ipcMain.handle('git:changed-files', (_, workspaceId: number, mergeBase: string, head?: string) =>
     listChangedFiles(db, workspaceId, mergeBase, head),
   )

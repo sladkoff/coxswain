@@ -183,11 +183,17 @@ export function listChangedFiles(db: Db, workspaceId: number, mergeBase: string,
   })
 }
 
-// The commits from the merge base to the worktree's HEAD, newest first.
-export function listCommits(db: Db, workspaceId: number, mergeBase: string): Promise<{ status: 'ok'; commits: Commit[] } | GitProblem> {
+// The commits from the merge base to the worktree's HEAD, or to head, newest first.
+export function listCommits(
+  db: Db,
+  workspaceId: number,
+  mergeBase: string,
+  head?: string,
+): Promise<{ status: 'ok'; commits: Commit[] } | GitProblem> {
   return withGit(async () => {
     if (!isCommit(mergeBase)) throw new GitError(`Not a commit: ${mergeBase}`)
-    const out = await gitText(await openedWorktree(db, workspaceId), ['log', '-z', '--format=%H%x1f%P%x1f%s', `${mergeBase}..HEAD`])
+    if (head !== undefined && !isCommit(head)) throw new GitError(`Not a commit: ${head}`)
+    const out = await gitText(await openedWorktree(db, workspaceId), ['log', '-z', '--format=%H%x1f%P%x1f%s', `${mergeBase}..${head ?? 'HEAD'}`])
     const commits = out
       .split('\0')
       .filter(Boolean)
@@ -197,6 +203,15 @@ export function listCommits(db: Db, workspaceId: number, mergeBase: string): Pro
       })
     return { status: 'ok' as const, commits }
   })
+}
+
+// Whether commit a is an ancestor of b, e.g. whether a new PR head builds on the one before.
+export async function isAncestor(db: Db, workspaceId: number, a: string, b: string): Promise<boolean> {
+  if (!isCommit(a) || !isCommit(b)) return false
+  return git(await openedWorktree(db, workspaceId), ['merge-base', '--is-ancestor', a, b]).then(
+    () => true,
+    () => false,
+  )
 }
 
 // Joins `git diff -z --name-status` and `--numstat` output by path, and adds untracked files as added.

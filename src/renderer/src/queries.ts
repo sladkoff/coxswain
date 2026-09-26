@@ -14,11 +14,11 @@ const github = { staleTime: 60_000, refetchOnWindowFocus: true }
 const extra: Partial<Record<Reads, { staleTime?: number; refetchOnWindowFocus?: boolean }>> = {
   readFileAt: { staleTime: Infinity }, // a file at a commit never changes
   openWorktree: github, // asks GitHub for the PR's head and fetches it
-  getPullRequestOverview: github,
+  getTimeline: github, // reads GitHub's activity with coxswain's own
   listPullRequests: github,
 }
 // Offline or signed out: a GitHub read keeps what it fetched before. Throwing leaves the query's data as it was.
-const keepsOk = new Set<Reads>(['openWorktree', 'getPullRequestOverview'])
+const keepsOk = new Set<Reads>(['openWorktree'])
 
 // A core call as a query: its key is the call's name and arguments, so keys live here only.
 // Trailing undefined arguments are left out of the key, so an optional head given or not makes the same key.
@@ -40,11 +40,12 @@ export function core<K extends Reads>(name: K, ...args: Parameters<Api[K]>) {
 
 // The queries each kind of change makes stale, for the workspace it happened in.
 const affects: Record<Changed['what'], Reads[]> = {
-  entries: ['listEntries', 'listRounds'],
+  entries: ['listEntries', 'listRounds', 'getTimeline'],
   // Entries and Viewed follow the code they're about (ADR 0014, 0015).
   worktree: ['listChangedFiles', 'listWorktreeFiles', 'readWorktreeFile', 'listViewed', 'listEntries', 'listRounds'],
   transcript: ['listAgentSessions', 'readTranscript'],
   guide: ['getGuide'],
+  timeline: ['getTimeline'],
 }
 
 // Refetches what's on screen and marks the rest stale. Resolves once what's on screen is in.

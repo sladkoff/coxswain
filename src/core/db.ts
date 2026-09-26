@@ -141,6 +141,27 @@ const migrations = [
   alter table review_rounds add column head text`,
   // ADR 0019: an action item can be ticked done; a round whose items are all done is resolved.
   `alter table action_items add column done_at text`,
+  // ADR 0020: a phase is a PR head coxswain saw. base: the old side of what it changed (the merge base, or the
+  // previous head when this one builds on it). intent, why: its change summary, null until made.
+  `create table phases (
+    id integer primary key,
+    workspace_id integer not null references workspaces (id) on delete cascade,
+    head text not null,
+    base text not null,
+    merge_base text not null,
+    seen_at text not null,
+    intent text,
+    why text,
+    model text,
+    summarised_at text,
+    unique (workspace_id, head)
+  )`,
+  // ADR 0020: a change summary is prose, which the intent and why only steer. Summaries made before are dropped, so
+  // they're made again.
+  `alter table phases drop column intent;
+  alter table phases drop column why;
+  alter table phases add column summary text;
+  update phases set model = null, summarised_at = null`,
 ]
 
 // ADR 0016: the tables as the migrations above leave them. Change this with every migration that changes a table.
@@ -194,6 +215,17 @@ export type Tables = {
     head: string | null
     created_at: string
     sent_at: string | null
+  }
+  phases: {
+    id: Generated<number>
+    workspace_id: number
+    head: string
+    base: string
+    merge_base: string
+    seen_at: string
+    summary: string | null
+    model: string | null
+    summarised_at: string | null
   }
   action_items: {
     id: Generated<number>

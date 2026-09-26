@@ -3,6 +3,40 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-26 — The Overview's timeline
+
+### What works
+
+- **The Overview is a timeline** ([ADR 0020](adr/0020-timeline-of-phases.md)): the PR's title, author and GitHub link,
+  then its phases, newest first, each with its events, newest first too. Terms (*timeline*, *phase*, *change summary*, *event*,
+  *context*) are in the glossary; the layout is in UX.md.
+- **Phases** (`phases` table, migration 18): every PR head `openWorktree` reads is passed to `recordHead`, which adds
+  a phase when the head is new. `base` is the previous head if the new one builds on it (`isAncestor`), else the
+  merge base; the kind (*PR created*, *N new commits*, *Rebased*) is derived from it.
+- **Change summaries** are made in the background right after a phase is recorded: one run on the guide's summary
+  model with the phase's diff (cut like a guide's), its commits, the PR's description, earlier phases' intents and,
+  for a push, the action items and GitHub reviews and comments since the previous phase. Stored as prose
+  (`phases.summary`, migration 19, which drops the first try's separate `intent` and `why` columns); the prompt asks
+  for the intent and the why. *Regenerate* (or *Summarise*) makes one again.
+- **`getTimeline`** puts it together on each read: phases with files, +/− lines and commits counted by git
+  (`listCommits` now takes a head); every round's notes and questions (answers folded) and wrap-ups; GitHub's issue
+  timeline (`getPullRequestActivity`, which replaces `getPullRequestOverview`): comments, reviews with their review
+  comment count, merged, closed, reopened, ready or draft, force-pushed. Events go in the phase seen at or before
+  them; a review in the phase of its commit.
+- The core sends `timeline` when a phase is recorded or a summary starts or ends; entries changing also refetch it.
+- Not checked in the running app yet: the user is testing it.
+
+### Tech debt
+
+- `ponytail:` `getTimeline` asks GitHub (the PR and up to 10 pages of its timeline) on every read, and entries
+  changing reads it again. Cache the activity if the rate limit shows.
+- `ponytail:` the summary's diff sizes are the guide's, copied; share them if they become settings.
+- Phases are only seen while coxswain is open, so pushes made while it's closed are one phase, and the first phase
+  covers everything up to the first head seen. A phase after a rebase summarises the whole PR again.
+- A failed summary isn't tried again on its own until the app restarts.
+- Agent sessions and hand-offs aren't on the timeline: hand-offs aren't recorded yet.
+- The context (the timeline as text for agents) isn't built.
+
 ## 2026-09-26 — Every round readable, resolved when its items are done
 
 ### What works

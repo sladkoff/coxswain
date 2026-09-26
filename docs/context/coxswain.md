@@ -36,7 +36,12 @@ listed at the end.
 | **Workspace** | A unit of work in a project, as shown in the sidebar: either a PR being reviewed or a local iteration. Has one worktree, and its diff, open tabs, review rounds and agent sessions. | *Agent session*: one run of an agent; a workspace can have many. *Project*: a project has many workspaces. |
 | **Navigator** | The file list on the left of the Diff tab ([UX](../UX.md) L2), shown with its *Files* toggle. A toggle at its top switches between *Diffs*, the workspace's changed files, and *Files*, the whole file tree of the workspace. | *Viewer*: the navigator lists files; the viewer shows the one you open. |
 | **Viewer** | The main pane ([UX](../UX.md) L3), with the workspace's tabs along its top: *Overview*, *Guide* and *Diff*, plus a tab for a whole file opened from *Files*. | *Navigator*. |
-| **Overview** | The Viewer tab that shows the PR's title and description. | *Conversation*: the overview is only the PR's description for now. |
+| **Overview** | The Viewer tab that shows the PR's title and its timeline. | *Conversation*: GitHub's, which the timeline takes in along with the rest. |
+| **Timeline** | The history of a workspace's PR, split into phases, as the Overview shows it, newest first. It starts with *PR created*, at the bottom. It takes in what coxswain stores (change summaries, rounds, entries, wrap-ups) and what GitHub has (comments, reviews, merged or closed). Put together each time it's read, not stored. | *Review round*: a round is one pass by the user; the timeline holds every round, placed in the phases they happened in. |
+| **Phase** | One version of the PR on the timeline: from a PR head coxswain saw until it saw the next. The first is *PR created*; each later one is *N new commits*, or *Rebased* when the new head doesn't build on the old one. Holds the events that happened while its head was the PR's. coxswain only sees a head while it's open, so several pushes made while it was closed show as one phase. | *Review round*: rounds end when wrapped up; phases end when the head moves. A round can span two phases. *Guide group*. |
+| **Change summary** | What a phase changed, written by an agent as a short piece of prose: what the change sets out to do and why, from the description, commit messages and the review before it. Intent and why are what the prompt asks for, not fields. Shown with the lines, files and commits it covers, which are counted, not written. The first phase's covers merge base → head; a later phase's, the previous head → its head, or merge base → head after a rebase. Made on its own when a phase starts. | *File summary*: one sentence per file diff, for grouping. *Guide*: a reading order, made on request. |
+| **Event** | One item in a phase on the timeline: a note or a question (with its answers), a wrap-up, a GitHub comment or review, or the PR being merged, closed, reopened or force-pushed. | *Entry*: an entry is one kind of event. *Chat entry*. |
+| **Context** | What coxswain knows about a workspace's PR, as an agent would read it: the timeline as text. Not built yet; later it goes to questions and hand-offs. | *Prompt*: the context is part of what a prompt carries. |
 | **Guide** | A reading order for a workspace's diff, or for one commit diff, made by an agent: its file diffs sorted into guide groups. Pinned to the diff it was made from (the merge base → the PR head then, or a commit's parent → the commit) and shows that, not the live diff; local changes aren't in it. **Stale** once the PR head moves on. Stored with that range, the models that made it and how long it took; the tab shows the latest, and a guide to all changes from another merge base isn't shown. Shown once grouped, and filled in as its groups are described. Also the Viewer tab that shows it. | *Overview*: the PR's own description, written by its author. |
 | **Guide group** | A set of file diffs in a guide that share one theme, with a title, a short description of what the reviewer is looking at, and a *file note* on each of its file diffs. Every file diff is in at most one group. A group is viewed when all its file diffs are. | *Thread*, *folder*: a group is by theme, not by place in the tree. |
 | **Guide tag** | A label the agent puts on a guide group. The only one is *generated*: the group's files are made by a tool (lockfiles, generated clients, snapshots), not written by hand. A generated group is low-lighted and comes last, after *Not in the guide*. | *Label*: GitHub's labels are on the PR, not on a group. |
@@ -79,6 +84,9 @@ listed at the end.
 - The expected loop: review the diff in a round, leaving notes and asking questions; ask an agent to
   implement the notes; look at the result in a new round; at the end, post what a collaborator
   should see.
+- A workspace's **timeline** has one phase per PR head coxswain saw, each with its change summary. Events
+  from both sides of the line above (comments and reviews on GitHub; entries and wrap-ups in coxswain) go in
+  the phase they happened in.
 - A round's **questions** are turns of one agent session, so a question on one file diff can build
   on earlier ones. The session starts with the round's first question.
 - An **agent session** runs in one worktree. For an *ask* that changes code, where the result goes
@@ -104,7 +112,8 @@ listed at the end.
 3. **What a round reviews.** Should a round be tied to what was on screen, e.g. the head commit,
    merge base or guide it was made against, so a round can go stale when the code changes and a new
    one is due? A round now records its first entry's range (ADR 0015), but nothing uses it yet: a round
-   starts with the first entry after the last one was wrapped up.
+   starts with the first entry after the last one was wrapped up. Partly answered by ADR 0020: the timeline
+   puts each entry in the phase it was written in, but a round still doesn't end when a new phase starts.
 4. **Comments in coxswain.** Show a PR's comments in the diff next to entries? Turn a comment into
    a note with one click, so notes stay the one queue? Posting appears as the current user: can an
    answer be posted, marked as agent-written?

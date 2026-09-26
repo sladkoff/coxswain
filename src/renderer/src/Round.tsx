@@ -107,7 +107,7 @@ export function Round({ workspace, handedOffId, onHandOff }: Props) {
   )
 }
 
-const where = (a: { path: string | null; startLine: number | null; endLine: number | null }) =>
+export const where = (a: { path: string | null; startLine: number | null; endLine: number | null }) =>
   a.path && `${a.path}:${a.startLine === a.endLine ? a.startLine : `${a.startLine}–${a.endLine}`}`
 
 // A round's stream in order: each note or question, with a question's follow-ups and answers under it.

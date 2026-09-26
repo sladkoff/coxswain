@@ -48,7 +48,7 @@ then the workspace's files, the work in the middle and the agents on the right.
   next to its +/− lines). A changed file with notes or questions in the current round shows how many
   after its +/− lines (`✎ 2`; hovering says how many of each). *Show Viewed Files* in the tab bar's cog menu (L3) shows viewed files again
   with a ✓.
-- **L3 — Viewer.** Tabs along the top: *Overview* (the PR's title and description, the tab a
+- **L3 — Viewer.** Tabs along the top: *Overview* (the PR's title and its timeline, the tab a
   workspace opens on), *Guide* and *Diff*, all file diffs side by side one after
   another, with the Navigator on their left. Selecting a file in *Diffs* scrolls to its file diff;
   selecting one in *Files* shows the whole file in their place, until the toggle goes back to *Diffs*. Under the tabs, a second bar
@@ -106,6 +106,37 @@ then the workspace's files, the work in the middle and the agents on the right.
   *Regenerate*. A guide shows the PR as it was when made, and its *Viewed* ticks stay as they were;
   once the PR has new commits, an amber bar above it says so, with *Regenerate*. A new guide keeps the
   ticks of file diffs that didn't change. The prompt, the model and the summary model are in Settings, under *Guide*.
+  *Overview* shows the PR's title, author and when it was opened, then its **timeline**, newest first: the latest phase on top, and in each phase the latest event on top. Each
+  phase starts with a header: *PR created*, *N new commits* or *Rebased*, when coxswain saw it, and its head commit.
+  Under it, what it covers (*N files · +A −D · N commits*, the commits' subjects in a disclosure), then its change
+  summary, a paragraph or two of prose on what the change sets out to do and why, which model wrote it, and
+  *Regenerate*; *Summarising…* while it's made. The first
+  phase also has the PR's description, folded. Then the phase's events, one line each, with the time: a note or
+  question of *Round N*, with where it points and its text, a question's answers folded under it; *Round N wrapped
+  up* with *N of M action items done*; a GitHub comment or review, with its author, state (*approved*, *changes
+  requested*, *commented*), text and how many review comments it has, linking to GitHub; and the PR being merged,
+  closed, reopened, marked ready or draft, or force-pushed. The phase the PR is on now is marked *current*. If
+  GitHub can't be reached, a line at the top says so and the timeline shows only what coxswain has.
+
+  ```
+  Add user stats and user management helpers  #1
+  sladkoff opened this on 26 Sep
+  ┃
+  ● 2 new commits · 26 Sep 12:10                                d4e5f6a  current
+  ┃  ...
+  ● PR created · 26 Sep 10:36                                   a1b2c3d
+  ┃  2 files · +34 −0 · 1 commit ▸
+  ┃  This PR adds stats helpers (averages, top users, lookup by name,
+  ┃  pagination) and helpers to delete and update users. Neither the
+  ┃  description nor the commit says why they're needed.
+  ┃  claude-haiku-4-5 · Regenerate
+  ┃  Description ▸
+  ┃  ○ 11:02  alice reviewed · changes requested · 3 comments  "..."
+  ┃  ○ 10:50  Round 1 wrapped up · 0 of 2 action items done
+  ┃  ○ 10:42  Round 1 · Note · src/users.py:8       drop this helper
+  ┃  ○ 10:40  Round 1 · Question · src/stats.py:4   what is this?     Answer ▸
+  ```
+
 - **L4 — Agents** on the right: the agent sessions of the current workspace. Hidden at first. The *Agent* toggle at the right of
   each tab's bar, *View > Toggle Agents* or ⌥⌘B shows and hides it. *Send to agent* shows it. Several can be open at
   once, e.g. as tabs in the pane. For now L4 is a chat with the workspace's latest agent session:
@@ -131,9 +162,13 @@ then the workspace's files, the work in the middle and the agents on the right.
 2. **Tabs in L3:** which options go in each tab's bar? Should *Regenerate* move to the Guide's bar?
    Should a guide group down to hunks, not whole file diffs?
 3. **The review round as a whole:** where do you write an entry that floats on the round rather than on lines?
-   Hand-off one action item at a time, and *Post*, are still open. And where do a PR's GitHub comments show?
+   Hand-off one action item at a time, and *Post*, are still open. GitHub's comments show on the timeline (ADR 0020); should review comments also show in the diff?
 4. **Agents in L4:** tabs, a list, or split panes, and how running and finished agent sessions look.
    Only the latest agent session is reachable so far; earlier ones need a way back.
 5. **PR changes vs local changes:** *Diffs* mixes the PR's file diffs with local changes (uncommitted,
    untracked, unpushed), so an agent's work isn't told apart from the PR's. Options: a marker per
    file, a third toggle (*Local*), or showing local changes on top of the PR's head separately.
+6. **The timeline:** What else
+   makes a summary again (new review activity, a finished round), and should a phase get a recap of its events,
+   not just of its code? Should bot comments (CI, Linear) be folded or hidden? Where do agent sessions and
+   hand-offs go on it, once they're recorded?
