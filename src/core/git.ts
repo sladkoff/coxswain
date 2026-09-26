@@ -157,7 +157,7 @@ export async function openWorktree(db: Db, workspaceId: number): Promise<Worktre
   })
 }
 
-export async function openedWorktree(db: Db, workspaceId: number): Promise<string> {
+async function openedWorktree(db: Db, workspaceId: number): Promise<string> {
   const { owner, name } = await getWorkspaceRepo(db, workspaceId)
   const path = worktreePath(owner, name, workspaceId)
   if (!existsSync(join(path, '.git'))) throw new GitError('The worktree is not ready yet')
@@ -205,17 +205,8 @@ export function listCommits(
   })
 }
 
-// Whether commit a is an ancestor of b, e.g. whether a new PR head builds on the one before.
-export async function isAncestor(db: Db, workspaceId: number, a: string, b: string): Promise<boolean> {
-  if (!isCommit(a) || !isCommit(b)) return false
-  return git(await openedWorktree(db, workspaceId), ['merge-base', '--is-ancestor', a, b]).then(
-    () => true,
-    () => false,
-  )
-}
-
 // Joins `git diff -z --name-status` and `--numstat` output by path, and adds untracked files as added.
-export function parseChanges(
+function parseChanges(
   names: string,
   counts: string,
   untracked: string,
@@ -343,22 +334,6 @@ function readBlobs(cwd: string, commit: string, files: string[]): Promise<Map<st
     })
     child.stdin.end(files.map((f) => `${commit}:${f}\n`).join(''))
   })
-}
-
-// A file diff as unified diff text, for prompts. A new untracked file has no git diff, so its lines show as added.
-// --no-ext-diff: a repo's .gitattributes can send files to a diff tool that isn't installed (e.g. CSV to daff).
-// With head, the file's diff in a commit diff.
-export async function readFileDiff(db: Db, workspaceId: number, mergeBase: string, file: ChangedFile, head?: string): Promise<string> {
-  if (!isCommit(mergeBase)) throw new GitError(`Not a commit: ${mergeBase}`)
-  if (head !== undefined && !isCommit(head)) throw new GitError(`Not a commit: ${head}`)
-  const path = await openedWorktree(db, workspaceId)
-  const paths = file.previousPath ? [file.previousPath, file.path] : [file.path]
-  const range = head ? [mergeBase, head] : [mergeBase]
-  const diff = await gitText(path, ['diff', '--no-ext-diff', '--no-color', '-M', ...range, '--', ...paths])
-  if (diff || head || file.status !== 'added') return diff
-  const text = await readWorktreeFile(db, workspaceId, file.path)
-  if (text.status !== 'ok' || text.text === null) return 'Binary file'
-  return `new file\n${text.text.replace(/\n$/, '').replace(/^/gm, '+')}\n`
 }
 
 // A file at a commit, e.g. the merge base. May fetch its contents from GitHub the first time (blobless clone).

@@ -4,7 +4,7 @@ import type { ReviewEntry } from '../../core/review'
 import { countItems, itemsTitle, muted, Prose } from './ui'
 
 // A guide group as the canvas shows it: its file diffs; group null is the files in no group.
-export type GuideSection = { group: GuideGroup | null; diffs: { file: ChangedFile }[] }
+type GuideSection = { group: GuideGroup | null; diffs: { file: ChangedFile }[] }
 
 type Props = {
   sections: GuideSection[]

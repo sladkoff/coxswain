@@ -16,8 +16,11 @@ We will use Architecture Decision Records, as described by Michael Nygard in
 [Documenting Architecture Decisions](https://cognitect.com/blog/2011/11/15/documenting-architecture-decisions).
 
 Each ADR is a file in `docs/adr/` named `NNNN-short-title.md`, numbered in sequence, with the
-sections Status, Context, Decision and Consequences. Once an ADR is accepted it is not edited;
-to change a decision, write a new ADR that supersedes it.
+sections Status, Context, Decision, Alternatives considered and Consequences.
+
+The ADRs describe the decisions as they stand, not their history. When a decision changes, the ADR
+is edited to say what holds now; when it no longer holds at all, the ADR is deleted. A new decision
+gets the next number. Numbers are never reused, so a deleted ADR leaves a gap in the sequence.
 
 ## Consequences
 

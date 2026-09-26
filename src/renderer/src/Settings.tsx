@@ -37,36 +37,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
           )}
         </div>
 
-        <SummarySection />
       </div>
     </div>
-  )
-}
-
-const field =
-  'rounded-md border border-neutral-300 bg-transparent p-1.5 outline-none select-text focus:border-neutral-500 dark:border-neutral-700'
-
-// The model change summaries are made on (ADR 0020). Saved when the field loses focus.
-function SummarySection() {
-  const [model, setModel] = useState<string | null>(null)
-  useEffect(() => void window.coxswain.getSummaryModel().then(setModel), [])
-  if (model === null) return null
-  return (
-    <>
-      <h2 className="mt-6 mb-3 font-medium">Change summaries</h2>
-      <div className="flex flex-col gap-3 rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
-        <label className="flex flex-col gap-1">
-          Model
-          <input
-            value={model}
-            onChange={(e) => setModel(e.target.value)}
-            onBlur={() => window.coxswain.setSummaryModel(model)}
-            placeholder="Claude Code's default"
-            className={field}
-          />
-          <span className={`text-xs ${muted}`}>Summarises each new version of the PR. A fast one, e.g. haiku.</span>
-        </label>
-      </div>
-    </>
   )
 }

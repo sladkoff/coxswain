@@ -10,5 +10,5 @@ Each ticket has these sections:
 - **What**: what should work when it's done, from the user's side.
 - **Notes**: anything known so far: the UX question it answers, ADRs, open points.
 
-When a ticket is done, set its status and mention it in the [devlog](../DEVLOG.md). Tickets are not
-deleted.
+When a ticket is done, mention it in the [devlog](../DEVLOG.md) and delete it. Numbers are never
+reused, so the next ticket takes the next number after the highest ever used (0004 so far).

@@ -3,6 +3,31 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-27 — Cleanup: no timeline, docs as they stand
+
+### What works
+
+- **The timeline is gone.** The Overview wasn't reachable since the tabs went, but opening a worktree still recorded
+  each PR head as a phase and spent a Claude call summarising it. Removed: `core/timeline.ts`, `Overview.tsx`,
+  GitHub's PR activity (`getPullRequestActivity`), `isAncestor` and `readFileDiff` in `git.ts`, the `timeline:` and
+  summary model IPC, Settings' *Change summaries*, and the `timeline` change kind. Migration 23 drops `phases` and the
+  `summary.model` setting. Opening a worktree now only opens it.
+- **One-shot runs are gone** from `core/agents.ts`: the answer tool, and the `answer`, `tools`, `instructions`,
+  `thinking`, `persist`, `model` and `mode` options. Every run is an agent pane turn, in auto mode on Claude Code's
+  default model. The MCP server stays for the guide tools. `runAgentTurn` is now `runTurn`.
+- Exports used only in their own file are no longer exported. Stale comments naming the Diff tab or deleted ADRs
+  are fixed; migration labels in `db.ts` (and in the entries below) were one too high and now match `user_version`.
+- **The docs say what holds now.** ADRs no longer keep history ([ADR 0001](adr/0001-record-architecture-decisions.md),
+  AGENTS.md): 0007, 0009, 0010, 0011, 0012, 0019, 0020 and 0022 are deleted, their numbers left as gaps. 0005,
+  0008, 0013, 0015, 0018, 0021 and 0023 are rewritten without what they superseded; 0014 is now *Reviewed belongs
+  to a file diff's contents*. The done tickets are deleted, and tickets are deleted when done from now on. UX.md
+  describes the agent-first layout (L1 project column, L2 Navigator, L3 canvas, L4 agent pane); the glossary lost
+  *Viewer*, *Overview*, *Diff tab*, *Timeline*, *Phase*, *Change summary*, *Event* and *Context*.
+
+### Tech debt
+
+- Older devlog entries below still describe what they built then, including what's now gone.
+
 ## 2026-09-27 — Guides made by the agent pane
 
 ### What works
@@ -18,7 +43,7 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 - **Pinned and kept:** a guide shows its range (merge base → PR head then), like a commit; stale once the PR moves
   on. Every guide stays in the *Guide* menu. The newest shows when it appears, and on opening if not stale.
 - **The old pipeline is gone:** file summaries, grouping and describing calls, the guide prompt and model, `Guide.tsx`
-  and the progress plumbing. Migration 21 drops `guides` and `file_summaries` (and their data), makes a new `guides`
+  and the progress plumbing. Migration 20 drops `guides` and `file_summaries` (and their data), makes a new `guides`
   table and rebuilds `entries`. The summary model moved to Settings > *Change summaries*; `ask` lives in `timeline.ts`.
 - **The guide's table of contents is back** (`GuideToc.tsx`, from the old Guide tab): left of the canvas while a
   guide shows, with viewed counts per group and in all, `✎` counts, the group being read marked, and click to jump.
@@ -32,11 +57,11 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 - **Thread ⋯ menu** replaces the thread's ✕: *Edit* (the first comment, the user's own; `editEntry`), *Delete*,
   *Send to Agent* (`sendThread`: the latest note becomes a question and is asked like one, answer in the thread).
   `askQuestion` and `sendThread` share `ask` in the core and `asking` in the main process.
-- **Resolved threads:** a ✓ left of the ⋯ menu resolves and reopens. Migration 22 adds `entries.resolved_at`, set on
+- **Resolved threads:** a ✓ left of the ⋯ menu resolves and reopens. Migration 21 adds `entries.resolved_at`, set on
   the thread's first entry (`resolveThread`). A resolved thread folds to one line, is counted and labelled in the
   bottom bar's list, and is left out of *Send all to agent*.
 - ***Viewed* is now *Reviewed*** (glossary): labels, `src/core/reviewed.ts`, `listReviewed`/`setReviewed`,
-  `showReviewed`, the `reviewed:` IPC channels. Migration 23 renames `viewed_files` to `reviewed_files`. Accepted
+  `showReviewed`, the `reviewed:` IPC channels. Migration 22 renames `viewed_files` to `reviewed_files`. Accepted
   ADRs and older devlog entries keep the old word.
 - Tried on PR #1 of the test project: the agent called every tool, and the guide, two explanations and five findings
   showed on the canvas while it worked.
@@ -47,7 +72,6 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 - A guide request goes to the latest agent session, like comments, not the one the picker shows.
 - The Navigator keeps tree order under a guide; only the canvas and its table of contents are in reading order.
 - `ponytail:` the table of contents has a fixed width; make it resizable like the Navigator if titles get cut.
-- `Overview.tsx` still isn't mounted anywhere.
 
 ## 2026-09-26 — Agent-first layout, first rough pass
 
@@ -77,27 +101,24 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
   on `a.ts:3` sent to Claude*, the comment, *View thread*, which scrolls the canvas to the thread); the reply streams
   to both and is kept as the thread's answer. The card comes from a header line in the prompt, read back from the
   transcript (`withComment` in `core/agents.ts`).
-- **No more review rounds** ([ADR 0022](adr/0022-no-review-rounds.md)): entries belong to their workspace. Rounds,
+- **No more review rounds** (ADR 0022): entries belong to their workspace. Rounds,
   wrap up, action items, hand-off and *Copy as prompt* are gone from the core, IPC and UI (`Round.tsx` deleted; round
-  events left the timeline and action items the change summaries). Migration 20 rebuilds `entries` with
+  events left the timeline and action items the change summaries). Migration 19 rebuilds `entries` with
   `workspace_id` and `agent_sessions` without `review_round_id`, and drops `action_items` and `review_rounds`; ran
   on the real database with its 17 entries kept. `ask`'s `instructions` parameter went with wrap up.
 
 ### Tech debt
 
-- `Overview.tsx` isn't mounted anywhere; kept until the canvas can show it (`Guide.tsx` went with ADR 0023).
 - `ponytail:` the comment card is parsed from the prompt's header line; store sent comments by turn if it gets in the way.
 - `ponytail:` *View thread* stops at the file for an outdated thread, which isn't between the lines.
 - The agent pane shows no *Working…* during a comment's turn, and a comment fails if the pane's own turn is running.
-- `ponytail:` comments and *Send all to agent* go to the latest agent session, not the one the picker shows.
 - `ponytail:` every entry a workspace ever had is listed; nothing archives old ones.
-- UX.md's L3 and L4 sections still describe the tabbed layout; they get rewritten once the canvas settles.
 
 ## 2026-09-26 — The Overview's timeline
 
 ### What works
 
-- **The Overview is a timeline** ([ADR 0020](adr/0020-timeline-of-phases.md)): the PR's title, author and GitHub link,
+- **The Overview is a timeline** (ADR 0020): the PR's title, author and GitHub link,
   then its phases, newest first, each with its events, newest first too. Terms (*timeline*, *phase*, *change summary*, *event*,
   *context*) are in the glossary; the layout is in UX.md.
 - **Phases** (`phases` table, migration 18): every PR head `openWorktree` reads is passed to `recordHead`, which adds
@@ -131,8 +152,8 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 
 ### What works
 
-- **Every review round is reachable** ([ADR 0019](adr/0019-round-history-and-resolving.md),
-  [ticket 0001](tickets/0001-read-a-wrapped-up-round.md)). `listRounds` replaces `getRound`: every round, oldest
+- **Every review round is reachable** (ADR 0019,
+  ticket 0001). `listRounds` replaces `getRound`: every round, oldest
   first, with its stream and action items. The Round bar steps through them with ‹ ›, the latest shown first and a
   new round showing itself. *Show round* opens the selected round's action items and then its stream, each question
   with its follow-ups and answers. #5311's round 3, wrapped up with no action items, can be read again.
@@ -155,7 +176,7 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 ### What works
 
 - **Every agent run is an ACP session** ([ADR 0018](adr/0018-agents-over-acp.md),
-  [ticket 0004](tickets/0004-agent-sessions-over-acp.md)). `src/core/agents.ts` is the only place that starts an agent:
+  ticket 0004). `src/core/agents.ts` is the only place that starts an agent:
   `run(agent, options, handlers)` for a turn, `newSession` for an agent session stored before its first message,
   `history` for its transcript, `cancel` to stop a turn. L4's agent sessions, a round's questions, the three guide steps
   (`ask` in `guides.ts`) and wrap-up all call it; `runClaude`, the `claude -p` spawns, `transcriptPath`,
@@ -210,7 +231,7 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 ### What works
 
 - **Every read from the core is a TanStack Query query** ([ADR 0017](adr/0017-data-fetching-with-tanstack-query.md),
-  [ticket 0003](tickets/0003-data-fetching-with-tanstack-query.md)). `queries.ts` holds the one `QueryClient` and
+  ticket 0003). `queries.ts` holds the one `QueryClient` and
   `core(name, ...args)`, which turns a preload call into query options keyed `[name, ...args]`, so the keys live in
   one place. Switching back to a workspace or tab shows the cached data at once and refreshes behind it.
 - **The core says what changed.** The main process sends `changed` (`{ workspaceId, what }`) when an ask's notes are
@@ -245,7 +266,7 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 ### What works
 
 - **Every query in the core goes through Kysely** ([ADR 0016](adr/0016-typed-queries-with-kysely.md),
-  [ticket 0002](tickets/0002-typed-queries-with-kysely.md)). `db.ts` has the tables' types (`Tables`) next to the
+  ticket 0002). `db.ts` has the tables' types (`Tables`) next to the
   migrations; `openDatabase` still runs the migrations on `node:sqlite`, then returns a `Kysely<Tables>` (`Db`) on
   Kysely's own SQLite dialect, through a ten-line adapter. Column lists are typed arrays with `as` aliases, so a wrong
   column or alias fails `pnpm typecheck`. The `as` casts are gone; it found one: the stream was typed as entries with
@@ -302,7 +323,7 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
   changes*. The tab shows the latest guide of either kind. Checked with a hand-made commit guide on a
   copy of the database: the commit's 80 files, 2 in its group and 78 under *Not in the guide*.
 - Dropdown buttons have no ▾.
-- **Guides are pinned to the PR head** ([ADR 0014](adr/0014-guides-pinned-to-the-pr-head.md)): a new
+- **Guides are pinned to the PR head** ([ADR 0014](adr/0014-reviewed-follows-file-diff-contents.md)): a new
   guide to all changes covers the merge base → the PR head (migration 14: `guides.kind`, and `head`
   set for both kinds) and reads its file diffs there, so an agent's local edits don't show in it.
   When the PR head moves on, an amber bar says the guide is stale, with *Regenerate*. **Viewed
@@ -329,7 +350,7 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
   *Viewed* in a commit diff marks the file viewed for all changes (`ponytail:` on the Viewer's
   `head`). Anchor entries to the commit if that misleads.
 - **A wrapped-up round with no action items can't be read again** (ADR 0015 hides wrapped-up rounds):
-  [ticket 0001](tickets/0001-read-a-wrapped-up-round.md).
+  ticket 0001.
 - **Guide and Diff tab can disagree** on a file with local changes: viewed in one, not the other
   (ADR 0014). Local changes get no guide or "changes since" yet.
 - **Guides from before pinning** have no head and keep the old live behaviour until regenerated.
@@ -341,11 +362,11 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 - **A merge commit's diff** is against its first parent, so it shows everything merged in.
 - **Blocked tools can't be approved** (`ponytail:` on `runTurn`): what auto mode blocks stays
   blocked until L4 shows permission prompts. Planned: every agent run over ACP
-  ([ADR 0018](adr/0018-agents-over-acp.md), [ticket 0004](tickets/0004-agent-sessions-over-acp.md)).
+  ([ADR 0018](adr/0018-agents-over-acp.md), ticket 0004).
 - **No data cache in the UI**: panes refetch on every switch and reread through `version` counters.
   Planned: TanStack Query with `changed` events from the core
   ([ADR 0017](adr/0017-data-fetching-with-tanstack-query.md),
-  [ticket 0003](tickets/0003-data-fetching-with-tanstack-query.md)).
+  ticket 0003).
 - **The whole stream goes along**, answers in full. Fine for a round; trim if long rounds crowd the
   prompt.
 
@@ -370,7 +391,7 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 
 Not checked in the app yet: the user tests it.
 
-- **Review rounds of entries replace local comments** ([ADR 0011](adr/0011-review-rounds-and-entries.md)).
+- **Review rounds of entries replace local comments** (ADR 0011).
   Glossary first: *note*, *question*, *answer*, *thread*, *anchor*, *review round*; *comment* now
   means GitHub only; *local comment*, *imported comment*, *import* and *publish* are gone (*post*
   replaces publish).
@@ -385,7 +406,7 @@ Not checked in the app yet: the user tests it.
 - **Counts of notes and questions** (`✎ N`, hover for how many of each) on changed files in the
   Navigator, tree and list, and on groups in the Guide's table of contents (`countItems` in `ui.tsx`).
   A question's follow-ups and answers don't count; the thread does.
-- **Wrap up** ([ADR 0012](adr/0012-wrap-up-and-action-items.md)): a bar at the bottom of *Guide* and
+- **Wrap up** (ADR 0012): a bar at the bottom of *Guide* and
   *Diff* shows the round (*Round N*, its notes and questions) and *Wrap up*, which sends the round's
   numbered stream to one `claude -p` with a schema and no tools (`runClaude`, now exported from
   `guides.ts`) and stores the action items it drafts (migration 12: `action_items`,
@@ -419,7 +440,7 @@ Not checked in the app yet: the user tests it.
 
 Not checked in the app yet: the user runs the first guide with it.
 
-- **Guides made in one-turn calls** ([ADR 0010](adr/0010-faster-guides.md)). #5311 took ~6½ minutes,
+- **Guides made in one-turn calls** (ADR 0010). #5311 took ~6½ minutes,
   mostly summary agents taking ~20 turns to read diffs themselves. Now coxswain puts each file diff in
   the prompt (`readFileDiff`, cut to 300 lines) and every `claude -p` runs with no tools and a short
   system prompt of its own in place of Claude Code's.
@@ -475,7 +496,7 @@ Not checked in the app yet: the user runs the first guide with it.
 
 ### What works
 
-- **The Guide tab** ([ADR 0009](adr/0009-guides-from-structured-output.md)). The first time it opens
+- **The Guide tab** (ADR 0009). The first time it opens
   it shows a progress bar while `createGuide` asks Claude Code (`claude -p` with a
   JSON schema). No diff goes in the prompt: agents get the file list and read diffs themselves with
   `git diff` (read-only tools, no MCP servers). A big PR is cut into batches of files, summarised by
@@ -655,7 +676,7 @@ agent folder.
 
 ## 2026-09-24 — First agent sessions: chat with Claude Code
 
-L4 is now a chat with a local Claude Code, per [ADR 0007](adr/0007-running-claude-code.md). It
+L4 is now a chat with a local Claude Code, per ADR 0007. It
 proves the loop of sending a turn, streaming the reply and resuming later. The agent can't see the
 PR's code yet, because there is still no clone.
 

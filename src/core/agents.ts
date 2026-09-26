@@ -11,8 +11,7 @@ import { worktreePath } from './git'
 import { guideTools } from './guides'
 import { getWorkspaceRepo } from './workspaces'
 
-// ADR 0018: every agent run is a session over the Agent Client Protocol, in one adapter process per agent. An agent
-// session in the agent pane and a change summary differ only in the options their session is opened with.
+// ADR 0018: every agent run is a session over the Agent Client Protocol, in one adapter process per agent.
 export type AgentSession = { id: number; workspaceId: number; agentSessionId: string; createdAt: string }
 
 // One line of the chat: something the user said, text the agent wrote, or a tool the agent used. comment: the user's
@@ -31,7 +30,7 @@ export const formatComment = (c: SentComment, context: string) =>
 const reviewHeader = /^\[Review · (\d+) threads?\]\n/
 export const formatReview = (threads: number, body: string) => `[Review · ${threads} thread${threads === 1 ? '' : 's'}]\n${body}`
 
-export function withComment(entry: ChatEntry): ChatEntry {
+function withComment(entry: ChatEntry): ChatEntry {
   if (entry.kind !== 'user') return entry
   const r = reviewHeader.exec(entry.text)
   if (r) return { ...entry, review: { threads: Number(r[1]) } }
@@ -47,35 +46,24 @@ export type TurnResult = { status: 'ok' } | { status: 'error'; message: string }
 // reject.
 export type Permission = { id: string; title: string; options: { id: string; name: string; kind: string }[] }
 
-// What coxswain means, not what an agent calls it. tools 'none': no tools, no MCP servers but the answer tool.
-// instructions: a system prompt in place of the agent's own. persist false: a one-shot run, not kept in the agent's
-// session list. mode 'auto': the agent's classifier decides what would ask (ADR 0013); 'ask': the user decides.
-// answer: a JSON schema; the run resolves with the first answer that fits. session: carry on this agent session.
-// mcp: MCP servers the session gets, e.g. coxswain's tools for the agent pane (ADR 0023); not with answer.
-export type RunOptions = {
+// session: carry on this agent session. mcp: MCP servers the session gets: coxswain's tools for the agent pane
+// (ADR 0023).
+type RunOptions = {
   cwd: string
   prompt: string
   session?: string
-  model?: string
-  tools?: 'all' | 'none'
-  instructions?: string
-  thinking?: boolean
-  persist?: boolean
-  mode?: 'auto' | 'ask'
-  answer?: object
   mcp?: acp.McpServer[]
 }
 // onPermission resolves with the option picked, or null to cancel. Without it, every request is rejected.
-export type RunHandlers = {
+type RunHandlers = {
   onEntry?: (entry: ChatEntry) => void
   onPermission?: (p: Permission) => Promise<string | null>
 }
-export type RunResult = { sessionId: string; answer: unknown; model: string | null }
 
 export type Agent = 'claude'
 
-// Each agent is a record: how its adapter starts, and a run's options as its session/new _meta and permission modes.
-const agents: Record<Agent, { start: () => { command: string; args: string[]; env: NodeJS.ProcessEnv }; meta: (o: RunOptions) => object; modes: Record<'auto' | 'ask', string> }> = {
+// Each agent is a record: how its adapter starts, a run's options as its session/new _meta, and its auto mode's ID.
+const agents: Record<Agent, { start: () => { command: string; args: string[]; env: NodeJS.ProcessEnv }; meta: (o: RunOptions) => object; auto: string }> = {
   claude: {
     // Electron runs the adapter as Node. The user's own `claude` (ADR 0018, 5), not the one bundled with the SDK.
     start: () => ({
@@ -83,23 +71,17 @@ const agents: Record<Agent, { start: () => { command: string; args: string[]; en
       args: [require.resolve('@agentclientprotocol/claude-agent-acp/dist/index.js')],
       env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', CLAUDE_CODE_EXECUTABLE: claudeOnPath() },
     }),
-    // Names checked against the adapter's OPTION_REBUILDS_SESSION (0.81.2). The model isn't here: the adapter
-    // prefers the user's settings over it, so it's set as a config option once the session is open.
+    // Names checked against the adapter's OPTION_REBUILDS_SESSION (0.81.2).
     meta: (o) => ({
       claudeCode: {
         options: {
           // Agents the user runs (another Electron app, say) mustn't inherit Electron-as-Node from the adapter.
           env: { ELECTRON_RUN_AS_NODE: '' },
-          ...(o.tools === 'none' && { tools: [], strictMcpConfig: true }),
-          ...(o.instructions && { systemPrompt: o.instructions }),
-          ...(o.thinking === false && { thinking: { type: 'disabled' } }),
-          ...(o.persist === false && { persistSession: false }),
-          ...(o.answer && { allowedTools: ['mcp__coxswain__answer'] }),
           ...(o.mcp?.length && { allowedTools: ['mcp__coxswain'] }),
         },
       },
     }),
-    modes: { auto: 'auto', ask: 'default' },
+    auto: 'auto',
   },
 }
 
@@ -196,93 +178,57 @@ function toolTitle(u: { title: string; name?: string | null }): string {
 }
 
 // Opens a session for a run: a new one, or the given one, resumed if this adapter process hasn't got it open. Sets
-// its model and permission mode.
-async function openSession(name: Agent, o: RunOptions, mcpServers: acp.McpServer[]): Promise<{ a: Adapter; sessionId: string; model: string | null }> {
+// Claude Code's default model and auto mode: the agent's classifier decides what would ask (ADR 0013).
+async function openSession(name: Agent, o: RunOptions): Promise<{ a: Adapter; sessionId: string }> {
   const a = await adapter(name)
-  const params = { cwd: o.cwd, mcpServers, _meta: agents[name].meta(o) as Record<string, unknown> }
+  const params = { cwd: o.cwd, mcpServers: o.mcp ?? [], _meta: agents[name].meta(o) as Record<string, unknown> }
   let config: acp.SessionConfigOption[] | null | undefined
   let sessionId = o.session ?? ''
   if (!sessionId) ({ sessionId, configOptions: config } = await a.agent.request(acp.methods.agent.session.new, params))
   else if (!a.open.has(sessionId)) ({ configOptions: config } = await a.agent.request(acp.methods.agent.session.resume, { ...params, sessionId }))
   a.open.add(sessionId)
-  let model: string | null = null
+  // Left to itself the adapter resolves the user's settings model, and some aliases differently from Claude Code
+  // ("opus[1m]" became Opus 4.8, not 5.5, in 0.81.2), so Claude Code's own default is picked.
+  // ponytail: so a model in the user's settings is ignored; resolve it like Claude Code if someone relies on it.
   const models = config?.find((c) => c.category === 'model')
-  if (models?.type === 'select') {
+  if (models?.type === 'select' && models.currentValue !== 'default') {
     const options = models.options.flatMap((x) => ('options' in x ? x.options : [x]))
-    // The model's own ID, which Claude Code's "default" option has only in its description.
-    const id = (value: string) => (value === 'default' && options.find((x) => x.value === value)?.description) || value
-    // Without a model, the agent's own default. Left to itself the adapter resolves the user's settings model, and
-    // some aliases differently from Claude Code ("opus[1m]" became Opus 4.8, not 5.5, in 0.81.2).
-    // ponytail: so a model in the user's settings is ignored; resolve it like Claude Code if someone relies on it.
-    const wanted = o.model || (options.some((x) => x.value === 'default') ? 'default' : '')
-    model = id(models.currentValue)
-    if (wanted) {
-      const want = wanted.toLowerCase()
-      // Exactly, then in part.
-      const picked =
-        options.find((x) => x.value === wanted || x.description === wanted) ??
-        options.find((x) => `${x.value} ${x.name}`.toLowerCase().includes(want))
-      if (!picked) throw new Error(`${name} has no model "${wanted}"`)
-      if (picked.value !== models.currentValue)
-        await a.agent.request(acp.methods.agent.session.setConfigOption, { sessionId, configId: models.id, value: picked.value })
-      model = id(picked.value)
-    }
+    if (options.some((x) => x.value === 'default'))
+      await a.agent.request(acp.methods.agent.session.setConfigOption, { sessionId, configId: models.id, value: 'default' })
   }
-  if (o.mode) await a.agent.request(acp.methods.agent.session.setMode, { sessionId, modeId: agents[name].modes[o.mode] })
-  return { a, sessionId, model }
+  await a.agent.request(acp.methods.agent.session.setMode, { sessionId, modeId: agents[name].auto })
+  return { a, sessionId }
 }
 
 // Opens a session without a turn, for an agent session whose ID is stored before its first message.
 export async function newSession(name: Agent, o: Omit<RunOptions, 'prompt' | 'session'>): Promise<string> {
-  return (await openSession(name, { ...o, prompt: '' }, o.mcp ?? [])).sessionId
+  return (await openSession(name, { ...o, prompt: '' })).sessionId
 }
 
-// Runs one turn: sends the prompt and streams the reply as chat entries until the turn ends. With an answer schema,
-// resolves with the first answer that fits and ends the turn there; a turn that ends without one fails. One-shot
-// runs (persist false) close their session after.
-export async function run(name: Agent, o: RunOptions, handlers: RunHandlers = {}): Promise<RunResult> {
-  const answer = o.answer ? answerTool(o.answer) : null
+// Runs one turn: sends the prompt and streams the reply as chat entries until the turn ends.
+export async function run(name: Agent, o: RunOptions, handlers: RunHandlers = {}): Promise<void> {
+  const { a, sessionId } = await openSession(name, o)
+  const { update, flush } = chat(handlers.onEntry ?? (() => {}))
+  listening.set(sessionId, { update, handlers })
   try {
-    const mcpServers: acp.McpServer[] = answer ? [{ type: 'http', name: 'coxswain', url: await answer.url(), headers: [] }] : (o.mcp ?? [])
-    const prompt = answer ? `${o.prompt}\n\nGive your answer by calling the \`answer\` tool.` : o.prompt
-    const { a, sessionId, model } = await openSession(name, o, mcpServers)
-    const { update, flush } = chat(handlers.onEntry ?? (() => {}))
-    listening.set(sessionId, { update, handlers })
-    try {
-      const turn = a.agent.request(acp.methods.agent.session.prompt, { sessionId, prompt: [{ type: 'text', text: prompt }] })
-      const answered = answer ? await Promise.race([answer.value.then((v) => ({ v })), turn.then(() => null)]) : null
-      if (answered) {
-        await a.agent.notify(acp.methods.agent.session.cancel, { sessionId })
-        await turn.catch(() => {})
-        return { sessionId, answer: answered.v, model }
-      }
-      const { stopReason } = await turn
-      if (stopReason === 'cancelled') throw new Error('Stopped')
-      if (answer) throw new Error(`${name} gave no answer`)
-      if (stopReason === 'refusal') throw new Error(`${name} refused`)
-      return { sessionId, answer: undefined, model }
-    } finally {
-      flush()
-      listening.delete(sessionId)
-      for (const [id, p] of pending) if (p.sessionId === sessionId) p.resolve(null)
-      if (o.persist === false) {
-        a.open.delete(sessionId)
-        a.agent.request(acp.methods.agent.session.close, { sessionId }).catch(() => {})
-      }
-    }
+    const { stopReason } = await a.agent.request(acp.methods.agent.session.prompt, { sessionId, prompt: [{ type: 'text', text: o.prompt }] })
+    if (stopReason === 'cancelled') throw new Error('Stopped')
+    if (stopReason === 'refusal') throw new Error(`${name} refused`)
   } finally {
-    answer?.done()
+    flush()
+    listening.delete(sessionId)
+    for (const p of pending.values()) if (p.sessionId === sessionId) p.resolve(null)
   }
 }
 
 // Stops a session's turn; its run ends with 'Stopped'.
-export async function cancel(name: Agent, sessionId: string) {
+async function cancel(name: Agent, sessionId: string) {
   const a = await adapters.get(name)?.catch(() => null)
   await a?.agent.notify(acp.methods.agent.session.cancel, { sessionId })
 }
 
 // A session's history as chat entries, replayed by session/load. mcp: as for a run; the session stays open with them.
-export async function history(name: Agent, sessionId: string, cwd: string, mcp: acp.McpServer[] = []): Promise<ChatEntry[]> {
+async function history(name: Agent, sessionId: string, cwd: string, mcp: acp.McpServer[] = []): Promise<ChatEntry[]> {
   const a = await adapter(name)
   const entries: ChatEntry[] = []
   const { update, flush } = chat((e) => entries.push(e))
@@ -308,30 +254,12 @@ export async function stopAgents() {
 // Arguments are checked against inputSchema before call.
 export type McpTool = { name: string; description: string; inputSchema: object; call: (args: never) => Promise<string> }
 
-// ADR 0018, 2 and ADR 0023: coxswain's tools. One localhost HTTP MCP server for the app, a path per set of tools: one
-// per one-shot run with its answer tool, and one per workspace with the agent pane's tools. It speaks just enough MCP
-// (Streamable HTTP, JSON responses) for tools.
+// ADR 0023: coxswain's tools. One localhost HTTP MCP server for the app, a path per workspace with the agent pane's
+// tools. It speaks just enough MCP (Streamable HTTP, JSON responses) for tools.
 const toolsets = new Map<string, McpTool[]>()
 let server: Promise<Server> | undefined
 
 const serverUrl = async (path: string) => `http://127.0.0.1:${((await toolServer()).address() as AddressInfo).port}/${path}`
-
-function answerTool(schema: object) {
-  const path = randomUUID()
-  let resolve!: (v: unknown) => void
-  const value = new Promise<unknown>((r) => (resolve = r))
-  const answer: McpTool = {
-    name: 'answer',
-    description: 'Give your answer. Call it once, with the whole answer.',
-    inputSchema: schema,
-    call: async (args) => {
-      resolve(args)
-      return 'Answer received.'
-    },
-  }
-  toolsets.set(path, [answer])
-  return { value, url: () => serverUrl(path), done: () => toolsets.delete(path) }
-}
 
 // The agent pane's tools for a workspace (ADR 0023), at a path that stays the same while the app runs, since a session
 // keeps the URL it was opened with.
@@ -385,7 +313,7 @@ function toolServer(): Promise<Server> {
 // ponytail: checks only what our schemas use (type, properties, required, items, enum); a validator library if they
 // grow.
 type Schema = { type?: string; properties?: Record<string, Schema>; required?: string[]; items?: Schema; enum?: readonly unknown[] }
-export function mismatch(s: Schema, v: unknown, at = 'answer'): string | null {
+function mismatch(s: Schema, v: unknown, at: string): string | null {
   if (s.enum && !s.enum.includes(v)) return `${at} must be one of ${s.enum.map((e) => JSON.stringify(e)).join(', ')}`
   if (s.type === 'object') {
     if (typeof v !== 'object' || v === null || Array.isArray(v)) return `${at} must be an object`
@@ -407,10 +335,6 @@ export function mismatch(s: Schema, v: unknown, at = 'answer'): string | null {
   return null
 }
 
-// L4's agent sessions: every tool and coxswain's (ADR 0023), in auto mode (ADR 0013); what auto mode would block asks
-// the user.
-const agentSessionOptions = { tools: 'all', mode: 'auto' } as const
-
 const columns = ['id', 'workspace_id as workspaceId', 'agent_session_id as agentSessionId', 'created_at as createdAt'] as const
 
 // The workspace's agent sessions in the agent pane, oldest first; the last one is the current one, which questions go
@@ -429,7 +353,7 @@ export function listAgentSessions(db: Db, workspaceId: number): Promise<AgentSes
 // for it), so its first message then fails; start a new session in its place if that happens in practice.
 export async function startAgentSession(db: Db, workspaceId: number): Promise<AgentSession> {
   const cwd = await readyWorktree(db, workspaceId)
-  const id = await newSession('claude', { cwd, ...agentSessionOptions, mcp: await paneTools(db, workspaceId) })
+  const id = await newSession('claude', { cwd, mcp: await paneTools(db, workspaceId) })
   return db
     .insertInto('agent_sessions')
     .values({ workspace_id: workspaceId, agent: 'claude', agent_session_id: id, created_at: new Date().toISOString() })
@@ -448,7 +372,7 @@ export async function agentSessionWorkspace(db: Db, agentSessionId: string): Pro
   return row.id
 }
 
-export async function readyWorktree(db: Db, workspaceId: number): Promise<string> {
+async function readyWorktree(db: Db, workspaceId: number): Promise<string> {
   const { owner, name } = await getWorkspaceRepo(db, workspaceId)
   const cwd = worktreePath(owner, name, workspaceId)
   if (!existsSync(join(cwd, '.git'))) throw new Error('The worktree is not ready yet')
@@ -474,7 +398,6 @@ export async function runTurn(
   db: Db,
   agentSessionId: string,
   prompt: string,
-  options: Pick<RunOptions, 'tools' | 'mode' | 'mcp'>,
   handlers: RunHandlers,
 ): Promise<TurnResult> {
   if (running.has(agentSessionId)) return { status: 'error', message: 'A turn is already running' }
@@ -483,17 +406,13 @@ export async function runTurn(
     const workspaceId = await agentSessionWorkspace(db, agentSessionId)
     const cwd = await readyWorktree(db, workspaceId)
     handlers.onEntry?.(withComment({ kind: 'user', text: prompt }))
-    await run('claude', { cwd, prompt, session: agentSessionId, mcp: await paneTools(db, workspaceId), ...options }, handlers)
+    await run('claude', { cwd, prompt, session: agentSessionId, mcp: await paneTools(db, workspaceId) }, handlers)
     return { status: 'ok' }
   } catch (e) {
     return { status: 'error', message: (e as Error).message }
   } finally {
     running.delete(agentSessionId)
   }
-}
-
-export function runAgentTurn(db: Db, agentSessionId: string, prompt: string, handlers: RunHandlers) {
-  return runTurn(db, agentSessionId, prompt, agentSessionOptions, handlers)
 }
 
 export function stopTurn(agentSessionId: string) {

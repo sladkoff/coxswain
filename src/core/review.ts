@@ -4,7 +4,7 @@ import {
   formatReview,
   listAgentSessions,
   type Permission,
-  runAgentTurn,
+  runTurn,
   startAgentSession,
   stopTurn,
   type TurnResult,
@@ -12,12 +12,12 @@ import {
 import type { Db } from './db'
 import { readTexts } from './git'
 
-// ADR 0022: a workspace's entries (glossary): notes, questions and answers, threaded by parent_id; and the agent's
+// ADR 0015: a workspace's entries (glossary): notes, questions and answers, threaded by parent_id; and the agent's
 // explanations and findings, which belong to a guide too (guideId, ADR 0023).
 // An entry's anchor is a line range of a file; side 'old' is the merge base (removed lines in a diff), 'new' the
 // worktree. code: the lines as they were, since line numbers drift as the worktree changes. No anchor: it floats.
-// base, head: the range of the view it was written in (ADR 0015); head null is the worktree (the live Diff tab).
-export type Anchor = {
+// base, head: the range of the view it was written in (ADR 0015); head null is the worktree (the live diff).
+type Anchor = {
   path: string
   side: 'old' | 'new'
   startLine: number
@@ -71,7 +71,7 @@ const columns = [
 
 // Every entry of the workspace, in order.
 // ponytail: every entry the workspace ever had; page or archive them if workspaces collect hundreds.
-export const workspaceEntries = (db: Db, workspaceId: number): Promise<Omit<ReviewEntry, 'state'>[]> =>
+const workspaceEntries = (db: Db, workspaceId: number): Promise<Omit<ReviewEntry, 'state'>[]> =>
   db.selectFrom('entries').select(columns).where('workspace_id', '=', workspaceId).orderBy('id').execute()
 
 // The workspace's entries, with their state in the view of base → head (the worktree without head).
@@ -223,7 +223,7 @@ async function ask(
   const agentSessionId = await currentSession(db, question.workspaceId)
   const comment = { threadId, where: root.path ? where(root) : 'the review', body: question.body }
   const texts: string[] = []
-  const turn = runAgentTurn(db, agentSessionId, formatComment(comment, unseen(question, thread)), {
+  const turn = runTurn(db, agentSessionId, formatComment(comment, unseen(question, thread)), {
     onEntry: (c) => {
       if (c.kind === 'text') texts.push(c.text)
       onChat(threadId, c, agentSessionId)
@@ -264,12 +264,12 @@ answer what's still open, and tell me briefly what you did for each and what you
 export async function sendReview(
   db: Db,
   workspaceId: number,
-  handlers: (agentSessionId: string) => Parameters<typeof runAgentTurn>[3],
+  handlers: (agentSessionId: string) => Parameters<typeof runTurn>[3],
 ): Promise<TurnResult> {
   const { threads, prompt } = reviewPrompt(await workspaceEntries(db, workspaceId))
   if (!threads) return { status: 'error', message: 'No threads to send' }
   const agentSessionId = await currentSession(db, workspaceId)
-  return runAgentTurn(db, agentSessionId, prompt, handlers(agentSessionId))
+  return runTurn(db, agentSessionId, prompt, handlers(agentSessionId))
 }
 
 // Where a new comment goes, the composer's Comment/Agent toggle: to the agent (a question) or not (a note). Global.

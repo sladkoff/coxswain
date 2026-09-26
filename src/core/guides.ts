@@ -9,8 +9,8 @@ import { type ChangedFile, listChangedFiles, openedBefore, openWorktree, readTex
 export type GuideGroup = { title: string; description: string; paths: string[]; notes: Record<string, string>; tags: GuideTag[] }
 // Tags the agent can put on a group (glossary). generated: files made by a tool, not written by hand; the group is
 // low-lighted and comes last.
-export const guideTags = ['generated'] as const
-export type GuideTag = (typeof guideTags)[number]
+const guideTags = ['generated'] as const
+type GuideTag = (typeof guideTags)[number]
 export type Guide = { id: number; workspaceId: number; base: string; head: string; groups: GuideGroup[]; createdAt: string }
 
 const columns = ['id', 'workspace_id as workspaceId', 'base', 'head', 'groups', 'created_at as createdAt'] as const

@@ -5,7 +5,6 @@ import type { CurrentUser, PullRequestList, RepoPage } from '../core/github'
 import type { Guide } from '../core/guides'
 import type { Project } from '../core/projects'
 import type { NewEntry, ReviewEntry } from '../core/review'
-import type { Timeline } from '../core/timeline'
 import type { Workspace } from '../core/workspaces'
 
 // The Navigator's settings in its cog menu. layout: changed files as a tree or as a flat list.
@@ -13,7 +12,7 @@ export type NavigatorSettings = { layout: 'tree' | 'list' }
 // The canvas bar's settings in its cog menu. showReviewed: reviewed file diffs stay in the Navigator and on the canvas.
 export type ViewSettings = { diffStyle: 'unified' | 'split'; showReviewed: boolean }
 // What the core changed on its own, e.g. when an agent turn ends, so the UI refetches it (ADR 0017).
-export type Changed = { workspaceId: number; what: 'entries' | 'worktree' | 'transcript' | 'guide' | 'timeline' }
+export type Changed = { workspaceId: number; what: 'entries' | 'worktree' | 'transcript' | 'guide' }
 
 // The one interface between the UI and the core (ADR 0002).
 const api = {
@@ -23,19 +22,14 @@ const api = {
   openProject: (fullName: string): Promise<Project> => ipcRenderer.invoke('projects:open', fullName),
   listPullRequests: (owner: string, name: string): Promise<PullRequestList> =>
     ipcRenderer.invoke('github:list-pulls', owner, name),
-  // The Overview's timeline (ADR 0020): the PR, and its phases with their change summaries and events.
-  getTimeline: (workspaceId: number): Promise<Timeline> => ipcRenderer.invoke('timeline:get', workspaceId),
-  // Makes a phase's change summary again; resolves once it's stored.
-  summarisePhase: (workspaceId: number, phaseId: number): Promise<{ status: 'ok' } | { status: 'error'; message: string }> =>
-    ipcRenderer.invoke('timeline:summarise', workspaceId, phaseId),
   cloneProject: (projectId: number): Promise<CloneResult> => ipcRenderer.invoke('git:clone', projectId),
   openedBefore: (workspaceId: number): Promise<WorktreeResult | null> =>
     ipcRenderer.invoke('git:opened-before', workspaceId),
   openWorktree: (workspaceId: number): Promise<WorktreeResult> => ipcRenderer.invoke('git:open-worktree', workspaceId),
-  // With head: a commit diff, mergeBase being the commit's parent.
   // The PR's commits since the merge base, newest first: the Commits pane's list.
   listCommits: (workspaceId: number, mergeBase: string): Promise<{ status: 'ok'; commits: Commit[] } | GitProblem> =>
     ipcRenderer.invoke('git:commits', workspaceId, mergeBase),
+  // With head: a commit diff, mergeBase being the commit's parent.
   listChangedFiles: (workspaceId: number, mergeBase: string, head?: string): Promise<ChangedFileList> =>
     ipcRenderer.invoke('git:changed-files', workspaceId, mergeBase, head),
   listWorktreeFiles: (workspaceId: number): Promise<FileTreeResult> => ipcRenderer.invoke('git:worktree-files', workspaceId),
@@ -90,8 +84,6 @@ const api = {
   // The composer's Comment/Agent toggle, kept for every comment box.
   getCommentToAgent: (): Promise<boolean> => ipcRenderer.invoke('settings:comment-to-agent'),
   setCommentToAgent: (toAgent: boolean): Promise<void> => ipcRenderer.invoke('settings:set-comment-to-agent', toAgent),
-  getSummaryModel: (): Promise<string> => ipcRenderer.invoke('settings:summary-model'),
-  setSummaryModel: (model: string): Promise<void> => ipcRenderer.invoke('settings:set-summary-model', model),
   stopTurn: (agentSessionId: string): Promise<void> => ipcRenderer.invoke('agents:stop-turn', agentSessionId),
   onPermission: (callback: (agentSessionId: string, permission: Permission) => void) => {
     const listener = (_: unknown, id: string, p: Permission) => callback(id, p)

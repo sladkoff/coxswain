@@ -14,7 +14,7 @@ components bump a `version` counter passed down as a prop (`App.tsx`, `Viewer.ts
 (`onTurnEnd`, `onSent`). Each new place that changes data needs another counter or callback wired to every place that
 shows it.
 
-The data comes from four places: SQLite (projects, workspaces, review rounds, guides), git (diffs, files, commits),
+The data comes from four places: SQLite (projects, workspaces, entries, guides), git (diffs, files, commits),
 GitHub (PRs), and the agents' own files (transcripts). All of it is reached through the core over IPC, on the same
 machine.
 
@@ -26,7 +26,7 @@ apps.
 1. **TanStack Query in the renderer** for every read from the core. One `QueryClient` for the window. Query keys start
    with the core call's name and its arguments, e.g. `['listEntries', workspaceId, base, head]`.
 2. **Writes are mutations** that invalidate the queries they change when they succeed. Where a write is small and
-   certain (a note added, viewed toggled), the cache is updated right away and put back if the call fails.
+   certain (a note added, Reviewed toggled), the cache is updated right away and put back if the call fails.
 3. **The core says what changed.** When data changes outside a mutation from this window (an agent turn ends, a
    question is answered, a guide group is described, the worktree changes), the core sends one IPC event,
    `changed`, with the workspace and what changed, e.g. `{ workspaceId, what: 'entries' }`. The renderer maps it to

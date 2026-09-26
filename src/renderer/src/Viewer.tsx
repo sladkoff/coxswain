@@ -25,7 +25,7 @@ type Box = { entry?: ReviewEntry; draft?: Draft }
 type Props = {
   workspace: Workspace
   mergeBase: string
-  // A commit diff (the Diff tab's Commits): the new side is this commit, and mergeBase its parent.
+  // A commit diff (picked under Commits): the new side is this commit, and mergeBase its parent.
   // ponytail: notes on it keep the commit's line numbers and say "as in the worktree", and Reviewed marks the file
   // reviewed for all changes; anchor entries and reviewed state to the commit if that misleads.
   head?: string
@@ -52,7 +52,7 @@ const baseOptions = { preferredHighlighter: 'shiki-js', overflow: 'wrap', sticky
 // The old side is the merge base (git show), the new side the worktree now.
 // The + in the gutter (click, or drag for a range) starts a note or question on those lines.
 // Memoised, and so are the files and annotations it hands the library: @pierre/diffs re-diffs on a new file
-// object and redraws on every render, so the Diff tab's many Viewers must only render when their props change.
+// object and redraws on every render, so the canvas's many Viewers must only render when their props change.
 export const Viewer = memo(function Viewer(props: Props) {
   const { workspace, mergeBase, head, opened, entries } = props
   const [draft, setDraft] = useState<Draft | null>(null)

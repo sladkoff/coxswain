@@ -34,11 +34,8 @@ clones go (`~/coxswain/repos/<owner>/<name>/`) and that git runs with the user's
    with `git show`. PR metadata, the list of PRs and comments still come from the GitHub API.
 7. **Git never prompts.** It runs with `GIT_TERMINAL_PROMPT=0`, so missing credentials fail with a
    message instead of hanging.
-8. **Agents may edit files in their worktree.** Agent sessions run with
-   `--permission-mode acceptEdits`, so Claude Code edits files inside the worktree without asking.
-   This changes the "can't change code yet" consequence of [ADR 0007](0007-running-claude-code.md).
-   Other tools that need approval, such as most shell commands, are still refused until coxswain can
-   ask the user.
+8. **Agents work in the workspace's worktree.** Agent sessions run there and may edit its files;
+   what they may do without asking is [ADR 0013](0013-auto-permission-mode.md)'s.
 
 ## Alternatives considered
 

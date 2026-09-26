@@ -4,17 +4,15 @@ Date: 2026-09-26
 
 ## Status
 
-Accepted. Supersedes the per-round question session of [ADR 0011](0011-review-rounds-and-entries.md) and the
-question permission mode of [ADR 0018](0018-agents-over-acp.md) (point 8).
+Accepted
 
 ## Context
 
-coxswain is moving to an agent-first layout: the agent pane on the left, the canvas on the right (UX.md). Every
-comment is a thread, and a comment can be sent to the agent. Until now a question went to a hidden agent session
-of its own, one per review round, in *ask* mode, told not to change files. So the agent the user talks to in the
-agent pane never saw the comments, and there were two agents with two contexts on one workspace. The user wants
-comments sent to the agent to show in the agent chat as a card (*Comment on `a.ts:3` sent to Claude*, the comment,
-*View thread*), and the agent's reply attached to the thread.
+coxswain's layout is agent-first: the agent pane on the left, the canvas on the right (UX.md). Every comment is a
+thread, and a comment can be sent to the agent. The agent the user talks to in the agent pane should see those
+comments, so there is one agent with one context per workspace. The user wants comments sent to the agent to show
+in the agent chat as a card (*Comment on `a.ts:3` sent to Claude*, the comment, *View thread*), and the agent's
+reply attached to the thread.
 
 ## Decision
 
@@ -26,14 +24,14 @@ comments sent to the agent to show in the agent chat as a card (*Comment on `a.t
    from the transcript into the chat entry (`comment`), and the chat draws it as a card. The agent's own transcript
    stays the only record of the chat (ADR 0005).
 3. **The reply streams to both** the thread and the agent pane, and its text is kept as an answer entry in the
-   thread, as before. A tool use to approve is still asked in the thread.
-4. **No schema change.** Old per-round question sessions stay in `agent_sessions` with their `review_round_id` and
-   stay out of the agent pane's list.
+   thread. A tool use to approve is asked in the thread.
+4. ***Send all to agent*** sends every thread in one message, the same way, under a `[Review · N threads]` header,
+   shown as a card too. Explanations and findings nobody replied to, and resolved threads, are left out.
 
 ## Alternatives considered
 
-- **Keep the question session and mirror its questions as cards in the chat.** Two agents, two contexts; the cards
-  couldn't be placed among the chat's turns, since a transcript has no times.
+- **A hidden question session per workspace, in a read-only mode, mirrored as cards in the chat.** Two agents, two
+  contexts; the cards couldn't be placed among the chat's turns, since a transcript has no times.
 - **Store sent comments by session and turn** in place of the header. Cleaner, but a table for something the
   transcript already carries; worth it if the header gets in the way (a `ponytail:` note marks it).
 

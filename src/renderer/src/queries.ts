@@ -14,7 +14,6 @@ const github = { staleTime: 60_000, refetchOnWindowFocus: true }
 const extra: Partial<Record<Reads, { staleTime?: number; refetchOnWindowFocus?: boolean }>> = {
   readFileAt: { staleTime: Infinity }, // a file at a commit never changes
   openWorktree: github, // asks GitHub for the PR's head and fetches it
-  getTimeline: github, // reads GitHub's activity with coxswain's own
   listPullRequests: github,
 }
 // Offline or signed out: a GitHub read keeps what it fetched before. Throwing leaves the query's data as it was.
@@ -40,12 +39,11 @@ export function core<K extends Reads>(name: K, ...args: Parameters<Api[K]>) {
 
 // The queries each kind of change makes stale, for the workspace it happened in.
 const affects: Record<Changed['what'], Reads[]> = {
-  entries: ['listEntries', 'getTimeline'],
+  entries: ['listEntries'],
   // Entries and Reviewed follow the code they're about (ADR 0014, 0015).
   worktree: ['listChangedFiles', 'listWorktreeFiles', 'readWorktreeFile', 'listReviewed', 'listEntries'],
   transcript: ['listAgentSessions', 'readTranscript'],
   guide: ['listGuides'],
-  timeline: ['getTimeline'],
 }
 
 // Refetches what's on screen and marks the rest stale. Resolves once what's on screen is in.

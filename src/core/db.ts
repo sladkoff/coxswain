@@ -234,15 +234,18 @@ const migrations = [
     from entries order by id;
   drop table entries;
   alter table entries_new rename to entries`,
-  // 22: a thread can be resolved; set on its first entry.
+  // 21: a thread can be resolved; set on its first entry.
   `alter table entries add column resolved_at text`,
-  // 23: *Viewed* is now *Reviewed* (glossary).
+  // 22: *Viewed* is now *Reviewed* (glossary).
   `alter table viewed_files rename to reviewed_files`,
+  // 23: no timeline; its phases and the change summaries' model go.
+  `drop table phases;
+  delete from settings where key = 'summary.model'`,
 ]
 
 // ADR 0016: the tables as the migrations above leave them. Change this with every migration that changes a table.
 type Side = 'old' | 'new'
-export type Tables = {
+type Tables = {
   projects: { id: Generated<number>; owner: string; name: string; last_opened_at: string }
   workspaces: { id: Generated<number>; project_id: number; pr_number: number; last_opened_at: string }
   agent_sessions: {
@@ -271,17 +274,6 @@ export type Tables = {
     head: string | null
     created_at: string
     resolved_at: Generated<string | null>
-  }
-  phases: {
-    id: Generated<number>
-    workspace_id: number
-    head: string
-    base: string
-    merge_base: string
-    seen_at: string
-    summary: string | null
-    model: string | null
-    summarised_at: string | null
   }
 }
 

@@ -6,7 +6,7 @@ import {
   answerPermission,
   listAgentSessions,
   readTranscript,
-  runAgentTurn,
+  runTurn,
   startAgentSession,
   stopAgents,
   stopTurn,
@@ -26,7 +26,6 @@ import { type Guide, guideRequest, listGuides, onGuideChange } from '../core/gui
 import { getCurrentUser, listPullRequests, listRepos } from '../core/github'
 import { listProjects, openProject } from '../core/projects'
 import { addNote, askQuestion, deleteEntry, editEntry, resolveThread, sendThread, getCommentToAgent, setCommentToAgent, listEntries, type NewEntry, sendReview, stopQuestion } from '../core/review'
-import { getSummaryModel, getTimeline, recordHead, setSummaryModel, summarise } from '../core/timeline'
 import { listReviewed, setReviewed } from '../core/reviewed'
 import type { Changed, NavigatorSettings, ViewSettings } from '../preload'
 import { listWorkspaces, openPullRequestWorkspace } from '../core/workspaces'
@@ -115,28 +114,13 @@ app.whenReady().then(() => {
   ipcMain.handle('github:current-user', () => getCurrentUser())
   ipcMain.handle('github:list-repos', (_, page: number) => listRepos(page))
   ipcMain.handle('github:list-pulls', (_, owner: string, name: string) => listPullRequests(owner, name))
-  ipcMain.handle('timeline:get', (_, workspaceId: number) => getTimeline(db, workspaceId))
-  ipcMain.handle('timeline:summarise', (e, workspaceId: number, phaseId: number) =>
-    summarise(db, phaseId, () => changed(e.sender, { workspaceId, what: 'timeline' })).then(
-      () => ({ status: 'ok' as const }),
-      (err) => ({ status: 'error' as const, message: (err as Error).message }),
-    ),
-  )
   ipcMain.handle('workspaces:list', (_, projectId: number) => listWorkspaces(db, projectId))
   ipcMain.handle('workspaces:open-pr', (_, projectId: number, prNumber: number) =>
     openPullRequestWorkspace(db, projectId, prNumber),
   )
   ipcMain.handle('git:clone', (_, projectId: number) => cloneProject(db, projectId))
   ipcMain.handle('git:opened-before', (_, workspaceId: number) => openedBefore(db, workspaceId))
-  // Every head read from GitHub goes on the timeline (ADR 0020), whose summaries are made in the background.
-  ipcMain.handle('git:open-worktree', async (e, workspaceId: number) => {
-    const opened = await openWorktree(db, workspaceId)
-    if (opened.status === 'ok')
-      recordHead(db, workspaceId, opened.head, opened.mergeBase, () => changed(e.sender, { workspaceId, what: 'timeline' })).catch((err) =>
-        console.error('recording the PR head:', err),
-      )
-    return opened
-  })
+  ipcMain.handle('git:open-worktree', (_, workspaceId: number) => openWorktree(db, workspaceId))
   ipcMain.handle('git:commits', (_, workspaceId: number, mergeBase: string) => listCommits(db, workspaceId, mergeBase))
   ipcMain.handle('git:changed-files', (_, workspaceId: number, mergeBase: string, head?: string) =>
     listChangedFiles(db, workspaceId, mergeBase, head),
@@ -211,7 +195,7 @@ app.whenReady().then(() => {
   ipcMain.handle('agents:run-turn', async (e, agentSessionId: string, prompt: string) => {
     const workspaceId = await agentSessionWorkspace(db, agentSessionId)
     const send = (channel: string, ...args: unknown[]) => !e.sender.isDestroyed() && e.sender.send(channel, ...args)
-    const result = await runAgentTurn(db, agentSessionId, prompt, {
+    const result = await runTurn(db, agentSessionId, prompt, {
       onEntry: (entry) => send('agents:entry', agentSessionId, entry),
       onPermission: (p) => permission(e.sender, () => send('agents:permission', agentSessionId, p)),
     })
@@ -231,7 +215,7 @@ app.whenReady().then(() => {
         ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
       ),
   )
-  // The Diff tab's commits: all changes, or one commit's diff. Resolves only on a click, like the menus above.
+  // A thread's ⋯ menu. Resolves only on a click, like the menu above.
   ipcMain.handle(
     'menus:thread',
     (e, can: { edit: boolean; send: boolean }) =>
@@ -286,8 +270,6 @@ app.whenReady().then(() => {
   )
   ipcMain.handle('settings:comment-to-agent', () => getCommentToAgent(db))
   ipcMain.handle('settings:set-comment-to-agent', (_, toAgent: boolean) => setCommentToAgent(db, toAgent))
-  ipcMain.handle('settings:summary-model', () => getSummaryModel(db))
-  ipcMain.handle('settings:set-summary-model', (_, model: string) => setSummaryModel(db, model))
   // The agent's guide tools change guides and entries mid-turn; the UI refetches them as they come.
   onGuideChange((workspaceId) => {
     for (const w of BrowserWindow.getAllWindows()) {

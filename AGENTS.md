@@ -26,7 +26,8 @@ Keeping the docs current is part of every change, not a follow-up.
 2. **Decisions go in ADRs.** A choice of library, architecture, storage, protocol or anything else
    that is costly to reverse gets an ADR in `docs/adr/`, numbered in sequence
    (`NNNN-short-title.md`, sections Status, Context, Decision, Alternatives considered,
-   Consequences). Accepted ADRs are never edited; write a new one that supersedes it.
+   Consequences). ADRs say what holds now, not how we got there: when a decision changes, edit its
+   ADR; when it no longer holds, delete it. Numbers are never reused, so gaps are expected.
 3. **UX changes update [UX.md](docs/UX.md)**, including its diagram and open questions. Remove a
    question once it is answered.
 4. **Append to the devlog.** At the end of a piece of work, add or extend the newest entry in
