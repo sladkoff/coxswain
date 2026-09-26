@@ -10,8 +10,8 @@ import type { Workspace } from '../core/workspaces'
 
 // The Navigator's settings in its cog menu. layout: changed files as a tree or as a flat list.
 export type NavigatorSettings = { layout: 'tree' | 'list' }
-// The canvas bar's settings in its cog menu. showViewed: viewed file diffs stay in the Navigator and on the canvas.
-export type ViewSettings = { diffStyle: 'unified' | 'split'; showViewed: boolean }
+// The canvas bar's settings in its cog menu. showReviewed: reviewed file diffs stay in the Navigator and on the canvas.
+export type ViewSettings = { diffStyle: 'unified' | 'split'; showReviewed: boolean }
 // What the core changed on its own, e.g. when an agent turn ends, so the UI refetches it (ADR 0017).
 export type Changed = { workspaceId: number; what: 'entries' | 'worktree' | 'transcript' | 'guide' | 'timeline' }
 
@@ -56,6 +56,11 @@ const api = {
     ipcRenderer.invoke('review:list', workspaceId, base, head),
   addNote: (note: NewEntry): Promise<ReviewEntry> => ipcRenderer.invoke('review:add-note', note),
   deleteEntry: (id: number): Promise<void> => ipcRenderer.invoke('review:delete', id),
+  resolveThread: (id: number, resolved: boolean): Promise<void> => ipcRenderer.invoke('review:resolve', id, resolved),
+  editEntry: (id: number, body: string): Promise<void> => ipcRenderer.invoke('review:edit', id, body),
+  // A thread's *Send to agent*: its latest note becomes a question, answered in the thread. Null if it has none.
+  sendThread: (workspaceId: number, threadId: number): Promise<ReviewEntry | null> =>
+    ipcRenderer.invoke('review:send-thread', workspaceId, threadId),
   askQuestion: (question: NewEntry): Promise<ReviewEntry> => ipcRenderer.invoke('review:ask', question),
   stopQuestion: (workspaceId: number): Promise<void> => ipcRenderer.invoke('review:stop', workspaceId),
   // Every thread to the agent pane's session in one message; resolves when the agent's turn ends.
@@ -76,15 +81,18 @@ const api = {
     return () => void ipcRenderer.off('review:turn-end', listener)
   },
   // head: a pinned range (a guide); without it, the worktree (ADR 0014).
-  listViewed: (workspaceId: number, mergeBase: string, head?: string): Promise<string[]> =>
-    ipcRenderer.invoke('viewed:list', workspaceId, mergeBase, head),
-  setViewed: (workspaceId: number, mergeBase: string, path: string, viewed: boolean, head?: string): Promise<void> =>
-    ipcRenderer.invoke('viewed:set', workspaceId, mergeBase, path, viewed, head),
+  listReviewed: (workspaceId: number, mergeBase: string, head?: string): Promise<string[]> =>
+    ipcRenderer.invoke('reviewed:list', workspaceId, mergeBase, head),
+  setReviewed: (workspaceId: number, mergeBase: string, path: string, reviewed: boolean, head?: string): Promise<void> =>
+    ipcRenderer.invoke('reviewed:set', workspaceId, mergeBase, path, reviewed, head),
   // The workspace's guides, newest first (ADR 0023).
   listGuides: (workspaceId: number): Promise<Guide[]> => ipcRenderer.invoke('guides:list', workspaceId),
   // Asks the agent pane's session for a guide, with findings if review; resolves when the agent's turn ends.
   requestGuide: (workspaceId: number, review: boolean): Promise<TurnResult> =>
     ipcRenderer.invoke('guides:request', workspaceId, review),
+  // The composer's Comment/Agent toggle, kept for every comment box.
+  getCommentToAgent: (): Promise<boolean> => ipcRenderer.invoke('settings:comment-to-agent'),
+  setCommentToAgent: (toAgent: boolean): Promise<void> => ipcRenderer.invoke('settings:set-comment-to-agent', toAgent),
   getSummaryModel: (): Promise<string> => ipcRenderer.invoke('settings:summary-model'),
   setSummaryModel: (model: string): Promise<void> => ipcRenderer.invoke('settings:set-summary-model', model),
   stopTurn: (agentSessionId: string): Promise<void> => ipcRenderer.invoke('agents:stop-turn', agentSessionId),
@@ -104,6 +112,9 @@ const api = {
   showNavigatorMenu: (settings: NavigatorSettings): Promise<NavigatorSettings> =>
     ipcRenderer.invoke('menus:navigator', settings),
   showViewMenu: (settings: ViewSettings): Promise<ViewSettings> => ipcRenderer.invoke('menus:view', settings),
+  // A thread's ⋯ menu; stays pending if dismissed.
+  showThreadMenu: (can: { edit: boolean; send: boolean }): Promise<'edit' | 'delete' | 'send'> =>
+    ipcRenderer.invoke('menus:thread', can),
   // The canvas's Guide menu: make one (make: with review), or the guide to show (null: none). Pending if dismissed.
   showGuideMenu: (workspaceId: number, shown: number | null, prHead: string): Promise<{ make: boolean } | { show: number | null }> =>
     ipcRenderer.invoke('menus:guide', workspaceId, shown, prHead),

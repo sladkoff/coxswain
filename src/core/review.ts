@@ -43,6 +43,7 @@ export type ReviewEntry = {
   base: string | null
   head: string | null
   createdAt: string
+  resolvedAt: string | null // on a thread's first entry: when it was resolved
   // In the view it was listed for (ADR 0015): current if its lines still read as its code; outdated if not. A reply
   // or answer takes its thread's. Floating entries are current.
   state: 'current' | 'outdated'
@@ -66,6 +67,7 @@ const columns = [
   'base',
   'head',
   'created_at as createdAt',
+  'resolved_at as resolvedAt',
 ] as const
 
 // Every entry of the workspace, in order.
@@ -121,6 +123,15 @@ export async function addNote(db: Db, e: NewEntry): Promise<ReviewEntry> {
   return { ...(await addEntry(db, 'note', e)), state: 'current' }
 }
 
+export async function editEntry(db: Db, id: number, body: string) {
+  await db.updateTable('entries').set({ body: body.trim() }).where('id', '=', id).execute()
+}
+
+// Resolves a thread (its first entry), or reopens it.
+export async function resolveThread(db: Db, id: number, resolved: boolean) {
+  await db.updateTable('entries').set({ resolved_at: resolved ? new Date().toISOString() : null }).where('id', '=', id).execute()
+}
+
 export async function deleteEntry(db: Db, id: number) {
   await db.deleteFrom('entries').where('id', '=', id).execute()
 }
@@ -172,7 +183,35 @@ export async function askQuestion(
   onChat: (threadId: number, entry: ChatEntry, agentSessionId: string) => void,
   onPermission: (threadId: number, p: Permission) => Promise<string | null>,
 ): Promise<{ question: ReviewEntry; agentSessionId: string; turn: Promise<TurnResult> }> {
-  const question = await addEntry(db, 'question', e)
+  return ask(db, await addEntry(db, 'question', e), onChat, onPermission)
+}
+
+// A thread's *Send to agent*: its latest note becomes a question and is asked, with the notes before it since the
+// last question. Null when there's no such note (the agent has seen the thread).
+export async function sendThread(
+  db: Db,
+  threadId: number,
+  onChat: (threadId: number, entry: ChatEntry, agentSessionId: string) => void,
+  onPermission: (threadId: number, p: Permission) => Promise<string | null>,
+): Promise<{ question: ReviewEntry; agentSessionId: string; turn: Promise<TurnResult> } | null> {
+  const note = await db
+    .selectFrom('entries')
+    .select(columns)
+    .where((eb) => eb.or([eb('id', '=', threadId), eb('parent_id', '=', threadId)]))
+    .where('kind', 'in', ['note', 'question'])
+    .orderBy('id', 'desc')
+    .executeTakeFirst()
+  if (note?.kind !== 'note') return null
+  await db.updateTable('entries').set({ kind: 'question' }).where('id', '=', note.id).execute()
+  return ask(db, { ...note, kind: 'question' }, onChat, onPermission)
+}
+
+async function ask(
+  db: Db,
+  question: Omit<ReviewEntry, 'state'>,
+  onChat: (threadId: number, entry: ChatEntry, agentSessionId: string) => void,
+  onPermission: (threadId: number, p: Permission) => Promise<string | null>,
+): Promise<{ question: ReviewEntry; agentSessionId: string; turn: Promise<TurnResult> }> {
   const threadId = question.parentId ?? question.id
   const thread = await db
     .selectFrom('entries')
@@ -182,7 +221,7 @@ export async function askQuestion(
     .orderBy('id')
     .execute()
   const root = thread[0] ?? question
-  const agentSessionId = await currentSession(db, e.workspaceId)
+  const agentSessionId = await currentSession(db, question.workspaceId)
   const comment = { threadId, where: root.path ? where(root) : 'the review', body: question.body }
   const texts: string[] = []
   const turn = runAgentTurn(db, agentSessionId, formatComment(comment, unseen(question, thread)), {
@@ -193,7 +232,7 @@ export async function askQuestion(
     onPermission: (p) => onPermission(threadId, p),
   }).then(async (result) => {
     if (result.status === 'ok' && texts.length)
-      await addEntry(db, 'answer', { workspaceId: e.workspaceId, body: texts.join('\n\n'), parentId: threadId })
+      await addEntry(db, 'answer', { workspaceId: question.workspaceId, body: texts.join('\n\n'), parentId: threadId })
     return result
   })
   return { question: { ...question, state: 'current' }, agentSessionId, turn }
@@ -206,10 +245,10 @@ export async function stopQuestion(db: Db, workspaceId: number) {
 
 // Every thread of the workspace, as one message for the agent pane's session: where each points, the code, and its
 // comments and answers in order, then what to do with them. An explanation or finding the user didn't reply to isn't
-// part of their review.
+// part of their review, nor is a resolved thread.
 function reviewPrompt(entries: Omit<ReviewEntry, 'state'>[]): { threads: number; prompt: string } {
   const replied = new Set(entries.filter((e) => e.parentId && !byAgent(e)).map((e) => e.parentId))
-  const roots = entries.filter((e) => e.path && !e.parentId && (!byAgent(e) || replied.has(e.id)))
+  const roots = entries.filter((e) => e.path && !e.parentId && !e.resolvedAt && (!byAgent(e) || replied.has(e.id)))
   const parts = roots.map((root, i) => {
     const thread = [root, ...entries.filter((e) => e.parentId === root.id)]
     const lines = thread.map((e) => `${byAgent(e) ? 'You' : 'Me'}: ${e.body}`)
@@ -244,4 +283,19 @@ export async function requestGuide(
 ): Promise<TurnResult> {
   const agentSessionId = await currentSession(db, workspaceId)
   return runAgentTurn(db, agentSessionId, guideRequest(review), handlers(agentSessionId))
+}
+
+// Where a new comment goes, the composer's Comment/Agent toggle: to the agent (a question) or not (a note). Global.
+export async function getCommentToAgent(db: Db): Promise<boolean> {
+  const row = await db.selectFrom('settings').select('value').where('key', '=', 'comment.to-agent').executeTakeFirst()
+  return row?.value === 'true'
+}
+
+export async function setCommentToAgent(db: Db, toAgent: boolean) {
+  const value = String(toAgent)
+  await db
+    .insertInto('settings')
+    .values({ key: 'comment.to-agent', value })
+    .onConflict((oc) => oc.column('key').doUpdateSet({ value }))
+    .execute()
 }

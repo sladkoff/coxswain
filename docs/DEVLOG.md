@@ -14,7 +14,7 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
   *Send all to agent*). How to guide is in `start_guide`'s result.
 - **Guides show in *Changes*:** groups in reading order with title, description and file notes, *Not in the guide*,
   generated groups last. Explanations and findings are entries (new kinds) with a `guide_id`, shown as threads only
-  with their guide; replying goes to the agent by default. *Send all to agent* leaves out the ones nobody replied to.
+  with their guide; a reply is a note. *Send all to agent* leaves out the ones nobody replied to.
 - **Pinned and kept:** a guide shows its range (merge base → PR head then), like a commit; stale once the PR moves
   on. Every guide stays in the *Guide* menu. The newest shows when it appears, and on opening if not stale.
 - **The old pipeline is gone:** file summaries, grouping and describing calls, the guide prompt and model, `Guide.tsx`
@@ -27,6 +27,17 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
   window); a tabs row comes back with a second thing to show.
 - **Commits is a pane, not a menu:** *Commits* in the canvas's bar opens a list on the left, in the Navigator's
   place (one or the other), and a click picks the commit. `listCommits` replaces the `menus:commits` popup.
+- **Comment/Agent toggle** replaces the comment box's *Send to agent* checkbox, left of the send button. It's one
+  global preference in `settings` (`comment.to-agent`); a reply is always a note, so reply boxes have no toggle (*Send all to agent* sends threads afterwards).
+- **Thread ⋯ menu** replaces the thread's ✕: *Edit* (the first comment, the user's own; `editEntry`), *Delete*,
+  *Send to Agent* (`sendThread`: the latest note becomes a question and is asked like one, answer in the thread).
+  `askQuestion` and `sendThread` share `ask` in the core and `asking` in the main process.
+- **Resolved threads:** a ✓ left of the ⋯ menu resolves and reopens. Migration 22 adds `entries.resolved_at`, set on
+  the thread's first entry (`resolveThread`). A resolved thread folds to one line, is counted and labelled in the
+  bottom bar's list, and is left out of *Send all to agent*.
+- ***Viewed* is now *Reviewed*** (glossary): labels, `src/core/reviewed.ts`, `listReviewed`/`setReviewed`,
+  `showReviewed`, the `reviewed:` IPC channels. Migration 23 renames `viewed_files` to `reviewed_files`. Accepted
+  ADRs and older devlog entries keep the old word.
 - Tried on PR #1 of the test project: the agent called every tool, and the guide, two explanations and five findings
   showed on the canvas while it worked.
 

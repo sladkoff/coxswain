@@ -234,6 +234,10 @@ const migrations = [
     from entries order by id;
   drop table entries;
   alter table entries_new rename to entries`,
+  // 22: a thread can be resolved; set on its first entry.
+  `alter table entries add column resolved_at text`,
+  // 23: *Viewed* is now *Reviewed* (glossary).
+  `alter table viewed_files rename to reviewed_files`,
 ]
 
 // ADR 0016: the tables as the migrations above leave them. Change this with every migration that changes a table.
@@ -248,7 +252,7 @@ export type Tables = {
     agent_session_id: string
     created_at: string
   }
-  viewed_files: { workspace_id: number; path: string; fingerprint: string }
+  reviewed_files: { workspace_id: number; path: string; fingerprint: string }
   guides: { id: Generated<number>; workspace_id: number; base: string; head: string; groups: Generated<string>; created_at: string }
   settings: { key: string; value: string }
   entries: {
@@ -266,6 +270,7 @@ export type Tables = {
     base: string | null
     head: string | null
     created_at: string
+    resolved_at: Generated<string | null>
   }
   phases: {
     id: Generated<number>

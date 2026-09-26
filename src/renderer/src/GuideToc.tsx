@@ -8,32 +8,32 @@ export type GuideSection = { group: GuideGroup | null; diffs: { file: ChangedFil
 
 type Props = {
   sections: GuideSection[]
-  viewed: string[]
+  reviewed: string[]
   entries: ReviewEntry[]
   current: number // the section at the top of the canvas's scroll
   onPick: (i: number) => void
 }
 
-// A guide's table of contents, left of the canvas while a guide shows: how many file diffs are viewed in all, then
-// every group with how many of its file diffs are viewed (✓ when all are) and the notes and questions on them. The
+// A guide's table of contents, left of the canvas while a guide shows: how many file diffs are reviewed in all, then
+// every group with how many of its file diffs are reviewed (✓ when all are) and the notes and questions on them. The
 // group being read is marked; a click scrolls to it.
 // ponytail: fixed width, no Splitter; make it resizable like the Navigator if titles get cut.
-export function GuideToc({ sections, viewed, entries, current, onPick }: Props) {
+export function GuideToc({ sections, reviewed, entries, current, onPick }: Props) {
   const all = sections.flatMap((s) => s.diffs)
-  const viewedCount = all.filter((d) => viewed.includes(d.file.path)).length
+  const reviewedCount = all.filter((d) => reviewed.includes(d.file.path)).length
   const items = countItems(entries)
   return (
     <nav className="flex w-60 shrink-0 flex-col gap-2 overflow-y-auto border-r border-neutral-200 p-3 text-xs dark:border-neutral-800">
       <div className="flex flex-col gap-1">
         <div className="h-1 overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-800">
-          <div className="h-full bg-neutral-500 dark:bg-neutral-400" style={{ width: `${(100 * viewedCount) / (all.length || 1)}%` }} />
+          <div className="h-full bg-neutral-500 dark:bg-neutral-400" style={{ width: `${(100 * reviewedCount) / (all.length || 1)}%` }} />
         </div>
         <span className={muted}>
-          {viewedCount} of {all.length} viewed
+          {reviewedCount} of {all.length} reviewed
         </span>
       </div>
       {sections.map((s, i) => {
-        const n = s.diffs.filter((d) => viewed.includes(d.file.path)).length
+        const n = s.diffs.filter((d) => reviewed.includes(d.file.path)).length
         const done = n === s.diffs.length
         const c = s.diffs.reduce(
           (sum, d) => {

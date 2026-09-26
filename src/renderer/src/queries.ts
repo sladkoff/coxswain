@@ -41,8 +41,8 @@ export function core<K extends Reads>(name: K, ...args: Parameters<Api[K]>) {
 // The queries each kind of change makes stale, for the workspace it happened in.
 const affects: Record<Changed['what'], Reads[]> = {
   entries: ['listEntries', 'getTimeline'],
-  // Entries and Viewed follow the code they're about (ADR 0014, 0015).
-  worktree: ['listChangedFiles', 'listWorktreeFiles', 'readWorktreeFile', 'listViewed', 'listEntries'],
+  // Entries and Reviewed follow the code they're about (ADR 0014, 0015).
+  worktree: ['listChangedFiles', 'listWorktreeFiles', 'readWorktreeFile', 'listReviewed', 'listEntries'],
   transcript: ['listAgentSessions', 'readTranscript'],
   guide: ['listGuides'],
   timeline: ['getTimeline'],
@@ -58,10 +58,10 @@ export const changed = ({ workspaceId, what }: Changed) =>
 
 window.coxswain.onChanged(changed)
 
-// Marks a file diff viewed or not at once, and puts it back if the core fails to store it.
+// Marks a file diff reviewed or not at once, and puts it back if the core fails to store it.
 // Without head: the live diff; with it, a pinned range (ADR 0014).
-export function markViewed(workspaceId: number, mergeBase: string, path: string, on: boolean, head?: string) {
-  const { queryKey } = core('listViewed', workspaceId, mergeBase, head)
+export function markReviewed(workspaceId: number, mergeBase: string, path: string, on: boolean, head?: string) {
+  const { queryKey } = core('listReviewed', workspaceId, mergeBase, head)
   queryClient.setQueryData(queryKey, (v = []) => (on ? [...v, path] : v.filter((p) => p !== path)))
-  window.coxswain.setViewed(workspaceId, mergeBase, path, on, head).catch(() => queryClient.invalidateQueries({ queryKey }))
+  window.coxswain.setReviewed(workspaceId, mergeBase, path, on, head).catch(() => queryClient.invalidateQueries({ queryKey }))
 }

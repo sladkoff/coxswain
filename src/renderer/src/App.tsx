@@ -12,7 +12,7 @@ import { Navigator, type NavigatorView } from './Navigator'
 import { NewWorkspace } from './NewWorkspace'
 import { Onboarding } from './Onboarding'
 import { Projects } from './Projects'
-import { changed, core, markViewed as mark, queryClient } from './queries'
+import { changed, core, markReviewed as mark, queryClient } from './queries'
 import { Settings } from './Settings'
 import { usePullRequest } from './usePullRequest'
 import type { ViewSettings } from '../../preload'
@@ -48,7 +48,7 @@ export function App() {
 
   const [view, setView] = useState<NavigatorView>('diffs')
   // ponytail: resets on restart, like the Navigator's settings; store them once there's a settings table.
-  const [viewSettings, setViewSettings] = useState<ViewSettings>({ diffStyle: 'unified', showViewed: false })
+  const [viewSettings, setViewSettings] = useState<ViewSettings>({ diffStyle: 'unified', showReviewed: false })
   const workspaces = useQuery({ ...core('listWorkspaces', current?.id ?? 0), enabled: !!current }).data ?? []
   const currentWorkspace = workspaces.reduce<Workspace | undefined>(
     (latest, w) => (!latest || w.lastOpenedAt > latest.lastOpenedAt ? w : latest),
@@ -103,18 +103,18 @@ export function App() {
     [allEntries, guide?.id],
   )
   // Callbacks handed to the Viewers are stable (useCallback), so a memoised Viewer doesn't redraw its file diff.
-  // Paths of the viewed file diffs: the live diff's, reloaded with the changes, since a file diff that changed is no
-  // longer viewed (ADR 0014); or at a guide's head, where they stay as they were.
+  // Paths of the reviewed file diffs: the live diff's, reloaded with the changes, since a file diff that changed is no
+  // longer reviewed (ADR 0014); or at a guide's head, where they stay as they were.
   const mergeBase = pr.commits?.mergeBase
-  const viewedBase = guide?.base ?? mergeBase
-  const viewed =
+  const reviewedBase = guide?.base ?? mergeBase
+  const reviewed =
     useQuery({
-      ...core('listViewed', currentWorkspace?.id ?? 0, viewedBase ?? '', guide?.head),
-      enabled: !!currentWorkspace && !!viewedBase && !!pr.changed,
+      ...core('listReviewed', currentWorkspace?.id ?? 0, reviewedBase ?? '', guide?.head),
+      enabled: !!currentWorkspace && !!reviewedBase && !!pr.changed,
     }).data ?? noPaths
-  const markViewed = useCallback(
-    (path: string, on: boolean) => void (currentWorkspace && viewedBase && mark(currentWorkspace.id, viewedBase, path, on, guide?.head)),
-    [currentWorkspace?.id, viewedBase, guide?.head],
+  const markReviewed = useCallback(
+    (path: string, on: boolean) => void (currentWorkspace && reviewedBase && mark(currentWorkspace.id, reviewedBase, path, on, guide?.head)),
+    [currentWorkspace?.id, reviewedBase, guide?.head],
   )
   // Questions' turns by thread, kept here so they outlive the Viewer showing them. The reply streams in as chat
   // entries; once the turn ends it's an answer entry. A tool use to approve waits in permission until answered.
@@ -140,8 +140,10 @@ export function App() {
     window.coxswain.answerPermission(id, optionId)
     setTurns((t) => ({ ...t, [threadId]: { ...t[threadId], permission: null } }))
   }, [])
-  const ask = useCallback(async (q: NewEntry) => {
-    const question = await window.coxswain.askQuestion(q)
+  // A new question, or a thread sent to the agent (its latest note becomes the question).
+  const ask = useCallback(async (q: NewEntry | { workspaceId: number; threadId: number }) => {
+    const question = 'threadId' in q ? await window.coxswain.sendThread(q.workspaceId, q.threadId) : await window.coxswain.askQuestion(q)
+    if (!question) return
     const id = question.parentId ?? question.id
     setTurns((t) => ({ ...t, [id]: { running: true, error: null, live: t[id]?.live ?? [], permission: t[id]?.permission ?? null } }))
     changed({ workspaceId: q.workspaceId, what: 'entries' })
@@ -162,11 +164,11 @@ export function App() {
     () => (range ? rangeChanged?.map((file) => ({ kind: 'diff' as const, file })) : diffs),
     [!!range, rangeChanged, diffs],
   )
-  // Viewed file diffs are hidden unless Show Viewed Files is on, as in the Navigator.
-  const isShown = (d: { file: ChangedFile }) => viewSettings.showViewed || !viewed.includes(d.file.path)
-  const shownDiffs = useMemo(() => diffDiffs?.filter(isShown), [diffDiffs, viewed, viewSettings.showViewed])
+  // Reviewed file diffs are hidden unless Show Reviewed Files is on, as in the Navigator.
+  const isShown = (d: { file: ChangedFile }) => viewSettings.showReviewed || !reviewed.includes(d.file.path)
+  const shownDiffs = useMemo(() => diffDiffs?.filter(isShown), [diffDiffs, reviewed, viewSettings.showReviewed])
   // With a guide, its groups in reading order: the groups as added, the files in none, then the generated groups.
-  // Groups whose file diffs are all viewed stay listed (the table of contents shows them); the canvas skips them.
+  // Groups whose file diffs are all reviewed stay listed (the table of contents shows them); the canvas skips them.
   const sections = useMemo(() => {
     if (!guide || !diffDiffs) return null
     const byPath = new Map(diffDiffs.map((d) => [d.file.path, d]))
@@ -179,9 +181,9 @@ export function App() {
       section(null, diffDiffs.filter((d) => !listed.has(d.file.path))),
       ...guide.groups.filter(generated).map(of),
     ].filter((x) => x.diffs.length)
-  }, [guide, diffDiffs, viewed, viewSettings.showViewed])
+  }, [guide, diffDiffs, reviewed, viewSettings.showReviewed])
   // The table of contents: the group at the top of the canvas's scroll, and a group picked while it was hidden (all
-  // its file diffs viewed), scrolled to once Show Viewed Files has shown it.
+  // its file diffs reviewed), scrolled to once Show Reviewed Files has shown it.
   const [currentGroup, setCurrentGroup] = useState(0)
   const [pendingGroup, setPendingGroup] = useState<number | null>(null)
   const scrollToGroup = (i: number) => document.getElementById(`guide-group-${i}`)?.scrollIntoView()
@@ -189,10 +191,10 @@ export function App() {
     if (pendingGroup === null) return
     scrollToGroup(pendingGroup)
     setPendingGroup(null)
-  }, [pendingGroup, viewSettings.showViewed])
+  }, [pendingGroup, viewSettings.showReviewed])
   const pickGroup = (i: number) => {
     if (sections?.[i]?.shown.length) return scrollToGroup(i)
-    setViewSettings((v) => ({ ...v, showViewed: true }))
+    setViewSettings((v) => ({ ...v, showReviewed: true }))
     setPendingGroup(i)
   }
   // The last group whose top has scrolled past the top of the canvas (with a little slack) is the current one. Only
@@ -256,8 +258,8 @@ export function App() {
     mergeBase,
     head,
     entries,
-    viewed,
-    onViewedChange: markViewed,
+    reviewed,
+    onReviewedChange: markReviewed,
     turns,
     onAsk: ask,
     onAnswerPermission: answerPermission,
@@ -399,7 +401,7 @@ export function App() {
                       <div className="flex shrink-0 justify-end px-2 pt-1.5">
                         <ViewToggle view={view} onChange={setView} />
                       </div>
-                      <Navigator key={currentWorkspace.id} workspace={currentWorkspace} pr={diffPr} view={view} viewed={viewed} showViewed={viewSettings.showViewed} entries={entries} onOpen={open} />
+                      <Navigator key={currentWorkspace.id} workspace={currentWorkspace} pr={diffPr} view={view} reviewed={reviewed} showReviewed={viewSettings.showReviewed} entries={entries} onOpen={open} />
                     </>
                   )}
                 </div>
@@ -407,7 +409,7 @@ export function App() {
               </>
             )}
             {sections && !showFile && (
-              <GuideToc sections={sections} viewed={viewed} entries={entries} current={currentGroup} onPick={pickGroup} />
+              <GuideToc sections={sections} reviewed={reviewed} entries={entries} current={currentGroup} onPick={pickGroup} />
             )}
             <div style={{ minWidth: viewerMin }} className="flex min-w-0 flex-1 flex-col" onScrollCapture={onCanvasScroll}>
               {!pr.commits || !diffDiffs || !shownDiffs ? (
@@ -421,8 +423,8 @@ export function App() {
                     <div className={`p-4 text-xs ${muted}`}>
                       {diffDiffs.length ? (
                         <>
-                          All {diffDiffs.length} files viewed.{' '}
-                          <button className="underline" onClick={() => setViewSettings((s) => ({ ...s, showViewed: true }))}>
+                          All {diffDiffs.length} files reviewed.{' '}
+                          <button className="underline" onClick={() => setViewSettings((s) => ({ ...s, showReviewed: true }))}>
                             Show them
                           </button>
                         </>
@@ -439,7 +441,7 @@ export function App() {
                   )}
                   {(sections ?? [{ group: undefined, diffs: diffDiffs, shown: shownDiffs }]).map((x, i) => x.shown.length > 0 && (
                     <section key={i} id={`guide-group-${i}`} className={x.group?.tags.includes('generated') ? 'opacity-60' : ''}>
-                      {x.group !== undefined && <GroupHeader group={x.group} files={x.diffs.length} viewed={x.diffs.length - x.shown.length} />}
+                      {x.group !== undefined && <GroupHeader group={x.group} files={x.diffs.length} reviewed={x.diffs.length - x.shown.length} />}
                       {x.shown.map((d) => (
                         <div key={d.file.path} id={`diff:${d.file.path}`}>
                           {x.group?.notes[d.file.path] && (
@@ -462,7 +464,7 @@ export function App() {
             workspaceId={currentWorkspace.id}
             entries={entries}
             files={diffPr.changed}
-            viewed={viewed}
+            reviewed={reviewed}
             turns={turns}
             onViewThread={viewThread}
           />
@@ -476,7 +478,7 @@ export function App() {
 const prose = 'markdown max-w-[80ch] text-[13px] leading-relaxed text-neutral-700 [overflow-wrap:anywhere] dark:text-neutral-300'
 
 // Above a guide group's file diffs: its title, how many files, and its description. group null: the files in no group.
-function GroupHeader(props: { group: GuideGroup | null; files: number; viewed: number }) {
+function GroupHeader(props: { group: GuideGroup | null; files: number; reviewed: number }) {
   const g = props.group
   return (
     <div className="flex flex-col gap-1.5 px-4 pt-6 pb-3 select-text">
@@ -484,7 +486,7 @@ function GroupHeader(props: { group: GuideGroup | null; files: number; viewed: n
       <div className={muted}>
         {g?.tags.includes('generated') && 'Generated · '}
         {count(props.files, 'file')}
-        {props.viewed > 0 && `, ${props.viewed} viewed`}
+        {props.reviewed > 0 && `, ${props.reviewed} reviewed`}
       </div>
       {g?.description && (
         <div className={prose}>
@@ -498,12 +500,12 @@ function GroupHeader(props: { group: GuideGroup | null; files: number; viewed: n
 const count = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
 
 // The canvas's bottom bar: the review at a glance. Threads, with how many are outdated or waiting on the agent, how
-// many of the file diffs on screen are viewed, and their lines. The thread count opens every thread above the bar.
+// many of the file diffs on screen are reviewed, and their lines. The thread count opens every thread above the bar.
 type StatusBarProps = {
   workspaceId: number
   entries: ReviewEntry[]
   files: ChangedFile[]
-  viewed: string[]
+  reviewed: string[]
   turns: Record<number, Turn>
   onViewThread: (threadId: number) => void
 }
@@ -522,12 +524,14 @@ function StatusBar(props: StatusBarProps) {
   }
   const threads = props.entries.filter((e) => e.path && !e.parentId)
   const outdated = threads.filter((e) => e.state === 'outdated').length
+  const resolved = threads.filter((e) => e.resolvedAt).length
+  const which = [outdated && `${outdated} outdated`, resolved && `${resolved} resolved`].filter(Boolean)
   const answering = threads.filter((e) => props.turns[e.id]?.running).length
-  const viewed = props.files.filter((f) => props.viewed.includes(f.path)).length
+  const reviewed = props.files.filter((f) => props.reviewed.includes(f.path)).length
   const add = props.files.reduce((n, f) => n + f.additions, 0)
   const del = props.files.reduce((n, f) => n + f.deletions, 0)
   const parts = [
-    count(threads.length, 'thread') + (outdated ? ` (${outdated} outdated)` : ''),
+    count(threads.length, 'thread') + (which.length ? ` (${which.join(', ')})` : ''),
     answering ? `${answering} waiting on the agent` : '',
   ].filter(Boolean)
   return (
@@ -570,9 +574,9 @@ function StatusBar(props: StatusBarProps) {
         </span>
         <div className="flex items-center gap-1.5 tabular-nums">
           <div className="h-1 w-16 overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-800">
-            <div className="h-full bg-green-600" style={{ width: `${props.files.length ? (viewed / props.files.length) * 100 : 0}%` }} />
+            <div className="h-full bg-green-600" style={{ width: `${props.files.length ? (reviewed / props.files.length) * 100 : 0}%` }} />
           </div>
-          {viewed} of {count(props.files.length, 'file')} viewed
+          {reviewed} of {count(props.files.length, 'file')} reviewed
         </div>
       </div>
     </div>
@@ -585,6 +589,7 @@ function ThreadRow(props: { root: ReviewEntry; replies: ReviewEntry[]; answering
   const lines = t.startLine === t.endLine ? `${t.startLine}` : `${t.startLine}–${t.endLine}`
   const answers = replies.filter((r) => r.kind === 'answer').length
   const status = [
+    t.resolvedAt && 'resolved',
     t.state === 'outdated' && 'outdated',
     props.answering ? 'agent answering…' : answers ? count(answers, 'answer') : t.kind === 'question' && 'sent to agent',
     replies.length - answers > 0 && count(replies.length - answers, 'reply'),

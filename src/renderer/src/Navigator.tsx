@@ -15,15 +15,15 @@ type Props = {
   workspace: Workspace
   pr: PullRequestData
   view: NavigatorView
-  viewed: string[]
-  showViewed: boolean
+  reviewed: string[]
+  showReviewed: boolean
   entries: ReviewEntry[] // the workspace's, counted per file
   onOpen: (path: string) => void
 }
 
 // L2: the workspace's changed files (diffs) or its whole file tree (files).
 // The file tree reloads whenever the worktree changes, like the changes.
-export function Navigator({ workspace, pr, view, viewed, showViewed, entries, onOpen }: Props) {
+export function Navigator({ workspace, pr, view, reviewed, showReviewed, entries, onOpen }: Props) {
   const files = useQuery({ ...core('listWorktreeFiles', workspace.id), enabled: view === 'files' && !!pr.changed }).data
   const tree = files?.status === 'ok' ? files.paths : null
   const treeProblem = files && files.status !== 'ok' ? files : null
@@ -48,8 +48,8 @@ export function Navigator({ workspace, pr, view, viewed, showViewed, entries, on
       {view === 'diffs' && (
         <div className={`flex items-center justify-between px-2 py-1 text-xs ${muted}`}>
           <span>
-            {pr.changed.filter((f) => viewed.includes(f.path)).length} of {pr.changed.length} viewed
-            {!showViewed && viewed.length > 0 && ', hidden'}
+            {pr.changed.filter((f) => reviewed.includes(f.path)).length} of {pr.changed.length} reviewed
+            {!showReviewed && reviewed.length > 0 && ', hidden'}
           </span>
           <button
             title="View options"
@@ -66,9 +66,9 @@ export function Navigator({ workspace, pr, view, viewed, showViewed, entries, on
         key={`${view}:${settings.layout}:${idOf(view === 'diffs' ? pr.changed : paths)}`}
         paths={paths}
         changed={pr.changed}
-        viewed={viewed}
+        reviewed={reviewed}
         items={countItems(entries)}
-        hidden={view === 'diffs' && !showViewed ? viewed : []}
+        hidden={view === 'diffs' && !showReviewed ? reviewed : []}
         expanded={view === 'diffs'}
         flat={view === 'diffs' && settings.layout === 'list'}
         onOpen={onOpen}
@@ -85,9 +85,9 @@ const idOf = (o: object) => ids.get(o) ?? (ids.set(o, ++nextId), nextId)
 type TreeProps = {
   paths: string[]
   changed: ChangedFile[]
-  viewed: string[]
+  reviewed: string[]
   items: Map<string, ItemCount> // notes and questions per path
-  hidden: string[] // left out of the tree, e.g. viewed files
+  hidden: string[] // left out of the tree, e.g. reviewed files
   expanded: boolean
   flat: boolean // every file as a top-level row with its full path, no folders
   onOpen: (path: string) => void
@@ -105,7 +105,7 @@ function listRows(paths: string[]): (p: string) => string {
   return (p) => (seen.get(baseName(p))! > 1 ? p.replaceAll('/', '∕') : baseName(p))
 }
 
-function Tree({ paths, changed, viewed, items, hidden, expanded, flat, onOpen }: TreeProps) {
+function Tree({ paths, changed, reviewed, items, hidden, expanded, flat, onOpen }: TreeProps) {
   const [row] = useState(() => (flat ? listRows(paths) : (p: string) => p))
   const visible = paths.filter((p) => !hidden.includes(p)).map(row)
   const [counts] = useState(
@@ -120,7 +120,7 @@ function Tree({ paths, changed, viewed, items, hidden, expanded, flat, onOpen }:
   )
   const [files] = useState(() => new Map(paths.map((p) => [row(p), p])))
   // Read by the decorations, which the tree takes only when created.
-  const viewedNow = useRef(new Set(viewed.map(row)))
+  const reviewedNow = useRef(new Set(reviewed.map(row)))
   const itemsOf = (m: Map<string, ItemCount>) => new Map([...m].map(([p, c]) => [row(p), c]))
   const itemsNow = useRef(itemsOf(items))
   const { model } = useFileTree({
@@ -132,16 +132,16 @@ function Tree({ paths, changed, viewed, items, hidden, expanded, flat, onOpen }:
     renderRowDecoration: ({ item }) => {
       const c = counts.get(item.path)
       if (!c) return null
-      const viewed = viewedNow.current.has(item.path)
+      const reviewed = reviewedNow.current.has(item.path)
       const i = itemsNow.current.get(item.path)
       const parts = [
         ...(c.folder ? [{ text: c.folder, color: '#a3a3a3' }] : []),
         // The gap after the folder is an em space starting the next part: trailing space on the folder is trimmed.
-        ...(viewed ? [{ text: '\u2003✓ ', color: '#16a34a' }] : []),
-        { text: viewed ? c.lines : `\u2003${c.lines}` },
+        ...(reviewed ? [{ text: '\u2003✓ ', color: '#16a34a' }] : []),
+        { text: reviewed ? c.lines : `\u2003${c.lines}` },
         ...(i ? [{ text: `\u2003✎ ${i.notes + i.questions}`, color: '#2563eb' }] : []),
       ]
-      const title = [viewed && 'Viewed', i && itemsTitle(i)].filter(Boolean).join(' · ') || undefined
+      const title = [reviewed && 'Reviewed', i && itemsTitle(i)].filter(Boolean).join(' · ') || undefined
       return { text: parts.map((p) => p.text).join(''), title, parts }
     },
     // Selecting a folder only opens it; selecting a file opens it in the Viewer.
@@ -153,15 +153,15 @@ function Tree({ paths, changed, viewed, items, hidden, expanded, flat, onOpen }:
   })
   const itemsKey = [...items].map(([p, c]) => `${p}:${c.notes}:${c.questions}`).join('\0')
   useEffect(() => {
-    const [viewedBefore, itemsBefore] = [viewedNow.current, itemsNow.current]
-    viewedNow.current = new Set(viewed.map(row))
+    const [reviewedBefore, itemsBefore] = [reviewedNow.current, itemsNow.current]
+    reviewedNow.current = new Set(reviewed.map(row))
     itemsNow.current = itemsOf(items)
     const count = (m: Map<string, ItemCount>, p: string) => `${m.get(p)?.notes}:${m.get(p)?.questions}`
     const toggled = changed
       .map((f) => ({ path: row(f.path), status: f.status }))
       .filter(
         (f) =>
-          viewedBefore.has(f.path) !== viewedNow.current.has(f.path) ||
+          reviewedBefore.has(f.path) !== reviewedNow.current.has(f.path) ||
           count(itemsBefore, f.path) !== count(itemsNow.current, f.path),
       )
     // ponytail: the tree has no call to redraw decorations, so drop and restore the git status of the changed
@@ -169,7 +169,7 @@ function Tree({ paths, changed, viewed, items, hidden, expanded, flat, onOpen }:
     if (!toggled.length) return
     model.applyGitStatusPatch({ remove: toggled.map((f) => f.path) })
     model.applyGitStatusPatch({ set: toggled })
-  }, [viewed, itemsKey])
+  }, [reviewed, itemsKey])
   const visibleKey = visible.join('\0')
   const first = useRef(true)
   useEffect(() => {

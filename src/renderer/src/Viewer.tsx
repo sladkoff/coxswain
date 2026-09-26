@@ -7,7 +7,7 @@ import type { ChangedFile, FileText } from '../../core/git'
 import type { NewEntry, ReviewEntry } from '../../core/review'
 import type { Workspace } from '../../core/workspaces'
 import { Entry, PermissionPrompt } from './Agents'
-import { changed, core } from './queries'
+import { changed, core, queryClient } from './queries'
 import { button, muted, primaryButton, ProblemMessage, Prose, SendIcon } from './ui'
 
 // What the Viewer shows: the file diff of a changed file, or a whole file as it is in the worktree.
@@ -15,7 +15,7 @@ export type Opened = { kind: 'diff'; file: ChangedFile } | { kind: 'file'; path:
 // A question's turn in a thread: the reply streamed so far (live) until it's saved as an answer entry, and a tool use
 // waiting for the user's approval.
 export type Turn = { running: boolean; error: string | null; live: ChatEntry[]; permission: Permission | null }
-type Ask = (question: NewEntry) => void
+type Ask = (question: NewEntry | { workspaceId: number; threadId: number }) => void
 
 type Draft = { side: 'old' | 'new'; startLine: number; endLine: number }
 // What an inline box between the lines shows: an entry with its thread, or the form for a new one.
@@ -26,13 +26,13 @@ type Props = {
   workspace: Workspace
   mergeBase: string
   // A commit diff (the Diff tab's Commits): the new side is this commit, and mergeBase its parent.
-  // ponytail: notes on it keep the commit's line numbers and say "as in the worktree", and Viewed marks the file
-  // viewed for all changes; anchor entries and viewed state to the commit if that misleads.
+  // ponytail: notes on it keep the commit's line numbers and say "as in the worktree", and Reviewed marks the file
+  // reviewed for all changes; anchor entries and reviewed state to the commit if that misleads.
   head?: string
   opened: Opened
   entries: ReviewEntry[] // the workspace's
-  viewed: string[]
-  onViewedChange: (path: string, viewed: boolean) => void
+  reviewed: string[]
+  onReviewedChange: (path: string, reviewed: boolean) => void
   turns: Record<number, Turn> // by thread
   onAsk: Ask
   onAnswerPermission: (threadId: number, id: string, optionId: string) => void
@@ -160,6 +160,14 @@ export const Viewer = memo(function Viewer(props: Props) {
     await window.coxswain.addNote(e)
     changed({ workspaceId: workspace.id, what: 'entries' })
   }
+  const edit = async (e: ReviewEntry, body: string) => {
+    await window.coxswain.editEntry(e.id, body)
+    changed({ workspaceId: workspace.id, what: 'entries' })
+  }
+  const resolve = async (e: ReviewEntry, resolved: boolean) => {
+    await window.coxswain.resolveThread(e.id, resolved)
+    changed({ workspaceId: workspace.id, what: 'entries' })
+  }
   const remove = async (e: ReviewEntry) => {
     await window.coxswain.deleteEntry(e.id)
     changed({ workspaceId: workspace.id, what: 'entries' })
@@ -182,7 +190,10 @@ export const Viewer = memo(function Viewer(props: Props) {
         onReply={(body, toAgent) => post({ workspaceId: workspace.id, body, parentId: entry.id }, toAgent)}
         onStop={() => window.coxswain.stopQuestion(workspace.id)}
         onAnswerPermission={(id, optionId) => props.onAnswerPermission(entry.id, id, optionId)}
+        onEdit={(body) => edit(entry, body)}
+        onResolve={(resolved) => resolve(entry, resolved)}
         onRemove={() => remove(entry)}
+        onSend={() => props.onAsk({ workspaceId: workspace.id, threadId: entry.id })}
       />
     ) : null
 
@@ -234,10 +245,10 @@ export const Viewer = memo(function Viewer(props: Props) {
               <label className="flex items-center gap-1 font-sans text-xs select-none">
                 <input
                   type="checkbox"
-                  checked={props.viewed.includes(path)}
-                  onChange={(e) => props.onViewedChange(path, e.target.checked)}
+                  checked={props.reviewed.includes(path)}
+                  onChange={(e) => props.onReviewedChange(path, e.target.checked)}
                 />
-                Viewed
+                Reviewed
               </label>
             </div>
           )}
@@ -272,15 +283,21 @@ type ComposerProps = {
   autoFocus?: boolean
   rows: number
   placeholder: string
-  toAgent?: boolean // the checkbox's starting state
+  reply?: boolean // a reply is always a note: no Comment/Agent toggle
   onSend: (body: string, toAgent: boolean) => void
   onCancel?: () => void
 }
 
-// A comment's text, *Send to agent* on the left and the send button on the right. Enter sends, Shift+Enter adds a line.
+// A comment's text, then the Comment/Agent toggle and the send button on the right. Enter sends, Shift+Enter adds a line.
 function Composer(props: ComposerProps) {
   const [body, setBody] = useState('')
-  const [toAgent, setToAgent] = useState(props.toAgent ?? false)
+  // A global preference (every composer shares it), so the query is updated at once, then stored.
+  const saved = useQuery(core('getCommentToAgent')).data ?? false
+  const toAgent = !props.reply && saved
+  const setToAgent = (on: boolean) => {
+    queryClient.setQueryData(core('getCommentToAgent').queryKey, on)
+    void window.coxswain.setCommentToAgent(on)
+  }
   // autoFocus loses to the gutter button, which takes focus when the drag that opened the box ends.
   const input = useRef<HTMLTextAreaElement>(null)
   useEffect(() => {
@@ -310,11 +327,21 @@ function Composer(props: ComposerProps) {
         placeholder={`${props.placeholder} (Enter to send)`}
         className="resize-none rounded-md border border-neutral-300 bg-transparent p-1.5 outline-none focus:border-neutral-500 dark:border-neutral-700"
       />
-      <div className="flex items-center justify-between">
-        <label className="flex items-center gap-1 text-xs select-none">
-          <input type="checkbox" checked={toAgent} onChange={(e) => setToAgent(e.target.checked)} />
-          Send to agent
-        </label>
+      <div className="flex items-center justify-end gap-2">
+        {!props.reply && (
+          <div className="flex rounded-md border border-neutral-300 p-0.5 text-xs dark:border-neutral-700">
+            {([false, true] as const).map((on) => (
+              <button
+                key={String(on)}
+                title={on ? 'Send to the agent, who answers in the thread' : 'Leave a comment for yourself'}
+                className={`rounded px-2 py-0.5 ${toAgent === on ? 'bg-neutral-200 dark:bg-neutral-700' : 'text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800'}`}
+                onClick={() => setToAgent(on)}
+              >
+                {on ? 'Agent' : 'Comment'}
+              </button>
+            ))}
+          </div>
+        )}
         <button title="Send (Enter)" className={`${primaryButton} disabled:opacity-50`} disabled={!body.trim()} onClick={send}>
           <SendIcon />
         </button>
@@ -330,42 +357,116 @@ type ThreadBoxProps = {
   onReply: (body: string, toAgent: boolean) => void
   onStop: () => void
   onAnswerPermission: (id: string, optionId: string) => void
+  onEdit: (body: string) => void // the first comment's text
+  onResolve: (resolved: boolean) => void // false: reopen
   onRemove: () => void
+  onSend: () => void // the latest note, to the agent
 }
 
 // A thread: its first entry, the replies and answers, the reply streaming in while a turn runs, and a box to reply.
-function ThreadBox({ root, replies, turn, onReply, onStop, onAnswerPermission, onRemove }: ThreadBoxProps) {
+// Its ⋯ menu edits the first comment (the user's own only), deletes the thread, or sends its latest note to the agent.
+// Resolved, it folds to its header and first comment until reopened.
+function ThreadBox({ root, replies, turn, onReply, onStop, onAnswerPermission, onEdit, onResolve, onRemove, onSend }: ThreadBoxProps) {
   const running = turn?.running ?? false
+  const [editing, setEditing] = useState(false)
+  const lastOwn = [root, ...replies].findLast((e) => e.kind === 'note' || e.kind === 'question')
+  const menu = async () => {
+    const picked = await window.coxswain.showThreadMenu({
+      edit: root.kind === 'note' || root.kind === 'question',
+      send: !running && lastOwn?.kind === 'note',
+    })
+    if (picked === 'edit') setEditing(true)
+    if (picked === 'delete') onRemove()
+    if (picked === 'send') onSend()
+  }
   return (
     <div id={`thread:${root.id}`} className={box}>
       <div className={`flex items-center gap-2 text-xs ${muted}`}>
-        <span>{lines(root.startLine!, root.endLine!)}</span>
-        <div className="flex-1" />
-        <button title="Delete the thread" className="hover:text-neutral-900 dark:hover:text-neutral-100" onClick={onRemove}>
-          ✕
-        </button>
-      </div>
-      <div className="flex max-h-96 flex-col gap-1.5 overflow-y-auto">
-        <Comment entry={root} />
-        {replies.map((e) => <Comment key={e.id} entry={e} />)}
-        {turn?.live.filter((c) => c.kind !== 'user').map((c, i) => <Entry key={`live${i}`} entry={c} />)}
-        {turn?.permission ? (
-          <PermissionPrompt permission={turn.permission} onAnswer={(optionId) => onAnswerPermission(turn.permission!.id, optionId)} />
+        <span className="shrink-0">{lines(root.startLine!, root.endLine!)}</span>
+        {root.resolvedAt ? (
+          <span className="min-w-0 flex-1 truncate">Resolved · {root.body}</span>
         ) : (
-          running && <div className={`text-xs ${muted}`}>Working…</div>
+          <div className="flex-1" />
         )}
-        {turn?.error && <div className="text-xs text-red-600 select-text dark:text-red-400">{turn.error}</div>}
-      </div>
-      {running ? (
-        <button className={`${button} self-end text-xs`} onClick={onStop}>
-          Stop
+        <button
+          title={root.resolvedAt ? 'Resolved: click to reopen' : 'Resolve: mark the thread done; it folds to one line'}
+          disabled={running}
+          className={`rounded px-1 hover:bg-neutral-100 disabled:opacity-50 dark:hover:bg-neutral-800 ${root.resolvedAt ? 'text-green-600' : 'hover:text-neutral-900 dark:hover:text-neutral-100'}`}
+          onClick={() => onResolve(!root.resolvedAt)}
+        >
+          ✓
         </button>
-      ) : (
-        <div className="flex flex-col gap-1.5 border-t border-neutral-200 pt-1.5 dark:border-neutral-800">
-          {/* Ticked to start with when the thread is already talking to the agent, or the agent started it. */}
-          <Composer rows={1} placeholder="Reply" toAgent={root.kind !== 'note'} onSend={onReply} />
-        </div>
+        <button title="Edit, delete or send to the agent" className="rounded px-1 hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-neutral-800 dark:hover:text-neutral-100" onClick={menu}>
+          ⋯
+        </button>
+      </div>
+      {(!root.resolvedAt || editing) && (
+        <>
+          <div className="flex max-h-96 flex-col gap-1.5 overflow-y-auto">
+            {editing ? (
+              <EditBox
+                body={root.body}
+                onSave={(body) => {
+                  onEdit(body)
+                  setEditing(false)
+                }}
+                onCancel={() => setEditing(false)}
+              />
+            ) : (
+              <Comment entry={root} />
+            )}
+            {replies.map((e) => <Comment key={e.id} entry={e} />)}
+            {turn?.live.filter((c) => c.kind !== 'user').map((c, i) => <Entry key={`live${i}`} entry={c} />)}
+            {turn?.permission ? (
+              <PermissionPrompt permission={turn.permission} onAnswer={(optionId) => onAnswerPermission(turn.permission!.id, optionId)} />
+            ) : (
+              running && <div className={`text-xs ${muted}`}>Working…</div>
+            )}
+            {turn?.error && <div className="text-xs text-red-600 select-text dark:text-red-400">{turn.error}</div>}
+          </div>
+          {running ? (
+            <button className={`${button} self-end text-xs`} onClick={onStop}>
+              Stop
+            </button>
+          ) : (
+            <div className="flex flex-col gap-1.5 border-t border-neutral-200 pt-1.5 dark:border-neutral-800">
+              <Composer rows={1} placeholder="Reply" reply onSend={onReply} />
+            </div>
+          )}
+        </>
       )}
+    </div>
+  )
+}
+
+// A comment's text being edited in place: Enter saves, Esc cancels, Shift+Enter adds a line.
+function EditBox(props: { body: string; onSave: (body: string) => void; onCancel: () => void }) {
+  const [body, setBody] = useState(props.body)
+  const save = () => (body.trim() ? props.onSave(body) : props.onCancel())
+  return (
+    <div className="flex flex-col gap-1.5">
+      <textarea
+        autoFocus
+        value={body}
+        onChange={(e) => setBody(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') props.onCancel()
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault()
+            save()
+          }
+        }}
+        rows={3}
+        className="resize-none rounded-md border border-neutral-300 bg-transparent p-1.5 outline-none focus:border-neutral-500 dark:border-neutral-700"
+      />
+      <div className="flex justify-end gap-1.5 text-xs">
+        <button className={button} onClick={props.onCancel}>
+          Cancel
+        </button>
+        <button className={primaryButton} onClick={save}>
+          Save
+        </button>
+      </div>
     </div>
   )
 }

@@ -25,9 +25,9 @@ import {
 import { type Guide, listGuides, onGuideChange } from '../core/guides'
 import { getCurrentUser, listPullRequests, listRepos } from '../core/github'
 import { listProjects, openProject } from '../core/projects'
-import { addNote, askQuestion, deleteEntry, listEntries, type NewEntry, requestGuide, sendReview, stopQuestion } from '../core/review'
+import { addNote, askQuestion, deleteEntry, editEntry, resolveThread, sendThread, getCommentToAgent, setCommentToAgent, listEntries, type NewEntry, requestGuide, sendReview, stopQuestion } from '../core/review'
 import { getSummaryModel, getTimeline, recordHead, setSummaryModel, summarise } from '../core/timeline'
-import { listViewed, setViewed } from '../core/viewed'
+import { listReviewed, setReviewed } from '../core/reviewed'
 import type { Changed, NavigatorSettings, ViewSettings } from '../preload'
 import { listWorkspaces, openPullRequestWorkspace } from '../core/workspaces'
 
@@ -154,20 +154,21 @@ app.whenReady().then(() => {
   ipcMain.handle('review:list', (_, workspaceId: number, base: string, head?: string) => listEntries(db, workspaceId, base, head))
   ipcMain.handle('review:add-note', (_, note: NewEntry) => addNote(db, note))
   ipcMain.handle('review:delete', (_, id: number) => deleteEntry(db, id))
-  // Returns the question once saved; the reply streams as review:chat to the thread and agents:entry to the agent
-  // pane, a tool use to approve comes as review:permission, and the turn's end as review:turn-end.
-  ipcMain.handle('review:ask', async (e, question: NewEntry) => {
+  // A question (review:ask), or a thread's *Send to agent* (review:send-thread: its latest note made a question, null
+  // if it has none). Returns the question once saved; the reply streams as review:chat to the thread and agents:entry
+  // to the agent pane, a tool use to approve comes as review:permission, and the turn's end as review:turn-end.
+  type Handlers = Parameters<typeof sendThread> extends [unknown, unknown, ...infer H] ? H : never
+  const asking = async (e: Electron.IpcMainInvokeEvent, workspaceId: number, start: (...h: Handlers) => ReturnType<typeof sendThread>) => {
     const send = (channel: string, ...args: unknown[]) => !e.sender.isDestroyed() && e.sender.send(channel, ...args)
-    const asked = await askQuestion(
-      db,
-      question,
+    const asked = await start(
       (threadId, entry, agentSessionId) => {
         send('review:chat', threadId, entry)
         send('agents:entry', agentSessionId, entry)
       },
       (threadId, p) => permission(e.sender, () => send('review:permission', threadId, p)),
     )
-    const workspaceId = question.workspaceId
+    if (!asked) return null
+    changed(e.sender, { workspaceId, what: 'entries' }) // the question
     changed(e.sender, { workspaceId, what: 'transcript' }) // the session may be new
     const threadId = asked.question.parentId ?? asked.question.id
     asked.turn.then((result) => {
@@ -177,7 +178,15 @@ app.whenReady().then(() => {
       send('review:turn-end', threadId, result)
     })
     return asked.question
-  })
+  }
+  ipcMain.handle('review:ask', (e, question: NewEntry) =>
+    asking(e, question.workspaceId, (...h) => askQuestion(db, question, ...h)),
+  )
+  ipcMain.handle('review:send-thread', (e, workspaceId: number, threadId: number) =>
+    asking(e, workspaceId, (...h) => sendThread(db, threadId, ...h)),
+  )
+  ipcMain.handle('review:resolve', (_, id: number, resolved: boolean) => resolveThread(db, id, resolved))
+  ipcMain.handle('review:edit', (_, id: number, body: string) => editEntry(db, id, body))
   // Every thread to the agent pane's session at once; the reply streams as agents:entry, like a message sent there.
   ipcMain.handle('review:send-all', async (e, workspaceId: number) => {
     const send = (channel: string, ...args: unknown[]) => !e.sender.isDestroyed() && e.sender.send(channel, ...args)
@@ -193,11 +202,11 @@ app.whenReady().then(() => {
     return result
   })
   ipcMain.handle('review:stop', (_, workspaceId: number) => stopQuestion(db, workspaceId))
-  ipcMain.handle('viewed:list', (_, workspaceId: number, mergeBase: string, head?: string) =>
-    listViewed(db, workspaceId, mergeBase, head),
+  ipcMain.handle('reviewed:list', (_, workspaceId: number, mergeBase: string, head?: string) =>
+    listReviewed(db, workspaceId, mergeBase, head),
   )
-  ipcMain.handle('viewed:set', (_, workspaceId: number, mergeBase: string, path: string, viewed: boolean, head?: string) =>
-    setViewed(db, workspaceId, mergeBase, path, viewed, head),
+  ipcMain.handle('reviewed:set', (_, workspaceId: number, mergeBase: string, path: string, reviewed: boolean, head?: string) =>
+    setReviewed(db, workspaceId, mergeBase, path, reviewed, head),
   )
   ipcMain.handle('agents:run-turn', async (e, agentSessionId: string, prompt: string) => {
     const workspaceId = await agentSessionWorkspace(db, agentSessionId)
@@ -224,6 +233,18 @@ app.whenReady().then(() => {
   )
   // The Diff tab's commits: all changes, or one commit's diff. Resolves only on a click, like the menus above.
   ipcMain.handle(
+    'menus:thread',
+    (e, can: { edit: boolean; send: boolean }) =>
+      new Promise<'edit' | 'delete' | 'send'>((resolve) =>
+        Menu.buildFromTemplate([
+          { label: 'Edit', enabled: can.edit, click: () => resolve('edit') },
+          { label: 'Delete', click: () => resolve('delete') },
+          { type: 'separator' },
+          { label: 'Send to Agent', enabled: can.send, click: () => resolve('send') },
+        ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
+      ),
+  )
+  ipcMain.handle(
     'menus:view',
     (e, s: ViewSettings) =>
       new Promise<ViewSettings>((resolve) =>
@@ -232,10 +253,10 @@ app.whenReady().then(() => {
           { label: 'Split', type: 'radio', checked: s.diffStyle === 'split', click: () => resolve({ ...s, diffStyle: 'split' }) },
           { type: 'separator' },
           {
-            label: 'Show Viewed Files',
+            label: 'Show Reviewed Files',
             type: 'checkbox',
-            checked: s.showViewed,
-            click: () => resolve({ ...s, showViewed: !s.showViewed }),
+            checked: s.showReviewed,
+            click: () => resolve({ ...s, showReviewed: !s.showReviewed }),
           },
         ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
       ),
@@ -277,6 +298,8 @@ app.whenReady().then(() => {
           ),
       ),
   )
+  ipcMain.handle('settings:comment-to-agent', () => getCommentToAgent(db))
+  ipcMain.handle('settings:set-comment-to-agent', (_, toAgent: boolean) => setCommentToAgent(db, toAgent))
   ipcMain.handle('settings:summary-model', () => getSummaryModel(db))
   ipcMain.handle('settings:set-summary-model', (_, model: string) => setSummaryModel(db, model))
   // The agent's guide tools change guides and entries mid-turn; the UI refetches them as they come.

@@ -12,8 +12,8 @@ the left and the canvas on the right. The canvas is one explorer that both the a
 can annotate; what it can show is still to be decided. The agent will get tools to use the app
 (navigate the canvas, read what's on it). The canvas shows *Changes*: the file diffs (the old *Diff* tab) with the Navigator, and a bar at its top with
 their options. A row of tabs comes back once it shows a second thing. A bar at the bottom of
-the canvas sums up the review: how many threads (and how many are outdated or waiting on the agent), the lines added
-and removed, and how many of the files are viewed, with a progress bar. Clicking the thread count opens every thread above
+the canvas sums up the review: how many threads (and how many are outdated, resolved or waiting on the agent), the lines added
+and removed, and how many of the files are reviewed, with a progress bar. Clicking the thread count opens every thread above
 the bar, one line each: file and lines, the first comment, and whether it's outdated, answered (*N answers*), sent to
 the agent, or has replies. Clicking one scrolls the canvas to it. *Send all to agent* on the bar sends every thread in one message to
 the agent pane's session: where each points, the code, and its comments and answers, asking the agent to make the
@@ -26,12 +26,12 @@ send a message to the agent pane's session, which makes the guide with coxswain'
 the agent pane's own words does the same. A guide shows in *Changes* as soon as the agent starts it, and fills in as it
 adds to it: its groups in reading order, each with its title, how many files and its description above its first file
 diff, and each file note above its file diff; then the files in no group under *Not in the guide*; then the
-*generated* groups, low-lighted. On the canvas's left, a table of contents: how many file diffs are viewed in all
-with a bar, then every group with how many of its file diffs are viewed (✓ when all are) and, if any, how many notes
+*generated* groups, low-lighted. On the canvas's left, a table of contents: how many file diffs are reviewed in all
+with a bar, then every group with how many of its file diffs are reviewed (✓ when all are) and, if any, how many notes
 and questions are on them (`✎ 2`). The group being read is marked as you scroll; a click jumps to it, first showing
-viewed file diffs if all of its are. Explanations (labelled *Guide*) and, with review, findings (labelled *Finding*) are
+reviewed file diffs if all of its are. Explanations (labelled *Guide*) and, with review, findings (labelled *Finding*) are
 threads between the lines, which can be replied to like any other; they show only with their guide. A guide shows
-the PR as it was (its range, like a commit), and its *Viewed* ticks stay; once the PR has new commits, an amber bar
+the PR as it was (its range, like a commit), and its *Reviewed* ticks stay; once the PR has new commits, an amber bar
 says so. The button then reads *Guide · date*. Picking a commit hides the guide, and the other way round.
 
 The *Overview* tab is gone, so the timeline can't be reached; the L3 and L4 notes below describe the old layout until
@@ -71,11 +71,11 @@ this settles.
   files as a tree with their status and +/− lines, and *Files*, the whole file tree of the
   workspace, with folders that contain changes marked. Both come from the worktree, so *Diffs* shows
   the PR's file diffs and local changes (e.g. an agent's) together, and reloads after each turn.
-  While the project is being cloned, its icon pulses and the Navigator says so. In *Diffs*, viewed
-  files are hidden; the top says how many of the files are viewed, and a cog button opens a native
+  While the project is being cloned, its icon pulses and the Navigator says so. In *Diffs*, reviewed
+  files are hidden; the top says how many of the files are reviewed, and a cog button opens a native
   menu: *As Tree* or *As List* (a flat list of the changed files, each with its folder dimmed
   next to its +/− lines). A changed file with notes or questions shows how many
-  after its +/− lines (`✎ 2`; hovering says how many of each). *Show Viewed Files* in the tab bar's cog menu (L3) shows viewed files again
+  after its +/− lines (`✎ 2`; hovering says how many of each). *Show Reviewed Files* in the tab bar's cog menu (L3) shows reviewed files again
   with a ✓.
 - **L3 — Viewer.** Tabs along the top: *Overview* (the PR's title and its timeline, the tab a
   workspace opens on), *Guide* and *Diff*, all file diffs side by side one after
@@ -85,18 +85,17 @@ this settles.
   hides the commits pane, in the Navigator's place on the left: *All Changes*, then the PR's commits (and local ones on
   top), newest first. Picking a commit shows its commit diff in the file diffs (and in the Navigator once it's back), and the button then
   names the commit; the Guide keeps all changes. On *Guide* and *Diff* it has a cog button that
-  opens a native menu: *Unified* or *Split* file diffs, and *Show Viewed Files*, shared by the
-  Navigator, the file diffs and the Guide: off, viewed file diffs are hidden, and when all are, the canvas says *All N
-  files viewed* with *Show them*. A file diff's header has a
-  *Viewed* checkbox. The workspace's entries (glossary) go between the lines while
+  opens a native menu: *Unified* or *Split* file diffs, and *Show Reviewed Files*, shared by the
+  Navigator, the file diffs and the Guide: off, reviewed file diffs are hidden, and when all are, the canvas says *All N
+  files reviewed* with *Show them*. A file diff's header has a
+  *Reviewed* checkbox. The workspace's entries (glossary) go between the lines while
   they're current, i.e. their lines still read as the code they were written on; the header says *N
   outdated* for the others, and a click shows them above the file diff with that code. Hovering
   a line shows a `+` in the gutter; clicking it (or dragging it over a range) opens a comment box: the lines at its top, ✕ at its top right
-  to cancel (or Esc), the text, a *Send to agent* checkbox at the bottom left and a send button (Enter; Shift+Enter
-  adds a line) at the bottom right. Sending starts a **thread** between the lines: every comment is one. Under
-  its comments, a reply box of the same shape adds another comment to the thread; its checkbox starts ticked in a
-  thread that began as a question. Each comment is labelled *You*, or *You → agent* when it went to the agent, and
-  the agent's answers *Agent*. Unticked, a comment is a note. Ticked, it's a question: a turn in the agent pane's
+  to cancel (or Esc), the text, and at the bottom right a *Comment* / *Agent* toggle and a send button (Enter; Shift+Enter
+  adds a line). The toggle is one global preference, kept across boxes and restarts. Sending starts a **thread** between the lines: every comment is one. Under
+  its comments, a reply box adds another comment to the thread; a reply is always a note, with no toggle. Each comment is labelled *You*, or *You → agent* when it went to the agent, and
+  the agent's answers *Agent*. On *Comment*, a comment is a note. On *Agent*, it's a question: a turn in the agent pane's
   agent session (ADR 0021), which shows it as a card (*Comment on `path:lines` sent to Claude*, the comment, and
   *View thread*, which scrolls the canvas to the thread). The agent is given the thread's notes it hasn't seen (and the lines, if the
   thread began as a note): the reply streams into the thread, with each tool used as one line, and is kept as an
@@ -104,8 +103,10 @@ this settles.
   change something (a file edit, most shell commands) stops the turn with a permission prompt in the
   thread: what the agent wants to run and the agent's options (*Yes*, *No*, sometimes *Always*); the
   turn carries on once one is picked, or ends with *Stop*. Questions
-  run one at a time, and not while the agent pane's own turn runs. The thread's header has ✕ to delete it.
-  To send a note to the agent afterwards, reply with *Send to agent* ticked; the agent gets the thread's notes too.
+  run one at a time, and not while the agent pane's own turn runs. The thread's header has a ✓ to resolve it: the thread folds to its
+  header (*Resolved* and its first comment), is left out of *Send all to agent*, and the ✓, green now, reopens it. Right of it, a ⋯ button with a native
+  menu: *Edit* (the first comment, in place, if it's yours), *Delete* (the thread), and *Send to Agent*, which makes the
+  thread's latest note a question, with the notes before it since the last question; the answer comes in the thread.
 
   *Guide* was a tab of its own; guides now show in *Changes* (above).
   *Overview* shows the PR's title, author and when it was opened, then its **timeline**, newest first: the latest phase on top, and in each phase the latest event on top. Each
@@ -159,7 +160,7 @@ this settles.
 
 1. **Inbox:** where do you find PRs that aren't workspaces yet (review requested, new comments on
    your PRs)? Probably an inbox; where it lives and what goes in it is to be decided.
-2. **Guides:** should a guide group down to hunks, not whole file diffs? Should a group get its own *Viewed* again?
+2. **Guides:** should a guide group down to hunks, not whole file diffs? Should a group get its own *Reviewed* again?
    Does the agent pane need to show that a guide is being made?
 3. **The review as a whole:** where do you write a comment that isn't on lines? *Post* is still open. GitHub's comments
    show on the timeline (ADR 0020); should review comments also show in the diff?
