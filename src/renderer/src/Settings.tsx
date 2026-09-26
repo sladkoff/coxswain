@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import type { CurrentUser } from '../../core/github'
-import type { GuideSettings } from '../../core/guides'
 import { button, ProblemMessage, muted, ScreenHeader } from './ui'
 
 export function Settings({ onClose }: { onClose: () => void }) {
@@ -38,7 +37,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
           )}
         </div>
 
-        <GuideSection />
+        <SummarySection />
       </div>
     </div>
   )
@@ -47,60 +46,25 @@ export function Settings({ onClose }: { onClose: () => void }) {
 const field =
   'rounded-md border border-neutral-300 bg-transparent p-1.5 outline-none select-text focus:border-neutral-500 dark:border-neutral-700'
 
-// The prompt and model the Guide tab asks Claude Code with. Saved when a field loses focus.
-function GuideSection() {
-  const [s, setS] = useState<GuideSettings | null>(null)
-  useEffect(() => void window.coxswain.getGuideSettings().then(setS), [])
-  if (!s) return null
-  const save = (next: GuideSettings) => {
-    setS(next)
-    window.coxswain.setGuideSettings(next)
-  }
+// The model change summaries are made on (ADR 0020). Saved when the field loses focus.
+function SummarySection() {
+  const [model, setModel] = useState<string | null>(null)
+  useEffect(() => void window.coxswain.getSummaryModel().then(setModel), [])
+  if (model === null) return null
   return (
     <>
-      <h2 className="mt-6 mb-3 font-medium">Guide</h2>
+      <h2 className="mt-6 mb-3 font-medium">Change summaries</h2>
       <div className="flex flex-col gap-3 rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
-        <label className="flex flex-col gap-1">
-          <span className="flex items-center justify-between">
-            Prompt
-            <button
-              className={`${button} text-xs`}
-              disabled={s.prompt === s.defaultPrompt}
-              onClick={() => save({ ...s, prompt: s.defaultPrompt })}
-            >
-              Reset
-            </button>
-          </span>
-          <textarea
-            rows={7}
-            value={s.prompt}
-            onChange={(e) => setS({ ...s, prompt: e.target.value })}
-            onBlur={() => save(s)}
-            className={`${field} resize-y text-xs`}
-          />
-          <span className={`text-xs ${muted}`}>The changed files, how to read their diffs and the answer's format are added after it.</span>
-        </label>
         <label className="flex flex-col gap-1">
           Model
           <input
-            value={s.model}
-            onChange={(e) => setS({ ...s, model: e.target.value })}
-            onBlur={() => save(s)}
+            value={model}
+            onChange={(e) => setModel(e.target.value)}
+            onBlur={() => window.coxswain.setSummaryModel(model)}
             placeholder="Claude Code's default"
             className={field}
           />
-          <span className={`text-xs ${muted}`}>Groups the files, then describes each group. A Claude Code model name or alias, e.g. sonnet or opus.</span>
-        </label>
-        <label className="flex flex-col gap-1">
-          Summary model
-          <input
-            value={s.summaryModel}
-            onChange={(e) => setS({ ...s, summaryModel: e.target.value })}
-            onBlur={() => save(s)}
-            placeholder="Claude Code's default"
-            className={field}
-          />
-          <span className={`text-xs ${muted}`}>Summarises every file diff before grouping, a batch at a time, many at once. A fast one, e.g. haiku.</span>
+          <span className={`text-xs ${muted}`}>Summarises each new version of the PR. A fast one, e.g. haiku.</span>
         </label>
       </div>
     </>

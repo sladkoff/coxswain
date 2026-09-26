@@ -1,0 +1,64 @@
+import type { ChangedFile } from '../../core/git'
+import type { GuideGroup } from '../../core/guides'
+import type { ReviewEntry } from '../../core/review'
+import { countItems, itemsTitle, muted, Prose } from './ui'
+
+// A guide group as the canvas shows it: its file diffs; group null is the files in no group.
+export type GuideSection = { group: GuideGroup | null; diffs: { file: ChangedFile }[] }
+
+type Props = {
+  sections: GuideSection[]
+  viewed: string[]
+  entries: ReviewEntry[]
+  current: number // the section at the top of the canvas's scroll
+  onPick: (i: number) => void
+}
+
+// A guide's table of contents, left of the canvas while a guide shows: how many file diffs are viewed in all, then
+// every group with how many of its file diffs are viewed (✓ when all are) and the notes and questions on them. The
+// group being read is marked; a click scrolls to it.
+// ponytail: fixed width, no Splitter; make it resizable like the Navigator if titles get cut.
+export function GuideToc({ sections, viewed, entries, current, onPick }: Props) {
+  const all = sections.flatMap((s) => s.diffs)
+  const viewedCount = all.filter((d) => viewed.includes(d.file.path)).length
+  const items = countItems(entries)
+  return (
+    <nav className="flex w-60 shrink-0 flex-col gap-2 overflow-y-auto border-r border-neutral-200 p-3 text-xs dark:border-neutral-800">
+      <div className="flex flex-col gap-1">
+        <div className="h-1 overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-800">
+          <div className="h-full bg-neutral-500 dark:bg-neutral-400" style={{ width: `${(100 * viewedCount) / (all.length || 1)}%` }} />
+        </div>
+        <span className={muted}>
+          {viewedCount} of {all.length} viewed
+        </span>
+      </div>
+      {sections.map((s, i) => {
+        const n = s.diffs.filter((d) => viewed.includes(d.file.path)).length
+        const done = n === s.diffs.length
+        const c = s.diffs.reduce(
+          (sum, d) => {
+            const f = items.get(d.file.path)
+            return { notes: sum.notes + (f?.notes ?? 0), questions: sum.questions + (f?.questions ?? 0) }
+          },
+          { notes: 0, questions: 0 },
+        )
+        const itemCount = c.notes + c.questions
+        return (
+          <button
+            key={i}
+            onClick={() => onPick(i)}
+            className={`flex items-baseline gap-2 rounded px-1.5 py-1 text-left ${i === current ? 'bg-neutral-200 dark:bg-neutral-700' : 'hover:bg-neutral-100 dark:hover:bg-neutral-800'} ${done || s.group?.tags.includes('generated') ? muted : ''}`}
+          >
+            <span className="min-w-0 flex-1">{s.group ? <Prose inline>{s.group.title}</Prose> : 'Not in the guide'}</span>
+            {itemCount > 0 && (
+              <span title={itemsTitle(c)} className="shrink-0 text-blue-600 tabular-nums dark:text-blue-400">
+                ✎ {itemCount}
+              </span>
+            )}
+            <span className={`shrink-0 tabular-nums ${muted}`}>{done ? '✓' : `${n}/${s.diffs.length}`}</span>
+          </button>
+        )
+      })}
+    </nav>
+  )
+}

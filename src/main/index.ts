@@ -23,11 +23,11 @@ import {
   readFileAt,
   readWorktreeFile,
 } from '../core/git'
-import { createGuide, getGuide, getGuideSettings, type GuideSettingsChange, setGuideSettings } from '../core/guides'
+import { type Guide, listGuides, onGuideChange } from '../core/guides'
 import { getCurrentUser, listPullRequests, listRepos } from '../core/github'
 import { listProjects, openProject } from '../core/projects'
-import { addNote, askQuestion, deleteEntry, listEntries, type NewEntry, sendReview, stopQuestion } from '../core/review'
-import { getTimeline, recordHead, summarise } from '../core/timeline'
+import { addNote, askQuestion, deleteEntry, listEntries, type NewEntry, requestGuide, sendReview, stopQuestion } from '../core/review'
+import { getSummaryModel, getTimeline, recordHead, setSummaryModel, summarise } from '../core/timeline'
 import { listViewed, setViewed } from '../core/viewed'
 import type { Changed, NavigatorSettings, ViewSettings } from '../preload'
 import { listWorkspaces, openPullRequestWorkspace } from '../core/workspaces'
@@ -257,14 +257,52 @@ app.whenReady().then(() => {
         ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
       ),
   )
-  ipcMain.handle('guides:get', (_, workspaceId: number, mergeBase: string) => getGuide(db, workspaceId, mergeBase))
-  ipcMain.handle('guides:create', (e, workspaceId: number, mergeBase: string, head: string, kind: 'all' | 'commit') =>
-    createGuide(db, workspaceId, mergeBase, head, kind, (p) => {
-      if (!e.sender.isDestroyed()) e.sender.send('guides:progress', workspaceId, p)
-    }).finally(() => changed(e.sender, { workspaceId, what: 'guide' })),
+  ipcMain.handle('guides:list', (_, workspaceId: number) => listGuides(db, workspaceId))
+  // Asks the agent pane's session for a guide; the reply streams as agents:entry, like a message sent there.
+  ipcMain.handle('guides:request', async (e, workspaceId: number, review: boolean) => {
+    const send = (channel: string, ...args: unknown[]) => !e.sender.isDestroyed() && e.sender.send(channel, ...args)
+    const result = await requestGuide(db, workspaceId, review, (agentSessionId) => {
+      changed(e.sender, { workspaceId, what: 'transcript' }) // the session may be new
+      return {
+        onEntry: (entry) => send('agents:entry', agentSessionId, entry),
+        onPermission: (p) => permission(e.sender, () => send('agents:permission', agentSessionId, p)),
+      }
+    })
+    changed(e.sender, { workspaceId, what: 'worktree' })
+    changed(e.sender, { workspaceId, what: 'transcript' })
+    return result
+  })
+  // The canvas's Guide menu: make a guide, or pick which to show. Resolves only on a click, like the menus above.
+  ipcMain.handle(
+    'menus:guide',
+    (e, workspaceId: number, shown: number | null, prHead: string) =>
+      listGuides(db, workspaceId).then(
+        (guides) =>
+          new Promise<{ make: boolean } | { show: number | null }>((resolve) =>
+            Menu.buildFromTemplate([
+              { label: 'Make a Guide', click: () => resolve({ make: false }) },
+              { label: 'Make a Guide with Review', click: () => resolve({ make: true }) },
+              { type: 'separator' },
+              { label: 'No Guide', type: 'radio', checked: shown === null, click: () => resolve({ show: null }) },
+              ...guides.map((g: Guide) => ({
+                label: `${new Date(g.createdAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })} · ${g.head.slice(0, 7)}${g.head === prHead ? '' : ' (stale)'}`,
+                type: 'radio' as const,
+                checked: g.id === shown,
+                click: () => resolve({ show: g.id }),
+              })),
+            ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
+          ),
+      ),
   )
-  ipcMain.handle('guides:settings', () => getGuideSettings(db))
-  ipcMain.handle('guides:set-settings', (_, s: GuideSettingsChange) => setGuideSettings(db, s))
+  ipcMain.handle('settings:summary-model', () => getSummaryModel(db))
+  ipcMain.handle('settings:set-summary-model', (_, model: string) => setSummaryModel(db, model))
+  // The agent's guide tools change guides and entries mid-turn; the UI refetches them as they come.
+  onGuideChange((workspaceId) => {
+    for (const w of BrowserWindow.getAllWindows()) {
+      changed(w.webContents, { workspaceId, what: 'guide' })
+      changed(w.webContents, { workspaceId, what: 'entries' })
+    }
+  })
   ipcMain.handle('agents:stop-turn', (_, agentSessionId: string) => stopTurn(agentSessionId))
   ipcMain.handle('agents:answer-permission', (_, id: string, optionId: string | null) => answerPermission(id, optionId))
   createWindow()
@@ -281,7 +319,7 @@ function permission(to: WebContents, show: () => void): Promise<string | null> {
   return new Promise((resolve) => to.once('destroyed', () => resolve(null)))
 }
 
-// Stopping the adapters ends every turn and guide still running.
+// Stopping the adapters ends every turn still running.
 app.on('will-quit', stopAgents)
 
 app.on('window-all-closed', () => {

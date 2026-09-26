@@ -362,20 +362,25 @@ function ThreadBox({ root, replies, turn, onReply, onStop, onAnswerPermission, o
         </button>
       ) : (
         <div className="flex flex-col gap-1.5 border-t border-neutral-200 pt-1.5 dark:border-neutral-800">
-          {/* Ticked to start with when the thread is already talking to the agent. */}
-          <Composer rows={1} placeholder="Reply" toAgent={root.kind === 'question'} onSend={onReply} />
+          {/* Ticked to start with when the thread is already talking to the agent, or the agent started it. */}
+          <Composer rows={1} placeholder="Reply" toAgent={root.kind !== 'note'} onSend={onReply} />
         </div>
       )}
     </div>
   )
 }
 
-// One entry of a thread: the user's (a question marked as sent to the agent), or the agent's answer.
+// Who wrote an entry the agent wrote, and why (glossary).
+const agentLabels: Partial<Record<ReviewEntry['kind'], string>> = { answer: 'Agent', explanation: 'Guide', finding: 'Finding' }
+
+// One entry of a thread: the user's (a question marked as sent to the agent), or the agent's: an answer, an
+// explanation or a finding.
 function Comment({ entry: e }: { entry: ReviewEntry }) {
-  if (e.kind === 'answer')
+  const label = agentLabels[e.kind]
+  if (label)
     return (
       <div className="markdown select-text [overflow-wrap:anywhere]">
-        <span className={`text-xs ${muted}`}>Agent</span>
+        <span className={`text-xs ${e.kind === 'finding' ? 'text-amber-600 dark:text-amber-400' : muted}`}>{label}</span>
         <Prose>{e.body}</Prose>
       </div>
     )

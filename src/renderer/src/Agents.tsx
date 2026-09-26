@@ -7,15 +7,20 @@ import { button, muted, primaryButton, Prose } from './ui'
 
 const pane = 'border-neutral-200 dark:border-neutral-800'
 
-// L4: a chat with the workspace's current agent session. The session starts with its first message.
-// ponytail: shows only the latest agent session; the others stay in the database until L4 gets tabs (UX open question 4).
+// L4: a chat with one of the workspace's agent sessions, the latest unless another is picked in the header. A new
+// session starts with its first message.
+// ponytail: comments still go to the latest session, not the one shown; pass the shown one to ask and sendReview if that
+// confuses.
 type Props = {
   workspace: Workspace
   onViewThread: (threadId: number) => void
 }
 
 export function Agents({ workspace, onViewThread }: Props) {
-  const last = useQuery(core('listAgentSessions', workspace.id)).data?.at(-1)
+  const sessions = useQuery(core('listAgentSessions', workspace.id)).data ?? []
+  // The agent session picked in the header; null is the latest, 'new' one not started yet.
+  const [picked, setPicked] = useState<string | null>(null)
+  const last = picked ? sessions.find((s) => s.agentSessionId === picked) : sessions.at(-1)
   const transcript = useQuery({ ...core('readTranscript', last?.agentSessionId ?? ''), enabled: !!last }).data
   const [session, setSession] = useState<AgentSession | null>(last ?? null)
   const [entries, setEntries] = useState<ChatEntry[]>(transcript ?? [])
@@ -26,13 +31,13 @@ export function Agents({ workspace, onViewThread }: Props) {
   const sessionRef = useRef(session)
   sessionRef.current = session
 
-  // The latest agent session's transcript, once loaded and again when a turn ends (the core says it changed), in
+  // The shown agent session's transcript, once loaded or picked and again when a turn ends (the core says it changed), in
   // place of the entries streamed during the turn. Not while the turn runs: nothing refetches it then.
   useEffect(() => {
     if (!last || !transcript) return
     setSession(last)
     setEntries(transcript)
-  }, [transcript])
+  }, [transcript, picked])
 
   useEffect(() => {
     const offEntry = window.coxswain.onChatEntry((id, entry) => {
@@ -58,6 +63,7 @@ export function Agents({ workspace, onViewThread }: Props) {
     if (!message || running) return
     const current = session ?? (await window.coxswain.startAgentSession(workspace.id))
     sessionRef.current = current
+    setPicked(current.agentSessionId)
     setSession(current)
     setDraft('')
     setError(null)
@@ -69,6 +75,7 @@ export function Agents({ workspace, onViewThread }: Props) {
   }
 
   const newSession = () => {
+    setPicked('new')
     setSession(null)
     setEntries([])
     setError(null)
@@ -76,9 +83,25 @@ export function Agents({ workspace, onViewThread }: Props) {
 
   return (
     <>
-      <div className={`flex h-10 shrink-0 items-center justify-between border-b pr-2 pl-8 [-webkit-app-region:drag] ${pane}`}>
-        <span className="text-xs font-medium">Claude Code</span>
+      <div className={`flex h-10 shrink-0 items-center justify-end border-b pr-2 pl-8 [-webkit-app-region:drag] ${pane}`}>
         <div className="flex items-center gap-1">
+          {sessions.length > 0 && (
+            <select
+              className="text-xs [-webkit-app-region:no-drag]"
+              disabled={running}
+              value={session?.agentSessionId ?? ''}
+              onChange={(e) => setPicked(e.target.value)}
+            >
+              {!sessions.some((s) => s.agentSessionId === session?.agentSessionId) && (
+                <option value={session?.agentSessionId ?? ''}>New session</option>
+              )}
+              {sessions.map((s, i) => (
+                <option key={s.agentSessionId} value={s.agentSessionId}>
+                  Session {i + 1} · {new Date(s.createdAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                </option>
+              ))}
+            </select>
+          )}
           <button className={`${button} text-xs [-webkit-app-region:no-drag]`} disabled={running} onClick={newSession}>
             New session
           </button>

@@ -198,6 +198,42 @@ const migrations = [
   alter table agent_sessions_new rename to agent_sessions;
   drop table action_items;
   drop table review_rounds`,
+  // ADR 0023: guides are made by the agent pane's session. The old guides and file summaries go, and so do the guide
+  // prompt and model; the summary model stays, for change summaries. A guide is a pinned range and its groups; its
+  // explanations and findings are entries with its guide_id.
+  `drop table guides;
+  drop table file_summaries;
+  delete from settings where key in ('guide.prompt', 'guide.model');
+  update settings set key = 'summary.model' where key = 'guide.summary-model';
+  create table guides (
+    id integer primary key,
+    workspace_id integer not null references workspaces (id) on delete cascade,
+    base text not null,
+    head text not null,
+    groups text not null default '[]',
+    created_at text not null
+  );
+  create table entries_new (
+    id integer primary key,
+    workspace_id integer not null references workspaces (id) on delete cascade,
+    kind text not null check (kind in ('note', 'question', 'answer', 'explanation', 'finding')),
+    body text not null,
+    parent_id integer references entries_new (id) on delete cascade,
+    guide_id integer references guides (id) on delete cascade,
+    path text,
+    side text check (side in ('old', 'new')),
+    start_line integer,
+    end_line integer,
+    code text,
+    base text,
+    head text,
+    created_at text not null
+  );
+  insert into entries_new (id, workspace_id, kind, body, parent_id, path, side, start_line, end_line, code, base, head, created_at)
+    select id, workspace_id, kind, body, parent_id, path, side, start_line, end_line, code, base, head, created_at
+    from entries order by id;
+  drop table entries;
+  alter table entries_new rename to entries`,
 ]
 
 // ADR 0016: the tables as the migrations above leave them. Change this with every migration that changes a table.
@@ -213,26 +249,15 @@ export type Tables = {
     created_at: string
   }
   viewed_files: { workspace_id: number; path: string; fingerprint: string }
-  guides: {
-    id: Generated<number>
-    workspace_id: number
-    merge_base: string
-    head: string | null
-    kind: Generated<'all' | 'commit'>
-    model: string
-    groups: string // JSON
-    created_at: string
-    started_at: string | null
-    finished_at: string | null
-  }
+  guides: { id: Generated<number>; workspace_id: number; base: string; head: string; groups: Generated<string>; created_at: string }
   settings: { key: string; value: string }
-  file_summaries: { workspace_id: number; path: string; fingerprint: string; summary: string }
   entries: {
     id: Generated<number>
     workspace_id: number
-    kind: 'note' | 'question' | 'answer'
+    kind: 'note' | 'question' | 'answer' | 'explanation' | 'finding'
     body: string
     parent_id: number | null
+    guide_id: number | null
     path: string | null
     side: Side | null
     start_line: number | null

@@ -8,10 +8,11 @@ import { Readable, Writable } from 'node:stream'
 import * as acp from '@agentclientprotocol/sdk'
 import type { Db } from './db'
 import { worktreePath } from './git'
+import { guideTools } from './guides'
 import { getWorkspaceRepo } from './workspaces'
 
 // ADR 0018: every agent run is a session over the Agent Client Protocol, in one adapter process per agent. An agent
-// session in the agent pane, a guide step and a change summary differ only in the options their session is opened with.
+// session in the agent pane and a change summary differ only in the options their session is opened with.
 export type AgentSession = { id: number; workspaceId: number; agentSessionId: string; createdAt: string }
 
 // One line of the chat: something the user said, text the agent wrote, or a tool the agent used. comment: the user's
@@ -50,6 +51,7 @@ export type Permission = { id: string; title: string; options: { id: string; nam
 // instructions: a system prompt in place of the agent's own. persist false: a one-shot run, not kept in the agent's
 // session list. mode 'auto': the agent's classifier decides what would ask (ADR 0013); 'ask': the user decides.
 // answer: a JSON schema; the run resolves with the first answer that fits. session: carry on this agent session.
+// mcp: MCP servers the session gets, e.g. coxswain's tools for the agent pane (ADR 0023); not with answer.
 export type RunOptions = {
   cwd: string
   prompt: string
@@ -61,6 +63,7 @@ export type RunOptions = {
   persist?: boolean
   mode?: 'auto' | 'ask'
   answer?: object
+  mcp?: acp.McpServer[]
 }
 // onPermission resolves with the option picked, or null to cancel. Without it, every request is rejected.
 export type RunHandlers = {
@@ -92,6 +95,7 @@ const agents: Record<Agent, { start: () => { command: string; args: string[]; en
           ...(o.thinking === false && { thinking: { type: 'disabled' } }),
           ...(o.persist === false && { persistSession: false }),
           ...(o.answer && { allowedTools: ['mcp__coxswain__answer'] }),
+          ...(o.mcp?.length && { allowedTools: ['mcp__coxswain'] }),
         },
       },
     }),
@@ -230,7 +234,7 @@ async function openSession(name: Agent, o: RunOptions, mcpServers: acp.McpServer
 
 // Opens a session without a turn, for an agent session whose ID is stored before its first message.
 export async function newSession(name: Agent, o: Omit<RunOptions, 'prompt' | 'session'>): Promise<string> {
-  return (await openSession(name, { ...o, prompt: '' }, [])).sessionId
+  return (await openSession(name, { ...o, prompt: '' }, o.mcp ?? [])).sessionId
 }
 
 // Runs one turn: sends the prompt and streams the reply as chat entries until the turn ends. With an answer schema,
@@ -239,7 +243,7 @@ export async function newSession(name: Agent, o: Omit<RunOptions, 'prompt' | 'se
 export async function run(name: Agent, o: RunOptions, handlers: RunHandlers = {}): Promise<RunResult> {
   const answer = o.answer ? answerTool(o.answer) : null
   try {
-    const mcpServers: acp.McpServer[] = answer ? [{ type: 'http', name: 'coxswain', url: await answer.url(), headers: [] }] : []
+    const mcpServers: acp.McpServer[] = answer ? [{ type: 'http', name: 'coxswain', url: await answer.url(), headers: [] }] : (o.mcp ?? [])
     const prompt = answer ? `${o.prompt}\n\nGive your answer by calling the \`answer\` tool.` : o.prompt
     const { a, sessionId, model } = await openSession(name, o, mcpServers)
     const { update, flush } = chat(handlers.onEntry ?? (() => {}))
@@ -277,8 +281,8 @@ export async function cancel(name: Agent, sessionId: string) {
   await a?.agent.notify(acp.methods.agent.session.cancel, { sessionId })
 }
 
-// A session's history as chat entries, replayed by session/load.
-export async function history(name: Agent, sessionId: string, cwd: string): Promise<ChatEntry[]> {
+// A session's history as chat entries, replayed by session/load. mcp: as for a run; the session stays open with them.
+export async function history(name: Agent, sessionId: string, cwd: string, mcp: acp.McpServer[] = []): Promise<ChatEntry[]> {
   const a = await adapter(name)
   const entries: ChatEntry[] = []
   const { update, flush } = chat((e) => entries.push(e))
@@ -286,7 +290,7 @@ export async function history(name: Agent, sessionId: string, cwd: string): Prom
   if (running) return [] // a turn is streaming it; it's read again when the turn ends
   listening.set(sessionId, { update, handlers: {} })
   try {
-    await a.agent.request(acp.methods.agent.session.load, { sessionId, cwd, mcpServers: [], _meta: agents[name].meta({ cwd, prompt: '' }) as Record<string, unknown> })
+    await a.agent.request(acp.methods.agent.session.load, { sessionId, cwd, mcpServers: mcp, _meta: agents[name].meta({ cwd, prompt: '', mcp }) as Record<string, unknown> })
     a.open.add(sessionId)
     flush()
     return entries
@@ -300,33 +304,52 @@ export async function stopAgents() {
   server?.then((s) => s.close(), () => {})
 }
 
-// ADR 0018, 2: answer tools. One localhost HTTP MCP server for the app, a path per run, each path with a single
-// tool, `answer`, whose input schema is the run's. It speaks just enough MCP (Streamable HTTP, JSON responses) for
-// that one tool.
-const answering = new Map<string, { schema: object; resolve: (v: unknown) => void }>()
+// An MCP tool coxswain serves. call returns the tool's text for the agent; throwing makes it an error the agent reads.
+// Arguments are checked against inputSchema before call.
+export type McpTool = { name: string; description: string; inputSchema: object; call: (args: never) => Promise<string> }
+
+// ADR 0018, 2 and ADR 0023: coxswain's tools. One localhost HTTP MCP server for the app, a path per set of tools: one
+// per one-shot run with its answer tool, and one per workspace with the agent pane's tools. It speaks just enough MCP
+// (Streamable HTTP, JSON responses) for tools.
+const toolsets = new Map<string, McpTool[]>()
 let server: Promise<Server> | undefined
+
+const serverUrl = async (path: string) => `http://127.0.0.1:${((await toolServer()).address() as AddressInfo).port}/${path}`
 
 function answerTool(schema: object) {
   const path = randomUUID()
   let resolve!: (v: unknown) => void
   const value = new Promise<unknown>((r) => (resolve = r))
-  answering.set(path, { schema, resolve })
-  return {
-    value,
-    url: async () => `http://127.0.0.1:${((await answerServer()).address() as AddressInfo).port}/${path}`,
-    done: () => answering.delete(path),
+  const answer: McpTool = {
+    name: 'answer',
+    description: 'Give your answer. Call it once, with the whole answer.',
+    inputSchema: schema,
+    call: async (args) => {
+      resolve(args)
+      return 'Answer received.'
+    },
   }
+  toolsets.set(path, [answer])
+  return { value, url: () => serverUrl(path), done: () => toolsets.delete(path) }
 }
 
-function answerServer(): Promise<Server> {
+// The agent pane's tools for a workspace (ADR 0023), at a path that stays the same while the app runs, since a session
+// keeps the URL it was opened with.
+async function paneTools(db: Db, workspaceId: number): Promise<acp.McpServer[]> {
+  const path = `workspace/${workspaceId}`
+  toolsets.set(path, guideTools(db, workspaceId))
+  return [{ type: 'http', name: 'coxswain', url: await serverUrl(path), headers: [] }]
+}
+
+function toolServer(): Promise<Server> {
   server ??= new Promise((resolve, reject) => {
     const s = createServer(async (req, res) => {
-      const run = answering.get(req.url?.slice(1) ?? '')
-      if (!run) return void res.writeHead(404).end()
+      const tools = toolsets.get(req.url?.slice(1) ?? '')
+      if (!tools) return void res.writeHead(404).end()
       if (req.method !== 'POST') return void res.writeHead(405).end()
       let body = ''
       for await (const chunk of req) body += chunk
-      let msg: { id?: string | number; method?: string; params?: { protocolVersion?: string; arguments?: unknown } }
+      let msg: { id?: string | number; method?: string; params?: { protocolVersion?: string; name?: string; arguments?: unknown } }
       try {
         msg = JSON.parse(body)
       } catch {
@@ -339,12 +362,16 @@ function answerServer(): Promise<Server> {
         return reply({ result: { protocolVersion: msg.params?.protocolVersion ?? '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'coxswain', version: '0' } } })
       if (msg.method === 'ping') return reply({ result: {} })
       if (msg.method === 'tools/list')
-        return reply({ result: { tools: [{ name: 'answer', description: 'Give your answer. Call it once, with the whole answer.', inputSchema: run.schema }] } })
+        return reply({ result: { tools: tools.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })) } })
       if (msg.method === 'tools/call') {
-        const problem = mismatch(run.schema, msg.params?.arguments)
-        if (!problem) run.resolve(msg.params?.arguments)
-        const text = problem ? `The answer doesn't fit: ${problem}. Call answer again with all of it.` : 'Answer received.'
-        return reply({ result: { isError: !!problem, content: [{ type: 'text', text }] } })
+        const tool = tools.find((t) => t.name === msg.params?.name)
+        const args = msg.params?.arguments ?? {}
+        const problem = !tool ? `No tool ${msg.params?.name}` : mismatch(tool.inputSchema, args, 'input')
+        const text = problem
+          ? `${problem}. Call ${msg.params?.name} again with all of it.`
+          : await tool!.call(args as never).catch((e: Error) => ({ error: e.message }))
+        const isError = !!problem || typeof text !== 'string'
+        return reply({ result: { isError, content: [{ type: 'text', text: typeof text === 'string' ? text : text.error }] } })
       }
       reply({ error: { code: -32601, message: `No method ${msg.method}` } })
     })
@@ -380,7 +407,8 @@ export function mismatch(s: Schema, v: unknown, at = 'answer'): string | null {
   return null
 }
 
-// L4's agent sessions: every tool, in auto mode (ADR 0013); what auto mode would block asks the user.
+// L4's agent sessions: every tool and coxswain's (ADR 0023), in auto mode (ADR 0013); what auto mode would block asks
+// the user.
 const agentSessionOptions = { tools: 'all', mode: 'auto' } as const
 
 const columns = ['id', 'workspace_id as workspaceId', 'agent_session_id as agentSessionId', 'created_at as createdAt'] as const
@@ -401,7 +429,7 @@ export function listAgentSessions(db: Db, workspaceId: number): Promise<AgentSes
 // for it), so its first message then fails; start a new session in its place if that happens in practice.
 export async function startAgentSession(db: Db, workspaceId: number): Promise<AgentSession> {
   const cwd = await readyWorktree(db, workspaceId)
-  const id = await newSession('claude', { cwd, ...agentSessionOptions })
+  const id = await newSession('claude', { cwd, ...agentSessionOptions, mcp: await paneTools(db, workspaceId) })
   return db
     .insertInto('agent_sessions')
     .values({ workspace_id: workspaceId, agent: 'claude', agent_session_id: id, created_at: new Date().toISOString() })
@@ -431,7 +459,8 @@ export async function readyWorktree(db: Db, workspaceId: number): Promise<string
 // history to load.
 export async function readTranscript(db: Db, agentSessionId: string): Promise<ChatEntry[]> {
   try {
-    const entries = await history('claude', agentSessionId, await readyWorktree(db, await agentSessionWorkspace(db, agentSessionId)))
+    const workspaceId = await agentSessionWorkspace(db, agentSessionId)
+    const entries = await history('claude', agentSessionId, await readyWorktree(db, workspaceId), await paneTools(db, workspaceId))
     return entries.map(withComment)
   } catch {
     return []
@@ -445,15 +474,16 @@ export async function runTurn(
   db: Db,
   agentSessionId: string,
   prompt: string,
-  options: Pick<RunOptions, 'tools' | 'mode'>,
+  options: Pick<RunOptions, 'tools' | 'mode' | 'mcp'>,
   handlers: RunHandlers,
 ): Promise<TurnResult> {
   if (running.has(agentSessionId)) return { status: 'error', message: 'A turn is already running' }
   running.add(agentSessionId)
   try {
-    const cwd = await readyWorktree(db, await agentSessionWorkspace(db, agentSessionId))
+    const workspaceId = await agentSessionWorkspace(db, agentSessionId)
+    const cwd = await readyWorktree(db, workspaceId)
     handlers.onEntry?.(withComment({ kind: 'user', text: prompt }))
-    await run('claude', { cwd, prompt, session: agentSessionId, ...options }, handlers)
+    await run('claude', { cwd, prompt, session: agentSessionId, mcp: await paneTools(db, workspaceId), ...options }, handlers)
     return { status: 'ok' }
   } catch (e) {
     return { status: 'error', message: (e as Error).message }

@@ -44,7 +44,7 @@ const affects: Record<Changed['what'], Reads[]> = {
   // Entries and Viewed follow the code they're about (ADR 0014, 0015).
   worktree: ['listChangedFiles', 'listWorktreeFiles', 'readWorktreeFile', 'listViewed', 'listEntries'],
   transcript: ['listAgentSessions', 'readTranscript'],
-  guide: ['getGuide'],
+  guide: ['listGuides'],
   timeline: ['getTimeline'],
 }
 

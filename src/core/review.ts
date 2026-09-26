@@ -11,8 +11,10 @@ import {
 } from './agents'
 import type { Db } from './db'
 import { readTexts } from './git'
+import { guideRequest } from './guides'
 
-// ADR 0022: a workspace's entries (glossary): notes, questions and answers, threaded by parent_id.
+// ADR 0022: a workspace's entries (glossary): notes, questions and answers, threaded by parent_id; and the agent's
+// explanations and findings, which belong to a guide too (guideId, ADR 0023).
 // An entry's anchor is a line range of a file; side 'old' is the merge base (removed lines in a diff), 'new' the
 // worktree. code: the lines as they were, since line numbers drift as the worktree changes. No anchor: it floats.
 // base, head: the range of the view it was written in (ADR 0015); head null is the worktree (the live Diff tab).
@@ -29,9 +31,10 @@ export type Anchor = {
 export type ReviewEntry = {
   id: number
   workspaceId: number
-  kind: 'note' | 'question' | 'answer'
+  kind: 'note' | 'question' | 'answer' | 'explanation' | 'finding'
   body: string
-  parentId: number | null // the thread's first note or question, for replies, follow-ups and answers
+  parentId: number | null // the thread's first entry, for replies, follow-ups and answers
+  guideId: number | null
   path: string | null
   side: 'old' | 'new' | null
   startLine: number | null
@@ -54,6 +57,7 @@ const columns = [
   'kind',
   'body',
   'parent_id as parentId',
+  'guide_id as guideId',
   'path',
   'side',
   'start_line as startLine',
@@ -98,6 +102,7 @@ function addEntry(db: Db, kind: ReviewEntry['kind'], e: NewEntry): Promise<Omit<
       kind,
       body: e.body.trim(),
       parent_id: e.parentId ?? null,
+      guide_id: null,
       path: a?.path ?? null,
       side: a?.side ?? null,
       start_line: start,
@@ -140,17 +145,22 @@ async function currentSession(db: Db, workspaceId: number): Promise<string> {
   return last.agentSessionId
 }
 
+// Entries the agent wrote, not the user.
+const byAgent = (e: Pick<ReviewEntry, 'kind'>) => e.kind === 'answer' || e.kind === 'explanation' || e.kind === 'finding'
+
 const where = (e: Pick<ReviewEntry, 'path' | 'startLine' | 'endLine'>) =>
   `${e.path}:${e.startLine === e.endLine ? e.startLine : `${e.startLine}–${e.endLine}`}`
 
 // What the agent session hasn't seen of the question's thread, to go after it: the anchor, unless an earlier question
-// in the thread carried it, and the notes written in the thread since its last question.
+// in the thread carried it, what the agent wrote if the thread began as its explanation or finding (it may have been
+// another session), and the notes written in the thread since its last question.
 function unseen(question: Omit<ReviewEntry, 'state'>, thread: Omit<ReviewEntry, 'state'>[]): string {
   if (question.path) return `About ${describe(question)}`
   const asked = thread.findLast((e) => e.kind === 'question')
   const notes = thread.filter((e) => e.kind === 'note' && e.id > (asked?.id ?? 0))
   const about = !asked && thread[0]?.path ? [`About ${describe(thread[0])}`] : []
-  return [...about, ...notes.map((n) => `Earlier in the thread: ${n.body}`)].join('\n\n')
+  const yours = !asked && thread[0] && byAgent(thread[0]) ? [`You wrote there, in a guide: ${thread[0].body}`] : []
+  return [...about, ...yours, ...notes.map((n) => `Earlier in the thread: ${n.body}`)].join('\n\n')
 }
 
 // Adds a question and sends it to the workspace's agent session as a comment, streaming the reply; the agent's text
@@ -195,12 +205,14 @@ export async function stopQuestion(db: Db, workspaceId: number) {
 }
 
 // Every thread of the workspace, as one message for the agent pane's session: where each points, the code, and its
-// comments and answers in order, then what to do with them.
+// comments and answers in order, then what to do with them. An explanation or finding the user didn't reply to isn't
+// part of their review.
 function reviewPrompt(entries: Omit<ReviewEntry, 'state'>[]): { threads: number; prompt: string } {
-  const roots = entries.filter((e) => e.path && !e.parentId)
+  const replied = new Set(entries.filter((e) => e.parentId && !byAgent(e)).map((e) => e.parentId))
+  const roots = entries.filter((e) => e.path && !e.parentId && (!byAgent(e) || replied.has(e.id)))
   const parts = roots.map((root, i) => {
     const thread = [root, ...entries.filter((e) => e.parentId === root.id)]
-    const lines = thread.map((e) => `${e.kind === 'answer' ? 'You' : 'Me'}: ${e.body}`)
+    const lines = thread.map((e) => `${byAgent(e) ? 'You' : 'Me'}: ${e.body}`)
     return `${i + 1}. On ${describe(root)}\n${lines.join('\n')}`
   })
   const prompt = `Here's my review of this worktree's changes so far: every thread, with where it points and the code as it was
@@ -220,4 +232,16 @@ export async function sendReview(
   if (!threads) return { status: 'error', message: 'No threads to send' }
   const agentSessionId = await currentSession(db, workspaceId)
   return runAgentTurn(db, agentSessionId, prompt, handlers(agentSessionId))
+}
+
+// Asks the workspace's current agent session for a guide (ADR 0023), with findings if review, streaming the reply like
+// sendReview. The agent makes it with coxswain's tools.
+export async function requestGuide(
+  db: Db,
+  workspaceId: number,
+  review: boolean,
+  handlers: (agentSessionId: string) => Parameters<typeof runAgentTurn>[3],
+): Promise<TurnResult> {
+  const agentSessionId = await currentSession(db, workspaceId)
+  return runAgentTurn(db, agentSessionId, guideRequest(review), handlers(agentSessionId))
 }

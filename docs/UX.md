@@ -18,13 +18,28 @@ the bar, one line each: file and lines, the first comment, and whether it's outd
 the agent, or has replies. Clicking one scrolls the canvas to it. *Send all to agent* on the bar sends every thread in one message to
 the agent pane's session: where each points, the code, and its comments and answers, asking the agent to make the
 changes and answer what's open. The chat shows it as a card (*Review sent to Claude · N threads*); the bar says
-*Agent working…* until the turn ends. The *Overview*, *Guide* and *Diff* tabs are gone, so
-the timeline and guides can't be reached; the L3 and L4 notes below describe the old layout until
+*Agent working…* until the turn ends.
+
+*Guide*, next to *Commits* in the canvas's bar, opens a native menu: *Make a Guide*, *Make a Guide with Review*,
+then *No Guide* and every guide made so far (when, its head, *(stale)* once the PR moved on). The two *Make* items
+send a message to the agent pane's session, which makes the guide with coxswain's tools (ADR 0023); asking for one in
+the agent pane's own words does the same. A guide shows in *Changes* as soon as the agent starts it, and fills in as it
+adds to it: its groups in reading order, each with its title, how many files and its description above its first file
+diff, and each file note above its file diff; then the files in no group under *Not in the guide*; then the
+*generated* groups, low-lighted. On the canvas's left, a table of contents: how many file diffs are viewed in all
+with a bar, then every group with how many of its file diffs are viewed (✓ when all are) and, if any, how many notes
+and questions are on them (`✎ 2`). The group being read is marked as you scroll; a click jumps to it, first showing
+viewed file diffs if all of its are. Explanations (labelled *Guide*) and, with review, findings (labelled *Finding*) are
+threads between the lines, which can be replied to like any other; they show only with their guide. A guide shows
+the PR as it was (its range, like a commit), and its *Viewed* ticks stay; once the PR has new commits, an amber bar
+says so. The button then reads *Guide · date*. Picking a commit hides the guide, and the other way round.
+
+The *Overview* tab is gone, so the timeline can't be reached; the L3 and L4 notes below describe the old layout until
 this settles.
 
 ```
 ┌──────────────────────────────┬──────────────────────────────────────────┐
-│ Claude Code    [New session] │ [Changes]                                │
+│ Session 2 ▾    [New session] │ [Changes]                                │
 ├────┬─────────────────────────┼──────────────────────────────────────────┤
 │    │                         │ Files 3  Commits                     ⚙   │
 │    │                         ├──────────────────────────────────────────┤
@@ -92,27 +107,7 @@ this settles.
   run one at a time, and not while the agent pane's own turn runs. The thread's header has ✕ to delete it.
   To send a note to the agent afterwards, reply with *Send to agent* ticked; the agent gets the thread's notes too.
 
-  *Guide* shows the workspace's guide: its guide groups one after another, each a title, a short
-  description and then the group's file diffs, each with its file note above it, the same file diffs as in *Diff* (Viewed checkbox,
-  notes, *Ask agent*). A group has its own *Viewed* checkbox, which marks all its file diffs.
-  Viewed file diffs are hidden, and so is a group once all its file diffs are; the top says how many
-  are viewed; *Show Viewed Files* in the bar's cog menu shows them again, as in the Navigator. On the left, a table of
-  contents lists every group with how many of its file diffs are viewed (✓ when all are) and, if any,
-  how many notes and questions are on its file diffs (`✎ 2`), marks the
-  group being read as you scroll, and jumps to a group when clicked (showing viewed ones if it's
-  hidden). Above it, a bar of how many file diffs are viewed in all. Changed files the guide doesn't mention (changed since it was
-  made) come next, under *Not in the guide*. Groups tagged *generated* (glossary) come last, low-lighted, their title
-  marked *Generated*. Without a guide the tab offers *Create guide*; it isn't made on its own,
-  since it takes minutes and costs tokens. *Create guide* and *Regenerate* open the Commits menu
-  first: *All Changes*, or one commit for a guide to its commit diff. While it's made the tab shows an approximate progress
-  bar while Claude Code summarises and groups the files, labelled
-  *Summarising files: N of M batches* and then *Grouping files…*. The guide then shows right away,
-  its groups reading *Describing…* until their descriptions and file notes arrive, and the top says
-  *describing groups: N of M*. After that the stored guide shows at once. At the top: what it's
-  to (*All changes* or *Commit abc1234*), which models made it, when, how long it took, and
-  *Regenerate*. A guide shows the PR as it was when made, and its *Viewed* ticks stay as they were;
-  once the PR has new commits, an amber bar above it says so, with *Regenerate*. A new guide keeps the
-  ticks of file diffs that didn't change. The prompt, the model and the summary model are in Settings, under *Guide*.
+  *Guide* was a tab of its own; guides now show in *Changes* (above).
   *Overview* shows the PR's title, author and when it was opened, then its **timeline**, newest first: the latest phase on top, and in each phase the latest event on top. Each
   phase starts with a header: *PR created*, *N new commits* or *Rebased*, when coxswain saw it, and its head commit.
   Under it, what it covers (*N files · +A −D · N commits*, the commits' subjects in a disclosure), then its change
@@ -144,7 +139,8 @@ this settles.
 
 - **L4 — Agents** on the right: the agent sessions of the current workspace. Hidden at first. The *Agent* toggle at the right of
   each tab's bar, *View > Toggle Agents* or ⌥⌘B shows and hides it. *Send to agent* shows it. Several can be open at
-  once, e.g. as tabs in the pane. For now L4 is a chat with the workspace's latest agent session:
+  once, e.g. as tabs in the pane. For now L4 is a chat with one agent session, the workspace's latest unless another is
+  picked in the header's session picker (*Session N · date*):
   its turns, with each tool the agent used as one line, and a message box at the bottom (Enter
   sends, Shift+Enter adds a line). *New session* in the header starts another agent session with
   the next message; a running turn can be stopped. When the agent wants a tool that auto mode would block, a
@@ -163,12 +159,13 @@ this settles.
 
 1. **Inbox:** where do you find PRs that aren't workspaces yet (review requested, new comments on
    your PRs)? Probably an inbox; where it lives and what goes in it is to be decided.
-2. **Tabs in L3:** which options go in each tab's bar? Should *Regenerate* move to the Guide's bar?
-   Should a guide group down to hunks, not whole file diffs?
+2. **Guides:** should a guide group down to hunks, not whole file diffs? Should a group get its own *Viewed* again?
+   Does the agent pane need to show that a guide is being made?
 3. **The review as a whole:** where do you write a comment that isn't on lines? *Post* is still open. GitHub's comments
    show on the timeline (ADR 0020); should review comments also show in the diff?
 4. **Agents in L4:** tabs, a list, or split panes, and how running and finished agent sessions look.
-   Only the latest agent session is reachable so far; earlier ones need a way back.
+   Earlier agent sessions are reachable from the header's picker, one at a time. Comments still go to the latest
+   session, not the one shown.
 5. **PR changes vs local changes:** *Diffs* mixes the PR's file diffs with local changes (uncommitted,
    untracked, unpushed), so an agent's work isn't told apart from the PR's. Options: a marker per
    file, a third toggle (*Local*), or showing local changes on top of the PR's head separately.
@@ -177,5 +174,5 @@ this settles.
    not just of its code? Should bot comments (CI, Linear) be folded or hidden? Where do agent sessions go on
    it?
 7. **The canvas:** what it shows besides file diffs (the timeline, a guide, a whole file, something the agent
-   makes), how the agent and the human switch between them, and what an annotation is: an entry, or something new?
-   Which tools the agent gets to navigate the app and read its context.
+   makes), and how the agent and the human switch between them. An annotation on lines is an entry (ADR 0023); the
+   agent has tools to make guides, but not yet to navigate the app or read its context.

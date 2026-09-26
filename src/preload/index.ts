@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { AgentSession, ChatEntry, Permission, TurnResult } from '../core/agents'
 import type { ChangedFileList, CloneResult, Commit, FileText, FileTreeResult, WorktreeResult } from '../core/git'
 import type { CurrentUser, PullRequestList, RepoPage } from '../core/github'
-import type { Guide, GuideProgress, GuideResult, GuideSettings, GuideSettingsChange } from '../core/guides'
+import type { Guide } from '../core/guides'
 import type { Project } from '../core/projects'
 import type { NewEntry, ReviewEntry } from '../core/review'
 import type { Timeline } from '../core/timeline'
@@ -10,8 +10,7 @@ import type { Workspace } from '../core/workspaces'
 
 // The Navigator's settings in its cog menu. layout: changed files as a tree or as a flat list.
 export type NavigatorSettings = { layout: 'tree' | 'list' }
-// The tab bar's settings in its cog menu, for the Diff and Guide tabs. showViewed: viewed file diffs stay in the
-// Navigator and the Guide.
+// The canvas bar's settings in its cog menu. showViewed: viewed file diffs stay in the Navigator and on the canvas.
 export type ViewSettings = { diffStyle: 'unified' | 'split'; showViewed: boolean }
 // What the core changed on its own, e.g. when an agent turn ends, so the UI refetches it (ADR 0017).
 export type Changed = { workspaceId: number; what: 'entries' | 'worktree' | 'transcript' | 'guide' | 'timeline' }
@@ -78,19 +77,13 @@ const api = {
     ipcRenderer.invoke('viewed:list', workspaceId, mergeBase, head),
   setViewed: (workspaceId: number, mergeBase: string, path: string, viewed: boolean, head?: string): Promise<void> =>
     ipcRenderer.invoke('viewed:set', workspaceId, mergeBase, path, viewed, head),
-  getGuide: (workspaceId: number, mergeBase: string): Promise<Guide | null> =>
-    ipcRenderer.invoke('guides:get', workspaceId, mergeBase),
-  // A guide to mergeBase → head (ADR 0014): all changes up to the PR head, or one commit, mergeBase being its parent.
-  createGuide: (workspaceId: number, mergeBase: string, head: string, kind: 'all' | 'commit'): Promise<GuideResult> =>
-    ipcRenderer.invoke('guides:create', workspaceId, mergeBase, head, kind),
-  onGuideProgress: (callback: (workspaceId: number, progress: GuideProgress) => void) => {
-    const listener = (_: unknown, id: number, p: GuideProgress) => callback(id, p)
-    ipcRenderer.on('guides:progress', listener)
-    return () => void ipcRenderer.off('guides:progress', listener)
-  },
-  getGuideSettings: (): Promise<GuideSettings> => ipcRenderer.invoke('guides:settings'),
-  setGuideSettings: (settings: GuideSettingsChange): Promise<void> =>
-    ipcRenderer.invoke('guides:set-settings', settings),
+  // The workspace's guides, newest first (ADR 0023).
+  listGuides: (workspaceId: number): Promise<Guide[]> => ipcRenderer.invoke('guides:list', workspaceId),
+  // Asks the agent pane's session for a guide, with findings if review; resolves when the agent's turn ends.
+  requestGuide: (workspaceId: number, review: boolean): Promise<TurnResult> =>
+    ipcRenderer.invoke('guides:request', workspaceId, review),
+  getSummaryModel: (): Promise<string> => ipcRenderer.invoke('settings:summary-model'),
+  setSummaryModel: (model: string): Promise<void> => ipcRenderer.invoke('settings:set-summary-model', model),
   stopTurn: (agentSessionId: string): Promise<void> => ipcRenderer.invoke('agents:stop-turn', agentSessionId),
   onPermission: (callback: (agentSessionId: string, permission: Permission) => void) => {
     const listener = (_: unknown, id: string, p: Permission) => callback(id, p)
@@ -111,6 +104,9 @@ const api = {
   // The Diff tab's commits: resolves with the commit picked, or null for all changes.
   showCommitsMenu: (workspaceId: number, mergeBase: string, current: string | null): Promise<Commit | null> =>
     ipcRenderer.invoke('menus:commits', workspaceId, mergeBase, current),
+  // The canvas's Guide menu: make one (make: with review), or the guide to show (null: none). Pending if dismissed.
+  showGuideMenu: (workspaceId: number, shown: number | null, prHead: string): Promise<{ make: boolean } | { show: number | null }> =>
+    ipcRenderer.invoke('menus:guide', workspaceId, shown, prHead),
   onChanged: (callback: (change: Changed) => void) => {
     const listener = (_: unknown, change: Changed) => callback(change)
     ipcRenderer.on('changed', listener)

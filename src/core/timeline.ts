@@ -1,7 +1,7 @@
+import { run } from './agents'
 import type { Db } from './db'
 import { type Commit, isAncestor, listChangedFiles, listCommits, openedWorktree, readFileDiff } from './git'
 import { getPullRequestActivity, type GitHubEvent, type GitHubProblem } from './github'
-import { ask, getGuideSettings } from './guides'
 import { type ReviewEntry, workspaceEntries } from './review'
 import { getWorkspaceRepo } from './workspaces'
 
@@ -86,8 +86,31 @@ export function summarise(db: Db, phaseId: number, onChange: () => void): Promis
   return run
 }
 
-// ADR 0020: one run on the summary model with the phase's diff, cut like a guide's (ADR 0010).
-// ponytail: fixed sizes, the guide's; share them if they ever become settings.
+// The model change summaries are made on, changeable in Settings. Empty means Claude Code's own default.
+export async function getSummaryModel(db: Db): Promise<string> {
+  const row = await db.selectFrom('settings').select('value').where('key', '=', 'summary.model').executeTakeFirst()
+  return row?.value ?? 'haiku'
+}
+
+export async function setSummaryModel(db: Db, model: string) {
+  const value = model.trim()
+  await db
+    .insertInto('settings')
+    .values({ key: 'summary.model', value })
+    .onConflict((oc) => oc.column('key').doUpdateSet({ value }))
+    .execute()
+}
+
+// Claude Code's own system prompt is for coding; replaced, since everything a summary needs is in the message.
+const systemPrompt = 'You help a reviewer read a pull request. Everything you need is in the message; you have no tools but the answer tool.'
+
+// One one-shot run with an answer schema (ADR 0018), no tools, thinking off: the diff is in the prompt. No MCP servers
+// but the answer tool, and Claude Code's system prompt replaced, so the call doesn't pay for tools it won't use.
+const ask = (cwd: string, prompt: string, answer: object, model: string) =>
+  run('claude', { cwd, prompt, answer, model, thinking: false, instructions: systemPrompt, tools: 'none', persist: false })
+
+// ADR 0020: one run on the summary model with the phase's diff, each file cut to fileLines lines.
+// ponytail: fixed sizes; make them settings if other PRs want different ones.
 const fileLines = 300
 const diffLines = 3000
 
@@ -103,13 +126,13 @@ async function makeSummary(db: Db, phaseId: number) {
   const phase = await db.selectFrom('phases').selectAll().where('id', '=', phaseId).executeTakeFirstOrThrow()
   const workspaceId = phase.workspace_id
   const { owner, name, prNumber } = await getWorkspaceRepo(db, workspaceId)
-  const [cwd, changed, commits, activity, earlier, settings] = await Promise.all([
+  const [cwd, changed, commits, activity, earlier, summaryModel] = await Promise.all([
     openedWorktree(db, workspaceId),
     listChangedFiles(db, workspaceId, phase.base, phase.head),
     listCommits(db, workspaceId, phase.base, phase.head),
     getPullRequestActivity(owner, name, prNumber),
     db.selectFrom('phases').selectAll().where('workspace_id', '=', workspaceId).where('id', '<', phaseId).orderBy('id').execute(),
-    getGuideSettings(db),
+    getSummaryModel(db),
   ])
   if (changed.status !== 'ok') throw new Error(changed.message)
   const previous = earlier.at(-1)
@@ -157,12 +180,12 @@ async function makeSummary(db: Db, phaseId: number) {
   ]
     .filter(Boolean)
     .join('\n\n')
-  const out = await ask(cwd, prompt, summarySchema, settings.summaryModel, false)
+  const out = await ask(cwd, prompt, summarySchema, summaryModel)
   const answer = out.answer as { summary?: string } | undefined
   if (!answer?.summary?.trim()) throw new Error('Claude Code gave no summary')
   await db
     .updateTable('phases')
-    .set({ summary: answer.summary.trim(), model: out.model ?? settings.summaryModel, summarised_at: new Date().toISOString() })
+    .set({ summary: answer.summary.trim(), model: out.model ?? summaryModel, summarised_at: new Date().toISOString() })
     .where('id', '=', phaseId)
     .execute()
 }

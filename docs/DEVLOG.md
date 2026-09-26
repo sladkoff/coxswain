@@ -3,6 +3,37 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-27 — Guides made by the agent pane
+
+### What works
+
+- **Guides are agentic** ([ADR 0023](adr/0023-guides-made-by-the-agent-pane.md)). The agent pane's sessions get
+  coxswain's MCP tools (`start_guide`, `add_group`, `add_explanation`, `add_finding`) from the local server that served
+  the answer tool, at a path per workspace, allowed without asking. "Make me a guide" in the agent pane works; so do
+  *Make a Guide* and *Make a Guide with Review* in the canvas bar's new *Guide* menu (`requestGuide`, like
+  *Send all to agent*). How to guide is in `start_guide`'s result.
+- **Guides show in *Changes*:** groups in reading order with title, description and file notes, *Not in the guide*,
+  generated groups last. Explanations and findings are entries (new kinds) with a `guide_id`, shown as threads only
+  with their guide; replying goes to the agent by default. *Send all to agent* leaves out the ones nobody replied to.
+- **Pinned and kept:** a guide shows its range (merge base → PR head then), like a commit; stale once the PR moves
+  on. Every guide stays in the *Guide* menu. The newest shows when it appears, and on opening if not stale.
+- **The old pipeline is gone:** file summaries, grouping and describing calls, the guide prompt and model, `Guide.tsx`
+  and the progress plumbing. Migration 21 drops `guides` and `file_summaries` (and their data), makes a new `guides`
+  table and rebuilds `entries`. The summary model moved to Settings > *Change summaries*; `ask` lives in `timeline.ts`.
+- **The guide's table of contents is back** (`GuideToc.tsx`, from the old Guide tab): left of the canvas while a
+  guide shows, with viewed counts per group and in all, `✎` counts, the group being read marked, and click to jump.
+  `countItems` no longer makes an empty count for explanations and findings (`✎ 0`).
+- Tried on PR #1 of the test project: the agent called every tool, and the guide, two explanations and five findings
+  showed on the canvas while it worked.
+
+### Tech debt
+
+- The tools add to the workspace's latest guide, so two sessions making guides at once mix.
+- A guide request goes to the latest agent session, like comments, not the one the picker shows.
+- The Navigator keeps tree order under a guide; only the canvas and its table of contents are in reading order.
+- `ponytail:` the table of contents has a fixed width; make it resizable like the Navigator if titles get cut.
+- `Overview.tsx` still isn't mounted anywhere.
+
 ## 2026-09-26 — Agent-first layout, first rough pass
 
 ### What works
@@ -16,6 +47,8 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
   transcript by a `[Review · N threads]` header like a comment's, and shown as a card. *Show Viewed Files* now hides viewed file diffs on the canvas too, not only in the
   Navigator; when all are viewed it says so, with *Show them*.
 - *View > Toggle Agents* (⌥⌘B) is gone, since the agent pane is always shown.
+- The agent pane's header no longer says *Claude Code*. A session picker there (*Session N · date*) shows any of the
+  workspace's agent sessions, not only the latest; *New session* next to it.
 - **Comments are threads.** The comment box on lines is a send button (Enter), a *Send to agent* checkbox and ✕ to
   cancel. Every comment starts a thread with a reply box of the same shape, so a note can be answered too. Ticked, a
   comment is a question and the agent's answer lands in the thread; unticked, a note. No schema change: `parent_id`
@@ -37,10 +70,11 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 
 ### Tech debt
 
-- `Overview.tsx` and `Guide.tsx` aren't mounted anywhere. They're kept until the canvas can show them, or delete them.
+- `Overview.tsx` isn't mounted anywhere; kept until the canvas can show it (`Guide.tsx` went with ADR 0023).
 - `ponytail:` the comment card is parsed from the prompt's header line; store sent comments by turn if it gets in the way.
 - `ponytail:` *View thread* stops at the file for an outdated thread, which isn't between the lines.
 - The agent pane shows no *Working…* during a comment's turn, and a comment fails if the pane's own turn is running.
+- `ponytail:` comments and *Send all to agent* go to the latest agent session, not the one the picker shows.
 - `ponytail:` every entry a workspace ever had is listed; nothing archives old ones.
 - UX.md's L3 and L4 sections still describe the tabbed layout; they get rewritten once the canvas settles.
 
