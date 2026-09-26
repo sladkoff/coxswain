@@ -56,6 +56,8 @@ const api = {
   deleteEntry: (id: number): Promise<void> => ipcRenderer.invoke('review:delete', id),
   askQuestion: (question: NewEntry): Promise<ReviewEntry> => ipcRenderer.invoke('review:ask', question),
   stopQuestion: (workspaceId: number): Promise<void> => ipcRenderer.invoke('review:stop', workspaceId),
+  // Every thread to the agent pane's session in one message; resolves when the agent's turn ends.
+  sendReview: (workspaceId: number): Promise<TurnResult> => ipcRenderer.invoke('review:send-all', workspaceId),
   onQuestionChat: (callback: (threadId: number, entry: ChatEntry) => void) => {
     const listener = (_: unknown, id: number, entry: ChatEntry) => callback(id, entry)
     ipcRenderer.on('review:chat', listener)

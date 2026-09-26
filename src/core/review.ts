@@ -1,6 +1,7 @@
 import {
   type ChatEntry,
   formatComment,
+  formatReview,
   listAgentSessions,
   type Permission,
   runAgentTurn,
@@ -191,4 +192,32 @@ export async function askQuestion(
 export async function stopQuestion(db: Db, workspaceId: number) {
   const last = (await listAgentSessions(db, workspaceId)).at(-1)
   if (last) stopTurn(last.agentSessionId)
+}
+
+// Every thread of the workspace, as one message for the agent pane's session: where each points, the code, and its
+// comments and answers in order, then what to do with them.
+function reviewPrompt(entries: Omit<ReviewEntry, 'state'>[]): { threads: number; prompt: string } {
+  const roots = entries.filter((e) => e.path && !e.parentId)
+  const parts = roots.map((root, i) => {
+    const thread = [root, ...entries.filter((e) => e.parentId === root.id)]
+    const lines = thread.map((e) => `${e.kind === 'answer' ? 'You' : 'Me'}: ${e.body}`)
+    return `${i + 1}. On ${describe(root)}\n${lines.join('\n')}`
+  })
+  const prompt = `Here's my review of this worktree's changes so far: every thread, with where it points and the code as it was
+then, in order. "Me" is me, "You" is your earlier answers. Work through them: make the changes my comments ask for,
+answer what's still open, and tell me briefly what you did for each and what you left.\n\n${parts.join('\n\n')}`
+  return { threads: roots.length, prompt: formatReview(roots.length, prompt) }
+}
+
+// Sends every thread to the workspace's current agent session at once (see reviewPrompt), streaming the reply.
+// handlers: made for the session it goes to, so the reply can stream to the agent pane showing it.
+export async function sendReview(
+  db: Db,
+  workspaceId: number,
+  handlers: (agentSessionId: string) => Parameters<typeof runAgentTurn>[3],
+): Promise<TurnResult> {
+  const { threads, prompt } = reviewPrompt(await workspaceEntries(db, workspaceId))
+  if (!threads) return { status: 'error', message: 'No threads to send' }
+  const agentSessionId = await currentSession(db, workspaceId)
+  return runAgentTurn(db, agentSessionId, prompt, handlers(agentSessionId))
 }

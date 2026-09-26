@@ -152,6 +152,12 @@ export function PermissionPrompt({ permission, onAnswer }: { permission: Permiss
 // onViewThread: shows a comment's thread on the canvas.
 export function Entry({ entry, onViewThread }: { entry: ChatEntry; onViewThread?: (threadId: number) => void }) {
   if (entry.comment) return <CommentCard comment={entry.comment} onViewThread={onViewThread} />
+  if (entry.review)
+    return (
+      <div className={`my-3 max-w-[85%] shrink-0 self-end rounded-lg border px-2.5 py-2 text-xs ${muted} ${pane}`}>
+        Review sent to Claude · {entry.review.threads} thread{entry.review.threads === 1 ? '' : 's'}
+      </div>
+    )
   if (entry.kind === 'tool')
     // shrink-0: truncate's overflow lets a flex item shrink to nothing once the chat overflows, leaving only the gaps.
     return <div className={`shrink-0 truncate font-mono text-xs ${muted}`}>⏺ {entry.text}</div>

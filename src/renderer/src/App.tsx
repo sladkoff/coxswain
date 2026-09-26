@@ -1,7 +1,7 @@
 import { Virtualizer } from '@pierre/diffs/react'
 import { useQuery } from '@tanstack/react-query'
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
-import type { Commit } from '../../core/git'
+import type { ChangedFile, Commit } from '../../core/git'
 import type { NewEntry, ReviewEntry } from '../../core/review'
 import type { Workspace } from '../../core/workspaces'
 import { Agents } from './Agents'
@@ -132,6 +132,11 @@ export function App() {
   const diffDiffs = useMemo(
     () => (commit ? commitChanged?.map((file) => ({ kind: 'diff' as const, file })) : diffs),
     [commit, commitChanged, diffs],
+  )
+  // Viewed file diffs are hidden unless Show Viewed Files is on, as in the Navigator.
+  const shownDiffs = useMemo(
+    () => (viewSettings.showViewed ? diffDiffs : diffDiffs?.filter((d) => !viewed.includes(d.file.path))),
+    [diffDiffs, viewed, viewSettings.showViewed],
   )
   const pickCommit = async () => {
     if (!currentWorkspace || !pr.commits) return
@@ -306,15 +311,28 @@ export function App() {
               </>
             )}
             <div style={{ minWidth: viewerMin }} className="flex min-w-0 flex-1 flex-col">
-              {!pr.commits || !diffDiffs ? (
+              {!pr.commits || !diffDiffs || !shownDiffs ? (
                 <div className={`flex flex-1 items-center justify-center ${muted}`}>Loading…</div>
               ) : showFile ? (
                 <Viewer opened={opened} {...viewerProps(currentWorkspace, pr.commits.mergeBase)} />
               ) : (
                 // Only the lines on screen are drawn. ponytail: every file is still read from disk up front.
                 <Virtualizer className="min-h-0 flex-1 overflow-auto">
-                  {diffDiffs.length === 0 && <div className={`p-4 text-xs ${muted}`}>No changes</div>}
-                  {diffDiffs.map((d) => (
+                  {shownDiffs.length === 0 && (
+                    <div className={`p-4 text-xs ${muted}`}>
+                      {diffDiffs.length ? (
+                        <>
+                          All {diffDiffs.length} files viewed.{' '}
+                          <button className="underline" onClick={() => setViewSettings((s) => ({ ...s, showViewed: true }))}>
+                            Show them
+                          </button>
+                        </>
+                      ) : (
+                        'No changes'
+                      )}
+                    </div>
+                  )}
+                  {shownDiffs.map((d) => (
                     <div key={d.file.path} id={`diff:${d.file.path}`}>
                       <Viewer stacked opened={d} {...viewerProps(currentWorkspace, commit?.parent ?? pr.commits!.mergeBase, commit?.sha)} />
                     </div>
@@ -324,8 +342,123 @@ export function App() {
             </div>
           </div>
         )}
+        {currentWorkspace && diffPr.changed && (
+          <StatusBar
+            workspaceId={currentWorkspace.id}
+            entries={entries}
+            files={diffPr.changed}
+            viewed={viewed}
+            turns={turns}
+            onViewThread={viewThread}
+          />
+        )}
       </div>
     </div>
+  )
+}
+
+const count = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
+
+// The canvas's bottom bar: the review at a glance. Threads, with how many are outdated or waiting on the agent, how
+// many of the file diffs on screen are viewed, and their lines. The thread count opens every thread above the bar.
+type StatusBarProps = {
+  workspaceId: number
+  entries: ReviewEntry[]
+  files: ChangedFile[]
+  viewed: string[]
+  turns: Record<number, Turn>
+  onViewThread: (threadId: number) => void
+}
+
+function StatusBar(props: StatusBarProps) {
+  const [open, setOpen] = useState(false)
+  // Sending every thread to the agent pane's session; the agent's reply shows there.
+  const [sending, setSending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const sendAll = async () => {
+    setSending(true)
+    setError(null)
+    const result = await window.coxswain.sendReview(props.workspaceId)
+    setSending(false)
+    if (result.status === 'error') setError(result.message)
+  }
+  const threads = props.entries.filter((e) => e.path && !e.parentId)
+  const outdated = threads.filter((e) => e.state === 'outdated').length
+  const answering = threads.filter((e) => props.turns[e.id]?.running).length
+  const viewed = props.files.filter((f) => props.viewed.includes(f.path)).length
+  const add = props.files.reduce((n, f) => n + f.additions, 0)
+  const del = props.files.reduce((n, f) => n + f.deletions, 0)
+  const parts = [
+    count(threads.length, 'thread') + (outdated ? ` (${outdated} outdated)` : ''),
+    answering ? `${answering} waiting on the agent` : '',
+  ].filter(Boolean)
+  return (
+    <div className={`flex max-h-[50%] shrink-0 flex-col border-t text-xs ${pane}`}>
+      {open && (
+        <div className={`flex min-h-0 flex-col overflow-y-auto border-b py-1 ${pane}`}>
+          {threads.length === 0 && <div className={`px-2 py-1 ${muted}`}>No threads yet. Click a line's gutter to start one.</div>}
+          {threads.map((t) => (
+            <ThreadRow
+              key={t.id}
+              root={t}
+              replies={props.entries.filter((e) => e.parentId === t.id)}
+              answering={!!props.turns[t.id]?.running}
+              onClick={() => props.onViewThread(t.id)}
+            />
+          ))}
+        </div>
+      )}
+      <div className={`flex h-8 shrink-0 items-center gap-3 px-2 ${muted}`}>
+        <button
+          title={open ? 'Hide the threads' : 'Show all threads'}
+          className="flex min-w-0 items-center gap-1 rounded px-1 py-0.5 hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
+          onClick={() => setOpen((o) => !o)}
+        >
+          <span>{open ? '▾' : '▴'}</span>
+          <span className="truncate">{parts.join(' · ')}</span>
+        </button>
+        <button
+          title="Send every thread to the agent in one message"
+          className="rounded px-1.5 py-0.5 hover:bg-neutral-100 hover:text-neutral-900 disabled:opacity-50 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
+          disabled={!threads.length || sending}
+          onClick={sendAll}
+        >
+          {sending ? 'Agent working…' : 'Send all to agent'}
+        </button>
+        {error && <span className="truncate text-red-600 dark:text-red-400">{error}</span>}
+        <div className="flex-1" />
+        <span className="tabular-nums">
+          <span className="text-green-600">+{add}</span> <span className="text-red-600">−{del}</span>
+        </span>
+        <div className="flex items-center gap-1.5 tabular-nums">
+          <div className="h-1 w-16 overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-800">
+            <div className="h-full bg-green-600" style={{ width: `${props.files.length ? (viewed / props.files.length) * 100 : 0}%` }} />
+          </div>
+          {viewed} of {count(props.files.length, 'file')} viewed
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// One thread in the bar's list: where it is, its first comment, and how far it got. A click shows it on the canvas.
+function ThreadRow(props: { root: ReviewEntry; replies: ReviewEntry[]; answering: boolean; onClick: () => void }) {
+  const { root: t, replies } = props
+  const lines = t.startLine === t.endLine ? `${t.startLine}` : `${t.startLine}–${t.endLine}`
+  const answers = replies.filter((r) => r.kind === 'answer').length
+  const status = [
+    t.state === 'outdated' && 'outdated',
+    props.answering ? 'agent answering…' : answers ? count(answers, 'answer') : t.kind === 'question' && 'sent to agent',
+    replies.length - answers > 0 && count(replies.length - answers, 'reply'),
+  ].filter(Boolean)
+  return (
+    <button onClick={props.onClick} className="flex items-baseline gap-2 px-2 py-1 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800">
+      <span className={`shrink-0 font-mono ${muted}`}>
+        {t.path!.split('/').at(-1)}:{lines}
+      </span>
+      <span className="min-w-0 flex-1 truncate">{t.body}</span>
+      <span className={`shrink-0 ${muted}`}>{status.join(' · ')}</span>
+    </button>
   )
 }
 

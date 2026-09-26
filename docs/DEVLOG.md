@@ -10,6 +10,11 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 - **No more tabs.** The *Overview*, *Guide* and *Diff* tabs are gone. Opening a PR shows the **agent pane**
   (the old L4 chat) on the left, always visible and resizable, and the **canvas** on the right (glossary). For
   now the canvas has one tab, *Changes* (the file diffs), in a tabs row above a bar with *Files*, *Commits* and the cog.
+- **The canvas's bottom bar** sums up the review: threads (outdated, waiting on the agent), +/− lines, and files
+  viewed with a progress bar. Its thread count opens a list of every thread; clicking one scrolls to it.
+  *Send all to agent* sends every thread in one message to the agent pane's session (`sendReview`), known in the
+  transcript by a `[Review · N threads]` header like a comment's, and shown as a card. *Show Viewed Files* now hides viewed file diffs on the canvas too, not only in the
+  Navigator; when all are viewed it says so, with *Show them*.
 - *View > Toggle Agents* (⌥⌘B) is gone, since the agent pane is always shown.
 - **Comments are threads.** The comment box on lines is a send button (Enter), a *Send to agent* checkbox and ✕ to
   cancel. Every comment starts a thread with a reply box of the same shape, so a note can be answered too. Ticked, a

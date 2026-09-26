@@ -16,7 +16,8 @@ export type AgentSession = { id: number; workspaceId: number; agentSessionId: st
 
 // One line of the chat: something the user said, text the agent wrote, or a tool the agent used. comment: the user's
 // message was a comment sent from a thread, which the chat shows as a card.
-export type ChatEntry = { kind: 'user' | 'text' | 'tool'; text: string; comment?: SentComment }
+// review: the message was every thread of the review at once, with how many.
+export type ChatEntry = { kind: 'user' | 'text' | 'tool'; text: string; comment?: SentComment; review?: { threads: number } }
 export type SentComment = { threadId: number; where: string; body: string }
 
 // A comment sent to the agent session, as its prompt: a header line the chat knows it by, the comment, then what the
@@ -25,8 +26,15 @@ export type SentComment = { threadId: number; where: string; body: string }
 const commentHeader = /^\[Comment on (.+) · thread #(\d+)\]\n/
 export const formatComment = (c: SentComment, context: string) =>
   `[Comment on ${c.where} · thread #${c.threadId}]\n${c.body}${context ? `\n\n---\n${context}` : ''}`
+// A whole review sent at once, likewise known by its header line.
+const reviewHeader = /^\[Review · (\d+) threads?\]\n/
+export const formatReview = (threads: number, body: string) => `[Review · ${threads} thread${threads === 1 ? '' : 's'}]\n${body}`
+
 export function withComment(entry: ChatEntry): ChatEntry {
-  const m = entry.kind === 'user' ? commentHeader.exec(entry.text) : null
+  if (entry.kind !== 'user') return entry
+  const r = reviewHeader.exec(entry.text)
+  if (r) return { ...entry, review: { threads: Number(r[1]) } }
+  const m = commentHeader.exec(entry.text)
   if (!m) return entry
   const body = entry.text.slice(m[0].length).split('\n\n---\n')[0]
   return { ...entry, comment: { threadId: Number(m[2]), where: m[1], body } }

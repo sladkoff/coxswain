@@ -26,7 +26,7 @@ import {
 import { createGuide, getGuide, getGuideSettings, type GuideSettingsChange, setGuideSettings } from '../core/guides'
 import { getCurrentUser, listPullRequests, listRepos } from '../core/github'
 import { listProjects, openProject } from '../core/projects'
-import { addNote, askQuestion, deleteEntry, listEntries, type NewEntry, stopQuestion } from '../core/review'
+import { addNote, askQuestion, deleteEntry, listEntries, type NewEntry, sendReview, stopQuestion } from '../core/review'
 import { getTimeline, recordHead, summarise } from '../core/timeline'
 import { listViewed, setViewed } from '../core/viewed'
 import type { Changed, NavigatorSettings, ViewSettings } from '../preload'
@@ -177,6 +177,20 @@ app.whenReady().then(() => {
       send('review:turn-end', threadId, result)
     })
     return asked.question
+  })
+  // Every thread to the agent pane's session at once; the reply streams as agents:entry, like a message sent there.
+  ipcMain.handle('review:send-all', async (e, workspaceId: number) => {
+    const send = (channel: string, ...args: unknown[]) => !e.sender.isDestroyed() && e.sender.send(channel, ...args)
+    const result = await sendReview(db, workspaceId, (agentSessionId) => {
+      changed(e.sender, { workspaceId, what: 'transcript' }) // the session may be new
+      return {
+        onEntry: (entry) => send('agents:entry', agentSessionId, entry),
+        onPermission: (p) => permission(e.sender, () => send('agents:permission', agentSessionId, p)),
+      }
+    })
+    changed(e.sender, { workspaceId, what: 'worktree' })
+    changed(e.sender, { workspaceId, what: 'transcript' })
+    return result
   })
   ipcMain.handle('review:stop', (_, workspaceId: number) => stopQuestion(db, workspaceId))
   ipcMain.handle('viewed:list', (_, workspaceId: number, mergeBase: string, head?: string) =>

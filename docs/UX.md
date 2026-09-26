@@ -11,7 +11,14 @@ Draft: only the main areas so far. Open questions are listed at the end.
 the left and the canvas on the right. The canvas is one explorer that both the agent and the human
 can annotate; what it can show is still to be decided. The agent will get tools to use the app
 (navigate the canvas, read what's on it). The canvas has a row of tabs at its top, one per thing it shows, and under it a bar with the current tab's
-options. For now its only tab is *Changes*: the file diffs (the old *Diff* tab) with the Navigator. The *Overview*, *Guide* and *Diff* tabs are gone, so
+options. For now its only tab is *Changes*: the file diffs (the old *Diff* tab) with the Navigator. A bar at the bottom of
+the canvas sums up the review: how many threads (and how many are outdated or waiting on the agent), the lines added
+and removed, and how many of the files are viewed, with a progress bar. Clicking the thread count opens every thread above
+the bar, one line each: file and lines, the first comment, and whether it's outdated, answered (*N answers*), sent to
+the agent, or has replies. Clicking one scrolls the canvas to it. *Send all to agent* on the bar sends every thread in one message to
+the agent pane's session: where each points, the code, and its comments and answers, asking the agent to make the
+changes and answer what's open. The chat shows it as a card (*Review sent to Claude · N threads*); the bar says
+*Agent working…* until the turn ends. The *Overview*, *Guide* and *Diff* tabs are gone, so
 the timeline and guides can't be reached; the L3 and L4 notes below describe the old layout until
 this settles.
 
@@ -27,7 +34,8 @@ this settles.
 │ ── │                         │  (the agent and the human annotate it)   │
 │▌#12│                         │                                          │
 │ #34│                         │                                          │
-│ +  │ [message box]           │                                          │
+│ +  │ [message box]           ├──────────────────────────────────────────┤
+│    │                         │ 3 threads · 1 waiting   +33 −0  ▰▱ 1 of 2 │
 └────┴─────────────────────────┴──────────────────────────────────────────┘
           ⌘K from anywhere: switch to anything, do anything
 ```
@@ -63,7 +71,8 @@ this settles.
   Picking a commit shows its commit diff in the Navigator and the file diffs, and the button then
   names the commit; the Guide keeps all changes. On *Guide* and *Diff* it has a cog button that
   opens a native menu: *Unified* or *Split* file diffs, and *Show Viewed Files*, shared by the
-  Navigator and the Guide. A file diff's header has a
+  Navigator, the file diffs and the Guide: off, viewed file diffs are hidden, and when all are, the canvas says *All N
+  files viewed* with *Show them*. A file diff's header has a
   *Viewed* checkbox. The workspace's entries (glossary) go between the lines while
   they're current, i.e. their lines still read as the code they were written on; the header says *N
   outdated* for the others, and a click shows them above the file diff with that code. Hovering
