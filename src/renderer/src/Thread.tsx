@@ -15,8 +15,9 @@ export type Draft = { side: "old" | "new"; startLine: number; endLine: number };
 
 export const lines = (start: number, end: number) =>
   start === end ? `Line ${start}` : `Lines ${start}–${end}`;
+// contain: inline-size, so nothing in a box (a resolved thread's one-line header) widens the file diff's code column.
 const box =
-  "m-2 flex flex-col gap-1.5 rounded-md border border-neutral-300 bg-white p-2 font-sans text-sm dark:border-neutral-700 dark:bg-neutral-900";
+  "m-2 flex [contain:inline-size] flex-col gap-1.5 rounded-md border border-neutral-300 bg-white p-2 font-sans text-sm dark:border-neutral-700 dark:bg-neutral-900";
 
 type DraftBoxProps = {
   draft: Draft;
@@ -142,7 +143,15 @@ export function ThreadBox({
       send: !running && lastOwn?.kind === "note",
     });
     if (picked === "edit") setEditing(true);
-    if (picked === "delete") onRemove();
+    if (
+      picked === "delete" &&
+      (await window.coxswain.confirm({
+        message: "Delete this thread?",
+        detail: "Its comments and the agent's answers are deleted. This can't be undone.",
+        action: "Delete",
+      }))
+    )
+      onRemove();
     if (picked === "send") onSend();
   };
   return (

@@ -110,7 +110,7 @@ export function Agents({ workspace, onViewThread, composerText }: Props) {
       <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2">
         {entries.length === 0 && !running && (
           <div className={cn("m-auto text-xs", muted)}>
-            Ask Claude Code something to start an agent session
+            Ask the agent something to start an agent session
           </div>
         )}
         {entries.map((e, i) => (
@@ -134,7 +134,7 @@ export function Agents({ workspace, onViewThread, composerText }: Props) {
           onChange={(e) => setDraft(e.target.value)}
           onSubmit={send}
           rows={3}
-          placeholder="Message Claude Code (Enter to send, Shift+Enter for a new line)"
+          placeholder="Message the agent (Enter to send, Shift+Enter for a new line)"
           className="text-sm"
         />
         {running && session && (
@@ -150,7 +150,8 @@ export function Agents({ workspace, onViewThread, composerText }: Props) {
   );
 }
 
-// The header's pick of agent session: each by when it started, and the new one not started yet.
+// The header's pick of agent session: a button naming the shown one, and a native menu (ADR 0004) of them all, each
+// by when it started, with the new one not started yet at the bottom.
 function SessionPicker(props: {
   sessions: AgentSession[];
   current: AgentSession | null;
@@ -159,21 +160,21 @@ function SessionPicker(props: {
 }) {
   const { sessions, current } = props;
   if (!sessions.length) return null;
+  const i = sessions.findIndex((s) => s.agentSessionId === current?.agentSessionId);
+  const labels = sessions.map((s, n) => `Session ${n + 1} · ${shortDateTime(s.createdAt)}`);
+  if (i < 0) labels.push("New session");
+  const pick = async () => {
+    const n = await window.coxswain.showSessionsMenu(labels, i < 0 ? sessions.length : i);
+    if (n < sessions.length) props.onPick(sessions[n].agentSessionId);
+  };
   return (
-    <select
-      className={cn("text-xs", noDrag)}
+    <Button
+      variant="ghost"
+      className={cn("mr-auto text-xs", noDrag)}
       disabled={props.disabled}
-      value={current?.agentSessionId ?? ""}
-      onChange={(e) => props.onPick(e.target.value)}
+      onClick={pick}
     >
-      {!sessions.some((s) => s.agentSessionId === current?.agentSessionId) && (
-        <option value={current?.agentSessionId ?? ""}>New session</option>
-      )}
-      {sessions.map((s, i) => (
-        <option key={s.agentSessionId} value={s.agentSessionId}>
-          Session {i + 1} · {shortDateTime(s.createdAt)}
-        </option>
-      ))}
-    </select>
+      {i < 0 ? "New session" : `Session ${i + 1}`}
+    </Button>
   );
 }

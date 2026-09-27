@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Menu, shell, type WebContents } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell, type WebContents } from "electron";
 import { join } from "node:path";
 import icon from "../../resources/icon.png?asset";
 import {
@@ -41,7 +41,7 @@ import {
 } from "../core/review";
 import { listReviewed, setReviewed } from "../core/reviewed";
 import type { Changed, NavigatorSettings, ViewSettings } from "../preload";
-import { listWorkspaces, openPullRequestWorkspace } from "../core/workspaces";
+import { listWorkspaces, openPullRequestWorkspace, removeWorkspace } from "../core/workspaces";
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -138,6 +138,7 @@ app.whenReady().then(() => {
   ipcMain.handle("workspaces:open-pr", (_, projectId: number, prNumber: number) =>
     openPullRequestWorkspace(db, projectId, prNumber),
   );
+  ipcMain.handle("workspaces:remove", (_, workspaceId: number) => removeWorkspace(db, workspaceId));
   ipcMain.handle("git:clone", (_, projectId: number) => cloneProject(db, projectId));
   ipcMain.handle("git:opened-before", (_, workspaceId: number) => openedBefore(db, workspaceId));
   ipcMain.handle("git:open-worktree", (_, workspaceId: number) => openWorktree(db, workspaceId));
@@ -304,6 +305,65 @@ app.whenReady().then(() => {
           },
         ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
       ),
+  );
+  // L1's project icon: switch to a project (the first, most recently opened, is current) or add one. Resolves only
+  // on a click, like the menus above; null means Add Project.
+  ipcMain.handle(
+    "menus:projects",
+    (e, fullNames: string[]) =>
+      new Promise<string | null>((resolve) =>
+        Menu.buildFromTemplate([
+          ...fullNames.map((name, i) => ({
+            label: name,
+            type: "radio" as const,
+            checked: i === 0,
+            click: () => resolve(name),
+          })),
+          { type: "separator" },
+          { label: "Add Project…", click: () => resolve(null) },
+        ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
+      ),
+  );
+  // The agent pane's session picker: one radio item per label, the checked one at `checked`. Resolves with the picked
+  // index, only on a click, like the menus above.
+  ipcMain.handle(
+    "menus:sessions",
+    (e, labels: string[], checked: number) =>
+      new Promise<number>((resolve) =>
+        Menu.buildFromTemplate(
+          labels.map((label, i) => ({
+            label,
+            type: "radio" as const,
+            checked: i === checked,
+            click: () => resolve(i),
+          })),
+        ).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
+      ),
+  );
+  // A workspace's context menu in L1. Resolves only on a click, like the menus above.
+  ipcMain.handle(
+    "menus:workspace",
+    (e) =>
+      new Promise<"remove">((resolve) =>
+        Menu.buildFromTemplate([
+          { label: "Remove Workspace…", click: () => resolve("remove") },
+        ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
+      ),
+  );
+  // The one confirmation for destructive actions (ADR 0004: native dialogs): a sheet on the window, true if confirmed.
+  ipcMain.handle(
+    "dialogs:confirm",
+    async (e, c: { message: string; detail: string; action: string }) =>
+      (
+        await dialog.showMessageBox(BrowserWindow.fromWebContents(e.sender)!, {
+          type: "warning",
+          message: c.message,
+          detail: c.detail,
+          buttons: [c.action, "Cancel"],
+          defaultId: 0,
+          cancelId: 1,
+        })
+      ).response === 0,
   );
   ipcMain.handle("guides:list", (_, workspaceId: number) => listGuides(db, workspaceId));
   // The canvas's Guide menu: a prompt for a guide, for the agent pane's composer, or which guide to show. Resolves only on a click, like the menus above.

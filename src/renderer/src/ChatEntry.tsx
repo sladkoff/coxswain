@@ -19,7 +19,7 @@ export function Entry({
   if (entry.review)
     return (
       <SentCard className={cn("px-2.5 py-2 text-xs", muted)}>
-        Review sent to Claude · {count(entry.review.threads, "thread")}
+        Review sent to Agent · {count(entry.review.threads, "thread")}
       </SentCard>
     );
   if (entry.kind === "tool")
@@ -60,7 +60,7 @@ function CommentCard({
         className={cn("flex items-start gap-2 px-2.5 pt-2 text-left text-xs", muted)}
       >
         <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">
-          Comment on <span className="font-mono">{c.where}</span> sent to Claude
+          Comment on <span className="font-mono">{c.where}</span> sent to Agent
         </span>
         <span>›</span>
       </button>
@@ -111,7 +111,7 @@ function PermissionPrompt({
 }) {
   return (
     <div className="flex shrink-0 flex-col gap-1.5 rounded-md border border-neutral-300 p-1.5 text-xs dark:border-neutral-700">
-      <span>Claude Code wants to:</span>
+      <span>Agent wants to:</span>
       <div className="max-h-24 overflow-y-auto font-mono whitespace-pre-wrap select-text [overflow-wrap:anywhere]">
         {permission.title}
       </div>

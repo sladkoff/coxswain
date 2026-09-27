@@ -12,7 +12,7 @@ _Files_, _Commits_, _Guide_ and the cog; a bar at its bottom sums up the review.
 
 ```
 ┌────┬─────────────────────────┬──────────────────────────────────────────┐
-│    │ Session 2 ▾ [New session]│ Files 3  Commits  Guide              ⚙   │
+│    │ Session 2   [New session]│ Files 3  Commits  Guide              ⚙   │
 │ L1 ├─────────────────────────┼─────────┬────────────────────────────────┤
 │    │ L4 Agent pane           │ L2      │ L3 Canvas                      │
 │ P  │                         │ Navi-   │                                │
@@ -29,12 +29,14 @@ _Files_, _Commits_, _Guide_ and the cog; a bar at its bottom sums up the review.
 ## Levels
 
 - **L1 — Current project and its workspaces.** At the top, an icon for the current project, like a
-  Discord server icon. Clicking it opens the list of projects, to switch to one or add one from the
-  user's GitHub repositories. The rest of the screen belongs to the current project. A project's
+  Discord server icon. Clicking it opens a native menu of the user's projects, the current one
+  checked, to switch to one; _Add Project…_ at its bottom opens the list of the user's GitHub
+  repositories to add one. The rest of the screen belongs to the current project. A project's
   repository must be git, local or cloned, and may be on GitHub.
 
   Below it, one icon per workspace of the project, in the order they were added, with the current
-  one marked; `+` starts a new workspace. A workspace is either a PR or a local iteration, and has
+  one marked; `+` starts a new workspace. Right-clicking a workspace offers _Remove Workspace…_, which asks
+  first: its comments, reviewed files and agent sessions go, its worktree stays on disk. A workspace is either a PR or a local iteration, and has
   one worktree. For now `+` only offers the repository's open PRs. While the project is being cloned,
   its icon pulses.
 
@@ -68,7 +70,7 @@ _Files_, _Commits_, _Guide_ and the cog; a bar at its bottom sums up the review.
   comment is labelled _You_, or _You → agent_ when it went to the agent, and the agent's answers _Agent_.
 
   On _Comment_, a comment is a note. On _Agent_, it's a question: a turn in the agent pane's agent session
-  (ADR 0021), which shows it as a card (_Comment on `path:lines` sent to Claude_, the comment, and _View thread_,
+  (ADR 0021), which shows it as a card (_Comment on `path:lines` sent to Agent_, the comment, and _View thread_,
   which scrolls the canvas to the thread). The agent is given the thread's notes it hasn't seen (and the lines, if
   the thread began as a note): the reply streams into the thread, with each tool used as one line, and is kept as an
   answer when the turn ends. A tool use auto mode would block stops the turn with a permission prompt in the thread:
@@ -77,7 +79,7 @@ _Files_, _Commits_, _Guide_ and the cog; a bar at its bottom sums up the review.
 
   The thread's header has a ✓ to resolve it: the thread folds to its header (_Resolved_ and its first comment), is
   left out of _Send all to agent_, and the ✓, green now, reopens it. Right of it, a ⋯ button with a native menu:
-  _Edit_ (the first comment, in place, if it's yours), _Delete_ (the thread), and _Send to Agent_, which makes the
+  _Edit_ (the first comment, in place, if it's yours), _Delete_ (the thread, after a confirmation), and _Send to Agent_, which makes the
   thread's latest note a question, with the notes before it since the last question; the answer comes in the thread.
 
   **The bottom bar** sums up the review: how many threads (and how many are outdated, resolved or waiting on the
@@ -86,7 +88,7 @@ _Files_, _Commits_, _Guide_ and the cog; a bar at its bottom sums up the review.
   outdated, answered (_N answers_), sent to the agent, or has replies. Clicking one scrolls the canvas to it. _Send
   all to agent_ sends every thread in one message to the agent pane's session: where each points, the code, and its
   comments and answers, asking the agent to make the changes and answer what's open. The chat shows it as a card
-  (_Review sent to Claude · N threads_); the bar says _Agent working…_ until the turn ends.
+  (_Review sent to Agent · N threads_); the bar says _Agent working…_ until the turn ends.
 
   **Guides.** _Guide_ in the canvas's bar opens a native menu: _Make a Guide_, _Make a Guide with Review_, then _No
   Guide_ and every guide made so far (when, its head, _(stale)_ once the PR moved on). The two _Make_ items put a
@@ -104,11 +106,11 @@ _Files_, _Commits_, _Guide_ and the cog; a bar at its bottom sums up the review.
   _Guide · date_. Picking a commit hides the guide, and the other way round.
 
 - **L4 — Agent pane**, left of the canvas, always shown; its border can be dragged. A chat with one of the
-  workspace's agent sessions, the latest unless another is picked in the header's session picker (_Session N ·
-  date_): its turns, with each tool the agent used as one line, comments and reviews sent from the canvas as cards,
+  workspace's agent sessions, the latest unless another is picked in the header's session picker (_Session N_; its
+  native menu lists them all with their dates): its turns, with each tool the agent used as one line, comments and reviews sent from the canvas as cards,
   and a message box at the bottom (Enter sends, Shift+Enter adds a line). _New session_ in the header starts another
   agent session. A running turn can be stopped. When the agent wants a tool that auto mode would block, a permission
-  prompt takes the place of _Working…_: _Claude Code wants to:_, the command or file, and the agent's options as
+  prompt takes the place of _Working…_: _Agent wants to:_, the command or file, and the agent's options as
   buttons (_Yes_, _Always_, _No_); the turn waits until one is picked.
 
 ## Across all levels

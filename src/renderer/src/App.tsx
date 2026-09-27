@@ -69,6 +69,19 @@ export function App() {
     close();
   };
 
+  // The workspace's entries, reviewed files and agent sessions go with it; its worktree stays on disk.
+  const removeWorkspace = async (w: Workspace) => {
+    const ok = await window.coxswain.confirm({
+      message: `Remove PR #${w.prNumber} from the sidebar?`,
+      detail:
+        "Its comments, reviewed files and agent sessions are deleted. The worktree stays on disk, and adding the PR again reuses it.",
+      action: "Remove",
+    });
+    if (!ok) return;
+    await window.coxswain.removeWorkspace(w.id);
+    await queryClient.invalidateQueries({ queryKey: ["listWorkspaces", w.projectId] });
+  };
+
   // ADR 0008: clone as soon as a project is current; opening a workspace waits for it.
   const [cloning, setCloning] = useState(false);
   useEffect(() => {
@@ -379,8 +392,15 @@ export function App() {
         cloning={cloning}
         workspaces={workspaces}
         current={currentWorkspace}
-        onProjects={() => setScreen("projects")}
+        onProjects={async () => {
+          const picked = await window.coxswain.showProjectsMenu(
+            projects.map((p) => `${p.owner}/${p.name}`),
+          );
+          if (picked === null) setScreen("projects");
+          else if (picked !== `${current.owner}/${current.name}`) await selectProject(picked);
+        }}
         onSelect={selectWorkspace}
+        onRemove={removeWorkspace}
         onNew={() => setScreen("new-workspace")}
       />
 

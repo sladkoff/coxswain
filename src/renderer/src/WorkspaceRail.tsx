@@ -9,6 +9,7 @@ type Props = {
   current: Workspace | undefined;
   onProjects: () => void;
   onSelect: (prNumber: number) => void;
+  onRemove: (workspace: Workspace) => void;
   onNew: () => void;
 };
 
@@ -20,6 +21,7 @@ export function WorkspaceRail({
   current,
   onProjects,
   onSelect,
+  onRemove,
   onNew,
 }: Props) {
   return (
@@ -28,7 +30,7 @@ export function WorkspaceRail({
       <div className={cn(titleBar, "border-b", divider)} />
       <div className={cn("flex min-h-0 flex-1 border-r", divider)}>
         <div className="flex w-12 flex-col items-center gap-2 py-2">
-          {/* The current project, like a Discord server icon. Opens the list to switch or add projects. */}
+          {/* The current project, like a Discord server icon. Opens a native menu to switch or add projects. */}
           <button
             title={`${project.owner}/${project.name}${cloning ? " (cloning…)" : ""}: switch or add project`}
             onClick={onProjects}
@@ -46,6 +48,9 @@ export function WorkspaceRail({
               workspace={w}
               selected={w.id === current?.id}
               onClick={() => onSelect(w.prNumber)}
+              onContextMenu={async () => {
+                if ((await window.coxswain.showWorkspaceMenu()) === "remove") onRemove(w);
+              }}
             />
           ))}
           <button
@@ -61,15 +66,17 @@ export function WorkspaceRail({
   );
 }
 
-// A workspace by its PR number; the pill on the left marks the current one.
+// A workspace by its PR number; the pill on the left marks the current one. Right-click offers to remove it.
 function WorkspaceButton({
   workspace: w,
   selected,
   onClick,
+  onContextMenu,
 }: {
   workspace: Workspace;
   selected: boolean;
   onClick: () => void;
+  onContextMenu: () => void;
 }) {
   return (
     <div className="relative flex w-full justify-center">
@@ -79,6 +86,7 @@ function WorkspaceButton({
       <button
         title={`PR #${w.prNumber}`}
         onClick={onClick}
+        onContextMenu={onContextMenu}
         className={cn(
           "flex h-7 w-10 items-center justify-center rounded-md text-[10px] font-medium",
           selected

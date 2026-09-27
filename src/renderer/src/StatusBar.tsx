@@ -72,7 +72,6 @@ export function StatusBar(props: Props) {
           className="flex min-w-0 items-center gap-1 px-1 py-0.5"
           onClick={() => setOpen((o) => !o)}
         >
-          <span>{open ? "▾" : "▴"}</span>
           <span className="truncate">{parts.join(" · ")}</span>
         </Button>
         <Button

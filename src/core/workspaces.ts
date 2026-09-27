@@ -55,3 +55,9 @@ export async function getWorkspaceRepo(db: Db, workspaceId: number) {
   if (!row) throw new Error(`No workspace ${workspaceId}`);
   return row;
 }
+
+// Takes the workspace out of the sidebar, with its entries, reviewed files and agent sessions (the cascade). The
+// worktree stays on disk; adding the PR again adopts it (git.ts).
+export async function removeWorkspace(db: Db, workspaceId: number): Promise<void> {
+  await db.deleteFrom("workspaces").where("id", "=", workspaceId).execute();
+}

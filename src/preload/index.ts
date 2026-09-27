@@ -63,6 +63,8 @@ const api = {
     ipcRenderer.invoke("workspaces:list", projectId),
   openPullRequestWorkspace: (projectId: number, prNumber: number): Promise<Workspace> =>
     ipcRenderer.invoke("workspaces:open-pr", projectId, prNumber),
+  removeWorkspace: (workspaceId: number): Promise<void> =>
+    ipcRenderer.invoke("workspaces:remove", workspaceId),
   listAgentSessions: (workspaceId: number): Promise<AgentSession[]> =>
     ipcRenderer.invoke("agents:list", workspaceId),
   startAgentSession: (workspaceId: number): Promise<AgentSession> =>
@@ -146,6 +148,17 @@ const api = {
   // A thread's ⋯ menu; stays pending if dismissed.
   showThreadMenu: (can: { edit: boolean; send: boolean }): Promise<"edit" | "delete" | "send"> =>
     ipcRenderer.invoke("menus:thread", can),
+  // The agent pane's session menu: the index of the picked label. Pending if dismissed.
+  showSessionsMenu: (labels: string[], checked: number): Promise<number> =>
+    ipcRenderer.invoke("menus:sessions", labels, checked),
+  // A workspace's context menu in L1; stays pending if dismissed.
+  showWorkspaceMenu: (): Promise<"remove"> => ipcRenderer.invoke("menus:workspace"),
+  // A native confirmation before a destructive action: `action` names its button. True if confirmed.
+  confirm: (c: { message: string; detail: string; action: string }): Promise<boolean> =>
+    ipcRenderer.invoke("dialogs:confirm", c),
+  // L1's project menu: the project to switch to, or null for Add Project. Pending if dismissed.
+  showProjectsMenu: (fullNames: string[]): Promise<string | null> =>
+    ipcRenderer.invoke("menus:projects", fullNames),
   // The canvas's Guide menu: make one (make: with review), or the guide to show (null: none). Pending if dismissed.
   showGuideMenu: (
     workspaceId: number,
