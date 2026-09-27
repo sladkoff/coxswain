@@ -1,16 +1,19 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import type { AgentSession, ChatEntry, Permission } from "../../core/agents";
+import type { Agent, AgentSession, ChatEntry, Permission, Pick } from "../../core/agents";
 import type { Workspace } from "../../core/workspaces";
 import { Entry, TurnStatus, upsert } from "./ChatEntry";
-import { Button } from "./components/button";
+import { Button, SplitButton } from "./components/button";
 import { TextArea } from "./components/field";
 import { cn, divider, muted, noDrag, titleBar } from "./components/styles";
 import { shortDateTime } from "./format";
-import { core } from "./queries";
+import { core, queryClient } from "./queries";
+
+const agentNames: Record<Agent, string> = { claude: "Claude Code", codex: "Codex" };
 
 // L4: a chat with one of the workspace's agent sessions, the latest unless another is picked in the header. A new
-// session starts with its first message.
+// session starts with its first message, on the agent picked in New session's menu. The composer picks the model and
+// effort, which every session of that agent runs on.
 // ponytail: comments still go to the latest session, not the one shown; pass the shown one to ask and sendReview if that
 // confuses.
 type Props = {
@@ -30,6 +33,10 @@ export function Agents({ workspace, onViewThread, composerText }: Props) {
     enabled: !!last,
   }).data;
   const [session, setSession] = useState<AgentSession | null>(last ?? null);
+  // The agent a new session gets: picked in New session's menu, else the one picked last.
+  const lastAgent = useQuery(core("newSessionAgent")).data ?? "claude";
+  const [newAgent, setNewAgent] = useState<Agent | null>(null);
+  const agent = session?.agent ?? newAgent ?? lastAgent;
   const [entries, setEntries] = useState<ChatEntry[]>(transcript ?? []);
   const [running, setRunning] = useState(false);
   const [permission, setPermission] = useState<Permission | null>(null);
@@ -81,7 +88,7 @@ export function Agents({ workspace, onViewThread, composerText }: Props) {
     setRunning(true);
     let current = session;
     try {
-      current ??= await window.coxswain.startAgentSession(workspace.id);
+      current ??= await window.coxswain.startAgentSession(workspace.id, agent);
     } catch (e) {
       setRunning(false);
       return setError((e as Error).message);
@@ -95,7 +102,10 @@ export function Agents({ workspace, onViewThread, composerText }: Props) {
     if (result.status === "error") setError(result.message);
   };
 
-  const newSession = () => {
+  // New session: on the agent picked last, or on one picked from its menu.
+  const newSessionAgent = newAgent ?? lastAgent;
+  const newSession = (on: Agent) => {
+    setNewAgent(on);
     setPicked("new");
     setSession(null);
     setEntries([]);
@@ -108,17 +118,32 @@ export function Agents({ workspace, onViewThread, composerText }: Props) {
         <SessionPicker
           sessions={sessions}
           current={session}
+          agent={agent}
           disabled={running}
           onPick={setPicked}
         />
-        <Button className={cn("text-xs", noDrag)} disabled={running} onClick={newSession}>
+        <SplitButton
+          className={cn("text-xs", noDrag)}
+          disabled={running}
+          title={`New ${agentNames[newSessionAgent]} session`}
+          onClick={() => newSession(newSessionAgent)}
+          menuTitle="New session on…"
+          onMenu={async () => {
+            const all = Object.keys(agentNames) as Agent[];
+            const n = await window.coxswain.showPickMenu(
+              all.map((a) => agentNames[a]),
+              all.indexOf(newSessionAgent),
+            );
+            newSession(all[n]);
+          }}
+        >
           New session
-        </Button>
+        </SplitButton>
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2">
         {entries.length === 0 && !running && (
           <div className={cn("m-auto text-xs", muted)}>
-            Ask the agent something to start an agent session
+            Ask {agentNames[agent]} something to start an agent session
           </div>
         )}
         {entries.map((e, i) => (
@@ -145,14 +170,17 @@ export function Agents({ workspace, onViewThread, composerText }: Props) {
           placeholder="Message the agent (Enter to send, Shift+Enter for a new line)"
           className="text-sm"
         />
-        {running && session && (
-          <Button
-            className="self-end text-xs"
-            onClick={() => window.coxswain.stopTurn(session.agentSessionId)}
-          >
-            Stop
-          </Button>
-        )}
+        <div className="flex items-center gap-1">
+          <AgentPickers workspaceId={workspace.id} agent={agent} />
+          {running && session && (
+            <Button
+              className="ml-auto text-xs"
+              onClick={() => window.coxswain.stopTurn(session.agentSessionId)}
+            >
+              Stop
+            </Button>
+          )}
+        </div>
       </div>
     </>
   );
@@ -163,16 +191,19 @@ export function Agents({ workspace, onViewThread, composerText }: Props) {
 function SessionPicker(props: {
   sessions: AgentSession[];
   current: AgentSession | null;
+  agent: Agent;
   disabled: boolean;
   onPick: (id: string) => void;
 }) {
   const { sessions, current } = props;
   if (!sessions.length) return null;
   const i = sessions.findIndex((s) => s.agentSessionId === current?.agentSessionId);
-  const labels = sessions.map((s, n) => `Session ${n + 1} · ${shortDateTime(s.createdAt)}`);
+  const labels = sessions.map(
+    (s, n) => `Session ${n + 1} · ${agentNames[s.agent]} · ${shortDateTime(s.createdAt)}`,
+  );
   if (i < 0) labels.push("New session");
   const pick = async () => {
-    const n = await window.coxswain.showSessionsMenu(labels, i < 0 ? sessions.length : i);
+    const n = await window.coxswain.showPickMenu(labels, i < 0 ? sessions.length : i);
     if (n < sessions.length) props.onPick(sessions[n].agentSessionId);
   };
   return (
@@ -182,7 +213,32 @@ function SessionPicker(props: {
       disabled={props.disabled}
       onClick={pick}
     >
-      {i < 0 ? "New session" : `Session ${i + 1}`}
+      {i < 0 ? "New session" : `Session ${i + 1}`} · {agentNames[current?.agent ?? props.agent]}
     </Button>
+  );
+}
+
+// The composer's model and effort for the agent's sessions: a button naming each pick and a native menu (ADR 0004) of
+// the agent's choices. A pick holds from the next turn on, in every session of the agent, and for new ones.
+function AgentPickers({ workspaceId, agent }: { workspaceId: number; agent: Agent }) {
+  const query = core("listAgentPicks", workspaceId, agent);
+  const picks = useQuery(query).data ?? {};
+  const pick = async (which: Pick) => {
+    const { choices, current } = picks[which]!;
+    const n = await window.coxswain.showPickMenu(
+      choices.map((c) => c.name),
+      choices.findIndex((c) => c.value === current),
+    );
+    await window.coxswain.setAgentPick(agent, which, choices[n].value);
+    queryClient.invalidateQueries({ queryKey: query.queryKey });
+  };
+  return (["model", "effort"] as const).map(
+    (which) =>
+      picks[which] && (
+        <Button key={which} variant="ghost" className="text-xs" onClick={() => pick(which)}>
+          {picks[which].choices.find((c) => c.value === picks[which]!.current)?.name ??
+            picks[which].current}
+        </Button>
+      ),
   );
 }

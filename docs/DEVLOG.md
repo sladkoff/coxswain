@@ -3,6 +3,31 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-27 — Codex, and model and effort in the composer
+
+### What works
+
+- **Codex runs in the agent pane** (`@agentclientprotocol/codex-acp` 1.13.1, the user's own `codex` on `PATH`), in
+  its _Approve for me_ mode, with coxswain's tools and the pane's instructions (ADR 0018, 10).
+- **_New session_ is a split button** (`SplitButton`): the button starts a session on the agent picked last, its
+  chevron's native menu on another, Claude Code or Codex. The one picked last is also what questions, reviews and
+  guides start a session on when the workspace has none. The session keeps its agent; the
+  picker names it.
+- **Agent picks under the composer** (`listAgentPicks`, `setAgentPick`): the model and the effort, each a native menu
+  of what the agent offers (ACP session config options), stored per agent in `settings`. Every turn of the agent's
+  sessions, the pane's own, questions, reviews and guides, runs on them.
+- Claude Code's _Default (recommended)_ model shows as the model it resolves to, e.g. _Opus 5.5 (default)_, named
+  from the model ID the adapter sends (`modelName`, a `ponytail:` guess from the ID's shape).
+
+### Tech debt
+
+- The choices are the agent's latest session's. Before the agent has one, listing them opens a session in the
+  worktree and closes it again (a few seconds for Claude Code). Choices are kept while the app runs; a model the agent
+  adds shows after a restart.
+- **Effort levels follow the model late** (`ponytail:` in `listAgentPicks`): a model picked before its first turn
+  shows the old model's levels until the turn, and a stored level the model hasn't is skipped.
+- Codex isn't in the startup check: a missing `codex` shows as the first turn's error.
+
 ## 2026-09-27 — Go to Definition and Find Usages
 
 ### What works

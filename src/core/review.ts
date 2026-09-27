@@ -284,7 +284,7 @@ async function ask(
 
 export async function stopQuestion(db: Db, workspaceId: number) {
   const last = (await listAgentSessions(db, workspaceId)).at(-1);
-  if (last) stopTurn(last.agentSessionId);
+  if (last) await stopTurn(db, last.agentSessionId);
 }
 
 // Every thread of the workspace, as one message for the agent pane's session: where each points, the code, and its

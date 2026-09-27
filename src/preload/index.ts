@@ -1,5 +1,13 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { AgentSession, ChatEntry, Permission, TurnResult } from "../core/agents";
+import type {
+  Agent,
+  AgentPicks,
+  AgentSession,
+  ChatEntry,
+  Permission,
+  Pick,
+  TurnResult,
+} from "../core/agents";
 import type {
   ChangedFileList,
   CloneResult,
@@ -77,8 +85,15 @@ const api = {
     ipcRenderer.invoke("workspaces:remove", workspaceId),
   listAgentSessions: (workspaceId: number): Promise<AgentSession[]> =>
     ipcRenderer.invoke("agents:list", workspaceId),
-  startAgentSession: (workspaceId: number): Promise<AgentSession> =>
-    ipcRenderer.invoke("agents:start", workspaceId),
+  // agent: the one picked for it; without it, the one picked last.
+  startAgentSession: (workspaceId: number, agent?: Agent): Promise<AgentSession> =>
+    ipcRenderer.invoke("agents:start", workspaceId, agent),
+  newSessionAgent: (): Promise<Agent> => ipcRenderer.invoke("agents:new-session-agent"),
+  // The composer's model and effort for an agent's sessions, with the choices; kept for every session of the agent.
+  listAgentPicks: (workspaceId: number, agent: Agent): Promise<AgentPicks> =>
+    ipcRenderer.invoke("agents:picks", workspaceId, agent),
+  setAgentPick: (agent: Agent, pick: Pick, value: string): Promise<void> =>
+    ipcRenderer.invoke("agents:set-pick", agent, pick, value),
   readTranscript: (agentSessionId: string): Promise<ChatEntry[]> =>
     ipcRenderer.invoke("agents:transcript", agentSessionId),
   runTurn: (agentSessionId: string, message: string): Promise<TurnResult> =>
@@ -158,9 +173,10 @@ const api = {
   // A thread's ⋯ menu; stays pending if dismissed.
   showThreadMenu: (can: { edit: boolean; send: boolean }): Promise<"edit" | "delete" | "send"> =>
     ipcRenderer.invoke("menus:thread", can),
-  // The agent pane's session menu: the index of the picked label. Pending if dismissed.
-  showSessionsMenu: (labels: string[], checked: number): Promise<number> =>
-    ipcRenderer.invoke("menus:sessions", labels, checked),
+  // A pick from a list (the agent pane's session, agent, model, effort): the index of the picked label. Pending if
+  // dismissed.
+  showPickMenu: (labels: string[], checked: number): Promise<number> =>
+    ipcRenderer.invoke("menus:pick", labels, checked),
   // A token's context menu in the canvas; stays pending if dismissed.
   showTokenMenu: (): Promise<"definition" | "usages"> => ipcRenderer.invoke("menus:token"),
   // Definitions or usages to pick from, how many didn't fit, and what to say when there are none: the index of the

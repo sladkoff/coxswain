@@ -2,12 +2,17 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, shell, type WebContents } fr
 import { join } from "node:path";
 import icon from "../../resources/icon.png?asset";
 import {
+  type Agent,
   agentSessionWorkspace,
   answerPermission,
+  listAgentPicks,
   listAgentSessions,
+  newSessionAgent,
+  type Pick,
   readTranscript,
   runTurn,
   startAgentSession,
+  setAgentPick,
   stopAgents,
   stopTurn,
 } from "../core/agents";
@@ -179,7 +184,16 @@ app.whenReady().then(() => {
     findUsages(db, workspaceId, token),
   );
   ipcMain.handle("agents:list", (_, workspaceId: number) => listAgentSessions(db, workspaceId));
-  ipcMain.handle("agents:start", (_, workspaceId: number) => startAgentSession(db, workspaceId));
+  ipcMain.handle("agents:start", (_, workspaceId: number, agent?: Agent) =>
+    startAgentSession(db, workspaceId, agent),
+  );
+  ipcMain.handle("agents:new-session-agent", () => newSessionAgent(db));
+  ipcMain.handle("agents:picks", (_, workspaceId: number, agent: Agent) =>
+    listAgentPicks(db, workspaceId, agent),
+  );
+  ipcMain.handle("agents:set-pick", (_, agent: Agent, pick: Pick, value: string) =>
+    setAgentPick(db, agent, pick, value),
+  );
   ipcMain.handle("agents:transcript", (_, agentSessionId: string) =>
     readTranscript(db, agentSessionId),
   );
@@ -346,10 +360,10 @@ app.whenReady().then(() => {
         ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
       ),
   );
-  // The agent pane's session picker: one radio item per label, the checked one at `checked`. Resolves with the picked
-  // index, only on a click, like the menus above.
+  // A pick from a list, e.g. the agent pane's session, agent, model and effort: one radio item per label, the checked one
+  // at `checked`. Resolves with the picked index, only on a click, like the menus above.
   ipcMain.handle(
-    "menus:sessions",
+    "menus:pick",
     (e, labels: string[], checked: number) =>
       new Promise<number>((resolve) =>
         Menu.buildFromTemplate(
@@ -453,7 +467,7 @@ app.whenReady().then(() => {
       changed(w.webContents, { workspaceId, what: "entries" });
     }
   });
-  ipcMain.handle("agents:stop-turn", (_, agentSessionId: string) => stopTurn(agentSessionId));
+  ipcMain.handle("agents:stop-turn", (_, agentSessionId: string) => stopTurn(db, agentSessionId));
   ipcMain.handle("agents:answer-permission", (_, id: string, optionId: string | null) =>
     answerPermission(id, optionId),
   );

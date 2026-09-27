@@ -12,7 +12,7 @@ _Files_, _Commits_, _Guide_, a magnifier (Open Quickly) and the cog; a bar at it
 
 ```
 ┌────┬─────────────────────────┬──────────────────────────────────────────┐
-│    │ Session 2   [New session]│ Files 3  Commits  Guide              ⚙   │
+│    │ Session 2 · Codex [New▾]│ Files 3  Commits  Guide              ⚙   │
 │ L1 ├─────────────────────────┼─────────┬────────────────────────────────┤
 │    │ L4 Agent pane           │ L2      │ L3 Canvas                      │
 │ P  │                         │ Navi-   │                                │
@@ -126,8 +126,10 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
 - **L4 — Agent pane**, left of the canvas, always shown; its border can be dragged. A chat with one of the
   workspace's agent sessions, the latest unless another is picked in the header's session picker (_Session N_; its
   native menu lists them all with their dates): its turns, with each tool the agent used as one line, comments and reviews sent from the canvas as cards,
-  and a message box at the bottom (Enter sends, Shift+Enter adds a line). _New session_ in the header starts another
-  agent session. A running turn can be stopped. When the agent wants a tool that auto mode would block, a permission
+  and a message box at the bottom (Enter sends, Shift+Enter adds a line). _New session_ in the header, a split button, starts another
+  agent session on the agent picked last; its chevron's native menu picks another (_Claude Code_, _Codex_), which the
+  session keeps; the picker names each session's agent. Under the message box, the agent picks: the model and the
+  effort, each a button with a native menu of the agent's choices, kept per agent for all its sessions. A running turn can be stopped. When the agent wants a tool that auto mode would block, a permission
   prompt takes the place of _Working…_: _Agent wants to:_, the command or file, and the agent's options as
   buttons (_Yes_, _Always_, _No_); the turn waits until one is picked.
 

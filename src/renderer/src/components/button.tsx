@@ -1,4 +1,5 @@
 import type { ComponentProps } from "react";
+import { ChevronDownIcon } from "./icons";
 import { cn, muted, selectable } from "./styles";
 
 const variants = {
@@ -18,6 +19,35 @@ export function Button({
   ...props
 }: ComponentProps<"button"> & { variant?: keyof typeof variants }) {
   return <button {...props} className={cn(variants[variant], "disabled:opacity-50", className)} />;
+}
+
+// An action with a choice of how: the main part does it the default way, the chevron opens a menu of the others
+// (onMenu shows a native one, ADR 0004).
+export function SplitButton({
+  onMenu,
+  menuTitle,
+  className,
+  disabled,
+  ...props
+}: ComponentProps<"button"> & { onMenu: () => void; menuTitle: string }) {
+  return (
+    <div className={cn(variants.default, "flex p-0", disabled && "opacity-50", className)}>
+      <button
+        {...props}
+        disabled={disabled}
+        className="rounded-l-md px-2.5 py-1 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+      />
+      <button
+        disabled={disabled}
+        title={menuTitle}
+        aria-label={menuTitle}
+        onClick={onMenu}
+        className="rounded-r-md border-l border-neutral-300 px-1 hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+      >
+        <ChevronDownIcon />
+      </button>
+    </div>
+  );
 }
 
 // Shows or hides something, or picks a mode: filled while on.

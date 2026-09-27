@@ -15,6 +15,7 @@ import { getWorkspaceRepo } from "./workspaces";
 export type AgentSession = {
   id: number;
   workspaceId: number;
+  agent: Agent;
   agentSessionId: string;
   createdAt: string;
 };
@@ -64,12 +65,13 @@ export type Permission = {
 };
 
 // session: carry on this agent session. mcp: MCP servers the session gets: coxswain's tools for the agent pane
-// (ADR 0023).
+// (ADR 0023). picks: the model and effort to set, the user's (agentPicks).
 type RunOptions = {
   cwd: string;
   prompt: string;
   session?: string;
   mcp?: acp.McpServer[];
+  picks?: Picks;
 };
 // onPermission resolves with the option picked, or null to cancel. Without it, every request is rejected.
 type RunHandlers = {
@@ -77,15 +79,22 @@ type RunHandlers = {
   onPermission?: (p: Permission) => Promise<string | null>;
 };
 
-export type Agent = "claude";
+export type Agent = "claude" | "codex";
 
-// Each agent is a record: how its adapter starts, a run's options as its session/new _meta, and its auto mode's ID.
+// What the composer picks for an agent's sessions, as the adapter's session config options of that category.
+export type Pick = "model" | "effort";
+type Picks = Partial<Record<Pick, string>>;
+const category: Record<Pick, string> = { model: "model", effort: "thought_level" };
+
+// Each agent is a record: how its adapter starts, a run's options as its session/new _meta, its auto mode's ID, and
+// picks it gets when the user has made none.
 const agents: Record<
   Agent,
   {
     start: () => { command: string; args: string[]; env: NodeJS.ProcessEnv };
     meta: (o: RunOptions) => object;
     auto: string;
+    picks: Picks;
   }
 > = {
   claude: {
@@ -107,6 +116,31 @@ const agents: Record<
       },
     }),
     auto: "auto",
+    // Left to itself the adapter resolves the user's settings model, and some aliases differently from Claude Code
+    // ("opus[1m]" became Opus 4.8, not 5.5, in 0.81.2), so Claude Code's own default is picked.
+    // ponytail: so a model in the user's settings is ignored; resolve it like Claude Code if someone relies on it.
+    picks: { model: "default" },
+  },
+  codex: {
+    // The user's own `codex`, like claude. Instructions go in as Codex config, for every session: all are the pane's.
+    // Commands Codex runs mustn't inherit Electron-as-Node either.
+    start: () => ({
+      command: process.execPath,
+      args: [require.resolve("@agentclientprotocol/codex-acp/dist/index.js")],
+      env: {
+        ...process.env,
+        ELECTRON_RUN_AS_NODE: "1",
+        CODEX_PATH: onPath("codex", "Codex"),
+        CODEX_CONFIG: JSON.stringify({
+          developer_instructions: paneContext,
+          shell_environment_policy: { exclude: ["ELECTRON_RUN_AS_NODE"] },
+        }),
+      },
+    }),
+    meta: () => ({}),
+    // "Approve for me": Codex's reviewer decides what would ask, like Claude Code's auto mode (ADR 0013).
+    auto: "agent",
+    picks: {},
   },
 };
 
@@ -119,12 +153,13 @@ through the changes (start_guide, add_group), explanations of lines (add_explana
 findings on lines (add_finding). Use them, and your review skills, when the user asks for a guide or a review.`;
 
 // ponytail: PATH as the app got it, like `gh`; a login shell's PATH if coxswain is started from the Dock.
-export function claudeOnPath(): string {
+export const claudeOnPath = () => onPath("claude", "Claude Code");
+function onPath(command: string, name: string): string {
   const found = (process.env.PATH ?? "")
     .split(delimiter)
-    .map((dir) => join(dir, "claude"))
+    .map((dir) => join(dir, command))
     .find(existsSync);
-  if (!found) throw new Error("Claude Code (claude) is not installed or not on PATH");
+  if (!found) throw new Error(`${name} (${command}) is not installed or not on PATH`);
   return found;
 }
 
@@ -253,8 +288,17 @@ function toolTitle(u: { title: string; name?: string | null }): string {
   return u.name && !title.startsWith(u.name) ? `${u.name} ${title}` : title;
 }
 
-// Opens a session for a run: a new one, or the given one, resumed if this adapter process hasn't got it open. Sets
-// Claude Code's default model and auto mode: the agent's classifier decides what would ask (ADR 0013).
+// Each open session's config options as the adapter last sent them, and each agent's latest: the choices the composer
+// offers.
+const configs = new Map<string, acp.SessionConfigOption[]>();
+const latest = new Map<Agent, acp.SessionConfigOption[]>();
+const configOf = (name: Agent, sessionId: string, config: acp.SessionConfigOption[]) => {
+  configs.set(sessionId, config);
+  latest.set(name, config);
+};
+
+// Opens a session for a run: a new one, or the given one, resumed if this adapter process hasn't got it open. Sets the
+// picks, model first (the effort levels depend on it), and auto mode: the agent decides what would ask (ADR 0013).
 async function openSession(name: Agent, o: RunOptions): Promise<{ a: Adapter; sessionId: string }> {
   const a = await adapter(name);
   const params = {
@@ -275,24 +319,47 @@ async function openSession(name: Agent, o: RunOptions): Promise<{ a: Adapter; se
       sessionId,
     }));
   a.open.add(sessionId);
-  // Left to itself the adapter resolves the user's settings model, and some aliases differently from Claude Code
-  // ("opus[1m]" became Opus 4.8, not 5.5, in 0.81.2), so Claude Code's own default is picked.
-  // ponytail: so a model in the user's settings is ignored; resolve it like Claude Code if someone relies on it.
-  const models = config?.find((c) => c.category === "model");
-  if (models?.type === "select" && models.currentValue !== "default") {
-    const options = models.options.flatMap((x) => ("options" in x ? x.options : [x]));
-    if (options.some((x) => x.value === "default"))
-      await a.agent.request(acp.methods.agent.session.setConfigOption, {
-        sessionId,
-        configId: models.id,
-        value: "default",
-      });
+  config ??= configs.get(sessionId);
+  if (config) configOf(name, sessionId, config);
+  for (const pick of ["model", "effort"] as const) {
+    const value = o.picks?.[pick] ?? agents[name].picks[pick];
+    const option: acp.SessionConfigOption | undefined = config?.find(
+      (c) => c.category === category[pick],
+    );
+    if (!value || option?.type !== "select" || option.currentValue === value) continue;
+    if (!choicesOf(option).some((x) => x.value === value)) continue;
+    const set: acp.SetSessionConfigOptionResponse = await a.agent.request(
+      acp.methods.agent.session.setConfigOption,
+      { sessionId, configId: option.id, value },
+    );
+    config = set.configOptions;
+    configOf(name, sessionId, set.configOptions);
   }
   await a.agent.request(acp.methods.agent.session.setMode, {
     sessionId,
     modeId: agents[name].auto,
   });
   return { a, sessionId };
+}
+
+type Choice = { value: string; name: string };
+const choicesOf = (o: acp.SessionConfigOption & { type: "select" }): Choice[] =>
+  o.options
+    .flatMap((x) => ("options" in x ? x.options : [x]))
+    .map((x) => ({
+      value: x.value,
+      name:
+        x.value === "default" && x.description ? `${modelName(x.description)} (default)` : x.name,
+    }));
+
+// Claude Code's default model option says only "Default (recommended)"; its description is the model it resolves to,
+// by ID when the list has no name for it: "claude-opus-5-5" is shown as "Opus 5.5".
+// ponytail: guesses the name from the ID's shape; the adapter's own display name if it ever sends one.
+function modelName(id: string): string {
+  const m = /^claude-([a-z]+)-(\d+)(?:-(\d+))?(.*)$/.exec(id);
+  if (!m) return id;
+  const [, family, major, minor, rest] = m;
+  return `${family[0].toUpperCase()}${family.slice(1)} ${major}${minor ? `.${minor}` : ""}${rest.replace(/^-\d{8}/, "")}`;
 }
 
 // Opens a session without a turn, for an agent session whose ID is stored before its first message.
@@ -341,13 +408,14 @@ async function history(
   if (running) return []; // a turn is streaming it; it's read again when the turn ends
   listening.set(sessionId, { update, handlers: {} });
   try {
-    await a.agent.request(acp.methods.agent.session.load, {
+    const { configOptions } = await a.agent.request(acp.methods.agent.session.load, {
       sessionId,
       cwd,
       mcpServers: mcp,
       _meta: agents[name].meta({ cwd, prompt: "", mcp }) as Record<string, unknown>,
     });
     a.open.add(sessionId);
+    if (configOptions) configOf(name, sessionId, configOptions);
     return [...entries.values()];
   } finally {
     listening.delete(sessionId);
@@ -494,6 +562,7 @@ function mismatch(s: Schema, v: unknown, at: string): string | null {
 const columns = [
   "id",
   "workspace_id as workspaceId",
+  "agent",
   "agent_session_id as agentSessionId",
   "created_at as createdAt",
 ] as const;
@@ -506,36 +575,117 @@ export function listAgentSessions(db: Db, workspaceId: number): Promise<AgentSes
     .select(columns)
     .where("workspace_id", "=", workspaceId)
     .orderBy("id")
-    .execute();
+    .execute() as Promise<AgentSession[]>;
 }
 
-// The agent picks the session ID (ADR 0018, 6).
+// The agent picks the session ID (ADR 0018, 6). agent: the one picked for it, kept for the next new session; without
+// it, the one picked last.
 // ponytail: an agent session that never got a message can't be resumed after a restart (Claude Code has no transcript
 // for it), so its first message then fails; start a new session in its place if that happens in practice.
-export async function startAgentSession(db: Db, workspaceId: number): Promise<AgentSession> {
+export async function startAgentSession(
+  db: Db,
+  workspaceId: number,
+  agent?: Agent,
+): Promise<AgentSession> {
+  if (agent) await saveSetting(db, "agent", agent);
+  agent ??= await newSessionAgent(db);
   const cwd = await readyWorktree(db, workspaceId);
-  const id = await newSession("claude", { cwd, mcp: await paneTools(db, workspaceId) });
+  const id = await newSession(agent, {
+    cwd,
+    mcp: await paneTools(db, workspaceId),
+    picks: await agentPicks(db, agent),
+  });
   return db
     .insertInto("agent_sessions")
     .values({
       workspace_id: workspaceId,
-      agent: "claude",
+      agent,
       agent_session_id: id,
       created_at: new Date().toISOString(),
     })
     .returning(columns)
-    .executeTakeFirstOrThrow();
+    .executeTakeFirstOrThrow() as Promise<AgentSession>;
 }
 
-// Agent sessions run in their workspace's worktree, which opening the workspace creates (ADR 0008).
-export async function agentSessionWorkspace(db: Db, agentSessionId: string): Promise<number> {
+// The agent a new session gets unless another is picked: the one picked last.
+export async function newSessionAgent(db: Db): Promise<Agent> {
+  return (await setting(db, "agent")) === "codex" ? "codex" : "claude";
+}
+
+// An agent session's workspace and agent. Sessions run in their workspace's worktree, which opening the workspace
+// creates (ADR 0008).
+async function sessionOf(db: Db, agentSessionId: string): Promise<{ id: number; agent: Agent }> {
   const row = await db
     .selectFrom("agent_sessions")
-    .select("workspace_id as id")
+    .select(["workspace_id as id", "agent"])
     .where("agent_session_id", "=", agentSessionId)
     .executeTakeFirst();
   if (!row) throw new Error(`No agent session ${agentSessionId}`);
-  return row.id;
+  return row as { id: number; agent: Agent };
+}
+
+export async function agentSessionWorkspace(db: Db, agentSessionId: string): Promise<number> {
+  return (await sessionOf(db, agentSessionId)).id;
+}
+
+// The composer's picks for an agent: each with the choices the agent offers and the current one. Every session of the
+// agent runs on them, set as each turn starts. The choices are the agent's latest session's; before it has one, a
+// session opened in the workspace to ask, and closed.
+// ponytail: the effort levels are the latest session's model's; a model picked before a session starts shows the old
+// levels until then, and a level the new model hasn't is skipped.
+export type AgentPicks = Partial<Record<Pick, { current: string; choices: Choice[] }>>;
+export async function listAgentPicks(
+  db: Db,
+  workspaceId: number,
+  agent: Agent,
+): Promise<AgentPicks> {
+  const picks = await agentPicks(db, agent);
+  if (!latest.has(agent)) {
+    const cwd = await readyWorktree(db, workspaceId);
+    const { a, sessionId } = await openSession(agent, { cwd, prompt: "", picks });
+    configs.delete(sessionId);
+    a.open.delete(sessionId);
+    await a.agent.request(acp.methods.agent.session.close, { sessionId }).catch(() => {});
+  }
+  const result: AgentPicks = {};
+  for (const pick of ["model", "effort"] as const) {
+    const option = latest.get(agent)?.find((c) => c.category === category[pick]);
+    if (option?.type !== "select") continue;
+    const choices = choicesOf(option);
+    const value = picks[pick] ?? agents[agent].picks[pick];
+    const current = choices.some((x) => x.value === value) ? value! : String(option.currentValue);
+    result[pick] = { current, choices };
+  }
+  return result;
+}
+
+// The user's pick of model or effort for an agent's sessions, from the next turn on.
+export function setAgentPick(db: Db, agent: Agent, pick: Pick, value: string) {
+  return saveSetting(db, `agent.${agent}.${pick}`, value);
+}
+
+async function agentPicks(db: Db, agent: Agent): Promise<Picks> {
+  const [model, effort] = await Promise.all(
+    (["model", "effort"] as const).map((p) => setting(db, `agent.${agent}.${p}`)),
+  );
+  return { ...(model && { model }), ...(effort && { effort }) };
+}
+
+async function setting(db: Db, key: string): Promise<string | undefined> {
+  const row = await db
+    .selectFrom("settings")
+    .select("value")
+    .where("key", "=", key)
+    .executeTakeFirst();
+  return row?.value;
+}
+
+async function saveSetting(db: Db, key: string, value: string) {
+  await db
+    .insertInto("settings")
+    .values({ key, value })
+    .onConflict((oc) => oc.column("key").doUpdateSet({ value }))
+    .execute();
 }
 
 async function readyWorktree(db: Db, workspaceId: number): Promise<string> {
@@ -549,9 +699,9 @@ async function readyWorktree(db: Db, workspaceId: number): Promise<string> {
 // history to load.
 export async function readTranscript(db: Db, agentSessionId: string): Promise<ChatEntry[]> {
   try {
-    const workspaceId = await agentSessionWorkspace(db, agentSessionId);
+    const { id: workspaceId, agent } = await sessionOf(db, agentSessionId);
     const entries = await history(
-      "claude",
+      agent,
       agentSessionId,
       await readyWorktree(db, workspaceId),
       await paneTools(db, workspaceId),
@@ -574,12 +724,18 @@ export async function runTurn(
   if (running.has(agentSessionId)) return { status: "error", message: "A turn is already running" };
   running.add(agentSessionId);
   try {
-    const workspaceId = await agentSessionWorkspace(db, agentSessionId);
+    const { id: workspaceId, agent } = await sessionOf(db, agentSessionId);
     const cwd = await readyWorktree(db, workspaceId);
     handlers.onEntry?.(withComment({ kind: "user", text: prompt }));
     await run(
-      "claude",
-      { cwd, prompt, session: agentSessionId, mcp: await paneTools(db, workspaceId) },
+      agent,
+      {
+        cwd,
+        prompt,
+        session: agentSessionId,
+        mcp: await paneTools(db, workspaceId),
+        picks: await agentPicks(db, agent),
+      },
       handlers,
     );
     return { status: "ok" };
@@ -590,6 +746,6 @@ export async function runTurn(
   }
 }
 
-export function stopTurn(agentSessionId: string) {
-  return cancel("claude", agentSessionId);
+export async function stopTurn(db: Db, agentSessionId: string) {
+  return cancel((await sessionOf(db, agentSessionId)).agent, agentSessionId);
 }
