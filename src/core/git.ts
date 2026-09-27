@@ -1,6 +1,14 @@
 import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import type { Db } from "./db";
@@ -441,3 +449,70 @@ export function readFileAt(
     return asText(await git(await openedWorktree(db, workspaceId), ["show", `${commit}:${file}`]));
   });
 }
+
+// Where a symbol clicked in a file is defined: a line in a worktree file.
+export type Definition = { path: string; line: number; text: string };
+export type DefinitionList = { status: "ok"; definitions: Definition[] } | GitProblem;
+
+// What reads as a definition of a name, in most languages: a keyword before it, a Go method, or a class method.
+const definitionOf = (name: string) => {
+  const n = name.replaceAll("$", "\\$");
+  return new RegExp(
+    [
+      String.raw`\b(?:function\*?|class|interface|type|enum|struct|trait|def|fn|func|namespace|module|protocol|object|record|const|let|var|val)\s+${n}\b`,
+      String.raw`\bfunc\s+\([^)]*\)\s+${n}\b`,
+      String.raw`^\s*(?:(?:public|private|protected|static|async|readonly|override|get|set)\s+)*${n}\s*(?:<[^>]*>)?\(.*\)\s*(?::[^=]*)?\{\s*$`,
+    ].join("|"),
+  );
+};
+const importLine = /^\s*(?:import|from)\b|\bfrom\s+["']/;
+const importPath = /^["'`]?(\.{1,2}\/[^"'`]*)["'`]?$/;
+const extensions = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".d.ts", ".json", ".css"];
+
+// Go to Definition for a token clicked in `from` (a worktree path): a relative import path opens its file; a name is
+// looked up with `git grep` in the worktree. Only the worktree: the clone is blobless, so grepping a commit fetches
+// every blob. ponytail: matches by name and a regex per language, so every definition of the name is found, not
+// the one in scope; a language server in the core (ADR 0003) if that gets noisy.
+export function findDefinitions(
+  db: Db,
+  workspaceId: number,
+  from: string,
+  token: string,
+): Promise<DefinitionList> {
+  return withGit(async () => {
+    const path = await openedWorktree(db, workspaceId);
+    const spec = token.match(importPath)?.[1];
+    if (spec) {
+      const base = join(dirname(from), spec);
+      const found = [base, base.replace(/\.js$/, ".ts"), ...extensions.map((x) => base + x)]
+        .concat(extensions.map((x) => join(base, "index" + x)))
+        .find((p) => !relative(path, resolve(path, p)).startsWith("..") && isFile(join(path, p)));
+      return {
+        status: "ok" as const,
+        definitions: found ? [{ path: found, line: 1, text: "" }] : [],
+      };
+    }
+    if (!/^[A-Za-z_$][\w$]*$/.test(token)) return { status: "ok" as const, definitions: [] };
+    // Exit code 1 is no match.
+    const out = await gitText(path, [
+      "grep",
+      "-n",
+      "-z",
+      "-I",
+      "-w",
+      "--untracked",
+      "-F",
+      "-e",
+      token,
+    ]).catch(() => "");
+    const definition = definitionOf(token);
+    const definitions = out
+      .split("\n")
+      .map((l) => l.split("\0"))
+      .filter(([, , text]) => text && definition.test(text) && !importLine.test(text))
+      .map(([p, line, text]) => ({ path: p, line: Number(line), text: text.trim() }));
+    return { status: "ok" as const, definitions };
+  });
+}
+
+const isFile = (p: string) => existsSync(p) && statSync(p).isFile();

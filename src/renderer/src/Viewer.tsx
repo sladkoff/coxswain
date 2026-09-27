@@ -13,8 +13,11 @@ import { ProblemMessage } from "./components/text";
 import { changed, core } from "./queries";
 import { type Draft, DraftBox, lines, ThreadBox } from "./Thread";
 
-// What the Viewer shows: the file diff of a changed file, or a whole file as it is in the worktree.
-export type Opened = { kind: "diff"; file: ChangedFile } | { kind: "file"; path: string };
+// What the Viewer shows: the file diff of a changed file, or a whole file as it is in the worktree, scrolled to a
+// line with `line` (Go to Definition).
+export type Opened =
+  | { kind: "diff"; file: ChangedFile }
+  | { kind: "file"; path: string; line?: number };
 // A question's turn in a thread: the reply streamed so far (live) until it's saved as an answer entry, and a tool use
 // waiting for the user's approval.
 export type Turn = {
@@ -43,6 +46,7 @@ type Props = {
   turns: Record<number, Turn>; // by thread
   onAsk: Ask;
   onAnswerPermission: (threadId: number, id: string, optionId: string) => void;
+  onGoToDefinition: (path: string, line: number) => void;
   diffStyle: "unified" | "split";
   // One of several file diffs one after another: the parent scrolls, not the Viewer.
   stacked?: boolean;
@@ -57,6 +61,8 @@ const baseOptions = {
   preferredHighlighter: "shiki-js",
   overflow: "wrap",
   stickyHeader: true,
+  // Go to Definition: a token under the pointer while ⌘ is held reads as a link.
+  unsafeCSS: "[data-definition-link] { text-decoration: underline; cursor: pointer; }",
 } as const;
 
 // L3: shows the diff or file opened from the Navigator.
@@ -109,6 +115,32 @@ export const Viewer = memo(function Viewer(props: Props) {
   const n = readNew ? newSide : emptyText;
   useEffect(closeDraft, [opened]);
 
+  // Go to Definition: ⌘ over a token underlines it, ⌘-click opens where it's defined, picked from a menu if several.
+  // ponytail: no match, or a git error, does nothing.
+  const hovered = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const mark = (e: KeyboardEvent) =>
+      hovered.current?.toggleAttribute("data-definition-link", e.metaKey);
+    window.addEventListener("keydown", mark);
+    window.addEventListener("keyup", mark);
+    return () => {
+      window.removeEventListener("keydown", mark);
+      window.removeEventListener("keyup", mark);
+    };
+  }, []);
+  const goToDefinition = async (token: string) => {
+    const found = await window.coxswain.findDefinitions(workspace.id, path, token);
+    if (found.status !== "ok" || !found.definitions.length) return;
+    const ds = found.definitions.slice(0, 20);
+    const i =
+      ds.length === 1
+        ? 0
+        : await window.coxswain.showDefinitionsMenu(
+            ds.map((d) => `${d.path}:${d.line}   ${d.text.slice(0, 60)}`),
+          );
+    props.onGoToDefinition(ds[i].path, ds[i].line);
+  };
+
   const options = useMemo(
     () => ({
       ...baseOptions,
@@ -123,8 +155,19 @@ export const Viewer = memo(function Viewer(props: Props) {
           endLine: r.end,
         }),
       onLineSelectionChange: setSelection,
+      onTokenEnter: (t: { tokenElement: HTMLElement; tokenText: string }, e: PointerEvent) => {
+        if (!/\w/.test(t.tokenText)) return;
+        hovered.current = t.tokenElement;
+        t.tokenElement.toggleAttribute("data-definition-link", e.metaKey);
+      },
+      onTokenLeave: (t: { tokenElement: HTMLElement }) => {
+        t.tokenElement.removeAttribute("data-definition-link");
+        hovered.current = null;
+      },
+      onTokenClick: (t: { tokenText: string }, e: MouseEvent) =>
+        e.metaKey && void goToDefinition(t.tokenText),
     }),
-    [props.diffStyle],
+    [props.diffStyle, workspace.id, path, props.onGoToDefinition],
   );
 
   const files = useMemo(() => {
@@ -161,6 +204,23 @@ export const Viewer = memo(function Viewer(props: Props) {
       })),
     };
   }, [entries, draft, opened]);
+
+  // Go to Definition's line: selected, and scrolled to once the library has drawn it.
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const line = opened.kind === "file" && opened.line;
+    if (!line || !files) return;
+    setSelection({ start: line, end: line });
+    let tries = 20;
+    const find = () => {
+      const el = root.current
+        ?.querySelector("diffs-container")
+        ?.shadowRoot?.querySelector(`[data-line="${line}"]`);
+      if (el) el.scrollIntoView({ block: "center" });
+      else if (tries--) setTimeout(find, 50);
+    };
+    find();
+  }, [opened, !!files]);
 
   if (!near && opened.kind === "diff") {
     // Roughly the file diff's height, so scrolling to a file further down lands near it.
@@ -252,7 +312,10 @@ export const Viewer = memo(function Viewer(props: Props) {
   const outdated = entries.filter((e) => e.path === path && !e.parentId && e.state === "outdated");
 
   return (
-    <div className={props.stacked ? "select-text" : "min-h-0 flex-1 overflow-auto select-text"}>
+    <div
+      ref={root}
+      className={props.stacked ? "select-text" : "min-h-0 flex-1 overflow-auto select-text"}
+    >
       {showOutdated && opened.kind === "diff" && (
         <OutdatedThreads entries={outdated} renderThread={(entry) => render({ entry })} />
       )}

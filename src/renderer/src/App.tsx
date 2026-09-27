@@ -339,6 +339,13 @@ export function App() {
     setView("files");
     setOpened({ kind: "file", path });
   };
+  // Go to Definition from any Viewer: the file on the canvas at that line, with the Navigator on Files. Stable, so
+  // the memoised Viewers don't all redraw.
+  const goToDefinition = useCallback((path: string, line: number) => {
+    setLeftPane("files");
+    setView("files");
+    setOpened({ kind: "file", path, line });
+  }, []);
   // Shows a thread on the canvas: back to the live file diffs, scrolled to its file, then to the thread once the
   // file diff has drawn it. ponytail: an outdated thread isn't between the lines, so this stops at its file.
   const viewThread = (threadId: number) => {
@@ -367,6 +374,7 @@ export function App() {
     turns,
     onAsk: ask,
     onAnswerPermission: answerPermission,
+    onGoToDefinition: goToDefinition,
     diffStyle: viewSettings.diffStyle,
   });
 

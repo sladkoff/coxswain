@@ -14,6 +14,7 @@ import {
 import { openDatabase } from "../core/db";
 import {
   cloneProject,
+  findDefinitions,
   listChangedFiles,
   listCommits,
   listWorktreeFiles,
@@ -169,6 +170,9 @@ app.whenReady().then(() => {
   );
   ipcMain.handle("git:read-file-at", (_, workspaceId: number, commit: string, path: string) =>
     readFileAt(db, workspaceId, commit, path),
+  );
+  ipcMain.handle("git:definitions", (_, workspaceId: number, from: string, token: string) =>
+    findDefinitions(db, workspaceId, from, token),
   );
   ipcMain.handle("agents:list", (_, workspaceId: number) => listAgentSessions(db, workspaceId));
   ipcMain.handle("agents:start", (_, workspaceId: number) => startAgentSession(db, workspaceId));
@@ -351,6 +355,16 @@ app.whenReady().then(() => {
             checked: i === checked,
             click: () => resolve(i),
           })),
+        ).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
+      ),
+  );
+  // Go to Definition with several matches: one item per label, resolves with the picked index, only on a click.
+  ipcMain.handle(
+    "menus:definitions",
+    (e, labels: string[]) =>
+      new Promise<number>((resolve) =>
+        Menu.buildFromTemplate(
+          labels.map((label, i) => ({ label, click: () => resolve(i) })),
         ).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
       ),
   );

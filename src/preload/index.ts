@@ -4,6 +4,7 @@ import type {
   ChangedFileList,
   CloneResult,
   Commit,
+  DefinitionList,
   FileText,
   FileTreeResult,
   GitProblem,
@@ -60,6 +61,9 @@ const api = {
     ipcRenderer.invoke("git:read-worktree-file", workspaceId, path),
   readFileAt: (workspaceId: number, commit: string, path: string): Promise<FileText> =>
     ipcRenderer.invoke("git:read-file-at", workspaceId, commit, path),
+  // Go to Definition: where a token clicked in a worktree file (from) is defined.
+  findDefinitions: (workspaceId: number, from: string, token: string): Promise<DefinitionList> =>
+    ipcRenderer.invoke("git:definitions", workspaceId, from, token),
   // The startup check: which of git, gh (signed in) and claude are missing.
   checkSetup: (): Promise<SetupCheck> => ipcRenderer.invoke("setup:check"),
   listWorkspaces: (projectId: number): Promise<Workspace[]> =>
@@ -154,6 +158,9 @@ const api = {
   // The agent pane's session menu: the index of the picked label. Pending if dismissed.
   showSessionsMenu: (labels: string[], checked: number): Promise<number> =>
     ipcRenderer.invoke("menus:sessions", labels, checked),
+  // Go to Definition's pick among several: the index of the picked label. Pending if dismissed.
+  showDefinitionsMenu: (labels: string[]): Promise<number> =>
+    ipcRenderer.invoke("menus:definitions", labels),
   // A workspace's context menu in L1; stays pending if dismissed.
   showWorkspaceMenu: (): Promise<"remove"> => ipcRenderer.invoke("menus:workspace"),
   // A native confirmation before a destructive action: `action` names its button. True if confirmed.

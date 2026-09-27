@@ -3,6 +3,23 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-27 — Go to Definition
+
+### What works
+
+- **⌘-click a name to see where it's defined** (`findDefinitions` in `git.ts`, token callbacks in `Viewer.tsx`): in a
+  file diff or a whole file, ⌘ over a token underlines it; ⌘-click shows the defining file on the canvas at that
+  line, with the Navigator on _Files_. Several matches open a native menu to pick from (up to 20). A relative import
+  path (`"./queries"`) opens its file, trying the usual extensions and `index` files.
+
+### Tech debt
+
+- Definitions are found by name with `git grep -w` and one regex for many languages, so a common name lists every
+  definition of it, and methods written over several lines, C functions and destructured names aren't found. A
+  language server in the core (ADR 0003) is the upgrade.
+- Only the worktree is searched; a name clicked on the old side of a file diff finds its definition as it is now.
+- No match, or a git error, does nothing. No way back to where you clicked.
+
 ## 2026-09-27 — Open Quickly
 
 ### What works
