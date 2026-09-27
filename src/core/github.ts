@@ -159,3 +159,40 @@ export function getPullRequestHead(
     };
   });
 }
+
+// The open PR whose head is this branch of the repository, if there is one.
+export function findPullRequest(
+  owner: string,
+  name: string,
+  branch: string,
+): Promise<{ status: "ok"; number: number | null } | GitHubProblem> {
+  return withGitHub(async (octokit) => {
+    const { data } = await octokit.request("GET /repos/{owner}/{repo}/pulls", {
+      owner,
+      repo: name,
+      head: `${owner}:${branch}`,
+      state: "open",
+      per_page: 1,
+    });
+    return { status: "ok", number: data[0]?.number ?? null };
+  });
+}
+
+export type CreatedPullRequest = { status: "ok"; number: number; url: string } | GitHubProblem;
+
+// Opens a draft PR of a pushed branch; the user finishes its title and description on GitHub.
+export function createPullRequest(
+  owner: string,
+  name: string,
+  pr: { head: string; base: string; title: string; body: string },
+): Promise<CreatedPullRequest> {
+  return withGitHub(async (octokit) => {
+    const { data } = await octokit.request("POST /repos/{owner}/{repo}/pulls", {
+      owner,
+      repo: name,
+      ...pr,
+      draft: true,
+    });
+    return { status: "ok", number: data.number, url: data.html_url };
+  });
+}

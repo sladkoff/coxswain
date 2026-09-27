@@ -50,6 +50,9 @@ const affects: Record<Changed["what"], Reads[]> = {
   entries: ["listEntries"],
   // Entries and Reviewed follow the code they're about (ADR 0014, 0015).
   worktree: [
+    "snapshot",
+    "listTurns",
+    "listCommits",
     "listChangedFiles",
     "listWorktreeFiles",
     "readWorktreeFile",

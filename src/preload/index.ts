@@ -9,6 +9,7 @@ import type {
   TurnResult,
 } from "../core/agents";
 import type {
+  BranchList,
   ChangedFileList,
   CloneResult,
   Commit,
@@ -18,7 +19,7 @@ import type {
   GitProblem,
   WorktreeResult,
 } from "../core/git";
-import type { CurrentUser, PullRequestList, RepoPage } from "../core/github";
+import type { CreatedPullRequest, CurrentUser, PullRequestList, RepoPage } from "../core/github";
 import type { View, ViewRequest } from "../core/views";
 import type { Project } from "../core/projects";
 import type { NewEntry, ReviewEntry } from "../core/review";
@@ -50,7 +51,19 @@ const api = {
     ipcRenderer.invoke("git:opened-before", workspaceId),
   openWorktree: (workspaceId: number): Promise<WorktreeResult> =>
     ipcRenderer.invoke("git:open-worktree", workspaceId),
-  // The PR's commits since the merge base, newest first: the Commits pane's list.
+  // The branches to start a branch workspace from, and the default one.
+  listBranches: (projectId: number): Promise<BranchList> =>
+    ipcRenderer.invoke("git:branches", projectId),
+  // The worktree as a commit, uncommitted changes included (ADR 0028): what a new view is pinned to.
+  snapshot: (workspaceId: number): Promise<{ status: "ok"; sha: string } | GitProblem> =>
+    ipcRenderer.invoke("git:snapshot", workspaceId),
+  // Pushes the worktree's branch; never forced.
+  push: (workspaceId: number): Promise<{ status: "ok" } | GitProblem> =>
+    ipcRenderer.invoke("git:push", workspaceId),
+  // A branch workspace's draft PR: pushes, opens it, and shows it in the browser.
+  openPullRequest: (workspaceId: number): Promise<CreatedPullRequest | GitProblem> =>
+    ipcRenderer.invoke("git:open-pull-request", workspaceId),
+  // The commits since the merge base (or since another commit, e.g. what's pushed), newest first: the Commits pane's.
   listCommits: (
     workspaceId: number,
     mergeBase: string,
@@ -79,10 +92,25 @@ const api = {
   checkSetup: (): Promise<SetupCheck> => ipcRenderer.invoke("setup:check"),
   listWorkspaces: (projectId: number): Promise<Workspace[]> =>
     ipcRenderer.invoke("workspaces:list", projectId),
-  openPullRequestWorkspace: (projectId: number, prNumber: number): Promise<Workspace> =>
-    ipcRenderer.invoke("workspaces:open-pr", projectId, prNumber),
+  openWorkspace: (workspaceId: number): Promise<void> =>
+    ipcRenderer.invoke("workspaces:open", workspaceId),
+  openPullRequestWorkspace: (
+    projectId: number,
+    prNumber: number,
+    headRef: string,
+  ): Promise<Workspace> => ipcRenderer.invoke("workspaces:open-pr", projectId, prNumber, headRef),
+  // Rejects with a message if the branch name isn't one git takes.
+  openBranchWorkspace: (
+    projectId: number,
+    branch: string,
+    baseBranch: string,
+  ): Promise<Workspace> =>
+    ipcRenderer.invoke("workspaces:open-branch", projectId, branch, baseBranch),
   removeWorkspace: (workspaceId: number): Promise<void> =>
     ipcRenderer.invoke("workspaces:remove", workspaceId),
+  // The agent turns that changed the worktree, newest first, as commits between their snapshots (ADR 0028).
+  listTurns: (workspaceId: number): Promise<Commit[]> =>
+    ipcRenderer.invoke("agents:turns", workspaceId),
   listAgentSessions: (workspaceId: number): Promise<AgentSession[]> =>
     ipcRenderer.invoke("agents:list", workspaceId),
   // agent: the one picked for it; without it, the one picked last.

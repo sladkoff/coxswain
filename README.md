@@ -29,6 +29,8 @@ to.
 
 - **Pull requests as workspaces.** Add a GitHub repository, open any of its PRs, and coxswain checks it out in its
   own git worktree. Code stays on your machine.
+- **Build on a branch.** Start a workspace on a new branch, let the agent work, see each turn's diff and what's only
+  local versus pushed, then open a draft PR from it.
 - **Comments become agent work.** Leave notes on lines of the diff, then _Send all to agent_: the agent implements
   them in the PR's worktree, and its changes show up in the same diff, next to the PR's own. Or _Copy as prompt_ and
   paste them into any other agent.

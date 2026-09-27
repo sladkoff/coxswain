@@ -7,7 +7,8 @@ import { delimiter, join } from "node:path";
 import { Readable, Writable } from "node:stream";
 import * as acp from "@agentclientprotocol/sdk";
 import type { Db } from "./db";
-import { worktreePath } from "./git";
+import { type Commit, worktreePath } from "./git";
+import { snapshotOf } from "./snapshot";
 import { viewTools } from "./views";
 import { getWorkspaceRepo } from "./workspaces";
 
@@ -729,8 +730,8 @@ async function saveSetting(db: Db, key: string, value: string) {
 }
 
 async function readyWorktree(db: Db, workspaceId: number): Promise<string> {
-  const { owner, name, prNumber } = await getWorkspaceRepo(db, workspaceId);
-  const cwd = worktreePath(owner, name, prNumber);
+  const w = await getWorkspaceRepo(db, workspaceId);
+  const cwd = worktreePath(w.owner, w.name, w);
   if (!existsSync(join(cwd, ".git"))) throw new Error("The worktree is not ready yet");
   return cwd;
 }
@@ -774,23 +775,57 @@ export async function runTurn(
       .where("title", "is", null)
       .execute();
     handlers.onEntry?.(withComment({ kind: "user", text: prompt }));
-    await run(
-      agent,
-      {
-        cwd,
-        prompt,
-        session: agentSessionId,
-        mcp: await paneTools(db, workspaceId),
-        picks: await agentPicks(db, agent),
-      },
-      handlers,
-    );
+    // ADR 0028: the worktree before and after, for the turn's diff. A stopped or failed turn may have changed it too.
+    const before = await snapshotOf(cwd).catch(() => null);
+    try {
+      await run(
+        agent,
+        {
+          cwd,
+          prompt,
+          session: agentSessionId,
+          mcp: await paneTools(db, workspaceId),
+          picks: await agentPicks(db, agent),
+        },
+        handlers,
+      );
+    } finally {
+      const after = before && (await snapshotOf(cwd).catch(() => null));
+      if (after && after !== before)
+        await db
+          .insertInto("turns")
+          .values({
+            workspace_id: workspaceId,
+            before,
+            after,
+            title: firstMessageTitle(prompt) || "Turn",
+            created_at: new Date().toISOString(),
+          })
+          .execute();
+    }
     return { status: "ok" };
   } catch (e) {
     return { status: "error", message: (e as Error).message };
   } finally {
     running.delete(agentSessionId);
   }
+}
+
+// The workspace's agent turns that changed its worktree, newest first, each as a commit from its before to its after.
+// ponytail: two sessions' turns running at once in one workspace each get both's changes.
+export async function listTurns(db: Db, workspaceId: number): Promise<Commit[]> {
+  const rows = await db
+    .selectFrom("turns")
+    .select(["before", "after", "title", "created_at"])
+    .where("workspace_id", "=", workspaceId)
+    .orderBy("id", "desc")
+    .execute();
+  return rows.map((r) => ({
+    sha: r.after,
+    parent: r.before,
+    subject: r.title,
+    turn: r.created_at,
+  }));
 }
 
 export async function stopTurn(db: Db, agentSessionId: string) {

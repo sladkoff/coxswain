@@ -13,7 +13,7 @@ bottom sums up the review.
 
 ```
 ┌────┬─────────────────────────┬──────────────────────────────────────────┐
-│    │ Fix auth · Codex [New▾] │ Files 3  Commits  Diff  Guide [+]    ⚙   │
+│    │ Fix auth · Codex [New▾] │ Files 3 Commits Diff All|PR|Local [+] ⚙  │
 │ L1 ├─────────────────────────┼─────────┬────────────────────────────────┤
 │    │ L4 Agent pane           │ L2      │ L3 Canvas                      │
 │ P  │                         │ Navi-   │                                │
@@ -43,15 +43,20 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
 
   Below it, one icon per workspace of the project, in the order they were added, with the current
   one marked; `+` starts a new workspace. Right-clicking a workspace offers _Remove Workspace…_, which asks
-  first: its comments, reviewed files and agent sessions go, its worktree stays on disk. A workspace is either a PR or a local iteration, and has
-  one worktree. For now `+` only offers the repository's open PRs. While the project is being cloned,
-  its icon pulses.
+  first: its comments, reviewed files and agent sessions go, its worktree stays on disk. A workspace is either a PR or a branch (ADR 0028), and has
+  one worktree; a PR's icon shows its number, a branch's the last part of its name. `+` opens the new workspace
+  screen: at its top, a branch name (the repository's branches on GitHub are offered as it's typed), _from_ and the
+  branch it starts from (the default one; a native menu picks another), and _Start_, which makes a new branch or works
+  on the one on GitHub; a name git won't take is refused under the field. Below, the repository's open PRs. Opening a
+  PR whose branch has a workspace makes that workspace the PR's, and so does opening a branch workspace once GitHub
+  has a PR for its branch. While the project is being cloned, its icon pulses.
 
 - **L2 — Navigator**, on the left of the canvas. Hidden at first; _Files N_ in the canvas's bar (N the number of
   changed files), _View > Toggle Navigator_ or ⌘B shows and hides it. Its border can be dragged. A toggle in its
   header switches between _Diffs_, the changed files as a tree with their status and +/− lines, and _Files_, the
   whole file tree of the workspace, with folders that contain changes marked. Both come from the worktree, so
-  _Diffs_ shows the PR's file diffs and local changes (e.g. an agent's) together, and reloads after each turn. The
+  _Diffs_ shows the PR's file diffs and local changes (e.g. an agent's) together, a file with local changes marked with
+  an amber ● after its +/− lines, and reloads after each turn. The
   top says how many of the files are reviewed; reviewed files are hidden unless _Show Reviewed Files_ is on, and then
   show a ✓. A cog button opens a native menu: _As Tree_ or _As List_ (a flat list, each file's folder dimmed next to
   its +/− lines). A changed file with notes or questions shows how many after its +/− lines (`✎ 2`; hovering says how
@@ -75,8 +80,15 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   chevrons are greyed out at either end.
 
   _Commits_ in the canvas's bar shows the commits pane in the Navigator's place (one or the other): _All Changes_,
-  then the PR's commits (and local ones on top), newest first. Picking a commit shows its commit diff on the canvas,
-  and the button then names the commit.
+  then, if any agent turn changed the worktree, _Agent turns_ (when, and the turn's first message) and _Commits_: the
+  PR's commits (and local ones on top, marked _local_), newest first. Picking a commit shows its commit diff on the
+  canvas, and picking a turn its turn diff (glossary); the button then names the commit or _Turn: …_. At the top, how
+  many commits aren't pushed, with _Push_ (confirmed; never forced) or, for a branch workspace without a PR, _Open Pull
+  Request…_ (confirmed: pushes, opens a draft PR into its base branch and shows it in the browser). A push that fails
+  says why there.
+
+  **Scope.** While the diff shows (no view, no commit), a segmented control next to _Diff_ picks the scope (glossary):
+  _All_, _PR_ (_Pushed_ for a branch without a PR) or _Local_. _PR_ is pinned like a commit; _Local_ is live.
 
 - **L3 — Canvas.** All file diffs of the workspace one after another, to scroll through. The cog in its bar opens a
   native menu: _Unified_ or _Split_ file diffs, and _Show Reviewed Files_; off, reviewed file diffs are hidden, and
@@ -140,8 +152,8 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   any, how many notes and questions are on them (`✎ 2`). The section being read is marked as you scroll; a click jumps
   to it, first showing reviewed file diffs if all of its are. Explanations (labelled _Explanation_) and, with review,
   findings (labelled _Finding_) are threads between the lines, which can be replied to like any other; they show only
-  with their view. A view shows the PR as it was (its range, like a commit), and its _Reviewed_ ticks stay; once the
-  PR has new commits, an amber bar says so. Picking a commit hides the view, and the other way round.
+  with their view. A view shows the changes as they were, local ones included (pinned to a snapshot, like a
+  commit), and its _Reviewed_ ticks stay; once the worktree has moved on (new commits or edits), an amber bar says so. Picking a commit hides the view, and the other way round.
 
 - **L4 — Agent pane**, left of the canvas, always shown; its border can be dragged. A chat with one of the
   workspace's agent sessions, the latest unless another is picked in the header's session picker (the session's title, _Session N_ before
@@ -175,9 +187,9 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
 4. **Agents in L4:** tabs, a list, or split panes, and how running and finished agent sessions look.
    Earlier agent sessions are reachable from the header's picker, one at a time. Comments still go to the latest
    session, not the one shown.
-5. **PR changes vs local changes:** _Diffs_ mixes the PR's file diffs with local changes (uncommitted,
-   untracked, unpushed), so an agent's work isn't told apart from the PR's. Options: a marker per
-   file, a third toggle (_Local_), or showing local changes on top of the PR's head separately.
+5. **The local loop:** coxswain pushes and opens PRs, but doesn't commit; agents do, or the user in a terminal.
+   Should it commit (with a message to write) too? Turn diffs pile up under _Agent turns_; should older ones fold away,
+   and should the canvas say which turn a local change came from?
 6. **The canvas:** what else it shows (the PR's description and history), and how the agent and the human switch
    between them. An annotation on lines is an entry (ADR 0023); the agent has tools to make views (ADR 0026), but not
    yet to navigate the app or read its context. Interactive views (Excalidraw and the like) are deferred.

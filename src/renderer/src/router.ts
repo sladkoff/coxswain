@@ -10,7 +10,8 @@ export type CanvasSearch = {
   file?: string; // a whole file, shown in place of the file diffs while the toggle is on Files
   line?: number; // … scrolled to and selected when it's opened, not on Back or Forward
   at?: string; // the file diff picked in Diffs
-  commit?: Commit; // one commit's diff in place of all changes
+  commit?: Commit; // one commit's diff (or an agent turn's) in place of all changes
+  scope?: "pushed" | "local"; // only what's on GitHub, or only the local changes on top (ADR 0028); left out: all
   viewId?: number | null; // the view shown (ADR 0026); null: none, chosen by the user; left out: the newest if not stale
 };
 

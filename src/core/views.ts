@@ -1,9 +1,16 @@
 import type { McpTool } from "./agents";
 import type { Db } from "./db";
-import { type ChangedFile, listChangedFiles, openedBefore, openWorktree, readTexts } from "./git";
+import {
+  type ChangedFile,
+  listChangedFiles,
+  openedBefore,
+  openWorktree,
+  readTexts,
+  snapshot,
+} from "./git";
 
 // ADR 0023, 0026: a view (glossary) is made by the agent pane's session with the tools below. It's pinned to base →
-// head, the merge base → the PR head when it was started, and holds sections of markdown; its explanations and findings
+// head, the merge base → a snapshot of the worktree when it was started (ADR 0028), and holds sections of markdown; its explanations and findings
 // are entries with its id. A guide is a view that goes through every changed file. Views are kept until the user
 // removes one.
 
@@ -269,7 +276,7 @@ export function viewTools(db: Db, workspaceId: number): McpTool[] {
     {
       name: "start_view",
       description:
-        "Start a new view of the PR's changes in coxswain, the app the user reads them in: sections of markdown, with diagrams and embedded file diffs the user can comment on. A guide is a view that walks through every changed file in reading order; other views show one aspect (the data model, a data flow, whatever the user asked for). Returns the range the view is pinned to, the changed files and how to write the view.",
+        "Start a new view of the changes in coxswain, the app the user reads them in: sections of markdown, with diagrams and embedded file diffs the user can comment on. A guide is a view that walks through every changed file in reading order; other views show one aspect (the data model, a data flow, whatever the user asked for). Returns the range the view is pinned to, the changed files and how to write the view.",
       inputSchema: {
         type: "object",
         properties: {
@@ -288,8 +295,12 @@ export function viewTools(db: Db, workspaceId: number): McpTool[] {
         const at = (await openedBefore(db, workspaceId)) ?? (await openWorktree(db, workspaceId));
         if (at.status !== "ok")
           throw new Error("message" in at ? at.message : `GitHub: ${at.status}`);
-        const files = await changedFiles(db, { workspaceId, base: at.mergeBase, head: at.head });
-        if (!files.length) throw new Error("The PR has no changes to show");
+        // ADR 0028: pinned to the worktree as it is, local changes and all.
+        const now = await snapshot(db, workspaceId);
+        if (now.status !== "ok") throw new Error(now.message);
+        const head = now.sha;
+        const files = await changedFiles(db, { workspaceId, base: at.mergeBase, head });
+        if (!files.length) throw new Error("There are no changes to show");
         if (!v.title.trim()) throw new Error("title is empty");
         const { id } = await db
           .insertInto("views")
@@ -298,7 +309,7 @@ export function viewTools(db: Db, workspaceId: number): McpTool[] {
             title: v.title.trim(),
             guide: v.guide ? 1 : 0,
             base: at.mergeBase,
-            head: at.head,
+            head,
             created_at: new Date().toISOString(),
           })
           .returning("id")
@@ -309,8 +320,8 @@ export function viewTools(db: Db, workspaceId: number): McpTool[] {
             `${f.status} +${f.additions} -${f.deletions} ${f.previousPath ? `${f.previousPath} -> ` : ""}${f.path}`,
         );
         return [
-          `View ${id} started; the other tools write to it when given view: ${id}, or to the latest view without it. It's pinned to ${at.mergeBase} (the merge base) → ${at.head} (the PR head); local changes aren't in it.`,
-          `Read a diff with \`git diff ${at.mergeBase} ${at.head} -- <path>\`. Line numbers are the file's at the head (side "new") or, for removed lines, at the base (side "old").`,
+          `View ${id} started; the other tools write to it when given view: ${id}, or to the latest view without it. It's pinned to ${at.mergeBase} (the merge base) → ${head} (the worktree as it is now, uncommitted changes included, as a commit).`,
+          `Read a diff with \`git diff ${at.mergeBase} ${head} -- <path>\`. Line numbers are the file's at the head (side "new") or, for removed lines, at the base (side "old").`,
           `Changed files (status, lines added and removed, path):\n${listed.join("\n")}`,
           howToView,
           v.guide ? howToGuide : howToOther,

@@ -25,8 +25,9 @@ clones go (`~/coxswain/repos/<owner>/<name>/`) and that git runs with the user's
    clone never looks finished.
 4. **A PR worktree tracks the PR's head branch in the same repository:**
    `git worktree add --track -b <head branch> <worktree> origin/<head branch>`, so agent commits can
-   be pushed to the PR. PRs from forks aren't supported yet.
-5. **Opening a workspace fetches.** If the PR's head branch moved and the worktree has no local
+   be pushed to the PR. PRs from forks aren't supported yet. A workspace started on a branch has a worktree on that
+   branch instead ([ADR 0028](0028-branch-workspaces-and-snapshots.md)).
+5. **Opening a workspace fetches.** If the PR's (or branch's) head branch moved and the worktree has no local
    changes, it is fast-forwarded. Otherwise it is left alone and the user is told.
 6. **The worktree is the source for the Navigator and Viewer.** _Diffs_ compares the worktree,
    including uncommitted and untracked files, with the PR's merge base, so an agent's changes show up
@@ -51,7 +52,7 @@ clones go (`~/coxswain/repos/<owner>/<name>/`) and that git runs with the user's
 
 - The first open of a workspace waits for its clone; very large repositories take a while.
 - Reading an old file version may go to the network the first time (blobless clone).
-- _Diffs_ shows the PR's changes and the local changes together; telling them apart is open.
+- _Diffs_ shows the PR's changes and the local changes together; the scope (ADR 0028) shows either on its own.
 - Fork PRs need a remote for the fork and depend on the author allowing edits from maintainers.
 - An agent can rewrite any file in the worktree, uncommitted. Git shows what it did, but there is no
   undo in coxswain yet.
