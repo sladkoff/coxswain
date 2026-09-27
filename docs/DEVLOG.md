@@ -3,7 +3,7 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
-## 2026-09-28 — Top and bottom bars that follow what they hold
+## 2026-09-28 — Top and bottom bars, and a sidebar with titles
 
 UX, for G3 and G5 ([UX](UX.md) L2, L3).
 
@@ -23,6 +23,10 @@ UX, for G3 and G5 ([UX](UX.md) L2, L3).
   Prompt_ and _Send to GitHub as a Review…_ (greyed out, not built). The thread list gets a header with _Open_ ·
   _Resolved_ and groups threads by file, each with a status dot. Checked in the built app with a reply added to an
   explanation (the count came up as 1); the native menu itself wasn't opened in the check.
+- The workspace sidebar (L1) is about 230 px wide: the project by name and owner, then a row per workspace with its
+  PR's title, `#number · branch`, and an open/draft/merged/closed or branch icon; the pill marking the current one is
+  gone (its row is filled). Titles and states come from GitHub in one GraphQL request for the workspaces' PR numbers
+  (`listPullRequestTitles`), nothing stored; a number that isn't a PR is skipped. Checked in the built app.
 - ponytail: the bar counts what Hand off takes with the same rule as the review prompt in `core/review.ts`, copied,
   since the renderer imports no core code. Move it to a shared pure module if a third place needs it.
 - Still open: a guide's table of contents stays its own column; making it the pane's first tab (_Sections_) would

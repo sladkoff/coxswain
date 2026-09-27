@@ -19,7 +19,13 @@ import type {
   GitProblem,
   WorktreeResult,
 } from "../core/git";
-import type { CreatedPullRequest, CurrentUser, PullRequestList, RepoPage } from "../core/github";
+import type {
+  CreatedPullRequest,
+  CurrentUser,
+  PullRequestList,
+  PullRequestTitles,
+  RepoPage,
+} from "../core/github";
 import type { View, ViewRequest } from "../core/views";
 import type { Project } from "../core/projects";
 import type { NewEntry, ReviewEntry } from "../core/review";
@@ -51,6 +57,12 @@ const api = {
     ipcRenderer.invoke("projects:open", fullName),
   listPullRequests: (owner: string, name: string): Promise<PullRequestList> =>
     ipcRenderer.invoke("github:list-pulls", owner, name),
+  // The rail's titles: title and state of the workspaces' PRs, open or not.
+  listPullRequestTitles: (
+    owner: string,
+    name: string,
+    numbers: number[],
+  ): Promise<PullRequestTitles> => ipcRenderer.invoke("github:pull-titles", owner, name, numbers),
   cloneProject: (projectId: number): Promise<CloneResult> =>
     ipcRenderer.invoke("git:clone", projectId),
   openedBefore: (workspaceId: number): Promise<WorktreeResult | null> =>

@@ -36,21 +36,22 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
 
 ## Levels
 
-- **L1 — Current project and its workspaces.** At the top, an icon for the current project, like a
-  Discord server icon. Clicking it opens a native menu of the user's projects, the current one
+- **L1 — Current project and its workspaces**, a sidebar about 230 px wide; its top bar holds the macOS window
+  buttons. At the top, the current project: its initial, name and owner. Clicking it opens a native menu of the user's projects, the current one
   checked, to switch to one; _Add Project…_ at its bottom opens the list of the user's GitHub
   repositories to add one. The rest of the screen belongs to the current project. A project's
   repository must be git, local or cloned, and may be on GitHub.
 
-  Below it, one icon per workspace of the project, in the order they were added, with the current
-  one marked; `+` starts a new workspace. Right-clicking a workspace offers _Remove Workspace…_, which asks
+  Below it, under _Workspaces_, one row per workspace of the project, in the order they were added, the current one
+  filled: the PR's title (from GitHub; its number until it's loaded or when offline), then `#number · branch` in small
+  type, and an icon for an open, draft, merged or closed PR, or a branch; _+ New Workspace_ at the end starts one. Right-clicking a workspace offers _Remove Workspace…_, which asks
   first: its comments, reviewed files and agent sessions go, its worktree stays on disk. A workspace is either a PR or a branch (ADR 0028), and has
-  one worktree; a PR's icon shows its number, a branch's the last part of its name. `+` opens the new workspace
+  one worktree; a branch workspace's row shows its branch name. _New Workspace_ opens the new workspace
   screen: at its top, a branch name (the repository's branches on GitHub are offered as it's typed), _from_ and the
   branch it starts from (the default one; a native menu picks another), and _Start_, which makes a new branch or works
   on the one on GitHub; a name git won't take is refused under the field. Below, the repository's open PRs. Opening a
   PR whose branch has a workspace makes that workspace the PR's, and so does opening a branch workspace once GitHub
-  has a PR for its branch. While the project is being cloned, its icon pulses.
+  has a PR for its branch. While the project is being cloned, its initial pulses.
 
 - **L2 — Navigator**, on the left of the canvas, under its own bar, as wide as it. Hidden at first; the panel button
   at the canvas bar's left, _View > Toggle Navigator_ or ⌘B shows it, and the same button at its bar's left hides it

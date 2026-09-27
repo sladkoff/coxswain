@@ -53,7 +53,7 @@ import {
   type ViewRequest,
   viewRequests,
 } from "../core/views";
-import { getCurrentUser, listPullRequests, listRepos } from "../core/github";
+import { getCurrentUser, listPullRequestTitles, listPullRequests, listRepos } from "../core/github";
 import { listProjects, openProject } from "../core/projects";
 import {
   addNote,
@@ -258,6 +258,9 @@ app.whenReady().then(() => {
   ipcMain.handle("github:list-repos", (_, page: number) => listRepos(page));
   ipcMain.handle("github:list-pulls", (_, owner: string, name: string) =>
     listPullRequests(owner, name),
+  );
+  ipcMain.handle("github:pull-titles", (_, owner: string, name: string, numbers: number[]) =>
+    listPullRequestTitles(owner, name, numbers),
   );
   ipcMain.handle("workspaces:list", (_, projectId: number) => listWorkspaces(db, projectId));
   ipcMain.handle("workspaces:open", (_, workspaceId: number) => openWorkspace(db, workspaceId));
