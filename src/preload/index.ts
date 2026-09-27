@@ -208,6 +208,12 @@ const api = {
     ipcRenderer.on("toggle-navigator", listener);
     return () => void ipcRenderer.off("toggle-navigator", listener);
   },
+  // View > Back (-1) and Forward (1) through the canvas's history.
+  onNavigate: (callback: (by: -1 | 1) => void) => {
+    const listener = (_: unknown, by: -1 | 1) => callback(by);
+    ipcRenderer.on("navigate", listener);
+    return () => void ipcRenderer.off("navigate", listener);
+  },
   onOpenQuickly: (callback: () => void) => {
     const listener = () => callback();
     ipcRenderer.on("open-quickly", listener);

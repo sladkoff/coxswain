@@ -3,6 +3,18 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-27 — Back and forward on the canvas
+
+### What works
+
+- **_View > Back_ (⌥⌘←) and _Forward_ (⌥⌘→)** step through the canvas's history (#8): whole files opened any way, and
+  returns to the file diffs. Kept in `App.tsx`, per workspace, gone on restart.
+
+### Tech debt
+
+- The file diffs' scroll isn't part of a step, so going back to them lands where they were last scrolled.
+- Back and Forward are always enabled in the menu; at either end they do nothing.
+
 ## 2026-09-27 — CI and releases
 
 ### What works

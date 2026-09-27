@@ -218,7 +218,40 @@ export function App() {
   }, []);
   // `opened` is a whole file picked in Files, shown on the canvas in place of the file diffs.
   const [opened, setOpened] = useState<Opened | null>(null);
-  useEffect(() => setOpened(null), [currentWorkspace?.id]);
+  // The canvas's history, for View > Back and Forward (⌥⌘← ⌥⌘→): every change of what it shows (a whole file, or the
+  // file diffs) is a step, however it came about. One workspace's; opening another starts it over.
+  // ponytail: the file diffs' scroll isn't kept, so going back to them lands where they were last scrolled.
+  const history = useRef<{ steps: { view: NavigatorView; opened: Opened | null }[]; at: number }>({
+    steps: [],
+    at: -1,
+  });
+  const navigating = useRef(false);
+  useEffect(() => {
+    history.current = { steps: [], at: -1 };
+    setOpened(null);
+  }, [currentWorkspace?.id]);
+  useEffect(() => {
+    // Adjacent steps always differ, so stepping to one changes view or opened and lands here.
+    if (navigating.current) return void (navigating.current = false);
+    const h = history.current;
+    const now = h.steps[h.at];
+    if (now?.view === view && now.opened === opened) return; // StrictMode runs this twice on mount
+    h.steps = [...h.steps.slice(0, h.at + 1), { view, opened }];
+    h.at = h.steps.length - 1;
+  }, [view, opened]);
+  useEffect(
+    () =>
+      window.coxswain.onNavigate((by) => {
+        const h = history.current;
+        const step = h.steps[h.at + by];
+        if (!step) return;
+        h.at += by;
+        navigating.current = true;
+        setView(step.view);
+        setOpened(step.opened);
+      }),
+    [],
+  );
   // Memoised: the Viewer rereads when its Opened changes.
   const diffs = useMemo(
     () => pr.changed?.map((file) => ({ kind: "diff" as const, file })),

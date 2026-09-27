@@ -106,8 +106,11 @@ function openSettings() {
 
 // ponytail: macOS menu layout only; add a File > Settings entry when we ship Windows/Linux.
 // ponytail: one window for now, so no focused window (e.g. the app isn't frontmost) means that one.
-const sendToWindow = (channel: string) =>
-  (BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0])?.webContents.send(channel);
+const sendToWindow = (channel: string, ...args: unknown[]) =>
+  (BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0])?.webContents.send(
+    channel,
+    ...args,
+  );
 
 const menu = Menu.buildFromTemplate([
   {
@@ -146,6 +149,18 @@ const menu = Menu.buildFromTemplate([
         label: "Toggle Navigator",
         accelerator: "CmdOrCtrl+B",
         click: () => sendToWindow("toggle-navigator"),
+      },
+      { type: "separator" },
+      // ponytail: always enabled; greying them out at either end needs the renderer to report its history.
+      {
+        label: "Back",
+        accelerator: "Alt+CmdOrCtrl+Left",
+        click: () => sendToWindow("navigate", -1),
+      },
+      {
+        label: "Forward",
+        accelerator: "Alt+CmdOrCtrl+Right",
+        click: () => sendToWindow("navigate", 1),
       },
       { type: "separator" },
       { role: "reload" },
