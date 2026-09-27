@@ -213,6 +213,8 @@ const api = {
   // Native menu (ADR 0004). Resolves with the new settings when an item is picked; stays pending if dismissed.
   showViewMenu: (settings: ViewSettings): Promise<ViewSettings> =>
     ipcRenderer.invoke("menus:view", settings),
+  // The bottom bar's Hand off menu: send the open threads to the agent, or copy them as a prompt. Pending if dismissed.
+  showHandOffMenu: (): Promise<"agent" | "copy"> => ipcRenderer.invoke("menus:hand-off"),
   // The Diff tab's range menu: a scope, or "commits". `scope` is null while a commit or turn shows. Pending if dismissed.
   showRangeMenu: (scope: "all" | "pushed" | "local" | null, hasPr: boolean): Promise<RangePick> =>
     ipcRenderer.invoke("menus:range", scope, hasPr),

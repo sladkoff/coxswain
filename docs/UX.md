@@ -128,18 +128,23 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   is picked, or ends with _Stop_. Questions run one at a time, and not while the agent pane's own turn runs.
 
   The thread's header has a ✓ to resolve it: the thread folds to its header (_Resolved_ and its first comment), is
-  left out of _Send all to agent_, and the ✓, green now, reopens it. Right of it, a ⋯ button with a native menu:
+  left out of _Hand off_, and the ✓, green now, reopens it. Right of it, a ⋯ button with a native menu:
   _Edit_ (the first comment, in place, if it's yours), _Delete_ (the thread, after a confirmation), and _Send to Agent_, which makes the
   thread's latest note a question, with the notes before it since the last question; the answer comes in the thread.
 
-  **The bottom bar** sums up the review: how many threads (and how many are outdated, resolved or waiting on the
-  agent), the lines added and removed, and how many of the files are reviewed, with a progress bar. Clicking the
-  thread count opens every thread above the bar, one line each: file and lines, the first comment, and whether it's
-  outdated, answered (_N answers_), sent to the agent, or has replies. Clicking one scrolls the canvas to it. _Send
-  all to agent_ sends every thread in one message to the agent pane's session: where each points, the code, and its
-  comments and answers, asking the agent to make the changes and answer what's open. The chat shows it as a card
-  (_Review sent to Agent · N threads_); the bar says _Agent working…_ until the turn ends. _Copy as prompt_, next to it, puts
-  the same message on the clipboard instead.
+  **The bottom bar** has the review at a glance on the left and _Hand off_ on the right. On the left: the thread
+  toggle (a chevron, how many threads, and _● N waiting_ while the agent answers one), how many of the files are
+  reviewed with a progress bar (_8/29 reviewed_), and the lines added and removed. The toggle opens the threads above
+  the bar: a header with _Threads_ and _Open N_ · _Resolved N_, then the threads grouped under their file, one line
+  each: its lines, its first comment, and a dot with how far it got (_agent answering_, _outdated_, _N answers_, _sent
+  to agent_) and its replies. Clicking one scrolls the canvas to it.
+
+  _Hand off N_ (N the open threads it takes: not resolved, and the agent's explanations and findings only once the user
+  replied) opens a native menu: _Send to Agent_ sends them in one message to the agent pane's session: where each
+  points, the code, and its comments and answers, asking the agent to make the changes and answer what's open. The
+  chat shows it as a card (_Review sent to Agent · N threads_); the bar says _Agent working on N threads_ until the turn
+  ends. _Copy as Prompt_ puts the same message on the clipboard instead (the bar says _Copied_). _Send to GitHub as a
+  Review…_ is shown greyed out until it's built.
 
   **Views.** _Diff_ in the canvas's bar shows the diff without a view; it's on while no view shows. Next to it, a
   chip per view, oldest first, named by its title (_Guide_, _Data flow_; a repeated title gets a number, _Guide 2_; its

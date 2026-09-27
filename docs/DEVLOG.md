@@ -3,7 +3,7 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
-## 2026-09-28 — A top bar that follows the columns
+## 2026-09-28 — Top and bottom bars that follow what they hold
 
 UX, for G3 and G5 ([UX](UX.md) L2, L3).
 
@@ -18,6 +18,13 @@ UX, for G3 and G5 ([UX](UX.md) L2, L3).
   List_. The Navigator's own cog and its "N of M reviewed" line are gone; the bottom bar counts reviewed files.
 - Checked in the built app, on a copy of the database: pane hidden with a guide showing, _Changes_, _Files_, a commit
   picked from _Commits_ and cleared with ✕. The two native menus weren't opened in that check.
+- The bottom bar: the review at a glance on the left (a thread toggle with _● N waiting_, _8/29 reviewed_ with its
+  progress bar, the lines), and one _Hand off N_ button on the right. Its native menu has _Send to Agent_, _Copy as
+  Prompt_ and _Send to GitHub as a Review…_ (greyed out, not built). The thread list gets a header with _Open_ ·
+  _Resolved_ and groups threads by file, each with a status dot. Checked in the built app with a reply added to an
+  explanation (the count came up as 1); the native menu itself wasn't opened in the check.
+- ponytail: the bar counts what Hand off takes with the same rule as the review prompt in `core/review.ts`, copied,
+  since the renderer imports no core code. Move it to a shared pure module if a third place needs it.
 - Still open: a guide's table of contents stays its own column; making it the pane's first tab (_Sections_) would
   save a column.
 

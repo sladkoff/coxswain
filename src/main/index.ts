@@ -468,6 +468,19 @@ app.whenReady().then(() => {
         ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
       ),
   );
+  // The bottom bar's Hand off: where the open threads go. Send to GitHub isn't built yet, so it's shown greyed out.
+  ipcMain.handle(
+    "menus:hand-off",
+    (e) =>
+      new Promise<"agent" | "copy">((resolve) =>
+        Menu.buildFromTemplate([
+          { label: "Send to Agent", click: () => resolve("agent") },
+          { label: "Copy as Prompt", click: () => resolve("copy") },
+          { type: "separator" },
+          { label: "Send to GitHub as a Review…", enabled: false },
+        ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
+      ),
+  );
   // The Diff tab's range: a scope (none checked while a commit or turn shows), or the Commits pane to pick one.
   ipcMain.handle(
     "menus:range",
