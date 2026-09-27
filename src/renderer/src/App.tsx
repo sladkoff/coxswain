@@ -6,6 +6,7 @@ import type { GuideGroup } from "../../core/guides";
 import type { NewEntry, ReviewEntry } from "../../core/review";
 import type { Workspace } from "../../core/workspaces";
 import { Agents } from "./Agents";
+import { upsert } from "./ChatEntry";
 import { CanvasBar } from "./CanvasBar";
 import { Commits } from "./Commits";
 import { Button, SegmentedControl } from "./components/button";
@@ -162,7 +163,7 @@ export function App() {
         [id]: {
           running: true,
           error: null,
-          live: [...(t[id]?.live ?? []), c],
+          live: upsert(t[id]?.live ?? [], c),
           permission: t[id]?.permission ?? null,
         },
       })),

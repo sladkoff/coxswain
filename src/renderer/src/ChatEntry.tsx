@@ -5,6 +5,10 @@ import { cn, divider, muted } from "./components/styles";
 import { ErrorText, Prose } from "./components/text";
 import { count } from "./format";
 
+// Adds a streamed chat entry, or replaces the one it grew from (same id).
+export const upsert = (list: ChatEntry[], e: ChatEntry) =>
+  e.id !== undefined && list.at(-1)?.id === e.id ? [...list.slice(0, -1), e] : [...list, e];
+
 // Agent replies are Markdown.
 // ponytail: code blocks aren't highlighted; use @pierre/diffs' Shiki if they need it.
 // onViewThread: shows a comment's thread on the canvas.

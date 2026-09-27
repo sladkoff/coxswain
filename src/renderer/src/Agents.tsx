@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import type { AgentSession, ChatEntry, Permission } from "../../core/agents";
 import type { Workspace } from "../../core/workspaces";
-import { Entry, TurnStatus } from "./ChatEntry";
+import { Entry, TurnStatus, upsert } from "./ChatEntry";
 import { Button } from "./components/button";
 import { TextArea } from "./components/field";
 import { cn, divider, muted, noDrag, titleBar } from "./components/styles";
@@ -45,16 +45,16 @@ export function Agents({ workspace, onViewThread, composerText }: Props) {
   }, [composerText]);
 
   // The shown agent session's transcript, once loaded or picked and again when a turn ends (the core says it changed), in
-  // place of the entries streamed during the turn. Not while the turn runs: nothing refetches it then.
+  // place of the entries streamed during the turn. Not while the turn runs: it would drop the message just sent.
   useEffect(() => {
-    if (!last || !transcript) return;
+    if (!last || !transcript || running) return;
     setSession(last);
     setEntries(transcript);
   }, [transcript, picked]);
 
   useEffect(() => {
     const offEntry = window.coxswain.onChatEntry((id, entry) => {
-      if (id === sessionRef.current?.agentSessionId) setEntries((e) => [...e, entry]);
+      if (id === sessionRef.current?.agentSessionId) setEntries((e) => upsert(e, entry));
     });
     const offPermission = window.coxswain.onPermission((id, p) => {
       if (id === sessionRef.current?.agentSessionId) setPermission(p);
@@ -74,13 +74,21 @@ export function Agents({ workspace, onViewThread, composerText }: Props) {
   const send = async () => {
     const message = draft.trim();
     if (!message || running) return;
-    const current = session ?? (await window.coxswain.startAgentSession(workspace.id));
-    sessionRef.current = current;
-    setPicked(current.agentSessionId);
-    setSession(current);
+    // Shown at once; the core doesn't echo it for the pane's own messages. A new session's adapter can take seconds.
+    setEntries((e) => [...e, { kind: "user", text: message }]);
     setDraft("");
     setError(null);
     setRunning(true);
+    let current = session;
+    try {
+      current ??= await window.coxswain.startAgentSession(workspace.id);
+    } catch (e) {
+      setRunning(false);
+      return setError((e as Error).message);
+    }
+    sessionRef.current = current;
+    setPicked(current.agentSessionId);
+    setSession(current);
     const result = await window.coxswain.runTurn(current.agentSessionId, message);
     setRunning(false);
     setPermission(null);

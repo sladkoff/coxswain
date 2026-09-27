@@ -239,7 +239,8 @@ app.whenReady().then(() => {
     const send = (channel: string, ...args: unknown[]) =>
       !e.sender.isDestroyed() && e.sender.send(channel, ...args);
     const result = await runTurn(db, agentSessionId, prompt, {
-      onEntry: (entry) => send("agents:entry", agentSessionId, entry),
+      // The pane shows its own message as it sends it.
+      onEntry: (entry) => entry.kind !== "user" && send("agents:entry", agentSessionId, entry),
       onPermission: (p) => permission(e.sender, () => send("agents:permission", agentSessionId, p)),
     });
     changed(e.sender, { workspaceId, what: "worktree" });

@@ -21,8 +21,10 @@ export type AgentSession = {
 
 // One line of the chat: something the user said, text the agent wrote, or a tool the agent used. comment: the user's
 // message was a comment sent from a thread, which the chat shows as a card.
-// review: the message was every thread of the review at once, with how many.
+// review: the message was every thread of the review at once, with how many. id: a streamed entry's; a later entry with
+// the same id is the same one grown, and replaces it.
 export type ChatEntry = {
+  id?: number;
   kind: "user" | "text" | "tool";
   text: string;
   comment?: SentComment;
@@ -196,16 +198,17 @@ export function answerPermission(id: string, optionId: string | null) {
   pending.get(id)?.resolve(optionId);
 }
 
-// Turns a session's updates into chat entries. The last entry is held back until the next one starts, so streamed
-// text arrives whole and a tool's title can still be filled in (its first update carries only the tool's kind).
+// Turns a session's updates into chat entries, streamed: each update sends the entry it grows again, under the same id,
+// so text shows as it's written and a tool's title fills in (its first update carries only the tool's kind).
+let nextEntry = 0;
 function chat(onEntry: (e: ChatEntry) => void) {
   let last: (ChatEntry & { toolCallId?: string; name?: string | null }) | null = null;
-  const flush = () => {
-    if (last && last.text.trim())
-      onEntry({ kind: last.kind, text: last.kind === "tool" ? last.text : last.text.trim() });
-    last = null;
+  const emit = (e: typeof last) => {
+    last = e;
+    if (e?.text.trim())
+      onEntry({ id: e.id, kind: e.kind, text: e.kind === "tool" ? e.text : e.text.trim() });
   };
-  const update = (u: acp.SessionUpdate) => {
+  return (u: acp.SessionUpdate) => {
     // A subagent's updates carry the Agent call's id; L4 shows only the main thread, as before.
     if (
       (u as { _meta?: { claudeCode?: { parentToolUseId?: string } } })._meta?.claudeCode
@@ -215,20 +218,24 @@ function chat(onEntry: (e: ChatEntry) => void) {
     if (u.sessionUpdate === "agent_message_chunk" || u.sessionUpdate === "user_message_chunk") {
       if (u.content.type !== "text") return;
       const kind = u.sessionUpdate === "agent_message_chunk" ? "text" : "user";
-      if (last?.kind !== kind) flush();
-      last = { kind, text: (last?.text ?? "") + u.content.text };
+      const text = last?.kind === kind ? last.text : "";
+      emit({ id: last?.kind === kind ? last.id : nextEntry++, kind, text: text + u.content.text });
     } else if (u.sessionUpdate === "tool_call") {
-      flush();
-      last = { kind: "tool", text: toolTitle(u), toolCallId: u.toolCallId, name: u.name };
+      emit({
+        id: nextEntry++,
+        kind: "tool",
+        text: toolTitle(u),
+        toolCallId: u.toolCallId,
+        name: u.name,
+      });
     } else if (
       u.sessionUpdate === "tool_call_update" &&
       u.title &&
       last?.toolCallId === u.toolCallId
     ) {
-      last = { ...last, text: toolTitle({ title: u.title, name: u.name ?? last.name }) };
+      emit({ ...last, text: toolTitle({ title: u.title, name: u.name ?? last.name }) });
     }
   };
-  return { update, flush };
 }
 
 // e.g. "Read src/a.ts", "Bash git status". ponytail: tool results aren't shown; add them collapsed under the call.
@@ -290,7 +297,7 @@ export async function newSession(
 // Runs one turn: sends the prompt and streams the reply as chat entries until the turn ends.
 export async function run(name: Agent, o: RunOptions, handlers: RunHandlers = {}): Promise<void> {
   const { a, sessionId } = await openSession(name, o);
-  const { update, flush } = chat(handlers.onEntry ?? (() => {}));
+  const update = chat(handlers.onEntry ?? (() => {}));
   listening.set(sessionId, { update, handlers });
   try {
     const { stopReason } = await a.agent.request(acp.methods.agent.session.prompt, {
@@ -300,7 +307,6 @@ export async function run(name: Agent, o: RunOptions, handlers: RunHandlers = {}
     if (stopReason === "cancelled") throw new Error("Stopped");
     if (stopReason === "refusal") throw new Error(`${name} refused`);
   } finally {
-    flush();
     listening.delete(sessionId);
     for (const p of pending.values()) if (p.sessionId === sessionId) p.resolve(null);
   }
@@ -320,8 +326,8 @@ async function history(
   mcp: acp.McpServer[] = [],
 ): Promise<ChatEntry[]> {
   const a = await adapter(name);
-  const entries: ChatEntry[] = [];
-  const { update, flush } = chat((e) => entries.push(e));
+  const entries = new Map<number | undefined, ChatEntry>();
+  const update = chat((e) => entries.set(e.id, e));
   const running = listening.get(sessionId);
   if (running) return []; // a turn is streaming it; it's read again when the turn ends
   listening.set(sessionId, { update, handlers: {} });
@@ -333,8 +339,7 @@ async function history(
       _meta: agents[name].meta({ cwd, prompt: "", mcp }) as Record<string, unknown>,
     });
     a.open.add(sessionId);
-    flush();
-    return entries;
+    return [...entries.values()];
   } finally {
     listening.delete(sessionId);
   }

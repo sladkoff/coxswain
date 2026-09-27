@@ -263,18 +263,18 @@ async function ask(
   const root = thread[0] ?? question;
   const agentSessionId = await currentSession(db, question.workspaceId);
   const comment = { threadId, where: root.path ? where(root) : "the review", body: question.body };
-  const texts: string[] = [];
+  const texts = new Map<number | undefined, string>(); // by entry id, as they stream
   const turn = runTurn(db, agentSessionId, formatComment(comment, unseen(question, thread)), {
     onEntry: (c) => {
-      if (c.kind === "text") texts.push(c.text);
+      if (c.kind === "text") texts.set(c.id, c.text);
       onChat(threadId, c, agentSessionId);
     },
     onPermission: (p) => onPermission(threadId, p),
   }).then(async (result) => {
-    if (result.status === "ok" && texts.length)
+    if (result.status === "ok" && texts.size)
       await addEntry(db, "answer", {
         workspaceId: question.workspaceId,
-        body: texts.join("\n\n"),
+        body: [...texts.values()].join("\n\n"),
         parentId: threadId,
       });
     return result;

@@ -3,6 +3,21 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-27 — Agent replies stream token by token
+
+### What works
+
+- **The agent's text streams as it's written**, in the agent pane and in a thread, and a tool's line shows as soon as
+  the tool starts. The core sends a chat entry again on every update under the same `id`; the UI replaces the entry it
+  grew from (`upsert` in `ChatEntry.tsx`). A question's answer entry is still saved whole when the turn ends.
+- **A message sent in the agent pane shows at once**, with the composer cleared, before the core has started the
+  session's adapter (seconds for a new session). The core no longer echoes the pane's own message back to it.
+
+### Tech debt
+
+- Each streamed chunk is one IPC message and a re-render of the entry's Markdown. Fine at chat speed; batch per
+  animation frame if long replies stutter.
+
 ## 2026-09-27 — Shared components
 
 ### What works
