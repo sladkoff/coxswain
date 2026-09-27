@@ -3,6 +3,40 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-28 — Branch workspaces, local changes and turn diffs
+
+The local development loop (#3, ADR 0028), for G5.
+
+### What works
+
+- **A workspace without a PR.** The new workspace screen starts one on a branch: a new one made from a base branch (the
+  default unless another is picked), or one already on GitHub. Its diff is against where it forked. The sidebar shows
+  the branch's last name part. _Open Pull Request…_ (Commits pane, ⌘K) pushes it and opens a draft PR into the base
+  branch in the browser; the workspace is the PR's from then on, in the same worktree. A PR opened elsewhere for the
+  branch is picked up when the workspace opens, and opening that PR from the new workspace screen reuses it.
+- **Local changes told apart** (UX open question 5, now gone): _All_ · _PR_ · _Local_ next to _Diff_; the Navigator
+  marks files with local changes (●); the Commits pane marks commits not pushed and has _Push_ (never forced).
+- **Snapshots.** The worktree as a commit, uncommitted and untracked files included, without touching its index
+  (`src/core/snapshot.ts`). New views are pinned to one, so they include local changes, and go stale when the worktree
+  changes rather than only when the PR moves.
+- **Turn diffs.** Every agent turn is snapshotted before and after; a turn that changed something is listed under
+  _Agent turns_ in the Commits pane and shows like a commit diff.
+- The `workspaces` table is rebuilt (nullable `pr_number`, `branch`, `base_branch`) with foreign keys off while
+  migrating, checked after; `turns` is new. `src/core/workspaces.test.ts` covers the rebuild keeping children, branch
+  names and snapshots.
+- Checked in the app: a branch workspace with a local commit, an untracked file and an agent turn; the scopes; the
+  turn's diff; a view with the untracked file going stale on an edit; a PR workspace's scopes. _Push_ and _Open Pull
+  Request…_ weren't run against GitHub.
+
+### Tech debt
+
+- `ponytail:` snapshot refs (`refs/coxswain/snapshots/`) are never pruned.
+- `ponytail:` a branch's slashes become `+` in its worktree's folder name, so `a/b` and `a+b` collide.
+- `ponytail:` the branches offered for a new workspace are as of the clone and the fetches since.
+- `ponytail:` two turns running at once in one workspace each get both's changes.
+- The base branch is picked from a native menu of every branch on GitHub; long for big repositories.
+- coxswain doesn't commit; the agent or the user does (UX open question 5).
+
 ## 2026-09-27 — README for the first release
 
 ### What works

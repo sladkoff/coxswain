@@ -22,6 +22,7 @@ type Props = {
   reviewed: string[];
   showReviewed: boolean;
   entries: ReviewEntry[]; // the workspace's, counted per file
+  local?: ChangedFile[]; // files with local changes, marked (ADR 0028); left out when only those are listed
   selected?: string; // the file shown in the canvas, revealed and selected in Files
   onOpen: (path: string) => void;
 };
@@ -35,6 +36,7 @@ export function Navigator({
   reviewed,
   showReviewed,
   entries,
+  local,
   selected,
   onOpen,
 }: Props) {
@@ -83,9 +85,10 @@ export function Navigator({
       {/* Remounts on a new list: the tree takes its paths only when created. A refetch with the same paths keeps
           the same array (structural sharing), so the tree keeps its state. */}
       <Tree
-        key={`${view}:${settings.layout}:${idOf(view === "diffs" ? pr.changed : paths)}`}
+        key={`${view}:${settings.layout}:${idOf(view === "diffs" ? pr.changed : paths)}:${local ? idOf(local) : 0}`}
         paths={paths}
         changed={pr.changed}
+        local={local}
         reviewed={reviewed}
         items={countItems(entries)}
         hidden={view === "diffs" && !showReviewed ? reviewed : []}
@@ -110,6 +113,7 @@ const idOf = (o: object) => ids.get(o) ?? (ids.set(o, ++nextId), nextId);
 type TreeProps = {
   paths: string[];
   changed: ChangedFile[];
+  local?: ChangedFile[];
   reviewed: string[];
   items: Map<string, ItemCount>; // notes and questions per path
   hidden: string[]; // left out of the tree, e.g. reviewed files
@@ -134,6 +138,7 @@ function listRows(paths: string[]): (p: string) => string {
 function Tree({
   paths,
   changed,
+  local,
   reviewed,
   items,
   hidden,
@@ -144,16 +149,16 @@ function Tree({
 }: TreeProps) {
   const [row] = useState(() => (flat ? listRows(paths) : (p: string) => p));
   const visible = paths.filter((p) => !hidden.includes(p)).map(row);
-  const [counts] = useState(
-    () =>
-      new Map(
-        changed.map((f) => {
-          const lines = `+${f.additions} −${f.deletions}`;
-          const folder = flat && row(f.path) === baseName(f.path) ? dirName(f.path) : "";
-          return [row(f.path), { lines, folder }];
-        }),
-      ),
-  );
+  const [counts] = useState(() => {
+    const locally = new Set(local?.map((f) => f.path));
+    return new Map(
+      changed.map((f) => {
+        const lines = `+${f.additions} −${f.deletions}`;
+        const folder = flat && row(f.path) === baseName(f.path) ? dirName(f.path) : "";
+        return [row(f.path), { lines, folder, local: locally.has(f.path) }];
+      }),
+    );
+  });
   const [files] = useState(() => new Map(paths.map((p) => [row(p), p])));
   // Read by the decorations, which the tree takes only when created.
   const reviewedNow = useRef(new Set(reviewed.map(row)));
@@ -175,10 +180,13 @@ function Tree({
         // The gap after the folder is an em space starting the next part: trailing space on the folder is trimmed.
         ...(reviewed ? [{ text: "\u2003✓ ", color: "#16a34a" }] : []),
         { text: reviewed ? c.lines : `\u2003${c.lines}` },
+        ...(c.local ? [{ text: "\u2003●", color: "#d97706" }] : []),
         ...(i ? [{ text: `\u2003✎ ${i.notes + i.questions}`, color: "#2563eb" }] : []),
       ];
       const title =
-        [reviewed && "Reviewed", i && itemsTitle(i)].filter(Boolean).join(" · ") || undefined;
+        [reviewed && "Reviewed", c.local && "Local changes", i && itemsTitle(i)]
+          .filter(Boolean)
+          .join(" · ") || undefined;
       return { text: parts.map((p) => p.text).join(""), title, parts };
     },
     // Selecting a folder only opens it; selecting a file opens it in the Viewer.

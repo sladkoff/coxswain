@@ -1,6 +1,7 @@
 import type { Project } from "../../core/projects";
 import type { Workspace } from "../../core/workspaces";
 import { cn, divider, titleBar } from "./components/styles";
+import { workspaceLabel } from "./format";
 
 type Props = {
   project: Project;
@@ -8,7 +9,7 @@ type Props = {
   workspaces: Workspace[];
   current: Workspace | undefined;
   onProjects: () => void;
-  onSelect: (prNumber: number) => void;
+  onSelect: (workspace: Workspace) => void;
   onRemove: (workspace: Workspace) => void;
   onNew: () => void;
 };
@@ -47,7 +48,7 @@ export function WorkspaceRail({
               key={w.id}
               workspace={w}
               selected={w.id === current?.id}
-              onClick={() => onSelect(w.prNumber)}
+              onClick={() => onSelect(w)}
               onContextMenu={async () => {
                 if ((await window.coxswain.showWorkspaceMenu()) === "remove") onRemove(w);
               }}
@@ -66,7 +67,7 @@ export function WorkspaceRail({
   );
 }
 
-// A workspace by its PR number; the pill on the left marks the current one. Right-click offers to remove it.
+// A workspace by its PR number, or its branch's last part until it has one; the pill on the left marks the current one. Right-click offers to remove it.
 function WorkspaceButton({
   workspace: w,
   selected,
@@ -84,17 +85,21 @@ function WorkspaceButton({
         <span className="absolute top-1 left-0 h-5 w-1 rounded-r bg-neutral-900 dark:bg-neutral-100" />
       )}
       <button
-        title={`PR #${w.prNumber}`}
+        title={
+          w.prNumber !== null && w.branch ? `${workspaceLabel(w)} · ${w.branch}` : workspaceLabel(w)
+        }
         onClick={onClick}
         onContextMenu={onContextMenu}
         className={cn(
-          "flex h-7 w-10 items-center justify-center rounded-md text-[10px] font-medium",
+          "flex h-7 w-10 items-center justify-center rounded-md px-0.5 text-[10px] font-medium",
           selected
             ? "bg-neutral-300 text-neutral-900 dark:bg-neutral-600 dark:text-white"
             : "bg-neutral-100 text-neutral-500 hover:bg-neutral-200 dark:bg-neutral-800/60 dark:hover:bg-neutral-800",
         )}
       >
-        #{w.prNumber}
+        <span className="truncate">
+          {w.prNumber !== null ? `#${w.prNumber}` : w.branch!.split("/").at(-1)}
+        </span>
       </button>
     </div>
   );

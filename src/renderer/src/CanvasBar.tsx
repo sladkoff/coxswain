@@ -1,6 +1,6 @@
 import type { Commit } from "../../core/git";
 import type { View } from "../../core/views";
-import { Button, ToggleButton } from "./components/button";
+import { Button, SegmentedControl, ToggleButton } from "./components/button";
 import {
   ChevronLeftIcon,
   ChevronRightIcon,
@@ -18,7 +18,10 @@ type Props = {
   commit: Commit | null;
   view: View | null;
   views: View[]; // newest first
-  prHead: string | undefined;
+  snapshot: string | null; // the worktree now; a view pinned to another is stale
+  scope: "all" | "pushed" | "local";
+  hasPr: boolean; // what's pushed is the PR's
+  onScope: (scope: "all" | "pushed" | "local") => void;
   onShowView: (id: number | null) => void; // null: the diff, no view
   onRemoveView: (view: View, label: string) => void;
   onNewView: () => void;
@@ -30,7 +33,7 @@ type Props = {
   onForward: () => void;
 };
 
-// The canvas's bar: Files, Commits, Diff, a chip per view and New View on the left; Back, Forward, Open Quickly and the view options on the right. It also
+// The canvas's bar: Files, Commits, Diff (with its scope while it shows), a chip per view and New View on the left; Back, Forward, Open Quickly and the view options on the right. It also
 // drags the window, so it lines up with the agent pane's. ponytail: no tabs row until the canvas shows a second thing.
 export function CanvasBar(props: Props) {
   const titles = viewTitles(props.views);
@@ -56,7 +59,11 @@ export function CanvasBar(props: Props) {
         on={props.leftPane === "commits" || !!props.commit}
         onClick={() => props.onToggleLeftPane("commits")}
       >
-        {props.commit ? `${props.commit.sha.slice(0, 7)} ${props.commit.subject}` : "Commits"}
+        {props.commit
+          ? props.commit.turn
+            ? `Turn: ${props.commit.subject}`
+            : `${props.commit.sha.slice(0, 7)} ${props.commit.subject}`
+          : "Commits"}
       </ToggleButton>
       <ToggleButton
         title="Show the diff without a view"
@@ -66,10 +73,31 @@ export function CanvasBar(props: Props) {
       >
         Diff
       </ToggleButton>
+      {!props.view && !props.commit && props.ready && (
+        <SegmentedControl
+          value={props.scope}
+          onChange={props.onScope}
+          options={[
+            { value: "all", label: "All", title: "Everything since the merge base" },
+            {
+              value: "pushed",
+              label: props.hasPr ? "PR" : "Pushed",
+              title: props.hasPr
+                ? "Only the PR's changes, as on GitHub"
+                : "Only what's pushed to GitHub",
+            },
+            {
+              value: "local",
+              label: "Local",
+              title: "Only the local changes: uncommitted, untracked and not pushed",
+            },
+          ]}
+        />
+      )}
       {props.views.toReversed().map((v) => (
         <ToggleButton
           key={v.id}
-          title={`Made ${new Date(v.createdAt).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })} at ${v.head.slice(0, 7)}${v.head === props.prHead ? "" : " (stale)"}`}
+          title={`Made ${new Date(v.createdAt).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })} at ${v.head.slice(0, 7)}${props.snapshot && v.head !== props.snapshot ? " (stale)" : ""}`}
           disabled={!props.ready}
           className="max-w-40 truncate"
           on={v.id === props.view?.id}

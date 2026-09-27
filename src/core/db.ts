@@ -3,7 +3,7 @@ import { type Generated, Kysely, SqliteDialect } from "kysely";
 
 // ADR 0005: one SQLite database, owned by the core. Append migrations; never edit one that has shipped.
 // The history up to here was squashed into the first one; databases made before it are refused (openDatabase).
-const migrations = [
+export const migrations = [
   `create table projects (
     id integer primary key,
     owner text not null,
@@ -86,6 +86,33 @@ const migrations = [
   alter table views drop column groups`,
   // An agent session's title: the agent's own once it names the session, else its first message.
   `alter table agent_sessions add column title text`,
+  // ADR 0028: a workspace is a PR or a branch, so pr_number may be null. SQLite can't drop a not null, so the table is
+  // rebuilt (openDatabase turns foreign keys off meanwhile, or dropping it would cascade). branch, base_branch: set for
+  // a workspace started on a branch, kept once it gets a PR; its worktree is named by the branch.
+  // turns: the worktree's snapshot before and after each agent turn that changed it, for the turn's diff.
+  `create table workspaces_new (
+    id integer primary key,
+    project_id integer not null references projects (id) on delete cascade,
+    pr_number integer,
+    branch text,
+    base_branch text,
+    last_opened_at text not null,
+    unique (project_id, pr_number),
+    unique (project_id, branch),
+    check (pr_number is not null or (branch is not null and base_branch is not null))
+  );
+  insert into workspaces_new (id, project_id, pr_number, last_opened_at)
+    select id, project_id, pr_number, last_opened_at from workspaces;
+  drop table workspaces;
+  alter table workspaces_new rename to workspaces;
+  create table turns (
+    id integer primary key,
+    workspace_id integer not null references workspaces (id) on delete cascade,
+    before text not null,
+    after text not null,
+    title text not null,
+    created_at text not null
+  )`,
 ];
 
 // ADR 0016: the tables as the migrations above leave them. Change this with every migration that changes a table.
@@ -95,8 +122,18 @@ type Tables = {
   workspaces: {
     id: Generated<number>;
     project_id: number;
-    pr_number: number;
+    pr_number: number | null;
+    branch: string | null;
+    base_branch: string | null;
     last_opened_at: string;
+  };
+  turns: {
+    id: Generated<number>;
+    workspace_id: number;
+    before: string;
+    after: string;
+    title: string;
+    created_at: string;
   };
   agent_sessions: {
     id: Generated<number>;
@@ -141,7 +178,7 @@ export type Db = Kysely<Tables>;
 
 export function openDatabase(path: string): Db {
   const db = new DatabaseSync(path);
-  db.exec("pragma foreign_keys = on");
+  db.exec("pragma foreign_keys = off"); // node:sqlite turns them on; see below
   const { user_version } = db.prepare("pragma user_version").get() as { user_version: number };
   if (user_version > migrations.length)
     throw new Error(
@@ -153,6 +190,10 @@ export function openDatabase(path: string): Db {
     db.exec(`pragma user_version = ${i + 1}`);
     db.exec("commit");
   }
+  // Off while migrating, so a table rebuilt (dropped and made again) keeps its children; checked once they're done.
+  if (db.prepare("pragma foreign_key_check").all().length)
+    throw new Error(`${path}: a migration broke a foreign key`);
+  db.exec("pragma foreign_keys = on");
   // Kysely's SQLite dialect expects better-sqlite3's statements: parameters as one array, and a reader flag.
   const database = {
     close: () => db.close(),

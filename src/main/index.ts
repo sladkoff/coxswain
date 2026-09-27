@@ -16,6 +16,7 @@ import {
   agentSessionWorkspace,
   answerPermission,
   listAgentPicks,
+  listTurns,
   listAgentSessions,
   newSessionAgent,
   onSessionTitle,
@@ -32,13 +33,17 @@ import {
   cloneProject,
   findDefinitions,
   findUsages,
+  listBranches,
   listChangedFiles,
   listCommits,
   listWorktreeFiles,
   openedBefore,
+  openPullRequest,
   openWorktree,
+  push,
   readFileAt,
   readWorktreeFile,
+  snapshot,
 } from "../core/git";
 import {
   listViews,
@@ -68,7 +73,13 @@ import {
 import { listReviewed, setReviewed } from "../core/reviewed";
 import { checkSetup } from "../core/setup";
 import type { Changed, NavigatorSettings, ViewSettings } from "../preload";
-import { listWorkspaces, openPullRequestWorkspace, removeWorkspace } from "../core/workspaces";
+import {
+  listWorkspaces,
+  openBranchWorkspace,
+  openPullRequestWorkspace,
+  openWorkspace,
+  removeWorkspace,
+} from "../core/workspaces";
 
 // Started from the Dock, Finder or a desktop launcher, the app gets a bare PATH without gh, claude or codex, so it takes
 // the login shell's. The markers skip whatever the shell prints on start.
@@ -249,8 +260,14 @@ app.whenReady().then(() => {
     listPullRequests(owner, name),
   );
   ipcMain.handle("workspaces:list", (_, projectId: number) => listWorkspaces(db, projectId));
-  ipcMain.handle("workspaces:open-pr", (_, projectId: number, prNumber: number) =>
-    openPullRequestWorkspace(db, projectId, prNumber),
+  ipcMain.handle("workspaces:open", (_, workspaceId: number) => openWorkspace(db, workspaceId));
+  ipcMain.handle("workspaces:open-pr", (_, projectId: number, prNumber: number, headRef: string) =>
+    openPullRequestWorkspace(db, projectId, prNumber, headRef),
+  );
+  ipcMain.handle(
+    "workspaces:open-branch",
+    (_, projectId: number, branch: string, baseBranch: string) =>
+      openBranchWorkspace(db, projectId, branch, baseBranch),
   );
   ipcMain.handle("workspaces:remove", (_, workspaceId: number) => removeWorkspace(db, workspaceId));
   ipcMain.handle("git:clone", (_, projectId: number) => cloneProject(db, projectId));
@@ -259,6 +276,14 @@ app.whenReady().then(() => {
   ipcMain.handle("git:commits", (_, workspaceId: number, mergeBase: string) =>
     listCommits(db, workspaceId, mergeBase),
   );
+  ipcMain.handle("git:branches", (_, projectId: number) => listBranches(db, projectId));
+  ipcMain.handle("git:snapshot", (_, workspaceId: number) => snapshot(db, workspaceId));
+  ipcMain.handle("git:push", (_, workspaceId: number) => push(db, workspaceId));
+  ipcMain.handle("git:open-pull-request", async (_, workspaceId: number) => {
+    const pr = await openPullRequest(db, workspaceId);
+    if (pr.status === "ok") void shell.openExternal(pr.url);
+    return pr;
+  });
   ipcMain.handle("git:changed-files", (_, workspaceId: number, mergeBase: string, head?: string) =>
     listChangedFiles(db, workspaceId, mergeBase, head),
   );
@@ -278,6 +303,7 @@ app.whenReady().then(() => {
     findUsages(db, workspaceId, token),
   );
   ipcMain.handle("agents:list", (_, workspaceId: number) => listAgentSessions(db, workspaceId));
+  ipcMain.handle("agents:turns", (_, workspaceId: number) => listTurns(db, workspaceId));
   ipcMain.handle("agents:start", (_, workspaceId: number, agent?: Agent) =>
     startAgentSession(db, workspaceId, agent),
   );

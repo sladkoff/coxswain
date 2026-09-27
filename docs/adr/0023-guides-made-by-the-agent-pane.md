@@ -21,8 +21,8 @@ the agent's own thoughts. Reviewing is opt-in.
 1. **The agent pane's sessions get coxswain's tools.** The local HTTP MCP server
    ([ADR 0018](0018-agents-over-acp.md), 2) serves a stable path per workspace, `coxswain`, given to every agent pane
    session when it's opened, resumed or loaded, and allowed without asking (`mcp__coxswain`). Its tools:
-   - `start_view`: a new view, a guide or another kind, pinned to the merge base → the PR head as coxswain last saw
-     it. Returns the range, the changed files and how to write a good view.
+   - `start_view`: a new view, a guide or another kind, pinned to the merge base → a snapshot of the worktree,
+     local changes included ([ADR 0028](0028-branch-workspaces-and-snapshots.md). Returns the range, the changed files and how to write a good view.
    - `write_section`: appends a section of markdown to a view, or replaces one. What a view holds is in
      [ADR 0026](0026-views-in-markdown-with-mermaid.md); embedded paths are checked against the view's changed files,
      and a file is embedded once.
@@ -44,7 +44,7 @@ the agent's own thoughts. Reviewing is opt-in.
    view's id, shown as threads between the lines only while their view is shown, so the user can reply or send them
    back to the agent.
 4. **Views stay pinned and are kept until the user removes them.** A view shows its range (merge base → head then),
-   like a commit diff, not the live worktree; once the PR head moves on it's _stale_. Every view is kept and can be
+   like a commit diff, not the live worktree; once the worktree moves on (its snapshot changes) it's _stale_. Every view is kept and can be
    shown again from its chip in the canvas bar, for going back or for debugging. Removing one is the user's choice:
    right-click its chip → _Remove View…_, confirmed, deletes it with its explanations and findings (`entries.view_id`
    cascades). The agent can't remove a view. The newest is shown when it appears, and on opening a workspace if it

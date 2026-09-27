@@ -42,7 +42,7 @@ agent sessions can finish and write at the same time.
    ([ADR 0018](0018-agents-over-acp.md)); only an answer's text is kept, as an entry in its thread.
 4. **Secrets go in the OS keychain.** The GitHub token is stored with Electron's `safeStorage`,
    never in the database.
-5. **Worktrees coxswain creates go in `~/coxswain/worktrees/<owner>/<name>/pr-<number>/`,** not next to the
+5. **Worktrees coxswain creates go in `~/coxswain/worktrees/<owner>/<name>/pr-<number>/`** (or `branch-<branch>/`, [ADR 0028](0028-branch-workspaces-and-snapshots.md)), not next to the
    repository and not inside `.git`.
 
 The library is `node:sqlite`, with Kysely on top ([ADR 0016](0016-typed-queries-with-kysely.md)).

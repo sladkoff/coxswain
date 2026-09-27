@@ -12,11 +12,19 @@ import {
 import { homedir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import type { Db } from "./db";
-import { getPullRequestHead, type GitHubProblem } from "./github";
+import {
+  createPullRequest,
+  type CreatedPullRequest,
+  findPullRequest,
+  getPullRequestHead,
+  type GitHubProblem,
+} from "./github";
 import { getProject } from "./projects";
-import { getWorkspaceRepo } from "./workspaces";
+import { snapshotOf } from "./snapshot";
+import { getWorkspaceRepo, setWorkspacePullRequest } from "./workspaces";
 
-// ADR 0008: coxswain's own blobless clone per project, and one worktree per workspace on the PR's head branch.
+// ADR 0008: coxswain's own blobless clone per project, and one worktree per workspace on the PR's head branch, or on
+// the workspace's own branch (ADR 0028).
 export type GitProblem = { status: "git-error"; message: string };
 
 export type ChangedFile = {
@@ -29,28 +37,50 @@ export type ChangedFile = {
 
 export type ChangedFileList = { status: "ok"; files: ChangedFile[] } | GitProblem;
 export type FileTreeResult = { status: "ok"; paths: string[] } | GitProblem;
-// A commit of the PR, or a local one on top. parent: its first parent, the old side of its commit diff.
-export type Commit = { sha: string; parent: string; subject: string };
+// A commit of the PR, or a local one on top. parent: its first parent, the old side of its commit diff. An agent turn
+// is shown like one (turn: when it ran): its snapshots after and before (ADR 0028), subject its first message.
+export type Commit = { sha: string; parent: string; subject: string; turn?: string };
 // text is null when the file doesn't exist on that side or is binary.
 export type FileText = { status: "ok"; text: string | null; binary: boolean } | GitProblem;
 export type CloneResult = { status: "ok" } | GitProblem | GitHubProblem;
-// notice: something the user should know, e.g. the PR moved on but local changes kept the worktree back.
+// head: what's on GitHub (ADR 0028), the PR's head or the branch's; the merge base while a branch isn't pushed. Local
+// changes are what the worktree has on top of it. prNumber: the workspace's PR, which a branch workspace gets once one
+// is opened for its branch. notice: something the user should know, e.g. the PR moved on but local changes kept the
+// worktree back.
 export type WorktreeResult =
-  | { status: "ok"; head: string; mergeBase: string; notice: string | null }
+  | {
+      status: "ok";
+      head: string;
+      mergeBase: string;
+      prNumber: number | null;
+      notice: string | null;
+    }
   | GitProblem
   | GitHubProblem;
 
 const root = join(homedir(), "coxswain");
 const repoPath = (owner: string, name: string) => join(root, "repos", owner, name);
-// ADR 0005: worktrees go in ~/coxswain/worktrees/<owner>/<name>/pr-<number>/. Named by the PR, not the workspace's
-// row ID, so a database made afresh finds the same folder and never another PR's.
-export const worktreePath = (owner: string, name: string, prNumber: number) =>
-  join(root, "worktrees", owner, name, `pr-${prNumber}`);
+// ADR 0005: worktrees go in ~/coxswain/worktrees/<owner>/<name>/pr-<number>/, or branch-<branch>/ for a workspace
+// started on a branch, kept once it has a PR (agents' sessions are tied to the folder). Named by the PR or branch, not
+// the workspace's row ID, so a database made afresh finds the same folder and never another's.
+// ponytail: a branch's slashes become "+", so a/b and a+b share a folder; the second then moves the first's away.
+export const worktreePath = (
+  owner: string,
+  name: string,
+  w: { prNumber: number | null; branch: string | null },
+) =>
+  join(
+    root,
+    "worktrees",
+    owner,
+    name,
+    w.branch ? `branch-${w.branch.replaceAll("/", "+")}` : `pr-${w.prNumber}`,
+  );
 
 class GitError extends Error {}
 
 // ADR 0008 decision 7: git never prompts; missing credentials fail instead of hanging.
-function git(cwd: string, args: string[]): Promise<Buffer> {
+function git(cwd: string, args: string[], env: Record<string, string> = {}): Promise<Buffer> {
   return new Promise((done, fail) =>
     execFile(
       "git",
@@ -59,14 +89,20 @@ function git(cwd: string, args: string[]): Promise<Buffer> {
         cwd,
         encoding: "buffer",
         maxBuffer: 256 * 1024 * 1024,
-        env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+        env: { ...process.env, GIT_TERMINAL_PROMPT: "0", ...env },
       },
       (e, stdout, stderr) =>
         e ? fail(new GitError(stderr.toString().trim() || e.message)) : done(stdout),
     ),
   );
 }
-const gitText = async (cwd: string, args: string[]) => (await git(cwd, args)).toString();
+const gitText = async (cwd: string, args: string[], env?: Record<string, string>) =>
+  (await git(cwd, args, env)).toString();
+const hasRef = (cwd: string, ref: string) =>
+  git(cwd, ["rev-parse", "--verify", "--quiet", ref]).then(
+    () => true,
+    () => false,
+  );
 
 async function withGit<T>(fn: () => Promise<T>): Promise<T | GitProblem> {
   try {
@@ -115,92 +151,225 @@ function ghProtocol(): Promise<string> {
 
 // The last result of opening each workspace's worktree, so switching back needs no network.
 // ponytail: memory only, so the first open after a restart waits for GitHub and fetch (~2.5 s); persist if that hurts.
-const lastOpened = new Map<number, { head: string; mergeBase: string }>();
+const lastOpened = new Map<number, { head: string; mergeBase: string; prNumber: number | null }>();
 
 // What openWorktree last said, if the worktree is still there; null when it has to be opened properly.
 export async function openedBefore(db: Db, workspaceId: number): Promise<WorktreeResult | null> {
   const last = lastOpened.get(workspaceId);
-  const { owner, name, prNumber } = await getWorkspaceRepo(db, workspaceId);
-  if (!last || !existsSync(join(worktreePath(owner, name, prNumber), ".git"))) return null;
+  const w = await getWorkspaceRepo(db, workspaceId);
+  if (!last || !existsSync(join(worktreePath(w.owner, w.name, w), ".git"))) return null;
   return { status: "ok", ...last, notice: null };
 }
 
-// Makes sure the workspace's worktree exists and is on the PR's latest head, then says what its diff is against.
+// Makes sure the workspace's worktree exists and is on its latest head on GitHub, then says what its diff is against.
 // Talks to GitHub and fetches, so it takes a second or more; show openedBefore meanwhile.
 export async function openWorktree(db: Db, workspaceId: number): Promise<WorktreeResult> {
-  const { owner, name, prNumber } = await getWorkspaceRepo(db, workspaceId);
-  const [pr, cloned] = await Promise.all([
-    getPullRequestHead(owner, name, prNumber),
-    clone(owner, name),
-  ]);
+  const w = await getWorkspaceRepo(db, workspaceId);
+  const { owner, name } = w;
+  const cloned = clone(owner, name);
+  let prNumber = w.prNumber;
+  // ADR 0028: a branch workspace gets its PR once one is opened for the branch, here or on GitHub. Offline, or the PR
+  // already has a workspace of its own: it carries on as a branch.
+  if (prNumber === null && w.branch) {
+    const found = await findPullRequest(owner, name, w.branch);
+    if (found.status === "ok" && found.number !== null)
+      prNumber = await setWorkspacePullRequest(db, workspaceId, found.number).then(
+        () => found.number,
+        () => null,
+      );
+  }
+  if (prNumber === null) {
+    const c = await cloned;
+    return c.status === "ok" ? openBranch(workspaceId, w) : c;
+  }
+  const [pr, c] = await Promise.all([getPullRequestHead(owner, name, prNumber), cloned]);
   if (pr.status !== "ok") return pr;
-  if (cloned.status !== "ok") return cloned;
+  if (c.status !== "ok") return c;
   // ponytail: fork PRs need a remote for the fork (ADR 0008); read-only via pull/<n>/head would be the cheap first step.
   if (pr.fromFork) return { status: "git-error", message: "PRs from forks are not supported yet" };
 
   return withGit(async () => {
     const repo = repoPath(owner, name);
-    const path = worktreePath(owner, name, prNumber);
+    const path = worktreePath(owner, name, w);
     const branch = pr.headRef;
     const upstream = `origin/${branch}`;
     await git(repo, ["fetch", "origin", `+refs/heads/${branch}:refs/remotes/${upstream}`]);
-    let notice: string | null = null;
-    // ponytail: fails when the head branch is the default branch, which the clone itself has checked out;
-    // make the clone bare (with an explicit fetch refspec) if such PRs show up.
-    if (!existsSync(join(path, ".git"))) {
-      if (existsSync(path) && readdirSync(path).length)
-        throw new GitError(
-          `${path} exists and isn't a worktree; move it away and reopen the workspace`,
-        );
-      // A worktree elsewhere may hold the branch already, e.g. one named by an older coxswain or a database made
-      // since: move it here, local changes and all. Registrations whose folder is gone are dropped first.
-      await git(repo, ["worktree", "prune"]);
-      const holder = (await gitText(repo, ["worktree", "list", "--porcelain"]))
-        .split("\n\n")
-        .find((w) => w.split("\n").includes(`branch refs/heads/${branch}`))
-        ?.match(/^worktree (.+)$/m)?.[1];
-      if (holder && holder !== repo) await git(repo, ["worktree", "move", holder, path]);
-    }
-    if (!existsSync(join(path, ".git"))) {
-      const hasBranch = await git(repo, [
-        "rev-parse",
-        "--verify",
-        "--quiet",
-        `refs/heads/${branch}`,
-      ]).then(
-        () => true,
-        () => false,
-      );
-      await git(
-        repo,
-        hasBranch
-          ? ["worktree", "add", path, branch]
-          : ["worktree", "add", "--track", "-b", branch, path, upstream],
-      );
-    }
-    const [head, remote, dirty] = await Promise.all([
-      gitText(path, ["rev-parse", "HEAD"]),
-      gitText(path, ["rev-parse", upstream]),
-      gitText(path, ["status", "--porcelain"]),
-    ]);
-    if (head.trim() !== remote.trim()) {
-      const behind = await git(path, ["merge-base", "--is-ancestor", "HEAD", upstream]).then(
-        () => true,
-        () => false,
-      );
-      if (behind && !dirty) await git(path, ["merge", "--ff-only", upstream]);
-      else notice = behind ? "The PR has new commits; not updated because of local changes" : null;
-    }
-    lastOpened.set(workspaceId, { head: pr.head, mergeBase: pr.mergeBase });
-    return { status: "ok" as const, head: pr.head, mergeBase: pr.mergeBase, notice };
+    await addWorktree(repo, path, branch, upstream, true);
+    const notice = await catchUp(path, upstream, "The PR has new commits");
+    lastOpened.set(workspaceId, { head: pr.head, mergeBase: pr.mergeBase, prNumber });
+    return { status: "ok" as const, head: pr.head, mergeBase: pr.mergeBase, prNumber, notice };
   });
 }
 
+// A branch workspace without a PR (ADR 0028): its worktree on its branch, made from the base branch unless it's on
+// GitHub already. Its diff is against where it forked from the base branch, like a PR's; what's pushed is on GitHub.
+// Offline, it carries on with what was fetched before.
+function openBranch(
+  workspaceId: number,
+  w: { owner: string; name: string; branch: string | null; baseBranch: string | null },
+): Promise<WorktreeResult> {
+  return withGit(async () => {
+    const repo = repoPath(w.owner, w.name);
+    const path = worktreePath(w.owner, w.name, { prNumber: null, branch: w.branch });
+    const [branch, base] = [w.branch!, w.baseBranch!];
+    const fetch = (b: string) =>
+      git(repo, ["fetch", "origin", `+refs/heads/${b}:refs/remotes/origin/${b}`]).then(
+        () => true,
+        () => false,
+      );
+    // Fetching a branch that was never pushed fails too, so only the base branch's failure says we're offline.
+    const [fetched] = await Promise.all([fetch(base), fetch(branch)]);
+    const pushed = await hasRef(repo, `refs/remotes/origin/${branch}`);
+    await addWorktree(repo, path, branch, `origin/${pushed ? branch : base}`, pushed);
+    const behind = pushed
+      ? await catchUp(path, `origin/${branch}`, "The branch has new commits")
+      : null;
+    const mergeBase = (await gitText(path, ["merge-base", `origin/${base}`, "HEAD"])).trim();
+    const head = pushed
+      ? (await gitText(repo, ["rev-parse", `origin/${branch}`])).trim()
+      : mergeBase;
+    lastOpened.set(workspaceId, { head, mergeBase, prNumber: null });
+    const notice = fetched
+      ? behind
+      : "Could not fetch from GitHub; showing what was fetched before";
+    return { status: "ok" as const, head, mergeBase, prNumber: null, notice };
+  });
+}
+
+// Makes sure the worktree at path has branch checked out. Without a worktree there: a worktree elsewhere may hold the
+// branch already, e.g. one named by an older coxswain or a database made since, so it's moved here, local changes and
+// all (registrations whose folder is gone are dropped first); else one is added, the branch made from start if it
+// doesn't exist yet, tracking start if track.
+// ponytail: fails when the branch is the default branch, which the clone itself has checked out; make the clone bare
+// (with an explicit fetch refspec) if such PRs show up.
+async function addWorktree(
+  repo: string,
+  path: string,
+  branch: string,
+  start: string,
+  track: boolean,
+) {
+  if (existsSync(join(path, ".git"))) return;
+  if (existsSync(path) && readdirSync(path).length)
+    throw new GitError(
+      `${path} exists and isn't a worktree; move it away and reopen the workspace`,
+    );
+  await git(repo, ["worktree", "prune"]);
+  const holder = (await gitText(repo, ["worktree", "list", "--porcelain"]))
+    .split("\n\n")
+    .find((w) => w.split("\n").includes(`branch refs/heads/${branch}`))
+    ?.match(/^worktree (.+)$/m)?.[1];
+  if (holder && holder !== repo) await git(repo, ["worktree", "move", holder, path]);
+  if (existsSync(join(path, ".git"))) return;
+  const hasBranch = await hasRef(repo, `refs/heads/${branch}`);
+  await git(
+    repo,
+    hasBranch
+      ? ["worktree", "add", path, branch]
+      : ["worktree", "add", track ? "--track" : "--no-track", "-b", branch, path, start],
+  );
+}
+
+// Fast-forwards the worktree to upstream when it's behind and has no local changes. Otherwise, if it's behind, says so
+// (moved: what happened on GitHub).
+async function catchUp(path: string, upstream: string, moved: string): Promise<string | null> {
+  const [head, remote, dirty] = await Promise.all([
+    gitText(path, ["rev-parse", "HEAD"]),
+    gitText(path, ["rev-parse", upstream]),
+    gitText(path, ["status", "--porcelain"]),
+  ]);
+  if (head.trim() === remote.trim()) return null;
+  const behind = await git(path, ["merge-base", "--is-ancestor", "HEAD", upstream]).then(
+    () => true,
+    () => false,
+  );
+  if (behind && !dirty) await git(path, ["merge", "--ff-only", upstream]);
+  return behind && dirty ? `${moved}; not updated because of local changes` : null;
+}
+
 async function openedWorktree(db: Db, workspaceId: number): Promise<string> {
-  const { owner, name, prNumber } = await getWorkspaceRepo(db, workspaceId);
-  const path = worktreePath(owner, name, prNumber);
+  const w = await getWorkspaceRepo(db, workspaceId);
+  const path = worktreePath(w.owner, w.name, w);
   if (!existsSync(join(path, ".git"))) throw new GitError("The worktree is not ready yet");
   return path;
+}
+
+// The project's branches on GitHub (as last fetched), to start a branch workspace from, and its default branch.
+// ponytail: as of the clone and the fetches since; fetch them all first if a new branch is missed.
+export type BranchList =
+  | { status: "ok"; branches: string[]; defaultBranch: string }
+  | GitProblem
+  | GitHubProblem;
+export async function listBranches(db: Db, projectId: number): Promise<BranchList> {
+  const { owner, name } = await getProject(db, projectId);
+  const cloned = await clone(owner, name);
+  if (cloned.status !== "ok") return cloned;
+  return withGit(async () => {
+    const repo = repoPath(owner, name);
+    const [refs, head] = await Promise.all([
+      gitText(repo, ["for-each-ref", "--format=%(refname:lstrip=3)", "refs/remotes/origin"]),
+      gitText(repo, ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]).catch(() => ""),
+    ]);
+    const branches = refs.split("\n").filter((b) => b && b !== "HEAD");
+    const defaultBranch = head.trim().replace(/^origin\//, "") || branches[0] || "main";
+    return { status: "ok" as const, branches, defaultBranch };
+  });
+}
+
+// The worktree as a commit, uncommitted changes included (snapshot.ts).
+export function snapshot(
+  db: Db,
+  workspaceId: number,
+): Promise<{ status: "ok"; sha: string } | GitProblem> {
+  return withGit(async () => ({
+    status: "ok" as const,
+    sha: await snapshotOf(await openedWorktree(db, workspaceId)),
+  }));
+}
+
+// Pushes the worktree's branch to GitHub and makes it its upstream. Never forced: if the branch moved on there, it fails
+// with git's message.
+export function push(db: Db, workspaceId: number): Promise<{ status: "ok" } | GitProblem> {
+  return withGit(async () => {
+    const path = await openedWorktree(db, workspaceId);
+    const branch = (await gitText(path, ["symbolic-ref", "--short", "HEAD"])).trim();
+    await git(path, ["push", "--set-upstream", "origin", branch]);
+    return { status: "ok" as const };
+  });
+}
+
+// A branch workspace's PR (ADR 0028): pushes the branch and opens a draft PR into its base branch, titled by its one
+// commit or else by the branch, with the commits listed. The workspace is the PR's from then on.
+export async function openPullRequest(
+  db: Db,
+  workspaceId: number,
+): Promise<CreatedPullRequest | GitProblem> {
+  const w = await getWorkspaceRepo(db, workspaceId);
+  if (w.prNumber !== null || !w.branch || !w.baseBranch)
+    return { status: "git-error", message: "The workspace has a PR already" };
+  const pushed = await push(db, workspaceId);
+  if (pushed.status !== "ok") return pushed;
+  const log = await withGit(async () =>
+    (
+      await gitText(await openedWorktree(db, workspaceId), [
+        "log",
+        "-z",
+        "--format=%s",
+        `origin/${w.baseBranch}..HEAD`,
+      ])
+    )
+      .split("\0")
+      .filter(Boolean),
+  );
+  if (!Array.isArray(log)) return log;
+  const pr = await createPullRequest(w.owner, w.name, {
+    head: w.branch,
+    base: w.baseBranch,
+    title: log.length === 1 ? log[0] : w.branch,
+    body: log.length > 1 ? log.map((s) => `- ${s}`).join("\n") : "",
+  });
+  if (pr.status === "ok") await setWorkspacePullRequest(db, workspaceId, pr.number);
+  return pr;
 }
 
 const isCommit = (s: string) => /^[0-9a-f]{40}$/.test(s);

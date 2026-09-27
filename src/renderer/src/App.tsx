@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useLocation, useNavigate, useRouter, useSearch } from "@tanstack/react-router";
 import { type UIEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangedFile, Commit } from "../../core/git";
+import type { PullRequest } from "../../core/github";
 import type { NewEntry, ReviewEntry } from "../../core/review";
 import type { View, ViewRequest } from "../../core/views";
 import type { Workspace } from "../../core/workspaces";
@@ -21,6 +22,7 @@ import { Projects } from "./Projects";
 import type { CanvasSearch } from "./router";
 import { changed, core, markReviewed as mark, queryClient } from "./queries";
 import { Settings } from "./Settings";
+import { workspaceLabel } from "./format";
 import { Setup } from "./Setup";
 import { StatusBar } from "./StatusBar";
 import { usePullRequest } from "./usePullRequest";
@@ -65,19 +67,24 @@ export function App() {
     (latest, w) => (!latest || w.lastOpenedAt > latest.lastOpenedAt ? w : latest),
     undefined,
   );
-  const selectWorkspace = async (prNumber: number) => {
-    if (!current) return;
-    await window.coxswain.openPullRequestWorkspace(current.id, prNumber);
-    await queryClient.invalidateQueries({ queryKey: ["listWorkspaces", current.id] });
+  const opening = async (open: Promise<unknown>) => {
+    await open;
+    await queryClient.invalidateQueries({ queryKey: ["listWorkspaces", current?.id] });
     close();
+  };
+  const selectWorkspace = (id: number) => opening(window.coxswain.openWorkspace(id));
+  const newPullWorkspace = (p: PullRequest) =>
+    current && opening(window.coxswain.openPullRequestWorkspace(current.id, p.number, p.headRef));
+  // Rejects with the reason if git won't take the branch's name; the new workspace screen shows it.
+  const newBranchWorkspace = async (branch: string, base: string) => {
+    if (current) await opening(window.coxswain.openBranchWorkspace(current.id, branch, base));
   };
 
   // The workspace's entries, reviewed files and agent sessions go with it; its worktree stays on disk.
   const removeWorkspace = async (w: Workspace) => {
     const ok = await window.coxswain.confirm({
-      message: `Remove PR #${w.prNumber} from the sidebar?`,
-      detail:
-        "Its comments, reviewed files and agent sessions are deleted. The worktree stays on disk, and adding the PR again reuses it.",
+      message: `Remove ${workspaceLabel(w)} from the sidebar?`,
+      detail: `Its comments, reviewed files and agent sessions are deleted. The worktree stays on disk, and adding the ${w.prNumber !== null ? "PR" : "branch"} again reuses it.`,
       action: "Remove",
     });
     if (!ok) return;
@@ -130,7 +137,7 @@ export function App() {
   }, [currentWorkspace?.id]);
   useEffect(() => {
     const w = moved && workspaces.find((w) => w.id === search.ws);
-    if (w && w.id !== currentWorkspace?.id) void selectWorkspace(w.prNumber);
+    if (w && w.id !== currentWorkspace?.id) void selectWorkspace(w.id);
   }, [location.state.__TSR_key]);
 
   const view: NavigatorView = s.view ?? "diffs";
@@ -155,22 +162,29 @@ export function App() {
   const viewId = s.viewId ?? null;
   const newest = useRef<{ workspaceId: number; id: number } | null>(null);
   useEffect(() => {
-    if (!currentWorkspace || !views || !pr.commits) return;
+    if (!currentWorkspace || !views || !pr.commits || !pr.snapshot) return;
     const latest = views[0];
     const now = shown.current;
     if (newest.current?.workspaceId !== currentWorkspace.id) {
-      if (now.viewId === undefined && !now.commit && latest?.head === pr.commits.head)
+      if (now.viewId === undefined && !now.commit && !now.scope && latest?.head === pr.snapshot)
         void show({ viewId: latest.id }, true);
     } else if (latest && latest.id > newest.current.id)
       void show({ viewId: latest.id, commit: undefined });
     newest.current = { workspaceId: currentWorkspace.id, id: latest?.id ?? 0 };
-  }, [currentWorkspace?.id, views, pr.commits]);
+  }, [currentWorkspace?.id, views, pr.commits, pr.snapshot]);
   const canvasView = (viewId !== null && views?.find((v) => v.id === viewId)) || null;
-  const range = commit
+  // Without either, the diff: all of it, or only what's on GitHub or only the local changes on top (ADR 0028). The
+  // local changes are the live worktree, like all of it; the rest are pinned ranges.
+  const scope = s.scope ?? "all";
+  const range: { base: string; head?: string } | null = commit
     ? { base: commit.parent, head: commit.sha }
     : canvasView
       ? { base: canvasView.base, head: canvasView.head }
-      : null;
+      : pr.commits && scope === "pushed"
+        ? { base: pr.commits.mergeBase, head: pr.commits.head }
+        : pr.commits && scope === "local"
+          ? { base: pr.commits.head }
+          : null;
 
   // The workspace's entries, as the canvas shows them (ADR 0015: the live diff, or the range picked). An explanation or
   // finding shows only with its view.
@@ -402,6 +416,39 @@ export function App() {
     void show({ viewId: id, commit: undefined, file: undefined, at: undefined });
   const pickCommit = (picked: Commit | null) =>
     void show({ commit: picked ?? undefined, viewId: null, file: undefined, at: undefined });
+  const pickScope = (picked: "all" | "pushed" | "local") =>
+    void show({
+      scope: picked === "all" ? undefined : picked,
+      commit: undefined,
+      viewId: null,
+      file: undefined,
+      at: undefined,
+    });
+  // Push and Open Pull Request… (ADR 0028) go to GitHub, so they ask first. What went wrong shows in the Commits pane.
+  const [gitProblem, setGitProblem] = useState<string | null>(null);
+  const pushed = async (w: Workspace, result: { status: string; message?: string }) => {
+    setGitProblem(result.status === "ok" ? null : (result.message ?? `GitHub: ${result.status}`));
+    await queryClient.invalidateQueries({ queryKey: ["openWorktree", w.id] });
+    await queryClient.invalidateQueries({ queryKey: ["listWorkspaces", w.projectId] });
+    await changed({ workspaceId: w.id, what: "worktree" });
+  };
+  const push = async (w: Workspace) => {
+    const ok = await window.coxswain.confirm({
+      message: `Push ${w.branch ? `“${w.branch}”` : "the PR's branch"} to GitHub?`,
+      detail: "Its commits that aren't pushed yet go to GitHub. Uncommitted changes stay here.",
+      action: "Push",
+    });
+    if (ok) await pushed(w, await window.coxswain.push(w.id));
+  };
+  const openPullRequest = async (w: Workspace) => {
+    const ok = await window.coxswain.confirm({
+      message: `Open a pull request for “${w.branch}” into “${w.baseBranch}”?`,
+      detail:
+        "Pushes the branch to GitHub and opens a draft pull request, then shows it in your browser to finish its title and description. Uncommitted changes aren't in it.",
+      action: "Open Pull Request",
+    });
+    if (ok) await pushed(w, await window.coxswain.openPullRequest(w.id));
+  };
   // The one way to show a whole file: on the canvas, at `line` if given, with the Navigator on Files and the file
   // revealed there. Files, Open Quickly, Go to Definition and Find Usages all go through it. Stable, so the memoised
   // Viewers don't all redraw.
@@ -516,6 +563,35 @@ export function App() {
       enabled: ready && v.id !== canvasView?.id,
       run: () => showView(v.id),
     })),
+    ...(
+      [
+        ["all", "Show All Changes"],
+        [
+          "pushed",
+          currentWorkspace?.prNumber !== null
+            ? "Show Only the PR's Changes"
+            : "Show Only Pushed Changes",
+        ],
+        ["local", "Show Only Local Changes"],
+      ] as const
+    ).map(([value, title]) => ({
+      id: `scope:${value}`,
+      title,
+      enabled: ready && (scope !== value || !!range),
+      run: () => pickScope(value),
+    })),
+    {
+      id: "push",
+      title: "Push",
+      enabled: ready && currentWorkspace.prNumber !== null,
+      run: () => void push(currentWorkspace!),
+    },
+    {
+      id: "open-pull-request",
+      title: "Open Pull Request…",
+      enabled: ready && currentWorkspace.prNumber === null,
+      run: () => void openPullRequest(currentWorkspace!),
+    },
     newViewAction("guide", "New View (guide)"),
     newViewAction("review", "New View (review)"),
     newViewAction("data model", "New View (data model)"),
@@ -540,9 +616,9 @@ export function App() {
     },
     ...workspaces.map((w) => ({
       id: `workspace:${w.id}`,
-      title: `Open Workspace: PR #${w.prNumber}`,
+      title: `Open Workspace: ${workspaceLabel(w)}`,
       enabled: w.id !== currentWorkspace?.id,
-      run: () => void selectWorkspace(w.prNumber),
+      run: () => void selectWorkspace(w.id),
     })),
     {
       id: "new-workspace",
@@ -597,8 +673,9 @@ export function App() {
     return (
       <NewWorkspace
         project={current}
-        openPrNumbers={workspaces.map((w) => w.prNumber)}
-        onSelect={selectWorkspace}
+        openPrNumbers={workspaces.flatMap((w) => (w.prNumber !== null ? [w.prNumber] : []))}
+        onSelect={newPullWorkspace}
+        onBranch={newBranchWorkspace}
         onClose={close}
       />
     );
@@ -627,7 +704,7 @@ export function App() {
           if (picked === null) setScreen("projects");
           else if (picked !== `${current.owner}/${current.name}`) await selectProject(picked);
         }}
-        onSelect={selectWorkspace}
+        onSelect={(w) => void selectWorkspace(w.id)}
         onRemove={removeWorkspace}
         onNew={() => setScreen("new-workspace")}
       />
@@ -670,7 +747,10 @@ export function App() {
             commit={commit}
             view={canvasView}
             views={views ?? []}
-            prHead={pr.commits?.head}
+            snapshot={pr.snapshot}
+            scope={scope}
+            hasPr={currentWorkspace.prNumber !== null}
+            onScope={pickScope}
             onShowView={showView}
             onRemoveView={removeView}
             onNewView={newView}
@@ -701,8 +781,13 @@ export function App() {
                       <Commits
                         workspaceId={currentWorkspace.id}
                         mergeBase={pr.commits.mergeBase}
+                        head={pr.commits.head}
+                        canOpenPr={currentWorkspace.prNumber === null}
+                        problem={gitProblem}
                         current={commit}
                         onPick={pickCommit}
+                        onPush={() => void push(currentWorkspace)}
+                        onOpenPullRequest={() => void openPullRequest(currentWorkspace)}
                       />
                     )
                   ) : (
@@ -725,6 +810,7 @@ export function App() {
                         reviewed={reviewed}
                         showReviewed={viewSettings.showReviewed}
                         entries={entries}
+                        local={range ? undefined : (pr.local ?? undefined)}
                         selected={opened?.kind === "file" ? opened.path : undefined}
                         onOpen={open}
                       />
@@ -789,7 +875,9 @@ export function App() {
                         </div>
                       )
                     )}
-                    {canvasView && canvasView.head !== pr.commits.head && <StaleViewNotice />}
+                    {canvasView && pr.snapshot && canvasView.head !== pr.snapshot && (
+                      <StaleViewNotice />
+                    )}
                     {(
                       sections ?? [
                         {
@@ -911,11 +999,12 @@ function restoreScroll(canvas: HTMLElement, s: Scroll) {
   setTimeout(go);
 }
 
-// Stale (ADR 0023): the PR moved on since the view was made. The view stays as it was.
+// Stale (ADR 0023, 0028): the worktree moved on since the view was made, by new commits or local changes. The view
+// stays as it was.
 function StaleViewNotice() {
   return (
     <div className="border-b border-amber-200 bg-amber-50 px-4 py-1.5 text-xs dark:border-amber-900 dark:bg-amber-950">
-      The PR has new commits since this view. It still shows the PR as it was.
+      The code has changed since this view. It still shows the changes as they were.
     </div>
   );
 }

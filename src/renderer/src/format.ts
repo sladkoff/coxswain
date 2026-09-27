@@ -1,9 +1,14 @@
 import type { ReviewEntry } from "../../core/review";
+import type { Workspace } from "../../core/workspaces";
 
 export const count = (n: number, word: string, plural = `${word}s`) =>
   `${n} ${n === 1 ? word : plural}`;
 export const shortDateTime = (iso: string) =>
   new Date(iso).toLocaleString([], { dateStyle: "short", timeStyle: "short" });
+
+// A workspace by its PR, or its branch until it has one (ADR 0028).
+export const workspaceLabel = (w: Workspace) =>
+  w.prNumber !== null ? `PR #${w.prNumber}` : `Branch ${w.branch}`;
 
 // The workspace's notes and questions on each file, as the Navigator shows them.
 // Replies, follow-ups and answers are part of their thread, so they don't count.
