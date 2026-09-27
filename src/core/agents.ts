@@ -97,6 +97,7 @@ const agents: Record<
     }),
     // Names checked against the adapter's OPTION_REBUILDS_SESSION (0.81.2).
     meta: (o) => ({
+      ...(o.mcp?.length && { systemPrompt: { append: paneContext } }),
       claudeCode: {
         options: {
           // Agents the user runs (another Electron app, say) mustn't inherit Electron-as-Node from the adapter.
@@ -108,6 +109,14 @@ const agents: Record<
     auto: "auto",
   },
 };
+
+// Appended to Claude Code's system prompt in the agent pane (ADR 0023), so the agent knows where it is and what its
+// coxswain tools are for; the tools' own descriptions and results say how to use them.
+const paneContext = `You are running inside coxswain, a desktop app for reviewing a pull request's changes. The user sees
+the diff beside this chat. Messages starting with [Comment on …] or [Review · …] are review comments they sent you from
+the diff: make the change asked for, or answer the question. The mcp__coxswain tools put things in their review: a guide
+through the changes (start_guide, add_group), explanations of lines (add_explanation) and, when they ask for a review,
+findings on lines (add_finding). Use them, and your review skills, when the user asks for a guide or a review.`;
 
 // ponytail: PATH as the app got it, like `gh`; a login shell's PATH if coxswain is started from the Dock.
 export function claudeOnPath(): string {

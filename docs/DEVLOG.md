@@ -12,6 +12,9 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
   grew from (`upsert` in `ChatEntry.tsx`). A question's answer entry is still saved whole when the turn ends.
 - **A message sent in the agent pane shows at once**, with the composer cleared, before the core has started the
   session's adapter (seconds for a new session). The core no longer echoes the pane's own message back to it.
+- **The agent knows it's in coxswain.** Agent pane sessions append a short context to Claude Code's system prompt
+  (`paneContext` in `agents.ts`, ADR 0023): a PR review app, what the comment headers mean, what the coxswain tools
+  are for.
 
 ### Tech debt
 
