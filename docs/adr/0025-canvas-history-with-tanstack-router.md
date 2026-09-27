@@ -20,7 +20,7 @@ drawn after they're read.
 
 1. **What the canvas shows is the location's search**, in TanStack Router (`@tanstack/react-router`, pinned) with
    memory history: `CanvasSearch` in `src/renderer/src/router.ts` (workspace, _Files_ toggle, whole file and line,
-   file picked in _Diffs_, commit, guide). There's one route; the canvas has no pages. Every change is a
+   file picked in _Diffs_, commit, view). There's one route; the canvas has no pages. Every change is a
    `navigate()`, so every change is an entry, and Back and Forward are `history.back()` and `history.forward()`.
 2. **One history for the window, across workspaces.** Opening a workspace is an entry; Back or Forward to another
    workspace's entry opens that workspace again. The workspace shown still comes from SQLite (the latest opened); the

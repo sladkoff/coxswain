@@ -257,7 +257,7 @@ function EditBox(props: { body: string; onSave: (body: string) => void; onCancel
 // Who wrote an entry the agent wrote, and why (glossary).
 const agentLabels: Partial<Record<ReviewEntry["kind"], string>> = {
   answer: "Agent",
-  explanation: "Guide",
+  explanation: "Explanation",
   finding: "Finding",
 };
 

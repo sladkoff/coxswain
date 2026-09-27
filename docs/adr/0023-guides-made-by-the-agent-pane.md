@@ -21,27 +21,29 @@ the agent's own thoughts. Reviewing is opt-in.
 1. **The agent pane's sessions get coxswain's tools.** The local HTTP MCP server
    ([ADR 0018](0018-agents-over-acp.md), 2) serves a stable path per workspace, `coxswain`, given to every agent pane
    session when it's opened, resumed or loaded, and allowed without asking (`mcp__coxswain`). Its tools:
-   - `start_guide`: a new guide, pinned to the merge base → the PR head as coxswain last saw it. Returns the range, the
-     changed files and how to make a good guide.
-   - `add_group`: appends a guide group (title, description, a file note per file, _generated_ or not) to the
-     workspace's latest guide. Paths are checked against the guide's changed files; a file goes in one group.
-   - `add_explanation`: an explanation (glossary) on lines of the guide's range.
+   - `start_view`: a new view, a guide or another kind, pinned to the merge base → the PR head as coxswain last saw
+     it. Returns the range, the changed files and how to write a good view.
+   - `write_section`: appends a section of markdown to the workspace's latest view, or replaces one. What a view holds
+     is in [ADR 0026](0026-views-in-markdown-with-mermaid.md); embedded paths are checked against the view's changed
+     files, and a file is embedded once.
+   - `add_explanation`: an explanation (glossary) on lines of the view's range.
    - `add_finding`: a finding (glossary) on lines, the agent's own concern or suggestion. Its description says to use
      it only when the user asked for a review.
      A short text appended to Claude Code's system prompt (`paneContext`) tells the agent it runs in coxswain, what the
      comment and review headers mean, and what the tools are for; how to use each stays in its description and result.
-2. **Any message can make a guide.** "Make me a guide" works, since the tools are always there. _New View_ in the canvas's
-   bar also offers _New View (guide)_ and _New View (review)_, which put a short message in the agent pane's
-   composer for the user to edit and send. How to guide lives in `start_guide`'s result, not in a setting.
-3. **Guides show in _Changes_.** A guide shown puts its groups in reading order (generated last, then _Not in the
-   guide_), with each group's title and description above its first file diff and each file note above its file diff.
-   Explanations and findings are entries (kinds `explanation`, `finding`) with the guide's id, shown as threads
-   between the lines only while their guide is shown, so the user can reply or send them back to the agent.
-4. **Guides stay pinned and are all kept.** A guide shows its range (merge base → head then), like a commit diff, not
-   the live worktree; once the PR head moves on it's _stale_. Every guide is kept and can be shown again from the
-   _Guide_ menu, for going back or for debugging. The newest is shown when it appears, and on opening a workspace if
+2. **Any message can make a view.** "Make me a guide" or "show me the data model" works, since the tools are always
+   there. _New View_ in the canvas's bar also offers a guide, a review, a data model, a data flow or a message of
+   the user's own, each a short message put in the agent pane's composer for the user to edit and send. How to guide
+   lives in `start_view`'s result, not in a setting.
+3. **Views show on the canvas.** A view shown puts its sections in order, and for a guide the files it doesn't embed
+   after them under _Not in the guide_. Explanations and findings are entries (kinds `explanation`, `finding`) with the
+   view's id, shown as threads between the lines only while their view is shown, so the user can reply or send them
+   back to the agent.
+4. **Views stay pinned and are all kept.** A view shows its range (merge base → head then), like a commit diff, not
+   the live worktree; once the PR head moves on it's _stale_. Every view is kept and can be shown again from its chip
+   in the canvas bar, for going back or for debugging. The newest is shown when it appears, and on opening a workspace if
    it isn't stale.
-5. **Reviewed carries over between guides** for file diffs that didn't change
+5. **Reviewed carries over between views** for file diffs that didn't change
    ([ADR 0014](0014-reviewed-follows-file-diff-contents.md)).
 
 ## Alternatives considered
@@ -59,5 +61,5 @@ the agent's own thoughts. Reviewing is opt-in.
 
 - A guide costs what the agent pane's session costs, on its model, and fills in as the agent calls the tools.
 - A guide is made in whichever session the agent pane talks to; its reasoning stays in that transcript.
-- The workspace's latest guide is the one the tools add to, so two sessions making guides at once would mix them.
-- Local changes aren't in a guide.
+- The workspace's latest view is the one the tools add to, so two sessions making views at once would mix them.
+- Local changes aren't in a view.

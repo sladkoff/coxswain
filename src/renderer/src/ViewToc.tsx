@@ -1,27 +1,26 @@
 import type { ChangedFile } from "../../core/git";
-import type { GuideGroup } from "../../core/guides";
 import type { ReviewEntry } from "../../core/review";
 import { ProgressBar } from "./components/layout";
 import { cn, divider, muted, selectable } from "./components/styles";
 import { Prose } from "./components/text";
 import { countItems, itemsTitle } from "./format";
 
-// A guide group as the canvas shows it: its file diffs; group null is the files in no group.
-type GuideSection = { group: GuideGroup | null; diffs: { file: ChangedFile }[] };
+// A view section as the canvas shows it: its title and file diffs; title null is a guide's files in no section.
+type Section = { title: string | null; diffs: { file: ChangedFile }[]; generated: boolean };
 
 type Props = {
-  sections: GuideSection[];
+  sections: Section[];
   reviewed: string[];
   entries: ReviewEntry[];
   current: number; // the section at the top of the canvas's scroll
   onPick: (i: number) => void;
 };
 
-// A guide's table of contents, left of the canvas while a guide shows: how many file diffs are reviewed in all, then
-// every group with how many of its file diffs are reviewed (✓ when all are) and the notes and questions on them. The
-// group being read is marked; a click scrolls to it.
+// A view's table of contents, left of the canvas while a view shows: how many file diffs are reviewed in all, then
+// every section with how many of its file diffs are reviewed (✓ when all are) and the notes and questions on them. The
+// section being read is marked; a click scrolls to it.
 // ponytail: fixed width, no Splitter; make it resizable like the Navigator if titles get cut.
-export function GuideToc({ sections, reviewed, entries, current, onPick }: Props) {
+export function ViewToc({ sections, reviewed, entries, current, onPick }: Props) {
   const all = sections.flatMap((s) => s.diffs);
   const reviewedCount = all.filter((d) => reviewed.includes(d.file.path)).length;
   const items = countItems(entries);
@@ -32,12 +31,14 @@ export function GuideToc({ sections, reviewed, entries, current, onPick }: Props
         divider,
       )}
     >
-      <div className="flex flex-col gap-1">
-        <ProgressBar value={reviewedCount} max={all.length} />
-        <span className={muted}>
-          {reviewedCount} of {all.length} reviewed
-        </span>
-      </div>
+      {all.length > 0 && (
+        <div className="flex flex-col gap-1">
+          <ProgressBar value={reviewedCount} max={all.length} />
+          <span className={muted}>
+            {reviewedCount} of {all.length} reviewed
+          </span>
+        </div>
+      )}
       {sections.map((s, i) => {
         const n = s.diffs.filter((d) => reviewed.includes(d.file.path)).length;
         const done = n === s.diffs.length;
@@ -59,11 +60,11 @@ export function GuideToc({ sections, reviewed, entries, current, onPick }: Props
             className={cn(
               "flex items-baseline gap-2 rounded px-1.5 py-1 text-left",
               selectable(i === current),
-              (done || s.group?.tags.includes("generated")) && muted,
+              ((done && s.diffs.length > 0) || s.generated) && muted,
             )}
           >
             <span className="min-w-0 flex-1">
-              {s.group ? <Prose inline>{s.group.title}</Prose> : "Not in the guide"}
+              {s.title !== null ? <Prose inline>{s.title}</Prose> : "Not in the guide"}
             </span>
             {itemCount > 0 && (
               <span
@@ -73,9 +74,11 @@ export function GuideToc({ sections, reviewed, entries, current, onPick }: Props
                 ✎ {itemCount}
               </span>
             )}
-            <span className={cn("shrink-0 tabular-nums", muted)}>
-              {done ? "✓" : `${n}/${s.diffs.length}`}
-            </span>
+            {s.diffs.length > 0 && (
+              <span className={cn("shrink-0 tabular-nums", muted)}>
+                {done ? "✓" : `${n}/${s.diffs.length}`}
+              </span>
+            )}
           </button>
         );
       })}

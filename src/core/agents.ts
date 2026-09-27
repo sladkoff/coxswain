@@ -8,7 +8,7 @@ import { Readable, Writable } from "node:stream";
 import * as acp from "@agentclientprotocol/sdk";
 import type { Db } from "./db";
 import { worktreePath } from "./git";
-import { guideTools } from "./guides";
+import { viewTools } from "./views";
 import { getWorkspaceRepo } from "./workspaces";
 
 // ADR 0018: every agent run is a session over the Agent Client Protocol, in one adapter process per agent.
@@ -148,9 +148,11 @@ const agents: Record<
 // coxswain tools are for; the tools' own descriptions and results say how to use them.
 const paneContext = `You are running inside coxswain, a desktop app for reviewing a pull request's changes. The user sees
 the diff beside this chat. Messages starting with [Comment on …] or [Review · …] are review comments they sent you from
-the diff: make the change asked for, or answer the question. The mcp__coxswain tools put things in their review: a guide
-through the changes (start_guide, add_group), explanations of lines (add_explanation) and, when they ask for a review,
-findings on lines (add_finding). Use them, and your review skills, when the user asks for a guide or a review.`;
+the diff: make the change asked for, or answer the question. The mcp__coxswain tools put views on the canvas beside the
+diff (start_view, write_section): a guide through the changes, or a view of one aspect (the data model, a data flow, or
+anything the user asks to see), in markdown with diagrams and embedded file diffs; explanations of lines
+(add_explanation); and, when they ask for a review, findings on lines (add_finding). Use them, and your review skills,
+when the user asks for a guide, a review, or to see or visualise something about the changes.`;
 
 // PATH as the app got it, like `gh` (a packaged app takes the login shell's, src/main/index.ts).
 export const claudeOnPath = () => onPath("claude", "Claude Code");
@@ -455,7 +457,7 @@ const serverUrl = async (path: string) =>
 // keeps the URL it was opened with.
 async function paneTools(db: Db, workspaceId: number): Promise<acp.McpServer[]> {
   const path = `workspace/${workspaceId}`;
-  toolsets.set(path, guideTools(db, workspaceId));
+  toolsets.set(path, viewTools(db, workspaceId));
   return [{ type: "http", name: "coxswain", url: await serverUrl(path), headers: [] }];
 }
 

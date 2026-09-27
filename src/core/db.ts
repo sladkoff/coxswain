@@ -63,6 +63,27 @@ const migrations = [
     created_at text not null,
     resolved_at text
   )`,
+  // ADR 0026: guides become views, sections of markdown whose diff fences embed file diffs. A guide's groups turn into
+  // sections: the title as a heading, the description, then each file's note and its diff fence.
+  `alter table guides rename to views;
+  alter table entries rename column guide_id to view_id;
+  alter table views add column title text not null default 'Guide';
+  alter table views add column guide integer not null default 1;
+  alter table views add column sections text not null default '[]';
+  update views set sections = (
+    select coalesce(json_group_array(md), '[]') from (
+      select '## ' || json_extract(g.value, '$.title') || char(10, 10) || json_extract(g.value, '$.description') || coalesce((
+        select group_concat(
+          char(10, 10) || coalesce(json_extract(g.value, '$.notes."' || p.value || '"') || char(10, 10), '') ||
+            '\`\`\`diff path="' || p.value || '"' ||
+            iif(json_extract(g.value, '$.tags') like '%"generated"%', ' generated', '') || char(10) || '\`\`\`',
+          '')
+        from json_each(g.value, '$.paths') p), '') as md
+      from json_each(views.groups) g
+      order by json_extract(g.value, '$.tags') like '%"generated"%', g.key
+    )
+  );
+  alter table views drop column groups`,
 ];
 
 // ADR 0016: the tables as the migrations above leave them. Change this with every migration that changes a table.
@@ -83,12 +104,14 @@ type Tables = {
     created_at: string;
   };
   reviewed_files: { workspace_id: number; path: string; fingerprint: string };
-  guides: {
+  views: {
     id: Generated<number>;
     workspace_id: number;
     base: string;
     head: string;
-    groups: Generated<string>;
+    title: string;
+    guide: number; // 1: a guide, which goes through every changed file
+    sections: Generated<string>; // JSON, the markdown of each section
     created_at: string;
   };
   settings: { key: string; value: string };
@@ -98,7 +121,7 @@ type Tables = {
     kind: "note" | "question" | "answer" | "explanation" | "finding";
     body: string;
     parent_id: number | null;
-    guide_id: number | null;
+    view_id: number | null;
     path: string | null;
     side: Side | null;
     start_line: number | null;

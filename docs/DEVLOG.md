@@ -3,6 +3,39 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-27 — Views: markdown, diagrams and embedded file diffs
+
+### What works
+
+- **Views** (#1, ADR 0026): the agent makes views of the PR with coxswain's tools, not only guides. A view is a title
+  and sections of markdown: prose, tables, ` ```mermaid ` diagrams, and ` ```diff path=… ` fences that embed a file
+  diff as in the diff, with threads, explanations, findings and _Reviewed_. The core parses sections; the UI renders
+  them.
+- **Guides are views** that go through every changed file; files no section embeds show under _Not in the guide_.
+  Existing guides were migrated into sections (their explanations, findings and replies kept). Other views show
+  only what they embed.
+- **Tools:** `start_view` (title, guide) and `write_section` (append, or replace section N) replace `start_guide` and
+  `add_group`. `start_view`'s result teaches the syntax and how to write a guide or another view.
+- **The canvas bar** names each view's chip by its title (_Guide_, _Data flow_, _Guide 2_ for a repeat). _New View_'s
+  menu adds _data model_, _data flow_ and a message of your own. The table of contents lists sections, with counts only
+  for sections that embed file diffs.
+- **Mermaid diagrams anywhere markdown shows**, chat and threads included: loaded on the first diagram, themed for
+  light or dark, and a diagram that doesn't parse shows its code and the error.
+- Explanations are labelled _Explanation_, not _Guide_, since any view can have them.
+- Checked in the built app driven with Playwright's `_electron`, on a copy of a real database: a migrated guide
+  (sections, table of contents, a low-lighted generated section, an explanation between the lines) and a data flow
+  view (a flowchart, a table, an embedded file diff, a broken diagram's error).
+
+### Tech debt
+
+- A diagram's theme is read when it's drawn, not followed when the system theme changes (`ponytail:` in
+  `components/text.tsx`).
+- The agent doesn't see its diagrams drawn, so a broken one is only shown to the user.
+- An embed is a whole file diff; embedding only some of its lines isn't built.
+- Reviewed file diffs are hidden in every view as in a guide, which can hide the one file diff a data model view is
+  about; _Show Reviewed Files_ brings it back.
+- Mermaid is about 1.2 MB of the renderer bundle, in its own chunk.
+
 ## 2026-09-27 — Diff and numbered guides in the canvas bar
 
 ### What works

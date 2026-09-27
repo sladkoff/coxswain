@@ -3,7 +3,6 @@ import { useQuery } from "@tanstack/react-query";
 import { useLocation, useNavigate, useRouter, useSearch } from "@tanstack/react-router";
 import { type UIEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangedFile, Commit } from "../../core/git";
-import type { GuideGroup } from "../../core/guides";
 import type { NewEntry, ReviewEntry } from "../../core/review";
 import type { Workspace } from "../../core/workspaces";
 import { Agents } from "./Agents";
@@ -13,8 +12,6 @@ import { Commits } from "./Commits";
 import { Button, SegmentedControl } from "./components/button";
 import { Centered, Splitter, viewerMin } from "./components/layout";
 import { cn, divider, muted, titleBar } from "./components/styles";
-import { GuideFileNote, GuideGroupHeader } from "./GuideGroup";
-import { GuideToc } from "./GuideToc";
 import { Navigator, type NavigatorView } from "./Navigator";
 import { NewWorkspace } from "./NewWorkspace";
 import { Onboarding } from "./Onboarding";
@@ -26,6 +23,8 @@ import { Settings } from "./Settings";
 import { Setup } from "./Setup";
 import { StatusBar } from "./StatusBar";
 import { usePullRequest } from "./usePullRequest";
+import { ViewProse, ViewSectionHeader } from "./ViewSection";
+import { ViewToc } from "./ViewToc";
 import type { ViewSettings } from "../../preload";
 import { type Opened, type Turn, Viewer } from "./Viewer";
 import { WorkspaceRail } from "./WorkspaceRail";
@@ -154,52 +153,52 @@ export function App() {
     if (was?.ws === currentWorkspace.id && was.head !== pr.commits.head && shown.current.commit)
       void show({ commit: undefined }, true);
   }, [currentWorkspace?.id, pr.commits]);
-  // The guide shown over Changes (ADR 0023), or none. The newest shows when it appears, and on opening a workspace if
-  // it isn't stale. A guide and a commit are both a pinned range, so picking one drops the other.
-  const guides = useQuery({
-    ...core("listGuides", currentWorkspace?.id ?? 0),
+  // The view shown on the canvas (ADR 0023, 0026), or none. The newest shows when it appears, and on opening a
+  // workspace if it isn't stale. A view and a commit are both a pinned range, so picking one drops the other.
+  const views = useQuery({
+    ...core("listViews", currentWorkspace?.id ?? 0),
     enabled: !!currentWorkspace,
   }).data;
-  // On opening a workspace the newest shows in place (unless one was chosen); a new guide shows as an entry of its own.
-  const guideId = s.guide ?? null;
+  // On opening a workspace the newest shows in place (unless one was chosen); a new view shows as an entry of its own.
+  const viewId = s.viewId ?? null;
   const newest = useRef<{ workspaceId: number; id: number } | null>(null);
   useEffect(() => {
-    if (!currentWorkspace || !guides || !pr.commits) return;
-    const latest = guides[0];
+    if (!currentWorkspace || !views || !pr.commits) return;
+    const latest = views[0];
     const now = shown.current;
     if (newest.current?.workspaceId !== currentWorkspace.id) {
-      if (now.guide === undefined && !now.commit && latest?.head === pr.commits.head)
-        void show({ guide: latest.id }, true);
+      if (now.viewId === undefined && !now.commit && latest?.head === pr.commits.head)
+        void show({ viewId: latest.id }, true);
     } else if (latest && latest.id !== newest.current.id)
-      void show({ guide: latest.id, commit: undefined });
+      void show({ viewId: latest.id, commit: undefined });
     newest.current = { workspaceId: currentWorkspace.id, id: latest?.id ?? 0 };
-  }, [currentWorkspace?.id, guides, pr.commits]);
-  const guide = (guideId !== null && guides?.find((g) => g.id === guideId)) || null;
+  }, [currentWorkspace?.id, views, pr.commits]);
+  const canvasView = (viewId !== null && views?.find((v) => v.id === viewId)) || null;
   const range = commit
     ? { base: commit.parent, head: commit.sha }
-    : guide
-      ? { base: guide.base, head: guide.head }
+    : canvasView
+      ? { base: canvasView.base, head: canvasView.head }
       : null;
 
   // The workspace's entries, as the canvas shows them (ADR 0015: the live diff, or the range picked). An explanation or
-  // finding shows only with its guide.
+  // finding shows only with its view.
   const base = range?.base ?? pr.commits?.mergeBase;
   const allEntries = useQuery({
     ...core("listEntries", currentWorkspace?.id ?? 0, base ?? "", range?.head),
     enabled: !!currentWorkspace && !!base,
   }).data;
   const entries = useMemo(
-    () => allEntries?.filter((e) => !e.guideId || e.guideId === guide?.id) ?? noEntries,
-    [allEntries, guide?.id],
+    () => allEntries?.filter((e) => !e.viewId || e.viewId === canvasView?.id) ?? noEntries,
+    [allEntries, canvasView?.id],
   );
   // Callbacks handed to the Viewers are stable (useCallback), so a memoised Viewer doesn't redraw its file diff.
   // Paths of the reviewed file diffs: the live diff's, reloaded with the changes, since a file diff that changed is no
-  // longer reviewed (ADR 0014); or at a guide's head, where they stay as they were.
+  // longer reviewed (ADR 0014); or at a view's head, where they stay as they were.
   const mergeBase = pr.commits?.mergeBase;
-  const reviewedBase = guide?.base ?? mergeBase;
+  const reviewedBase = canvasView?.base ?? mergeBase;
   const reviewed =
     useQuery({
-      ...core("listReviewed", currentWorkspace?.id ?? 0, reviewedBase ?? "", guide?.head),
+      ...core("listReviewed", currentWorkspace?.id ?? 0, reviewedBase ?? "", canvasView?.head),
       enabled: !!currentWorkspace && !!reviewedBase && !!pr.changed,
     }).data ?? noPaths;
   const markReviewed = useCallback(
@@ -207,9 +206,9 @@ export function App() {
       void (
         currentWorkspace &&
         reviewedBase &&
-        mark(currentWorkspace.id, reviewedBase, path, on, guide?.head)
+        mark(currentWorkspace.id, reviewedBase, path, on, canvasView?.head)
       ),
-    [currentWorkspace?.id, reviewedBase, guide?.head],
+    [currentWorkspace?.id, reviewedBase, canvasView?.head],
   );
   // Questions' turns by thread, kept here so they outlive the Viewer showing them. The reply streams in as chat
   // entries; once the turn ends it's an answer entry. A tool use to approve waits in permission until answered.
@@ -319,49 +318,55 @@ export function App() {
     () => diffDiffs?.filter(isShown),
     [diffDiffs, reviewed, viewSettings.showReviewed],
   );
-  // With a guide, its groups in reading order: the groups as added, the files in none, then the generated groups.
-  // Groups whose file diffs are all reviewed stay listed (the table of contents shows them); the canvas skips them.
+  // With a view, its sections in order: prose and the file diffs it embeds; for a guide, then the files in none.
+  // Sections whose file diffs are all reviewed stay listed (the table of contents shows them); the canvas skips them.
   const sections = useMemo(() => {
-    if (!guide || !diffDiffs) return null;
+    if (!canvasView || !diffDiffs) return null;
     const byPath = new Map(diffDiffs.map((d) => [d.file.path, d]));
-    const listed = new Set(guide.groups.flatMap((g) => g.paths));
-    const section = (group: GuideGroup | null, ds: typeof diffDiffs) => ({
-      group,
-      diffs: ds,
-      shown: ds.filter(isShown),
+    const section = (title: string | null, parts: SectionPart[], generated: boolean) => {
+      const diffs = parts.flatMap((p) => (p.kind === "diff" ? [p.d] : []));
+      return { title, parts, generated, diffs, shown: diffs.filter(isShown) };
+    };
+    const listed = new Set<string>();
+    const all = canvasView.sections.map((x) => {
+      const parts = x.parts.flatMap((p): SectionPart[] => {
+        if (p.kind === "prose") return [p];
+        const d = byPath.get(p.path);
+        if (!d) return [];
+        listed.add(p.path);
+        return [{ kind: "diff", d, generated: p.generated }];
+      });
+      const embeds = parts.filter((p) => p.kind === "diff");
+      return section(x.title, parts, embeds.length > 0 && embeds.every((p) => p.generated));
     });
-    const of = (g: GuideGroup) =>
-      section(
-        g,
-        g.paths.flatMap((p) => byPath.get(p) ?? []),
+    const rest = diffDiffs.filter((d) => !listed.has(d.file.path));
+    if (canvasView.guide && rest.length)
+      all.push(
+        section(
+          null,
+          rest.map((d) => ({ kind: "diff", d, generated: false })),
+          false,
+        ),
       );
-    const generated = (g: GuideGroup) => g.tags.includes("generated");
-    return [
-      ...guide.groups.filter((g) => !generated(g)).map(of),
-      section(
-        null,
-        diffDiffs.filter((d) => !listed.has(d.file.path)),
-      ),
-      ...guide.groups.filter(generated).map(of),
-    ].filter((x) => x.diffs.length);
-  }, [guide, diffDiffs, reviewed, viewSettings.showReviewed]);
-  // The table of contents: the group at the top of the canvas's scroll, and a group picked while it was hidden (all
-  // its file diffs reviewed), scrolled to once Show Reviewed Files has shown it.
-  const [currentGroup, setCurrentGroup] = useState(0);
-  const [pendingGroup, setPendingGroup] = useState<number | null>(null);
-  const scrollToGroup = (i: number) =>
-    document.getElementById(`guide-group-${i}`)?.scrollIntoView();
+    return all;
+  }, [canvasView, diffDiffs, reviewed, viewSettings.showReviewed]);
+  // The table of contents: the section at the top of the canvas's scroll, and a section picked while it was hidden
+  // (all its file diffs reviewed), scrolled to once Show Reviewed Files has shown it.
+  const [currentSection, setCurrentSection] = useState(0);
+  const [pendingSection, setPendingSection] = useState<number | null>(null);
+  const scrollToSection = (i: number) =>
+    document.getElementById(`view-section-${i}`)?.scrollIntoView();
   useEffect(() => {
-    if (pendingGroup === null) return;
-    scrollToGroup(pendingGroup);
-    setPendingGroup(null);
-  }, [pendingGroup, viewSettings.showReviewed]);
-  const pickGroup = (i: number) => {
-    if (sections?.[i]?.shown.length) return scrollToGroup(i);
+    if (pendingSection === null) return;
+    scrollToSection(pendingSection);
+    setPendingSection(null);
+  }, [pendingSection, viewSettings.showReviewed]);
+  const pickSection = (i: number) => {
+    if (sections?.[i] && sectionShown(sections[i])) return scrollToSection(i);
     setViewSettings((v) => ({ ...v, showReviewed: true }));
-    setPendingGroup(i);
+    setPendingSection(i);
   };
-  // The last group whose top has scrolled past the top of the canvas (with a little slack) is the current one. Only
+  // The last section whose top has scrolled past the top of the canvas (with a little slack) is the current one. Only
   // the canvas's own scroll: file diffs also scroll sideways inside it.
   const onCanvasScroll = (e: UIEvent<HTMLDivElement>) => {
     const scroller = e.target as HTMLElement;
@@ -370,17 +375,17 @@ export function App() {
     if (!sections) return;
     const top = scroller.getBoundingClientRect().top + 40;
     const passed = sections.flatMap((_, i) => {
-      const el = document.getElementById(`guide-group-${i}`);
+      const el = document.getElementById(`view-section-${i}`);
       return el && el.getBoundingClientRect().top <= top ? [i] : [];
     });
-    setCurrentGroup(passed.at(-1) ?? sections.findIndex((x) => x.shown.length));
+    setCurrentSection(passed.at(-1) ?? sections.findIndex(sectionShown));
   };
   // A message for the agent pane's composer, from the new view menu; a new object each time, so the same one fills it
-  // again. The user sends it from the agent pane; the guide shows as soon as the agent starts it.
+  // again. The user sends it from the agent pane; the view shows as soon as the agent starts it.
   const [composerText, setComposerText] = useState<{ text: string }>();
   const newView = async () => setComposerText({ text: await window.coxswain.showNewViewMenu() });
   const pickCommit = (picked: Commit | null) =>
-    void show({ commit: picked ?? undefined, guide: null, file: undefined, at: undefined });
+    void show({ commit: picked ?? undefined, viewId: null, file: undefined, at: undefined });
   // The one way to show a whole file: on the canvas, at `line` if given, with the Navigator on Files and the file
   // revealed there. Files, Open Quickly, Go to Definition and Find Usages all go through it. Stable, so the memoised
   // Viewers don't all redraw.
@@ -418,7 +423,7 @@ export function App() {
       file: undefined,
       at: undefined,
       commit: undefined,
-      guide: root.guideId ?? shown.current.guide,
+      viewId: root.viewId ?? shown.current.viewId,
     });
     document.getElementById(`diff:${root.path}`)?.scrollIntoView();
     let tries = 20;
@@ -530,11 +535,11 @@ export function App() {
             onToggleLeftPane={toggleLeftPane}
             ready={!!pr.commits}
             commit={commit}
-            guide={guide}
-            guides={guides ?? []}
+            view={canvasView}
+            views={views ?? []}
             prHead={pr.commits?.head}
-            onShowGuide={(id) =>
-              void show({ guide: id, commit: undefined, file: undefined, at: undefined })
+            onShowView={(id) =>
+              void show({ viewId: id, commit: undefined, file: undefined, at: undefined })
             }
             onNewView={newView}
             onOpenQuickly={() => setQuickOpen(true)}
@@ -598,12 +603,12 @@ export function App() {
               </>
             )}
             {sections && !showFile && (
-              <GuideToc
+              <ViewToc
                 sections={sections}
                 reviewed={reviewed}
                 entries={entries}
-                current={currentGroup}
-                onPick={pickGroup}
+                current={currentSection}
+                onPick={pickSection}
               />
             )}
             <div
@@ -627,55 +632,80 @@ export function App() {
                   {/* Only the lines on screen are drawn. Hidden, not unmounted, under a whole file: it keeps its
                       scroll and read files for Back. ponytail: every file is still read from disk up front. */}
                   <Virtualizer className={cn("min-h-0 flex-1 overflow-auto", showFile && "hidden")}>
-                    {shownDiffs.length === 0 && (
-                      <div className={cn("p-4 text-xs", muted)}>
-                        {diffDiffs.length ? (
-                          <>
-                            All {diffDiffs.length} files reviewed.{" "}
-                            <Button
-                              variant="link"
-                              onClick={() => setViewSettings((s) => ({ ...s, showReviewed: true }))}
-                            >
-                              Show them
-                            </Button>
-                          </>
-                        ) : (
-                          "No changes"
-                        )}
-                      </div>
+                    {canvasView && !canvasView.guide && !canvasView.sections.length ? (
+                      <div className={cn("p-4 text-xs", muted)}>Nothing in this view yet.</div>
+                    ) : (
+                      (!canvasView || canvasView.guide) &&
+                      shownDiffs.length === 0 && (
+                        <div className={cn("p-4 text-xs", muted)}>
+                          {diffDiffs.length ? (
+                            <>
+                              All {diffDiffs.length} files reviewed.{" "}
+                              <Button
+                                variant="link"
+                                onClick={() =>
+                                  setViewSettings((s) => ({ ...s, showReviewed: true }))
+                                }
+                              >
+                                Show them
+                              </Button>
+                            </>
+                          ) : (
+                            "No changes"
+                          )}
+                        </div>
+                      )
                     )}
-                    {guide && guide.head !== pr.commits.head && <StaleGuideNotice />}
-                    {(sections ?? [{ group: undefined, diffs: diffDiffs, shown: shownDiffs }]).map(
+                    {canvasView && canvasView.head !== pr.commits.head && <StaleViewNotice />}
+                    {(
+                      sections ?? [
+                        {
+                          title: undefined,
+                          generated: false,
+                          diffs: diffDiffs,
+                          shown: shownDiffs,
+                          parts: shownDiffs.map((d) => ({ kind: "diff", d, generated: false })),
+                        },
+                      ]
+                    ).map(
                       (x, i) =>
-                        x.shown.length > 0 && (
+                        sectionShown(x) && (
                           <section
                             key={i}
-                            id={`guide-group-${i}`}
-                            className={x.group?.tags.includes("generated") ? "opacity-60" : ""}
+                            id={`view-section-${i}`}
+                            className={x.generated ? "opacity-60" : ""}
                           >
-                            {x.group !== undefined && (
-                              <GuideGroupHeader
-                                group={x.group}
+                            {x.title !== undefined && (
+                              <ViewSectionHeader
+                                title={x.title}
                                 files={x.diffs.length}
                                 reviewed={x.diffs.length - x.shown.length}
+                                generated={x.generated}
                               />
                             )}
-                            {x.shown.map((d) => (
-                              <div key={d.file.path} id={`diff:${d.file.path}`}>
-                                {x.group?.notes[d.file.path] && (
-                                  <GuideFileNote>{x.group.notes[d.file.path]}</GuideFileNote>
-                                )}
-                                <Viewer
-                                  stacked
-                                  opened={d}
-                                  {...viewerProps(
-                                    currentWorkspace,
-                                    range?.base ?? pr.commits!.mergeBase,
-                                    range?.head,
-                                  )}
-                                />
-                              </div>
-                            ))}
+                            {(x.parts as SectionPart[]).map((p, j) =>
+                              p.kind === "prose" ? (
+                                <ViewProse key={j}>{p.text}</ViewProse>
+                              ) : (
+                                isShown(p.d) && (
+                                  <div
+                                    key={p.d.file.path}
+                                    id={`diff:${p.d.file.path}`}
+                                    className={p.generated && !x.generated ? "opacity-60" : ""}
+                                  >
+                                    <Viewer
+                                      stacked
+                                      opened={p.d}
+                                      {...viewerProps(
+                                        currentWorkspace,
+                                        range?.base ?? pr.commits!.mergeBase,
+                                        range?.head,
+                                      )}
+                                    />
+                                  </div>
+                                )
+                              ),
+                            )}
                           </section>
                         ),
                     )}
@@ -699,6 +729,14 @@ export function App() {
     </div>
   );
 }
+
+// A part of a view section on the canvas: its markdown, or a file diff it embeds.
+type SectionPart =
+  | { kind: "prose"; text: string }
+  | { kind: "diff"; d: { kind: "diff"; file: ChangedFile }; generated: boolean };
+// A section shows unless all its file diffs are hidden (reviewed); one with none always does.
+const sectionShown = (x: { diffs: unknown[]; shown: unknown[] }) =>
+  !x.diffs.length || x.shown.length > 0;
 
 const canvasScroller = (canvas: HTMLElement) =>
   canvas.querySelector<HTMLElement>(":scope > .overflow-auto:not(.hidden)");
@@ -739,11 +777,11 @@ function restoreScroll(canvas: HTMLElement, s: Scroll) {
   setTimeout(go);
 }
 
-// Stale (ADR 0023): the PR moved on since the guide was made. The guide stays as it was.
-function StaleGuideNotice() {
+// Stale (ADR 0023): the PR moved on since the view was made. The view stays as it was.
+function StaleViewNotice() {
   return (
     <div className="border-b border-amber-200 bg-amber-50 px-4 py-1.5 text-xs dark:border-amber-900 dark:bg-amber-950">
-      The PR has new commits since this guide. It still shows the PR as it was.
+      The PR has new commits since this view. It still shows the PR as it was.
     </div>
   );
 }
