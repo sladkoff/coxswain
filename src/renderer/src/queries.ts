@@ -84,10 +84,11 @@ export function markReviewed(
   path: string,
   on: boolean,
   head?: string,
+  kind?: "diff" | "file",
 ) {
-  const { queryKey } = core("listReviewed", workspaceId, mergeBase, head);
+  const { queryKey } = core("listReviewed", workspaceId, mergeBase, head, kind);
   queryClient.setQueryData(queryKey, (v = []) => (on ? [...v, path] : v.filter((p) => p !== path)));
   window.coxswain
-    .setReviewed(workspaceId, mergeBase, path, on, head)
+    .setReviewed(workspaceId, mergeBase, path, on, head, kind)
     .catch(() => queryClient.invalidateQueries({ queryKey }));
 }

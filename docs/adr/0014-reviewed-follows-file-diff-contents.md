@@ -1,4 +1,4 @@
-# 14. Reviewed belongs to a file diff's contents
+# 14. Reviewed belongs to the contents reviewed
 
 Date: 2026-09-25
 
@@ -21,6 +21,11 @@ as what they reviewed is unchanged, in whichever range it shows up.
 2. **`reviewed_files` keeps one row per fingerprint**, so a pinned ✓ and a live one don't replace each other.
 3. **A file diff that changes is no longer reviewed.** A new guide, or the live diff after a push, shows ✓ for
    every file diff that didn't change: same base, same contents, same fingerprint.
+
+4. **Whole files have independent Reviewed marks** (#31). A source file embedded in a view is fingerprinted by
+   its contents alone, with a `file:` prefix separating it from diff fingerprints in the same table. The base and
+   snapshot commit identity do not affect that mark. An edit invalidates it in a new snapshot; old pinned views keep
+   it. Reviewing a whole file never marks its diff reviewed, or vice versa. Existing diff fingerprints are unchanged.
 
 ## Alternatives considered
 

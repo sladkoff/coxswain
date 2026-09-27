@@ -22,9 +22,9 @@ the agent's own thoughts. Reviewing is opt-in.
    ([ADR 0018](0018-agents-over-acp.md), 2) serves a stable path per workspace, `coxswain`, given to every agent pane
    session when it's opened, resumed or loaded, and allowed without asking (`mcp__coxswain`). Its tools:
    - `start_view`: a new view, a guide or another kind, pinned to the merge base → a snapshot of the worktree,
-     local changes included ([ADR 0028](0028-branch-workspaces-and-snapshots.md). Returns the range, the changed files and how to write a good view.
+     local changes included ([ADR 0028](0028-branch-workspaces-and-snapshots.md). Returns the range, the changed files, how to read source files, and how to write a good view; no changes are required.
    - `write_section`: appends a section of markdown to a view, or replaces one. What a view holds is in
-     [ADR 0026](0026-views-in-markdown-with-mermaid.md); embedded paths are checked against the view's changed files,
+     [ADR 0026](0026-views-in-markdown-with-mermaid.md); embedded diff paths are checked against the changed files and source paths against the snapshot,
      and a file is embedded once.
    - `remove_section`: removes a section from a view.
    - `list_views`: the workspace's views, with their ids, titles, ranges and section headings.
@@ -68,4 +68,4 @@ the agent's own thoughts. Reviewing is opt-in.
 - A guide costs what the agent pane's session costs, on its model, and fills in as the agent calls the tools.
 - A guide is made in whichever session the agent pane talks to; its reasoning stays in that transcript.
 - Two sessions making views at once keep apart only if the agent passes `view`; without it, both write to the newest.
-- Local changes aren't in a view.
+- Views include local changes through their pinned snapshot (ADR 0028).

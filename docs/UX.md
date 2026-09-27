@@ -17,7 +17,7 @@ bottom sums up the review.
 │ L1 ├─────────────────────────┼─────────┬────────────────────────────────┤
 │    │ L4 Agent pane           │ L2      │ L3 Canvas                      │
 │ P  │                         │ Navi-   │                                │
-│ ── │ agent chat              │ gator   │  file diffs, with threads      │
+│ ── │ agent chat              │ gator   │  files, diffs and diagrams     │
 │▌#12│                         │ or      │  (the agent and the human      │
 │ #34│                         │ Commits │   annotate it)                 │
 │ +  │ [message box]           │         ├────────────────────────────────┤
@@ -165,6 +165,13 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   prompt takes the place of _Working…_: _Agent wants to:_, the command or file, and the agent's options as
   buttons (_Yes_, _Always_, _No_); the turn waits until one is picked.
 
+Whole-code views (#31) work even when the workspace has no changes. The agent can trace a process with prose,
+diagrams and source files pinned to the view's snapshot. Source-file headers have _Reviewed_ and support the same
+line comments and explanations as diffs. A file's Reviewed mark is independent of its diff and survives into another
+view only if its contents match. Reviewed source files hide under _Show Reviewed Files_ just like diffs. The table
+of contents and bottom bar count the files and diffs in the view; the Navigator still represents the range's changes.
+A prose-only view has no reviewable files. An empty view says _Nothing in this view yet_.
+
 ## Across all levels
 
 - The borders of the agent pane and the Navigator can be dragged to resize them; the canvas takes the rest.
@@ -179,9 +186,7 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
    your PRs)? Probably an inbox; where it lives and what goes in it is to be decided.
 2. **Views:** should a view embed only some lines of a file diff, not the whole of it? Should a section get its own
    _Reviewed_? Does the agent pane need to show that a view is being made? Should the agent see the view as drawn
-   (a screenshot), not only whether its diagrams draw? A view that embeds only some of the changes still counts all of them: the bottom bar's
-   _N of M reviewed_ and the Navigator's _Files N_ are over the whole range, not the view. Correct, but it reads as if
-   the view left work undone; should they count the view's file diffs while one shows?
+   (a screenshot), not only whether its diagrams draw?
 3. **The review as a whole:** where do you write a comment that isn't on lines? _Post_ is still open. Should the PR's
    GitHub comments and reviews show in coxswain, and where?
 4. **Agents in L4:** tabs, a list, or split panes, and how running and finished agent sessions look.

@@ -2,7 +2,7 @@ import { Virtualizer } from "@pierre/diffs/react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation, useNavigate, useRouter, useSearch } from "@tanstack/react-router";
 import { type UIEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ChangedFile, Commit } from "../../core/git";
+import type { Commit } from "../../core/git";
 import type { PullRequest } from "../../core/github";
 import type { NewEntry, ReviewEntry } from "../../core/review";
 import type { View, ViewRequest } from "../../core/views";
@@ -29,7 +29,7 @@ import { usePullRequest } from "./usePullRequest";
 import { ViewProse, ViewSectionHeader } from "./ViewSection";
 import { ViewToc } from "./ViewToc";
 import type { ViewSettings } from "../../preload";
-import { type Opened, type Turn, Viewer } from "./Viewer";
+import { openedPath, type Opened, type Turn, Viewer } from "./Viewer";
 import { WorkspaceRail } from "./WorkspaceRail";
 
 // Stable empty lists: a new [] each render would redraw the memoised Viewers.
@@ -201,30 +201,37 @@ export function App() {
   // Paths of the reviewed file diffs: the live diff's, reloaded with the changes, since a file diff that changed is no
   // longer reviewed (ADR 0014); or at a view's head, where they stay as they were.
   const mergeBase = pr.commits?.mergeBase;
-  const reviewedBase = canvasView?.base ?? mergeBase;
+  const reviewedBase = range?.base ?? mergeBase;
   const reviewed =
     useQuery({
-      ...core("listReviewed", currentWorkspace?.id ?? 0, reviewedBase ?? "", canvasView?.head),
+      ...core("listReviewed", currentWorkspace?.id ?? 0, reviewedBase ?? "", range?.head),
       enabled: !!currentWorkspace && !!reviewedBase && !!pr.changed,
     }).data ?? noPaths;
+  const reviewedFiles =
+    useQuery({
+      ...core("listReviewed", currentWorkspace?.id ?? 0, reviewedBase ?? "", range?.head, "file"),
+      enabled: !!currentWorkspace && !!canvasView && !!reviewedBase,
+    }).data ?? noPaths;
+  const isReviewed = (opened: Opened) =>
+    (opened.kind === "file" ? reviewedFiles : reviewed).includes(openedPath(opened));
   // A ticked file diff is hidden unless Show Reviewed Files is on: the next one takes its place on screen, rather than
   // everything below moving up under the scroll. Show Reviewed Files through a ref, so the callback stays stable.
   const showReviewed = useRef(viewSettings.showReviewed);
   showReviewed.current = viewSettings.showReviewed;
   const markReviewed = useCallback(
-    (path: string, on: boolean) => {
+    (path: string, on: boolean, kind?: "file") => {
       if (!currentWorkspace || !reviewedBase) return;
       const scroller = canvas.current && canvasScroller(canvas.current);
       const diffs = [...(scroller?.querySelectorAll<HTMLElement>('[id^="diff:"]') ?? [])];
       const i = diffs.findIndex((el) => el.id === `diff:${path}`);
       const next = diffs[i + 1];
-      mark(currentWorkspace.id, reviewedBase, path, on, canvasView?.head);
+      mark(currentWorkspace.id, reviewedBase, path, on, range?.head, kind);
       if (!on || showReviewed.current || i < 0 || !next || !scroller) return;
       const top = scroller.getBoundingClientRect().top;
       const at = Math.max(diffs[i].getBoundingClientRect().top, top);
       restoreScroll(canvas.current!, { top: 0, anchor: next.id, offset: top - at });
     },
-    [currentWorkspace?.id, reviewedBase, canvasView?.head],
+    [currentWorkspace?.id, reviewedBase, range?.head],
   );
   // Questions' turns by thread, kept here so they outlive the Viewer showing them. The reply streams in as chat
   // entries; once the turn ends it's an answer entry. A tool use to approve waits in permission until answered.
@@ -328,8 +335,7 @@ export function App() {
     [!!range, rangeChanged, diffs],
   );
   // Reviewed file diffs are hidden unless Show Reviewed Files is on, as in the Navigator.
-  const isShown = (d: { file: ChangedFile }) =>
-    viewSettings.showReviewed || !reviewed.includes(d.file.path);
+  const isShown = (d: Opened) => viewSettings.showReviewed || !isReviewed(d);
   const shownDiffs = useMemo(
     () => diffDiffs?.filter(isShown),
     [diffDiffs, reviewed, viewSettings.showReviewed],
@@ -340,19 +346,20 @@ export function App() {
     if (!canvasView || !diffDiffs) return null;
     const byPath = new Map(diffDiffs.map((d) => [d.file.path, d]));
     const section = (title: string | null, parts: SectionPart[], generated: boolean) => {
-      const diffs = parts.flatMap((p) => (p.kind === "diff" ? [p.d] : []));
-      return { title, parts, generated, diffs, shown: diffs.filter(isShown) };
+      const files = parts.flatMap((p) => (p.kind === "code" ? [p.d] : []));
+      return { title, parts, generated, files, shown: files.filter(isShown) };
     };
     const listed = new Set<string>();
     const all = canvasView.sections.map((x) => {
       const parts = x.parts.flatMap((p): SectionPart[] => {
         if (p.kind === "prose") return [p];
-        const d = byPath.get(p.path);
+        const d: Opened | undefined =
+          p.kind === "file" ? { kind: "file", path: p.path } : byPath.get(p.path);
         if (!d) return [];
-        listed.add(p.path);
-        return [{ kind: "diff", d, generated: p.generated }];
+        if (p.kind === "diff") listed.add(p.path);
+        return [{ kind: "code", d, generated: p.generated }];
       });
-      const embeds = parts.filter((p) => p.kind === "diff");
+      const embeds = parts.filter((p) => p.kind === "code");
       return section(x.title, parts, embeds.length > 0 && embeds.every((p) => p.generated));
     });
     const rest = diffDiffs.filter((d) => !listed.has(d.file.path));
@@ -360,12 +367,13 @@ export function App() {
       all.push(
         section(
           null,
-          rest.map((d) => ({ kind: "diff", d, generated: false })),
+          rest.map((d) => ({ kind: "code", d, generated: false })),
           false,
         ),
       );
     return all;
-  }, [canvasView, diffDiffs, reviewed, viewSettings.showReviewed]);
+  }, [canvasView, diffDiffs, reviewed, reviewedFiles, viewSettings.showReviewed]);
+  const canvasFiles = sections?.flatMap((s) => s.files) ?? diffDiffs ?? [];
   // The table of contents: the section at the top of the canvas's scroll, and a section picked while it was hidden
   // (all its file diffs reviewed), scrolled to once Show Reviewed Files has shown it.
   const [currentSection, setCurrentSection] = useState(0);
@@ -824,6 +832,7 @@ export function App() {
               <ViewToc
                 sections={sections}
                 reviewed={reviewed}
+                reviewedFiles={reviewedFiles}
                 entries={entries}
                 current={currentSection}
                 onPick={pickSection}
@@ -851,15 +860,17 @@ export function App() {
                   {/* Only the lines on screen are drawn. Hidden, not unmounted, under a whole file: it keeps its
                       scroll and read files for Back. ponytail: every file is still read from disk up front. */}
                   <Virtualizer className={cn("min-h-0 flex-1 overflow-auto", showFile && "hidden")}>
-                    {canvasView && !canvasView.guide && !canvasView.sections.length ? (
+                    {canvasView &&
+                    !canvasView.sections.length &&
+                    (!canvasView.guide || !diffDiffs.length) ? (
                       <div className={cn("p-4 text-xs", muted)}>Nothing in this view yet.</div>
                     ) : (
-                      (!canvasView || canvasView.guide) &&
-                      shownDiffs.length === 0 && (
+                      (!canvasView || canvasFiles.length > 0) &&
+                      canvasFiles.every((file) => !isShown(file)) && (
                         <div className={cn("p-4 text-xs", muted)}>
-                          {diffDiffs.length ? (
+                          {canvasFiles.length ? (
                             <>
-                              All {diffDiffs.length} files reviewed.{" "}
+                              All {canvasFiles.length} files reviewed.{" "}
                               <Button
                                 variant="link"
                                 onClick={() =>
@@ -883,9 +894,9 @@ export function App() {
                         {
                           title: undefined,
                           generated: false,
-                          diffs: diffDiffs,
+                          files: diffDiffs,
                           shown: shownDiffs,
-                          parts: shownDiffs.map((d) => ({ kind: "diff", d, generated: false })),
+                          parts: shownDiffs.map((d) => ({ kind: "code", d, generated: false })),
                         },
                       ]
                     ).map(
@@ -899,8 +910,8 @@ export function App() {
                             {x.title !== undefined && (
                               <ViewSectionHeader
                                 title={x.title}
-                                files={x.diffs.length}
-                                reviewed={x.diffs.length - x.shown.length}
+                                files={x.files.length}
+                                reviewed={x.files.filter(isReviewed).length}
                                 generated={x.generated}
                               />
                             )}
@@ -910,14 +921,14 @@ export function App() {
                               ) : (
                                 isShown(p.d) && (
                                   <div
-                                    key={p.d.file.path}
-                                    id={`diff:${p.d.file.path}`}
+                                    key={openedPath(p.d)}
+                                    id={`diff:${openedPath(p.d)}`}
                                     className={p.generated && !x.generated ? "opacity-60" : ""}
                                   >
                                     <Viewer
                                       stacked
                                       opened={p.d}
-                                      reviewed={reviewed.includes(p.d.file.path)}
+                                      reviewed={isReviewed(p.d)}
                                       {...viewerProps(
                                         currentWorkspace,
                                         range?.base ?? pr.commits!.mergeBase,
@@ -941,8 +952,12 @@ export function App() {
           <StatusBar
             workspaceId={currentWorkspace.id}
             entries={entries}
-            files={diffPr.changed}
-            reviewed={reviewed}
+            files={
+              sections
+                ? canvasFiles.map((d) => (d.kind === "diff" ? d.file : { path: d.path }))
+                : diffPr.changed
+            }
+            reviewed={sections ? canvasFiles.filter(isReviewed).map(openedPath) : reviewed}
             turns={turns}
             onViewThread={viewThread}
           />
@@ -952,13 +967,13 @@ export function App() {
   );
 }
 
-// A part of a view section on the canvas: its markdown, or a file diff it embeds.
+// A part of a view section on the canvas: its markdown, or a source file or file diff it embeds.
 type SectionPart =
   | { kind: "prose"; text: string }
-  | { kind: "diff"; d: { kind: "diff"; file: ChangedFile }; generated: boolean };
-// A section shows unless all its file diffs are hidden (reviewed); one with none always does.
-const sectionShown = (x: { diffs: unknown[]; shown: unknown[] }) =>
-  !x.diffs.length || x.shown.length > 0;
+  | { kind: "code"; d: Opened; generated: boolean };
+// A section shows unless all its files and diffs are hidden (reviewed); one with none always does.
+const sectionShown = (x: { files: unknown[]; shown: unknown[] }) =>
+  !x.files.length || x.shown.length > 0;
 
 const canvasScroller = (canvas: HTMLElement) =>
   canvas.querySelector<HTMLElement>(":scope > .overflow-auto:not(.hidden)");

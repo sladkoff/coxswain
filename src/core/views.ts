@@ -3,11 +3,12 @@ import type { Db } from "./db";
 import {
   type ChangedFile,
   listChangedFiles,
+  listFilesAt,
   openedBefore,
   openWorktree,
   readTexts,
   snapshot,
-} from "./git";
+} from "./git.ts";
 
 // ADR 0023, 0026: a view (glossary) is made by the agent pane's session with the tools below. It's pinned to base →
 // head, the merge base → a snapshot of the worktree when it was started (ADR 0028), and holds sections of markdown; its explanations and findings
@@ -15,10 +16,10 @@ import {
 // removes one.
 
 // A section as the canvas shows it: its heading, then prose (markdown, with mermaid fences drawn as diagrams) and the
-// file diffs its diff fences embed. generated: the file is made by a tool, not written by hand; it's low-lighted.
+// source files and file diffs its fences embed. generated: the file is made by a tool, not written by hand; it's low-lighted.
 export type ViewPart =
   | { kind: "prose"; text: string }
-  | { kind: "diff"; path: string; generated: boolean };
+  | { kind: "diff" | "file"; path: string; generated: boolean };
 export type ViewSection = { title: string; parts: ViewPart[] };
 export type View = {
   id: number;
@@ -31,9 +32,9 @@ export type View = {
   createdAt: string;
 };
 
-// A diff fence: ```diff path=src/a.ts (or path="a b.ts"), optionally with the flag generated, closed by ```. A diff
-// fence without path= is an ordinary code block.
-const diffFence = /^ {0,3}```diff\s+(?=.*\bpath=)(.*)$/;
+// A source or diff fence: ```file path=src/a.ts or ```diff path="a b.ts", optionally generated, closed by ```.
+// A fence without path= is an ordinary code block.
+const codeFence = /^ {0,3}```(diff|file)\s+(?=.*\bpath=)(.*)$/;
 const fenceEnd = /^ {0,3}```\s*$/;
 const pathAttr = /\bpath=(?:"([^"]*)"|(\S+))/;
 
@@ -48,17 +49,17 @@ export function parseSection(markdown: string): ViewSection {
     prose = [];
   };
   for (let i = 0; i < lines.length; i++) {
-    const fence = diffFence.exec(lines[i]);
-    const path = fence && pathAttr.exec(fence[1]);
+    const fence = codeFence.exec(lines[i]);
+    const path = fence && pathAttr.exec(fence[2]);
     if (!fence || !path) {
       prose.push(lines[i]);
       continue;
     }
     flush();
     parts.push({
-      kind: "diff",
+      kind: fence[1] as "diff" | "file",
       path: path[1] ?? path[2],
-      generated: /\bgenerated\b/.test(fence[1].replace(pathAttr, "")),
+      generated: /\bgenerated\b/.test(fence[2].replace(pathAttr, "")),
     });
     while (i + 1 < lines.length && !fenceEnd.test(lines[i + 1])) i++;
     i++;
@@ -79,7 +80,7 @@ let checkDiagrams = async (codes: string[]): Promise<(string | null)[]> => codes
 export const setDiagramCheck = (check: typeof checkDiagrams) => void (checkDiagrams = check);
 
 const embedded = (sections: ViewSection[]) =>
-  sections.flatMap((s) => s.parts.flatMap((p) => (p.kind === "diff" ? [p.path] : [])));
+  sections.flatMap((s) => s.parts.flatMap((p) => (p.kind !== "prose" ? [p] : [])));
 
 const columns = [
   "id",
@@ -128,20 +129,20 @@ const tell = (workspaceId: number) => listeners.forEach((l) => l(workspaceId));
 // The messages the New View menu puts in the agent pane's composer. How to make a view is in start_view's result, so
 // one asked for in the agent's own words is made the same way.
 export const viewRequests = {
-  guide: "Make a guide to this PR's changes with coxswain's tools.",
+  guide: "Make a guide to this workspace's changes with coxswain's tools.",
   review:
-    "Make a guide to this PR's changes with coxswain's tools, and review them: add findings where you see bugs, risks or better ways.",
+    "Make a guide to this workspace's changes with coxswain's tools, and review them: add findings where you see bugs, risks or better ways.",
   "data model":
-    "Make a view with coxswain's tools of the data model this PR changes: the types, tables or schemas, how they relate, and what changed, as a diagram with the key file diffs.",
+    "Make a view with coxswain's tools of the data model this workspace contains: the types, tables or schemas, how they relate, and what changed, as a diagram with the key source files and any relevant diffs.",
   "data flow":
-    "Make a view with coxswain's tools of how data flows through the code this PR changes, from where it enters to where it's stored or shown, as a diagram with the key file diffs.",
+    "Make a view with coxswain's tools of how data flows through the code this workspace contains, from where it enters to where it's stored or shown, as a diagram with the key source files and any relevant diffs.",
   custom: "Make a view with coxswain's tools of ",
 };
 export type ViewRequest = keyof typeof viewRequests;
 
 const howToView = `How to write the view: add its sections in reading order with write_section. Each section is markdown
 (GitHub-flavoured: tables, lists, code) and starts with a "## " heading, which lists it in the view's table of contents.
-Two kinds of fenced blocks do more than show code:
+Three kinds of fenced blocks do more than show code:
 - A diagram: a \`\`\`mermaid block (flowchart, sequenceDiagram, erDiagram, classDiagram, stateDiagram-v2). Use erDiagram
   or classDiagram for data models, flowchart or sequenceDiagram for data flow. Keep diagrams small enough to read in a
   column; split a big one. write_section draws each diagram before saving the section, and refuses it with mermaid's
@@ -150,7 +151,11 @@ Two kinds of fenced blocks do more than show code:
   user reviews it, where they can comment. Add the word generated after the path for a file made by a tool rather than
   written by hand (lockfiles, generated clients or models, snapshots, build output); it's low-lighted. Each file can be
   embedded once in a view. A \`\`\`diff block without path= is an ordinary code block.
-Write a sentence or two before an embedded file diff saying what to look at in it.`;
+- A whole source file: \`\`\`file path=<repository-relative path>, closed by \`\`\` right after, embeds its contents at
+  the view's snapshot, even if it has no changes. Quote paths containing spaces. It supports line comments,
+  explanations and its own Reviewed mark, separate from the file's diff. Use this to trace existing code.
+Each path can be embedded once, as either a file or a diff. Views can contain only prose and diagrams and need no diff.
+Write a sentence or two before an embedded file or diff saying what to look at in it.`;
 
 const howToGuide = `How to make the guide:
 - Read the diffs, and the code around them where it helps.
@@ -164,10 +169,10 @@ const howToGuide = `How to make the guide:
   them with add_explanation. Explain; don't judge. A few good ones beat many obvious ones.
 - Only if the user asked for a review: add findings with add_finding on lines where you see a bug, a risk, a missing
   case or a better way. Otherwise add none.
-- When you're done, say in a few lines what the PR does and how the guide is laid out. The guide shows in the app as
+- When you're done, say in a few lines what the changes do and how the guide is laid out. The guide shows in the app as
   you add to it; don't repeat it in the chat.`;
 
-const howToOther = `This view shows only what you put in it: embed just the file diffs that matter to what it's about,
+const howToOther = `This view shows only what you put in it: embed just the source files or file diffs that matter to what it's about,
 and explain the rest with prose, tables and diagrams. When you're done, say in a line or two what it shows; it shows in
 the app as you add to it, so don't repeat it in the chat.`;
 
@@ -203,7 +208,10 @@ const viewArg = {
 const anchorSchema = {
   type: "object",
   properties: {
-    path: { type: "string", description: "The file, as listed by start_view" },
+    path: {
+      type: "string",
+      description: "A changed file, or any file at the view snapshot (side new)",
+    },
     side: {
       enum: ["new", "old"],
       description: '"new": lines of the file at the head; "old": removed lines, at the base',
@@ -233,10 +241,14 @@ async function addOnLines(
 ): Promise<string> {
   const view = await toolView(db, workspaceId, a.view);
   const file = (await changedFiles(db, view)).find((f) => f.path === a.path);
-  if (!file) throw new Error(`${a.path} isn't changed in the view's range`);
+  if (
+    !file &&
+    (a.side === "old" || !(await listFilesAt(db, workspaceId, view.head)).includes(a.path))
+  )
+    throw new Error(`${a.path} isn't a file on that side of the view`);
   const [start, end] = [a.start_line, a.end_line].sort((x, y) => x - y);
   const commit = a.side === "old" ? view.base : view.head;
-  const readPath = a.side === "old" ? (file.previousPath ?? a.path) : a.path;
+  const readPath = a.side === "old" ? (file?.previousPath ?? a.path) : a.path;
   const text = (await readTexts(db, workspaceId, [readPath], commit)).get(readPath);
   if (text == null) throw new Error(`${a.path} has no ${a.side} side`);
   const lines = text.split("\n");
@@ -262,9 +274,9 @@ async function addOnLines(
     })
     .execute();
   tell(workspaceId);
-  const shown = embedded(view.sections).includes(a.path)
+  const shown = embedded(view.sections).some((p) => p.path === a.path)
     ? ""
-    : view.guide
+    : view.guide && file
       ? ` ${a.path} isn't in a section yet; it shows under "Not in the guide" until it is.`
       : ` ${a.path} isn't embedded in the view, so it won't show until a section embeds it.`;
   return `Added the ${kind} on ${a.path}:${start}${end > start ? `-${end}` : ""} in view ${view.id}.${shown}`;
@@ -276,7 +288,7 @@ export function viewTools(db: Db, workspaceId: number): McpTool[] {
     {
       name: "start_view",
       description:
-        "Start a new view of the changes in coxswain, the app the user reads them in: sections of markdown, with diagrams and embedded file diffs the user can comment on. A guide is a view that walks through every changed file in reading order; other views show one aspect (the data model, a data flow, whatever the user asked for). Returns the range the view is pinned to, the changed files and how to write the view.",
+        "Start a new view of code or changes in coxswain, the app the user reads them in: sections of markdown, with diagrams, source files and file diffs the user can comment on. No diff is required. A guide is a view that walks through every changed file in reading order; other views show one aspect (the data model, a data flow, whatever the user asked for). Returns the range the view is pinned to, the changed files and how to write the view.",
       inputSchema: {
         type: "object",
         properties: {
@@ -300,7 +312,6 @@ export function viewTools(db: Db, workspaceId: number): McpTool[] {
         if (now.status !== "ok") throw new Error(now.message);
         const head = now.sha;
         const files = await changedFiles(db, { workspaceId, base: at.mergeBase, head });
-        if (!files.length) throw new Error("There are no changes to show");
         if (!v.title.trim()) throw new Error("title is empty");
         const { id } = await db
           .insertInto("views")
@@ -322,7 +333,8 @@ export function viewTools(db: Db, workspaceId: number): McpTool[] {
         return [
           `View ${id} started; the other tools write to it when given view: ${id}, or to the latest view without it. It's pinned to ${at.mergeBase} (the merge base) → ${head} (the worktree as it is now, uncommitted changes included, as a commit).`,
           `Read a diff with \`git diff ${at.mergeBase} ${head} -- <path>\`. Line numbers are the file's at the head (side "new") or, for removed lines, at the base (side "old").`,
-          `Changed files (status, lines added and removed, path):\n${listed.join("\n")}`,
+          `Read a source file with \`git show ${head}:<path>\`; list available files with \`git ls-tree -r --name-only ${head}\`. Source-file line annotations use side "new".`,
+          `Changed files (status, lines added and removed, path):\n${listed.join("\n") || "None. You can still explain existing code with source files, prose and diagrams."}`,
           howToView,
           v.guide ? howToGuide : howToOther,
         ].join("\n\n");
@@ -337,7 +349,7 @@ export function viewTools(db: Db, workspaceId: number): McpTool[] {
         properties: {
           markdown: {
             type: "string",
-            description: 'Starts with a "## " heading; may hold mermaid and diff fences',
+            description: 'Starts with a "## " heading; may hold mermaid, file and diff fences',
           },
           number: { type: "integer", description: "The section to replace; leave out to add one" },
           ...viewArg,
@@ -354,10 +366,25 @@ export function viewTools(db: Db, workspaceId: number): McpTool[] {
         const changed = (await changedFiles(db, view)).map((f) => f.path);
         const others = embedded(view.sections.filter((_, i) => i !== at));
         const mine = embedded([parseSection(markdown)]);
+        const files = mine.some((p) => p.kind === "file")
+          ? await listFilesAt(db, workspaceId, view.head)
+          : [];
         for (const [i, p] of mine.entries()) {
-          if (!changed.includes(p)) throw new Error(`${p} isn't changed in the view's range`);
-          if (others.includes(p) || mine.indexOf(p) !== i)
-            throw new Error(`${p} is already embedded in the view`);
+          if (!(p.kind === "diff" ? changed : files).includes(p.path))
+            throw new Error(
+              p.kind === "diff"
+                ? `${p.path} isn't changed in the view's range`
+                : `${p.path} isn't a file at the view's snapshot`,
+            );
+          if (
+            others.some((o) => o.path === p.path) ||
+            mine.slice(0, i).some((o) => o.path === p.path)
+          )
+            throw new Error(`${p.path} is already embedded in the view`);
+          if (view.guide && p.kind === "file" && changed.includes(p.path))
+            throw new Error(
+              `${p.path} is changed; embed its diff in a guide, or use a non-guide view for source files`,
+            );
         }
         const errors = (await checkDiagrams(diagrams(markdown))).flatMap((e, i) =>
           e ? [`Diagram ${i + 1} doesn't draw: ${e}`] : [],
@@ -373,7 +400,9 @@ export function viewTools(db: Db, workspaceId: number): McpTool[] {
         tell(workspaceId);
         const done = `Section ${at + 1} of view ${view.id} ${a.number === undefined ? "added" : "replaced"}.`;
         if (!view.guide) return done;
-        const all = new Set([...others, ...mine]);
+        const all = new Set(
+          [...others, ...mine].filter((p) => p.kind === "diff").map((p) => p.path),
+        );
         const left = changed.filter((p) => !all.has(p));
         return left.length
           ? `${done} ${left.length} files in no section yet: ${left.join(", ")}`
@@ -423,14 +452,14 @@ export function viewTools(db: Db, workspaceId: number): McpTool[] {
     {
       name: "add_explanation",
       description:
-        "Explain lines of a changed file in the view: what they do and why, to help the user read them. Call start_view first.",
+        "Explain lines of a file or file diff in the view: what they do and why, to help the user read them. Call start_view first.",
       inputSchema: anchorSchema,
       call: (a: AnchorArgs) => addOnLines(db, workspaceId, "explanation", a),
     },
     {
       name: "add_finding",
       description:
-        "Add a review finding on lines of a changed file in the view: a bug, risk, missing case or better way. Only when the user asked for a review. Call start_view first.",
+        "Add a review finding on lines of a file or file diff in the view: a bug, risk, missing case or better way. Only when the user asked for a review. Call start_view first.",
       inputSchema: anchorSchema,
       call: (a: AnchorArgs) => addOnLines(db, workspaceId, "finding", a),
     },
