@@ -201,13 +201,23 @@ export function App() {
       ...core("listReviewed", currentWorkspace?.id ?? 0, reviewedBase ?? "", canvasView?.head),
       enabled: !!currentWorkspace && !!reviewedBase && !!pr.changed,
     }).data ?? noPaths;
+  // A ticked file diff is hidden unless Show Reviewed Files is on: the next one takes its place on screen, rather than
+  // everything below moving up under the scroll. Show Reviewed Files through a ref, so the callback stays stable.
+  const showReviewed = useRef(viewSettings.showReviewed);
+  showReviewed.current = viewSettings.showReviewed;
   const markReviewed = useCallback(
-    (path: string, on: boolean) =>
-      void (
-        currentWorkspace &&
-        reviewedBase &&
-        mark(currentWorkspace.id, reviewedBase, path, on, canvasView?.head)
-      ),
+    (path: string, on: boolean) => {
+      if (!currentWorkspace || !reviewedBase) return;
+      const scroller = canvas.current && canvasScroller(canvas.current);
+      const diffs = [...(scroller?.querySelectorAll<HTMLElement>('[id^="diff:"]') ?? [])];
+      const i = diffs.findIndex((el) => el.id === `diff:${path}`);
+      const next = diffs[i + 1];
+      mark(currentWorkspace.id, reviewedBase, path, on, canvasView?.head);
+      if (!on || showReviewed.current || i < 0 || !next || !scroller) return;
+      const top = scroller.getBoundingClientRect().top;
+      const at = Math.max(diffs[i].getBoundingClientRect().top, top);
+      restoreScroll(canvas.current!, { top: 0, anchor: next.id, offset: top - at });
+    },
     [currentWorkspace?.id, reviewedBase, canvasView?.head],
   );
   // Questions' turns by thread, kept here so they outlive the Viewer showing them. The reply streams in as chat
@@ -440,7 +450,6 @@ export function App() {
     mergeBase,
     head,
     entries,
-    reviewed,
     onReviewedChange: markReviewed,
     turns,
     onAsk: ask,
@@ -626,6 +635,7 @@ export function App() {
                     <Viewer
                       key={opened.kind === "file" ? opened.path : undefined}
                       opened={opened}
+                      reviewed={false}
                       {...viewerProps(currentWorkspace, pr.commits.mergeBase)}
                     />
                   )}
@@ -696,6 +706,7 @@ export function App() {
                                     <Viewer
                                       stacked
                                       opened={p.d}
+                                      reviewed={reviewed.includes(p.d.file.path)}
                                       {...viewerProps(
                                         currentWorkspace,
                                         range?.base ?? pr.commits!.mergeBase,

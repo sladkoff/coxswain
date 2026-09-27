@@ -41,7 +41,8 @@ type Props = {
   head?: string;
   opened: Opened;
   entries: ReviewEntry[]; // the workspace's
-  reviewed: string[];
+  // This file diff's, not the list: a tick must only redraw the file diff ticked.
+  reviewed: boolean;
   onReviewedChange: (path: string, reviewed: boolean) => void;
   turns: Record<number, Turn>; // by thread
   onAsk: Ask;
@@ -357,7 +358,7 @@ export const Viewer = memo(function Viewer(props: Props) {
             <DiffHeaderActions
               outdated={outdated.length}
               onToggleOutdated={() => setShowOutdated((s) => !s)}
-              reviewed={props.reviewed.includes(path)}
+              reviewed={props.reviewed}
               onReviewedChange={(on) => props.onReviewedChange(path, on)}
             />
           )}
