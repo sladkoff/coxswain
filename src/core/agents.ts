@@ -736,8 +736,9 @@ async function readyWorktree(db: Db, workspaceId: number): Promise<string> {
 }
 
 // A session made before ADR 0018 loads by its stored ID too: it is Claude Code's. One never sent a message has no
-// history to load.
-export async function readTranscript(db: Db, agentSessionId: string): Promise<ChatEntry[]> {
+// history to load. Null while a turn runs in it: the pane keeps what streamed, and reads it again when the turn ends.
+export async function readTranscript(db: Db, agentSessionId: string): Promise<ChatEntry[] | null> {
+  if (running.has(agentSessionId)) return null;
   try {
     const { id: workspaceId, agent } = await sessionOf(db, agentSessionId);
     const entries = await history(

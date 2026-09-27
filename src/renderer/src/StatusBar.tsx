@@ -24,6 +24,7 @@ export function StatusBar(props: Props) {
   // Sending every thread to the agent pane's session; the agent's reply shows there.
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
   const sendAll = async () => {
     setSending(true);
     setError(null);
@@ -82,6 +83,18 @@ export function StatusBar(props: Props) {
           onClick={sendAll}
         >
           {sending ? "Agent working…" : "Send all to agent"}
+        </Button>
+        <Button
+          variant="ghost"
+          title="Copy every thread to the clipboard as that message, to paste elsewhere"
+          className="px-1.5 py-0.5"
+          disabled={!threads.length}
+          onClick={async () => {
+            setCopied(await window.coxswain.copyReviewPrompt(props.workspaceId));
+            setTimeout(() => setCopied(false), 1500);
+          }}
+        >
+          {copied ? "Copied" : "Copy as prompt"}
         </Button>
         {error && <ErrorText className="truncate">{error}</ErrorText>}
         <div className="flex-1" />

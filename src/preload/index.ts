@@ -94,7 +94,8 @@ const api = {
     ipcRenderer.invoke("agents:picks", workspaceId, agent),
   setAgentPick: (agent: Agent, pick: Pick, value: string): Promise<void> =>
     ipcRenderer.invoke("agents:set-pick", agent, pick, value),
-  readTranscript: (agentSessionId: string): Promise<ChatEntry[]> =>
+  // Null while a turn runs in the session.
+  readTranscript: (agentSessionId: string): Promise<ChatEntry[] | null> =>
     ipcRenderer.invoke("agents:transcript", agentSessionId),
   runTurn: (agentSessionId: string, message: string): Promise<TurnResult> =>
     ipcRenderer.invoke("agents:run-turn", agentSessionId, message),
@@ -117,6 +118,9 @@ const api = {
   // Every thread to the agent pane's session in one message; resolves when the agent's turn ends.
   sendReview: (workspaceId: number): Promise<TurnResult> =>
     ipcRenderer.invoke("review:send-all", workspaceId),
+  // The same message, put on the clipboard instead; false if there are no threads.
+  copyReviewPrompt: (workspaceId: number): Promise<boolean> =>
+    ipcRenderer.invoke("review:copy-prompt", workspaceId),
   onQuestionChat: (callback: (threadId: number, entry: ChatEntry) => void) => {
     const listener = (_: unknown, id: number, entry: ChatEntry) => callback(id, entry);
     ipcRenderer.on("review:chat", listener);

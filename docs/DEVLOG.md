@@ -3,6 +3,22 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-27 — Send all, at once; Copy as prompt
+
+### What works
+
+- **Send all to agent shows at once** in the agent pane. The refetch of the transcript that tells the pane about a new
+  session used to reload the session mid-turn and replace the message just streamed in; `readTranscript` now returns
+  null while a turn runs in the session, and the pane keeps what streamed. Questions sent from threads had the same
+  race.
+- **Copy as prompt** next to it in the bottom bar puts the same message (without its _[Review · N threads]_ header) on
+  the clipboard, to paste into another agent.
+
+### Tech debt
+
+- The pane still doesn't show _working_ for a turn it didn't start, and a session made by _Send all_ misses the
+  message itself until the turn ends (it streams before the pane knows the session).
+
 ## 2026-09-27 — Agent session titles
 
 ### What works

@@ -119,7 +119,8 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   outdated, answered (_N answers_), sent to the agent, or has replies. Clicking one scrolls the canvas to it. _Send
   all to agent_ sends every thread in one message to the agent pane's session: where each points, the code, and its
   comments and answers, asking the agent to make the changes and answer what's open. The chat shows it as a card
-  (_Review sent to Agent · N threads_); the bar says _Agent working…_ until the turn ends.
+  (_Review sent to Agent · N threads_); the bar says _Agent working…_ until the turn ends. _Copy as prompt_, next to it, puts
+  the same message on the clipboard instead.
 
   **Views.** _Diff_ in the canvas's bar shows the diff without a view; it's on while no view shows. Next to it, a
   chip per view, oldest first, named by its title (_Guide_, _Data flow_; a repeated title gets a number, _Guide 2_; its

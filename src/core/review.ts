@@ -303,7 +303,13 @@ function reviewPrompt(entries: Omit<ReviewEntry, "state">[]): { threads: number;
   const prompt = `Here's my review of this worktree's changes so far: every thread, with where it points and the code as it was
 then, in order. "Me" is me, "You" is your earlier answers. Work through them: make the changes my comments ask for,
 answer what's still open, and tell me briefly what you did for each and what you left.\n\n${parts.join("\n\n")}`;
-  return { threads: roots.length, prompt: formatReview(roots.length, prompt) };
+  return { threads: roots.length, prompt };
+}
+
+// The review message sendReview sends, to paste elsewhere. Null with no threads.
+export async function reviewPromptText(db: Db, workspaceId: number): Promise<string | null> {
+  const { threads, prompt } = reviewPrompt(await workspaceEntries(db, workspaceId));
+  return threads ? prompt : null;
 }
 
 // Sends every thread to the workspace's current agent session at once (see reviewPrompt), streaming the reply.
@@ -316,7 +322,7 @@ export async function sendReview(
   const { threads, prompt } = reviewPrompt(await workspaceEntries(db, workspaceId));
   if (!threads) return { status: "error", message: "No threads to send" };
   const agentSessionId = await currentSession(db, workspaceId);
-  return runTurn(db, agentSessionId, prompt, handlers(agentSessionId));
+  return runTurn(db, agentSessionId, formatReview(threads, prompt), handlers(agentSessionId));
 }
 
 // Where a new comment goes, the composer's Comment/Agent toggle: to the agent (a question) or not (a note). Global.
