@@ -19,7 +19,7 @@ import type {
   WorktreeResult,
 } from "../core/git";
 import type { CurrentUser, PullRequestList, RepoPage } from "../core/github";
-import type { View } from "../core/views";
+import type { View, ViewRequest } from "../core/views";
 import type { Project } from "../core/projects";
 import type { NewEntry, ReviewEntry } from "../core/review";
 import type { SetupCheck } from "../core/setup";
@@ -197,29 +197,21 @@ const api = {
     ipcRenderer.invoke("menus:projects", fullNames),
   // The canvas's new view menu: the message for the agent pane's composer that asks for it. Pending if dismissed.
   showNewViewMenu: (): Promise<string> => ipcRenderer.invoke("menus:new-view"),
+  // The same message for one kind of view, for the command palette's New View actions.
+  newViewRequest: (kind: ViewRequest): Promise<string> => ipcRenderer.invoke("views:request", kind),
   onChanged: (callback: (change: Changed) => void) => {
     const listener = (_: unknown, change: Changed) => callback(change);
     ipcRenderer.on("changed", listener);
     return () => void ipcRenderer.off("changed", listener);
   },
-  onToggleNavigator: (callback: () => void) => {
-    const listener = () => callback();
-    ipcRenderer.on("toggle-navigator", listener);
-    return () => void ipcRenderer.off("toggle-navigator", listener);
-  },
   // Greys View > Back and Forward out at either end of the canvas's history.
   setNavigation: (canBack: boolean, canForward: boolean) =>
     ipcRenderer.send("navigation", canBack, canForward),
-  // View > Back (-1) and Forward (1) through the canvas's history.
-  onNavigate: (callback: (by: -1 | 1) => void) => {
-    const listener = (_: unknown, by: -1 | 1) => callback(by);
-    ipcRenderer.on("navigate", listener);
-    return () => void ipcRenderer.off("navigate", listener);
-  },
-  onOpenQuickly: (callback: () => void) => {
-    const listener = () => callback();
-    ipcRenderer.on("open-quickly", listener);
-    return () => void ipcRenderer.off("open-quickly", listener);
+  // A native menu item or key picked: the id of the action to run (ADR 0027).
+  onAction: (callback: (id: string) => void) => {
+    const listener = (_: unknown, id: string) => callback(id);
+    ipcRenderer.on("action", listener);
+    return () => void ipcRenderer.off("action", listener);
   },
   // ADR 0026: draws the view tools' diagrams to check them; the callback gives each one's error, or null if it drew.
   onCheckDiagrams: (callback: (codes: string[]) => Promise<(string | null)[]>) => {
@@ -227,11 +219,6 @@ const api = {
       ipcRenderer.send("diagrams:checked", id, await callback(codes));
     ipcRenderer.on("diagrams:check", listener);
     return () => void ipcRenderer.off("diagrams:check", listener);
-  },
-  onOpenSettings: (callback: () => void) => {
-    const listener = () => callback();
-    ipcRenderer.on("open-settings", listener);
-    return () => void ipcRenderer.off("open-settings", listener);
   },
 };
 

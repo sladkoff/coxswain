@@ -130,6 +130,7 @@ export const viewRequests = {
     "Make a view with coxswain's tools of how data flows through the code this PR changes, from where it enters to where it's stored or shown, as a diagram with the key file diffs.",
   custom: "Make a view with coxswain's tools of ",
 };
+export type ViewRequest = keyof typeof viewRequests;
 
 const howToView = `How to write the view: add its sections in reading order with write_section. Each section is markdown
 (GitHub-flavoured: tables, lists, code) and starts with a "## " heading, which lists it in the view's table of contents.

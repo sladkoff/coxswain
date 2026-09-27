@@ -73,11 +73,12 @@ pnpm install     # also downloads the Electron binary
 pnpm dev         # run with hot reload
 pnpm start       # build and run
 pnpm typecheck   # type check
+pnpm test        # node --test over src/**/*.test.ts
 pnpm lint        # oxlint
 pnpm format      # oxfmt, formats in place
 ```
 
 GitHub features need the GitHub CLI signed in: `gh auth login`.
 
-Before calling a change done, run `pnpm typecheck`, `pnpm lint`, `pnpm format` and `pnpm build`, and check the change in the
+Before calling a change done, run `pnpm typecheck`, `pnpm test`, `pnpm lint`, `pnpm format` and `pnpm build`, and check the change in the
 running app.

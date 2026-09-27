@@ -3,6 +3,27 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-27 — Command palette and action registry
+
+### What works
+
+- **Command palette** (#10, ADR 0027): ⌘K (_View > Command Palette…_) opens a search box with `>` typed; the text
+  after it finds an action by fuzzy match and Enter runs it. Without `>` it's Open Quickly (⌘⇧O), now ranked: a match
+  in the file name first, then word starts, then letters in order.
+- **Action registry**: every action (Back, Forward, show or hide Files and Commits, show the diff or a view, each New
+  View, Unified or Split diffs, show or hide reviewed files, open a workspace, New Workspace, switch project, Add
+  Project, Settings, Open Quickly) is one entry in `App.tsx` with a title, shortcut and whether it can run now. Native
+  menu items send one `action` IPC event with the id, replacing four one-off events; the canvas bar's Back, Forward
+  and magnifier run actions by id.
+- `pnpm test` runs `node --test` over `src/**/*.test.ts`; the first is the fuzzy matcher's.
+
+### Tech debt
+
+- Native menu items aren't greyed out from the registry (only Back and Forward are); a disabled action's menu item
+  does nothing.
+- The palette doesn't list PRs not yet opened as workspaces, or agent sessions ([UX](UX.md) wants both).
+- Files are still capped at the first 50 matches.
+
 ## 2026-09-27 — Managing views
 
 ### What works
@@ -1049,8 +1070,8 @@ code are found with `grep -rn "ponytail:" src`.
 **UI**
 
 - shadcn/ui isn't set up (ADR 0004); `src/renderer/src/components/` holds our own controls until it is.
-- Keyboard use stops at ⌘, (Settings), Esc (close a screen) and the tree's own arrow keys; there
-  are no shortcuts for the rest and no ⌘K, which [UX](UX.md) requires everywhere.
+- Keyboard shortcuts cover Settings, Open Quickly, the command palette (⌘K), Toggle Navigator, Back and Forward;
+  the rest are reached through ⌘K.
 - ADR 0004's system accent colour, reduced motion and high contrast aren't wired up.
 - The native menu is laid out for macOS only.
 - Panes have fixed widths; no resizing.
@@ -1060,7 +1081,7 @@ code are found with `grep -rn "ponytail:" src`.
 
 **Tooling**
 
-- No tests of any kind, and no linter or formatter config.
+- Tests are one `node --test` file (`pnpm test`); no linter or formatter config.
 - No signing or auto-update (ADR 0024).
 - electron-vite 5 doesn't know Electron 44 downloads its binary lazily, so `postinstall` runs
   `install-electron`. Remove it once electron-vite catches up.
