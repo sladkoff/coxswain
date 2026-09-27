@@ -158,8 +158,8 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
 1. **Inbox:** where do you find PRs that aren't workspaces yet (review requested, new comments on
    your PRs)? Probably an inbox; where it lives and what goes in it is to be decided.
 2. **Views:** should a view embed only some lines of a file diff, not the whole of it? Should a section get its own
-   _Reviewed_? Does the agent pane need to show that a view is being made? Should the agent see its diagrams drawn,
-   to fix one that doesn't parse? A view that embeds only some of the changes still counts all of them: the bottom bar's
+   _Reviewed_? Does the agent pane need to show that a view is being made? Should the agent see the view as drawn
+   (a screenshot), not only whether its diagrams draw? A view that embeds only some of the changes still counts all of them: the bottom bar's
    _N of M reviewed_ and the Navigator's _Files N_ are over the whole range, not the view. Correct, but it reads as if
    the view left work undone; should they count the view's file diffs while one shows?
 3. **The review as a whole:** where do you write a comment that isn't on lines? _Post_ is still open. Should the PR's

@@ -217,6 +217,13 @@ const api = {
     ipcRenderer.on("open-quickly", listener);
     return () => void ipcRenderer.off("open-quickly", listener);
   },
+  // ADR 0026: draws the view tools' diagrams to check them; the callback gives each one's error, or null if it drew.
+  onCheckDiagrams: (callback: (codes: string[]) => Promise<(string | null)[]>) => {
+    const listener = async (_: unknown, id: number, codes: string[]) =>
+      ipcRenderer.send("diagrams:checked", id, await callback(codes));
+    ipcRenderer.on("diagrams:check", listener);
+    return () => void ipcRenderer.off("diagrams:check", listener);
+  },
   onOpenSettings: (callback: () => void) => {
     const listener = () => callback();
     ipcRenderer.on("open-settings", listener);

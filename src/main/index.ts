@@ -30,7 +30,7 @@ import {
   readFileAt,
   readWorktreeFile,
 } from "../core/git";
-import { listViews, onViewChange, viewRequests } from "../core/views";
+import { listViews, onViewChange, setDiagramCheck, viewRequests } from "../core/views";
 import { getCurrentUser, listPullRequests, listRepos } from "../core/github";
 import { listProjects, openProject } from "../core/projects";
 import {
@@ -120,6 +120,30 @@ const sendToWindow = (channel: string, ...args: unknown[]) =>
     channel,
     ...args,
   );
+
+// ADR 0026: the view tools' diagrams are drawn in the window, which has mermaid and a DOM, and each one's error comes
+// back. No window, or no answer within 15 s: not checked.
+let checks = 0;
+const pendingChecks = new Map<number, (errors: (string | null)[]) => void>();
+ipcMain.on("diagrams:checked", (_, id: number, errors: (string | null)[]) =>
+  pendingChecks.get(id)?.(errors),
+);
+setDiagramCheck((codes) => {
+  const win = BrowserWindow.getAllWindows()[0];
+  const unchecked = codes.map(() => null);
+  if (!win) return Promise.resolve(unchecked);
+  const id = ++checks;
+  return new Promise((resolve) => {
+    const done = (errors: (string | null)[]) => {
+      pendingChecks.delete(id);
+      clearTimeout(timer);
+      resolve(errors);
+    };
+    const timer = setTimeout(() => done(unchecked), 15_000);
+    pendingChecks.set(id, done);
+    win.webContents.send("diagrams:check", id, codes);
+  });
+});
 
 const menu = Menu.buildFromTemplate([
   {

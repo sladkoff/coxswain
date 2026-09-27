@@ -59,6 +59,17 @@ export function parseSection(markdown: string): ViewSection {
   return { title: first.replace(/^#+\s*/, ""), parts };
 }
 
+// The code of a section's mermaid diagrams.
+const diagrams = (markdown: string) =>
+  [...markdown.matchAll(/^ {0,3}```mermaid[^\n]*\n([\s\S]*?)\n {0,3}```[ \t]*$/gm)].map(
+    (m) => m[1],
+  );
+
+// How the tools check that diagrams draw, given each one's error or null (ADR 0026). Set by the main process, which
+// draws them in the window; unset, they aren't checked.
+let checkDiagrams = async (codes: string[]): Promise<(string | null)[]> => codes.map(() => null);
+export const setDiagramCheck = (check: typeof checkDiagrams) => void (checkDiagrams = check);
+
 const embedded = (sections: ViewSection[]) =>
   sections.flatMap((s) => s.parts.flatMap((p) => (p.kind === "diff" ? [p.path] : [])));
 
@@ -119,7 +130,8 @@ const howToView = `How to write the view: add its sections in reading order with
 Two kinds of fenced blocks do more than show code:
 - A diagram: a \`\`\`mermaid block (flowchart, sequenceDiagram, erDiagram, classDiagram, stateDiagram-v2). Use erDiagram
   or classDiagram for data models, flowchart or sequenceDiagram for data flow. Keep diagrams small enough to read in a
-  column; split a big one.
+  column; split a big one. write_section draws each diagram before saving the section, and refuses it with mermaid's
+  error if one doesn't draw.
 - A file diff: \`\`\`diff path=<a changed file, as listed above>, closed by \`\`\` right after, embeds that file's diff as the
   user reviews it, where they can comment. Add the word generated after the path for a file made by a tool rather than
   written by hand (lockfiles, generated clients or models, snapshots, build output); it's low-lighted. Each file can be
@@ -319,6 +331,11 @@ export function viewTools(db: Db, workspaceId: number): McpTool[] {
           if (others.includes(p) || mine.indexOf(p) !== i)
             throw new Error(`${p} is already embedded in the view`);
         }
+        const errors = (await checkDiagrams(diagrams(markdown))).flatMap((e, i) =>
+          e ? [`Diagram ${i + 1} doesn't draw: ${e}`] : [],
+        );
+        if (errors.length)
+          throw new Error(`${errors.join("\n")}\nFix it and write the section again.`);
         const sections = view.markdown.toSpliced(at, a.number === undefined ? 0 : 1, markdown);
         await db
           .updateTable("views")

@@ -19,8 +19,11 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 - **The canvas bar** names each view's chip by its title (_Guide_, _Data flow_, _Guide 2_ for a repeat). _New View_'s
   menu adds _data model_, _data flow_ and a message of your own. The table of contents lists sections, with counts only
   for sections that embed file diffs.
-- **Mermaid diagrams anywhere markdown shows**, chat and threads included: loaded on the first diagram, themed for
-  light or dark, and a diagram that doesn't parse shows its code and the error.
+- **Mermaid diagrams anywhere markdown shows**, chat and threads included: loaded on the first diagram, in the system
+  theme and redrawn when it changes; a diagram that doesn't draw shows its code and the error.
+- **The agent's diagrams are checked:** `write_section` has the window draw each one first and refuses the section with
+  mermaid's error if one doesn't draw, so the agent fixes it. Checked by calling the tool over the MCP server: a
+  broken flowchart came back with the parse error, a good ER diagram was added.
 - Explanations are labelled _Explanation_, not _Guide_, since any view can have them.
 - Checked in the built app driven with Playwright's `_electron`, on a copy of a real database: a migrated guide
   (sections, table of contents, a low-lighted generated section, an explanation between the lines) and a data flow
@@ -28,9 +31,7 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 
 ### Tech debt
 
-- A diagram's theme is read when it's drawn, not followed when the system theme changes (`ponytail:` in
-  `components/text.tsx`).
-- The agent doesn't see its diagrams drawn, so a broken one is only shown to the user.
+- The agent learns whether its diagrams draw, not how they look; with no window open they aren't checked.
 - An embed is a whole file diff; embedding only some of its lines isn't built.
 - Reviewed file diffs are hidden in every view as in a guide, which can hide the one file diff a data model view is
   about; _Show Reviewed Files_ brings it back.

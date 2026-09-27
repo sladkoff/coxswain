@@ -24,8 +24,10 @@ gracefully when it's wrong. It must still embed file diffs as the user reviews t
    GitHub-flavoured markdown, rendered by `react-markdown` and `remark-gfm`, as in chat and threads.
 2. **Fenced blocks are the extension points.** Their info string says what they are:
    - ` ```mermaid `: a diagram, drawn by [Mermaid](https://mermaid.js.org) (`mermaid`, loaded only when one shows),
-     `securityLevel: "strict"`. One that doesn't parse shows its code and the error. Works wherever `Prose` renders,
-     so also in chat and threads.
+     `securityLevel: "strict"`, in the system theme and redrawn when it changes. `write_section` has the window draw
+     each diagram before saving the section (main asks the renderer over IPC, `setDiagramCheck`), and refuses it with
+     mermaid's error if one doesn't draw, so the agent fixes it. One that still fails (e.g. saved while no window was
+     open) shows its code and the error. Works wherever `Prose` renders, so also in chat and threads.
    - ` ```diff path=<file> ` (optionally `generated`): embeds that changed file's diff, the same Viewer as the live
      diff, with threads, explanations, findings and _Reviewed_. A file is embedded at most once per view. A ` ```diff `
      block without `path=` stays an ordinary code block.
@@ -52,7 +54,8 @@ gracefully when it's wrong. It must still embed file diffs as the user reviews t
 ## Consequences
 
 - Mermaid adds about 1.2 MB to the renderer, in a chunk of its own loaded on the first diagram.
-- The agent doesn't see its diagrams drawn: a diagram that doesn't parse shows the error only to the user.
+- The agent learns whether its diagrams draw, not how they look: the check can't tell a legible diagram from a
+  cramped one.
 - An embed shows a whole file diff; there's no way yet to embed only some of its lines.
 - Guides made before this were turned into sections by a migration (title, description, then each file's note and
   its fence, generated groups last).

@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useId, useState } from "react";
+import { type ReactNode, useEffect, useState, useSyncExternalStore } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { GitProblem } from "../../../core/git";
@@ -46,45 +46,67 @@ export function Prose({
   );
 }
 
+// The system theme, followed live: diagrams are drawn again when it changes.
 const dark = matchMedia("(prefers-color-scheme: dark)");
+const subscribeDark = (onChange: () => void) => {
+  dark.addEventListener("change", onChange);
+  return () => dark.removeEventListener("change", onChange);
+};
 
-// A mermaid diagram, drawn as SVG once mermaid has loaded (it's big, so only when one shows). A diagram that doesn't
-// parse shows its code and the error. ponytail: the theme is read when it's drawn, not followed live; redraw on
-// dark.onchange if that's noticed.
+// Draws a mermaid diagram as SVG, loading mermaid first (it's big, so only when one shows). Throws mermaid's error for a
+// diagram that doesn't parse or draw. Parsed first: a failed render leaves mermaid's error graphic in the page.
+let drawn = 0;
+async function drawDiagram(code: string, isDark: boolean): Promise<string> {
+  const { default: mermaid } = await import("mermaid");
+  mermaid.initialize({
+    startOnLoad: false,
+    securityLevel: "strict",
+    theme: isDark ? "dark" : "neutral",
+    fontFamily: "system-ui, sans-serif",
+  });
+  await mermaid.parse(code);
+  return (await mermaid.render(`mermaid-${++drawn}`, code)).svg;
+}
+
+// ADR 0026: the view tools check the agent's diagrams by drawing them here before they're saved, so the agent hears
+// of one that doesn't draw.
+window.coxswain.onCheckDiagrams(async (codes) => {
+  const errors: (string | null)[] = [];
+  for (const code of codes)
+    errors.push(
+      await drawDiagram(code, dark.matches).then(
+        () => null,
+        (e: Error) => e.message,
+      ),
+    );
+  return errors;
+});
+
+// A mermaid diagram, drawn as SVG in the system theme. One that doesn't draw shows its code and the error.
 function Mermaid({ code }: { code: string }) {
-  const id = `mermaid-${useId().replace(/\W/g, "")}`;
-  const [drawn, setDrawn] = useState<{ svg?: string; error?: string }>({});
+  const isDark = useSyncExternalStore(subscribeDark, () => dark.matches);
+  const [result, setResult] = useState<{ svg?: string; error?: string }>({});
   useEffect(() => {
     let live = true;
-    import("mermaid")
-      .then(async ({ default: mermaid }) => {
-        mermaid.initialize({
-          startOnLoad: false,
-          securityLevel: "strict",
-          theme: dark.matches ? "dark" : "neutral",
-          fontFamily: "system-ui, sans-serif",
-        });
-        // Parsed first: a failed render leaves mermaid's error graphic in the page.
-        await mermaid.parse(code);
-        const { svg } = await mermaid.render(id, code);
-        if (live) setDrawn({ svg });
-      })
-      .catch((e: Error) => live && setDrawn({ error: e.message }));
+    drawDiagram(code, isDark).then(
+      (svg) => live && setResult({ svg }),
+      (e: Error) => live && setResult({ error: e.message }),
+    );
     return () => void (live = false);
-  }, [code]);
-  if (drawn.error)
+  }, [code, isDark]);
+  if (result.error)
     return (
       <div className="mermaid">
         <pre>
           <code>{code}</code>
         </pre>
-        <ErrorText>Diagram: {drawn.error}</ErrorText>
+        <ErrorText>Diagram: {result.error}</ErrorText>
       </div>
     );
-  return drawn.svg ? (
+  return result.svg ? (
     <div
       className="mermaid my-2 flex justify-center [&_svg]:h-auto [&_svg]:max-w-full"
-      dangerouslySetInnerHTML={{ __html: drawn.svg }}
+      dangerouslySetInnerHTML={{ __html: result.svg }}
     />
   ) : (
     <div className="mermaid text-xs text-neutral-500">Drawing the diagram…</div>
