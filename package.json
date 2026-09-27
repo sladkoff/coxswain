@@ -25,6 +25,7 @@
     "@tanstack/react-query": "5.103.2",
     "@tanstack/react-router": "1.170.40",
     "kysely": "0.29.6",
+    "mermaid": "^12.0.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-markdown": "^10.1.0",

@@ -1,5 +1,5 @@
 import type { Commit } from "../../core/git";
-import type { Guide } from "../../core/guides";
+import type { View } from "../../core/views";
 import { Button, ToggleButton } from "./components/button";
 import {
   ChevronLeftIcon,
@@ -16,10 +16,10 @@ type Props = {
   onToggleLeftPane: (pane: "files" | "commits") => void;
   ready: boolean; // the PR's commits are loaded, so Commits and the views can open
   commit: Commit | null;
-  guide: Guide | null;
-  guides: Guide[]; // newest first
+  view: View | null;
+  views: View[]; // newest first
   prHead: string | undefined;
-  onShowGuide: (id: number | null) => void; // null: the diff, no guide
+  onShowView: (id: number | null) => void; // null: the diff, no view
   onNewView: () => void;
   onOpenQuickly: () => void;
   onViewOptions: () => void;
@@ -29,7 +29,7 @@ type Props = {
   onForward: () => void;
 };
 
-// The canvas's bar: Files, Commits, Diff, a chip per guide and New View on the left; Back, Forward, Open Quickly and the view options on the right. It also
+// The canvas's bar: Files, Commits, Diff, a chip per view and New View on the left; Back, Forward, Open Quickly and the view options on the right. It also
 // drags the window, so it lines up with the agent pane's. ponytail: no tabs row until the canvas shows a second thing.
 export function CanvasBar(props: Props) {
   return (
@@ -57,24 +57,30 @@ export function CanvasBar(props: Props) {
         {props.commit ? `${props.commit.sha.slice(0, 7)} ${props.commit.subject}` : "Commits"}
       </ToggleButton>
       <ToggleButton
-        title="Show the diff without a guide"
+        title="Show the diff without a view"
         disabled={!props.ready}
-        on={!props.guide}
-        onClick={() => props.onShowGuide(null)}
+        on={!props.view}
+        onClick={() => props.onShowView(null)}
       >
         Diff
       </ToggleButton>
-      {props.guides.toReversed().map((g, i) => (
-        <ToggleButton
-          key={g.id}
-          title={`Made ${new Date(g.createdAt).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })} at ${g.head.slice(0, 7)}${g.head === props.prHead ? "" : " (stale)"}`}
-          disabled={!props.ready}
-          on={g.id === props.guide?.id}
-          onClick={() => props.onShowGuide(g.id)}
-        >
-          Guide {i + 1}
-        </ToggleButton>
-      ))}
+      {props.views.toReversed().map((v, i, all) => {
+        // A title made before gets a number: Guide, Guide 2, …
+        const n = all.slice(0, i).filter((o) => o.title === v.title).length;
+        return (
+          <ToggleButton
+            key={v.id}
+            title={`Made ${new Date(v.createdAt).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })} at ${v.head.slice(0, 7)}${v.head === props.prHead ? "" : " (stale)"}`}
+            disabled={!props.ready}
+            className="max-w-40 truncate"
+            on={v.id === props.view?.id}
+            onClick={() => props.onShowView(v.id)}
+          >
+            {v.title}
+            {n > 0 && ` ${n + 1}`}
+          </ToggleButton>
+        );
+      })}
       <Button
         variant="ghost"
         title="New view"

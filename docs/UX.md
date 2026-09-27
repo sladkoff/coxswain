@@ -8,12 +8,12 @@ Direction for the main screen and navigation. Expected to change as we build; te
 Agent-first. Opening a PR shows the project column (L1), the agent pane (L4) on the left and the canvas (L3) on the
 right. The canvas is one explorer that both the agent and the human annotate; for now it shows _Changes_, the
 workspace's file diffs, with the Navigator (L2) or the commits pane on its left. A bar at the canvas's top holds
-_Files_, _Commits_, _Diff_, a chip per guide, a dashed _New View_ chip, then Back and Forward chevrons, a magnifier (Open Quickly) and the cog; a bar at its
+_Files_, _Commits_, _Diff_, a chip per view, a dashed _New View_ chip, then Back and Forward chevrons, a magnifier (Open Quickly) and the cog; a bar at its
 bottom sums up the review.
 
 ```
 ┌────┬─────────────────────────┬──────────────────────────────────────────┐
-│    │ Session 2 · Codex [New▾]│ Files 3  Commits  Diff  Guide 1 [+]  ⚙   │
+│    │ Session 2 · Codex [New▾]│ Files 3  Commits  Diff  Guide [+]    ⚙   │
 │ L1 ├─────────────────────────┼─────────┬────────────────────────────────┤
 │    │ L4 Agent pane           │ L2      │ L3 Canvas                      │
 │ P  │                         │ Navi-   │                                │
@@ -64,7 +64,7 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
 
   _View > Back_ (⌥⌘←) and _View > Forward_ (⌥⌘→), or the chevrons in the canvas bar, step through what the canvas
   showed (ADR 0025): each whole file opened (from _Files_, Open Quickly, Go to Definition or Find Usages), each file
-  picked in _Diffs_, each switch of the _Diffs_/_Files_ toggle, each commit or guide picked, and each workspace opened;
+  picked in _Diffs_, each switch of the _Diffs_/_Files_ toggle, each commit or view picked, and each workspace opened;
   Back into another workspace's step opens that workspace again. Each step comes back scrolled where it was left, the
   file diffs by the one at the top. The keys work wherever the focus is, the Navigator included; the menu items and
   chevrons are greyed out at either end.
@@ -116,22 +116,24 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   comments and answers, asking the agent to make the changes and answer what's open. The chat shows it as a card
   (_Review sent to Agent · N threads_); the bar says _Agent working…_ until the turn ends.
 
-  **Guides.** _Diff_ in the canvas's bar shows the diff without a guide; it's on while no guide shows. Next to it, a
-  chip per guide, oldest first (_Guide 1_, _Guide 2_, …; its tooltip says when it was made, its head, and _(stale)_
-  once the PR moved on), to switch between them. The dashed _New View_ chip (a layers-plus icon) makes new views:
-  its menu has _New View (guide)_ and _New View (review)_ (a guide with findings). Both put a message in the agent
-  pane's composer, to edit and send; the agent pane's session makes the guide with coxswain's tools (ADR 0023);
-  asking for one in the agent pane's own words does the same. A guide shows on the canvas as soon
-  as the agent starts it, and fills in as it adds to it: its groups in reading order, each with its title, how many
-  files and its description above its first file diff, and each file note above its file diff; then the files in no
-  group under _Not in the guide_; then the _generated_ groups, low-lighted. On the canvas's left, a table of
-  contents: how many file diffs are reviewed in all with a bar, then every group with how many of its file diffs are
-  reviewed (✓ when all are) and, if any, how many notes and questions are on them (`✎ 2`). The group being read is
-  marked as you scroll; a click jumps to it, first showing reviewed file diffs if all of its are. Explanations
-  (labelled _Guide_) and, with review, findings (labelled _Finding_) are threads between the lines, which can be
-  replied to like any other; they show only with their guide. A guide shows the PR as it was (its range, like a
-  commit), and its _Reviewed_ ticks stay; once the PR has new commits, an amber bar says so. The button then reads
-  _Guide · date_. Picking a commit hides the guide, and the other way round.
+  **Views.** _Diff_ in the canvas's bar shows the diff without a view; it's on while no view shows. Next to it, a
+  chip per view, oldest first, named by its title (_Guide_, _Data flow_; a repeated title gets a number, _Guide 2_; its
+  tooltip says when it was made, its head, and _(stale)_ once the PR moved on), to switch between them. The dashed
+  _New View_ chip (a layers-plus icon) makes new views: its menu has _New View (guide)_, _New View (review)_ (a guide
+  with findings), _New View (data model)_, _New View (data flow)_ and _New View…_ (a message to finish). Each puts a
+  message in the agent pane's composer, to edit and send; the agent pane's session makes the view with coxswain's
+  tools (ADR 0023); asking for one in the agent pane's own words does the same. A view shows on the canvas as soon as
+  the agent starts it, and fills in as it adds to it: its sections in order, each with its heading and how many file
+  diffs it embeds, then its markdown (ADR 0026): prose, tables, mermaid diagrams, and embedded file diffs, which work
+  as in the diff (threads, _Reviewed_). A diagram that doesn't parse shows its code and the error. A guide goes
+  through every file: those no section embeds come after it under _Not in the guide_. Generated file diffs, and
+  sections of only those, are low-lighted. On the canvas's left, a table of contents: how many embedded file diffs are
+  reviewed in all with a bar, then every section with how many of its file diffs are reviewed (✓ when all are) and, if
+  any, how many notes and questions are on them (`✎ 2`). The section being read is marked as you scroll; a click jumps
+  to it, first showing reviewed file diffs if all of its are. Explanations (labelled _Explanation_) and, with review,
+  findings (labelled _Finding_) are threads between the lines, which can be replied to like any other; they show only
+  with their view. A view shows the PR as it was (its range, like a commit), and its _Reviewed_ ticks stay; once the
+  PR has new commits, an amber bar says so. Picking a commit hides the view, and the other way round.
 
 - **L4 — Agent pane**, left of the canvas, always shown; its border can be dragged. A chat with one of the
   workspace's agent sessions, the latest unless another is picked in the header's session picker (_Session N_; its
@@ -155,8 +157,11 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
 
 1. **Inbox:** where do you find PRs that aren't workspaces yet (review requested, new comments on
    your PRs)? Probably an inbox; where it lives and what goes in it is to be decided.
-2. **Guides:** should a guide group down to hunks, not whole file diffs? Should a group get its own _Reviewed_ again?
-   Does the agent pane need to show that a guide is being made?
+2. **Views:** should a view embed only some lines of a file diff, not the whole of it? Should a section get its own
+   _Reviewed_? Does the agent pane need to show that a view is being made? Should the agent see the view as drawn
+   (a screenshot), not only whether its diagrams draw? A view that embeds only some of the changes still counts all of them: the bottom bar's
+   _N of M reviewed_ and the Navigator's _Files N_ are over the whole range, not the view. Correct, but it reads as if
+   the view left work undone; should they count the view's file diffs while one shows?
 3. **The review as a whole:** where do you write a comment that isn't on lines? _Post_ is still open. Should the PR's
    GitHub comments and reviews show in coxswain, and where?
 4. **Agents in L4:** tabs, a list, or split panes, and how running and finished agent sessions look.
@@ -165,6 +170,6 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
 5. **PR changes vs local changes:** _Diffs_ mixes the PR's file diffs with local changes (uncommitted,
    untracked, unpushed), so an agent's work isn't told apart from the PR's. Options: a marker per
    file, a third toggle (_Local_), or showing local changes on top of the PR's head separately.
-6. **The canvas:** what it shows besides file diffs (the PR's description and history, a whole file, something the agent
-   makes), and how the agent and the human switch between them. An annotation on lines is an entry (ADR 0023); the
-   agent has tools to make guides, but not yet to navigate the app or read its context.
+6. **The canvas:** what else it shows (the PR's description and history), and how the agent and the human switch
+   between them. An annotation on lines is an entry (ADR 0023); the agent has tools to make views (ADR 0026), but not
+   yet to navigate the app or read its context. Interactive views (Excalidraw and the like) are deferred.

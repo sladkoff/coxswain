@@ -3,6 +3,44 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-27 — Views: markdown, diagrams and embedded file diffs
+
+### What works
+
+- **Views** (#1, ADR 0026): the agent makes views of the PR with coxswain's tools, not only guides. A view is a title
+  and sections of markdown: prose, tables, ` ```mermaid ` diagrams, and ` ```diff path=… ` fences that embed a file
+  diff as in the diff, with threads, explanations, findings and _Reviewed_. The core parses sections; the UI renders
+  them.
+- **Guides are views** that go through every changed file; files no section embeds show under _Not in the guide_.
+  Existing guides were migrated into sections (their explanations, findings and replies kept). Other views show
+  only what they embed.
+- **Tools:** `start_view` (title, guide) and `write_section` (append, or replace section N) replace `start_guide` and
+  `add_group`. `start_view`'s result teaches the syntax and how to write a guide or another view.
+- **The canvas bar** names each view's chip by its title (_Guide_, _Data flow_, _Guide 2_ for a repeat). _New View_'s
+  menu adds _data model_, _data flow_ and a message of your own. The table of contents lists sections, with counts only
+  for sections that embed file diffs.
+- **Mermaid diagrams anywhere markdown shows**, chat and threads included: loaded on the first diagram, in the system
+  theme and redrawn when it changes; a diagram that doesn't draw shows its code and the error.
+- **The agent's diagrams are checked:** `write_section` has the window draw each one first and refuses the section with
+  mermaid's error if one doesn't draw, so the agent fixes it. Checked by calling the tool over the MCP server: a
+  broken flowchart came back with the parse error, a good ER diagram was added.
+- Explanations are labelled _Explanation_, not _Guide_, since any view can have them.
+- Checked in the built app driven with Playwright's `_electron`, on a copy of a real database: a migrated guide
+  (sections, table of contents, a low-lighted generated section, an explanation between the lines) and a data flow
+  view (a flowchart, a table, an embedded file diff, a broken diagram's error).
+
+### Tech debt
+
+- The agent learns whether its diagrams draw, not how they look; with no window open they aren't checked.
+- An embed is a whole file diff; embedding only some of its lines isn't built.
+- Reviewed file diffs are hidden in every view as in a guide, which can hide the one file diff a data model view is
+  about; _Show Reviewed Files_ brings it back.
+- Mermaid is about 1.2 MB of the renderer bundle, in its own chunk.
+- The bottom bar and the Navigator count the whole range while a view that embeds only some of it shows (UX open
+  question 2).
+- The tools write only to the workspace's latest view: an older one can't be changed, and views can't be removed, so
+  their chips pile up in the canvas bar.
+
 ## 2026-09-27 — Diff and numbered guides in the canvas bar
 
 ### What works

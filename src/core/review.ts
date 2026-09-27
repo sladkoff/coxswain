@@ -13,7 +13,7 @@ import type { Db } from "./db";
 import { readTexts } from "./git";
 
 // ADR 0015: a workspace's entries (glossary): notes, questions and answers, threaded by parent_id; and the agent's
-// explanations and findings, which belong to a guide too (guideId, ADR 0023).
+// explanations and findings, which belong to a view too (viewId, ADR 0023).
 // An entry's anchor is a line range of a file; side 'old' is the merge base (removed lines in a diff), 'new' the
 // worktree. code: the lines as they were, since line numbers drift as the worktree changes. No anchor: it floats.
 // base, head: the range of the view it was written in (ADR 0015); head null is the worktree (the live diff).
@@ -33,7 +33,7 @@ export type ReviewEntry = {
   kind: "note" | "question" | "answer" | "explanation" | "finding";
   body: string;
   parentId: number | null; // the thread's first entry, for replies, follow-ups and answers
-  guideId: number | null;
+  viewId: number | null;
   path: string | null;
   side: "old" | "new" | null;
   startLine: number | null;
@@ -57,7 +57,7 @@ const columns = [
   "kind",
   "body",
   "parent_id as parentId",
-  "guide_id as guideId",
+  "view_id as viewId",
   "path",
   "side",
   "start_line as startLine",
@@ -126,7 +126,7 @@ function addEntry(
       kind,
       body: e.body.trim(),
       parent_id: e.parentId ?? null,
-      guide_id: null,
+      view_id: null,
       path: a?.path ?? null,
       side: a?.side ?? null,
       start_line: start,
@@ -209,7 +209,7 @@ function unseen(
   const about = !asked && thread[0]?.path ? [`About ${describe(thread[0])}`] : [];
   const yours =
     !asked && thread[0] && byAgent(thread[0])
-      ? [`You wrote there, in a guide: ${thread[0].body}`]
+      ? [`You wrote there, in a view: ${thread[0].body}`]
       : [];
   return [...about, ...yours, ...notes.map((n) => `Earlier in the thread: ${n.body}`)].join("\n\n");
 }

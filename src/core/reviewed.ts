@@ -2,7 +2,7 @@ import type { Db } from "./db";
 import { diffFingerprints } from "./git";
 
 // Reviewed file diffs (glossary). Each is stored with the fingerprint of the file diff's contents when it was marked
-// (ADR 0014), so it counts as reviewed only while those are unchanged. head: a pinned range's (a guide's); without it,
+// (ADR 0014), so it counts as reviewed only while those are unchanged. head: a pinned range's (a view's); without it,
 // the worktree's (the live diff).
 // ponytail: rows for fingerprints no longer in use stay; prune them if the table ever matters.
 

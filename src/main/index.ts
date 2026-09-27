@@ -30,7 +30,7 @@ import {
   readFileAt,
   readWorktreeFile,
 } from "../core/git";
-import { guideRequest, listGuides, onGuideChange } from "../core/guides";
+import { listViews, onViewChange, setDiagramCheck, viewRequests } from "../core/views";
 import { getCurrentUser, listPullRequests, listRepos } from "../core/github";
 import { listProjects, openProject } from "../core/projects";
 import {
@@ -120,6 +120,30 @@ const sendToWindow = (channel: string, ...args: unknown[]) =>
     channel,
     ...args,
   );
+
+// ADR 0026: the view tools' diagrams are drawn in the window, which has mermaid and a DOM, and each one's error comes
+// back. No window, or no answer within 15 s: not checked.
+let checks = 0;
+const pendingChecks = new Map<number, (errors: (string | null)[]) => void>();
+ipcMain.on("diagrams:checked", (_, id: number, errors: (string | null)[]) =>
+  pendingChecks.get(id)?.(errors),
+);
+setDiagramCheck((codes) => {
+  const win = BrowserWindow.getAllWindows()[0];
+  const unchecked = codes.map(() => null);
+  if (!win) return Promise.resolve(unchecked);
+  const id = ++checks;
+  return new Promise((resolve) => {
+    const done = (errors: (string | null)[]) => {
+      pendingChecks.delete(id);
+      clearTimeout(timer);
+      resolve(errors);
+    };
+    const timer = setTimeout(() => done(unchecked), 15_000);
+    pendingChecks.set(id, done);
+    win.webContents.send("diagrams:check", id, codes);
+  });
+});
 
 const menu = Menu.buildFromTemplate([
   {
@@ -476,15 +500,19 @@ app.whenReady().then(() => {
         })
       ).response === 0,
   );
-  ipcMain.handle("guides:list", (_, workspaceId: number) => listGuides(db, workspaceId));
-  // The canvas's Guide menu: a prompt for a guide, for the agent pane's composer, or which guide to show. Resolves only on a click, like the menus above.
+  ipcMain.handle("views:list", (_, workspaceId: number) => listViews(db, workspaceId));
+  // The canvas's New View menu: a prompt for a view, for the agent pane's composer. Resolves only on a click, like the menus above.
   ipcMain.handle(
     "menus:new-view",
     (e) =>
       new Promise<string>((resolve) =>
         Menu.buildFromTemplate([
-          { label: "New View (guide)", click: () => resolve(guideRequest(false)) },
-          { label: "New View (review)", click: () => resolve(guideRequest(true)) },
+          { label: "New View (guide)", click: () => resolve(viewRequests.guide) },
+          { label: "New View (review)", click: () => resolve(viewRequests.review) },
+          { type: "separator" },
+          { label: "New View (data model)", click: () => resolve(viewRequests["data model"]) },
+          { label: "New View (data flow)", click: () => resolve(viewRequests["data flow"]) },
+          { label: "New View…", click: () => resolve(viewRequests.custom) },
         ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
       ),
   );
@@ -492,10 +520,10 @@ app.whenReady().then(() => {
   ipcMain.handle("settings:set-comment-to-agent", (_, toAgent: boolean) =>
     setCommentToAgent(db, toAgent),
   );
-  // The agent's guide tools change guides and entries mid-turn; the UI refetches them as they come.
-  onGuideChange((workspaceId) => {
+  // The agent's view tools change views and entries mid-turn; the UI refetches them as they come.
+  onViewChange((workspaceId) => {
     for (const w of BrowserWindow.getAllWindows()) {
-      changed(w.webContents, { workspaceId, what: "guide" });
+      changed(w.webContents, { workspaceId, what: "view" });
       changed(w.webContents, { workspaceId, what: "entries" });
     }
   });

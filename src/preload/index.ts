@@ -19,7 +19,7 @@ import type {
   WorktreeResult,
 } from "../core/git";
 import type { CurrentUser, PullRequestList, RepoPage } from "../core/github";
-import type { Guide } from "../core/guides";
+import type { View } from "../core/views";
 import type { Project } from "../core/projects";
 import type { NewEntry, ReviewEntry } from "../core/review";
 import type { SetupCheck } from "../core/setup";
@@ -32,7 +32,7 @@ export type ViewSettings = { diffStyle: "unified" | "split"; showReviewed: boole
 // What the core changed on its own, e.g. when an agent turn ends, so the UI refetches it (ADR 0017).
 export type Changed = {
   workspaceId: number;
-  what: "entries" | "worktree" | "transcript" | "guide";
+  what: "entries" | "worktree" | "transcript" | "view";
 };
 
 // The one interface between the UI and the core (ADR 0002).
@@ -132,7 +132,7 @@ const api = {
     ipcRenderer.on("review:turn-end", listener);
     return () => void ipcRenderer.off("review:turn-end", listener);
   },
-  // head: a pinned range (a guide); without it, the worktree (ADR 0014).
+  // head: a pinned range (a view); without it, the worktree (ADR 0014).
   listReviewed: (workspaceId: number, mergeBase: string, head?: string): Promise<string[]> =>
     ipcRenderer.invoke("reviewed:list", workspaceId, mergeBase, head),
   setReviewed: (
@@ -143,9 +143,9 @@ const api = {
     head?: string,
   ): Promise<void> =>
     ipcRenderer.invoke("reviewed:set", workspaceId, mergeBase, path, reviewed, head),
-  // The workspace's guides, newest first (ADR 0023).
-  listGuides: (workspaceId: number): Promise<Guide[]> =>
-    ipcRenderer.invoke("guides:list", workspaceId),
+  // The workspace's views, newest first (ADR 0023, 0026).
+  listViews: (workspaceId: number): Promise<View[]> =>
+    ipcRenderer.invoke("views:list", workspaceId),
   // The composer's Comment/Agent toggle, kept for every comment box.
   getCommentToAgent: (): Promise<boolean> => ipcRenderer.invoke("settings:comment-to-agent"),
   setCommentToAgent: (toAgent: boolean): Promise<void> =>
@@ -216,6 +216,13 @@ const api = {
     const listener = () => callback();
     ipcRenderer.on("open-quickly", listener);
     return () => void ipcRenderer.off("open-quickly", listener);
+  },
+  // ADR 0026: draws the view tools' diagrams to check them; the callback gives each one's error, or null if it drew.
+  onCheckDiagrams: (callback: (codes: string[]) => Promise<(string | null)[]>) => {
+    const listener = async (_: unknown, id: number, codes: string[]) =>
+      ipcRenderer.send("diagrams:checked", id, await callback(codes));
+    ipcRenderer.on("diagrams:check", listener);
+    return () => void ipcRenderer.off("diagrams:check", listener);
   },
   onOpenSettings: (callback: () => void) => {
     const listener = () => callback();
