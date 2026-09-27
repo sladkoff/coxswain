@@ -4,7 +4,8 @@ import { type ChangedFile, listChangedFiles, openedBefore, openWorktree, readTex
 
 // ADR 0023, 0026: a view (glossary) is made by the agent pane's session with the tools below. It's pinned to base →
 // head, the merge base → the PR head when it was started, and holds sections of markdown; its explanations and findings
-// are entries with its id. A guide is a view that goes through every changed file. Every view is kept.
+// are entries with its id. A guide is a view that goes through every changed file. Views are kept until the user
+// removes one.
 
 // A section as the canvas shows it: its heading, then prose (markdown, with mermaid fences drawn as diagrams) and the
 // file diffs its diff fences embed. generated: the file is made by a tool, not written by hand; it's low-lighted.
@@ -104,6 +105,11 @@ export async function listViews(db: Db, workspaceId: number): Promise<View[]> {
   return rows.map(fromRow);
 }
 
+// Removes a view, with its explanations and findings (entries.view_id cascades).
+export async function removeView(db: Db, viewId: number): Promise<void> {
+  await db.deleteFrom("views").where("id", "=", viewId).execute();
+}
+
 // Told when a tool changed a workspace's view or its entries, so the UI refetches them while the agent works.
 const listeners = new Set<(workspaceId: number) => void>();
 export function onViewChange(listener: (workspaceId: number) => void) {
@@ -167,17 +173,24 @@ async function changedFiles(
   return listed.files;
 }
 
-async function latestView(db: Db, workspaceId: number) {
-  const row = await db
-    .selectFrom("views")
-    .select(columns)
-    .where("workspace_id", "=", workspaceId)
-    .orderBy("id", "desc")
-    .limit(1)
-    .executeTakeFirst();
-  if (!row) throw new Error("No view yet: call start_view first");
+// The view a tool writes to: the one with the id given, or the workspace's latest.
+async function toolView(db: Db, workspaceId: number, id: number | undefined) {
+  let q = db.selectFrom("views").select(columns).where("workspace_id", "=", workspaceId);
+  q = id === undefined ? q.orderBy("id", "desc").limit(1) : q.where("id", "=", id);
+  const row = await q.executeTakeFirst();
+  if (!row)
+    throw new Error(
+      id === undefined ? "No view yet: call start_view first" : `No view ${id}: see list_views`,
+    );
   return { ...fromRow(row), markdown: markdownOf(row) };
 }
+
+const viewArg = {
+  view: {
+    type: "integer",
+    description: "The view's id, from start_view or list_views; leave out for the latest",
+  },
+};
 
 const anchorSchema = {
   type: "object",
@@ -190,6 +203,7 @@ const anchorSchema = {
     start_line: { type: "integer" },
     end_line: { type: "integer" },
     body: { type: "string", description: "Markdown" },
+    ...viewArg,
   },
   required: ["path", "side", "start_line", "end_line", "body"],
 };
@@ -199,16 +213,17 @@ type AnchorArgs = {
   start_line: number;
   end_line: number;
   body: string;
+  view?: number;
 };
 
-// An explanation or finding on lines of the latest view's range, with the code it's on (ADR 0015).
+// An explanation or finding on lines of a view's range, with the code it's on (ADR 0015).
 async function addOnLines(
   db: Db,
   workspaceId: number,
   kind: "explanation" | "finding",
   a: AnchorArgs,
 ): Promise<string> {
-  const view = await latestView(db, workspaceId);
+  const view = await toolView(db, workspaceId, a.view);
   const file = (await changedFiles(db, view)).find((f) => f.path === a.path);
   if (!file) throw new Error(`${a.path} isn't changed in the view's range`);
   const [start, end] = [a.start_line, a.end_line].sort((x, y) => x - y);
@@ -244,7 +259,7 @@ async function addOnLines(
     : view.guide
       ? ` ${a.path} isn't in a section yet; it shows under "Not in the guide" until it is.`
       : ` ${a.path} isn't embedded in the view, so it won't show until a section embeds it.`;
-  return `Added the ${kind} on ${a.path}:${start}${end > start ? `-${end}` : ""}.${shown}`;
+  return `Added the ${kind} on ${a.path}:${start}${end > start ? `-${end}` : ""} in view ${view.id}.${shown}`;
 }
 
 // The agent pane's tools for a workspace (ADR 0023, 0026).
@@ -293,7 +308,7 @@ export function viewTools(db: Db, workspaceId: number): McpTool[] {
             `${f.status} +${f.additions} -${f.deletions} ${f.previousPath ? `${f.previousPath} -> ` : ""}${f.path}`,
         );
         return [
-          `View ${id} started. It's pinned to ${at.mergeBase} (the merge base) → ${at.head} (the PR head); local changes aren't in it.`,
+          `View ${id} started; the other tools write to it when given view: ${id}, or to the latest view without it. It's pinned to ${at.mergeBase} (the merge base) → ${at.head} (the PR head); local changes aren't in it.`,
           `Read a diff with \`git diff ${at.mergeBase} ${at.head} -- <path>\`. Line numbers are the file's at the head (side "new") or, for removed lines, at the base (side "old").`,
           `Changed files (status, lines added and removed, path):\n${listed.join("\n")}`,
           howToView,
@@ -304,7 +319,7 @@ export function viewTools(db: Db, workspaceId: number): McpTool[] {
     {
       name: "write_section",
       description:
-        "Add a section to the latest view, after the ones so far, or with number replace section number N (1 is the first). Call start_view first.",
+        "Add a section to a view (the latest unless view is given), after the ones so far, or with number replace section number N (1 is the first). Call start_view first.",
       inputSchema: {
         type: "object",
         properties: {
@@ -313,11 +328,12 @@ export function viewTools(db: Db, workspaceId: number): McpTool[] {
             description: 'Starts with a "## " heading; may hold mermaid and diff fences',
           },
           number: { type: "integer", description: "The section to replace; leave out to add one" },
+          ...viewArg,
         },
         required: ["markdown"],
       },
-      call: async (a: { markdown: string; number?: number }) => {
-        const view = await latestView(db, workspaceId);
+      call: async (a: { markdown: string; number?: number; view?: number }) => {
+        const view = await toolView(db, workspaceId, a.view);
         const markdown = a.markdown.trim();
         if (!/^## \S/.test(markdown)) throw new Error('A section starts with a "## " heading');
         const at = a.number === undefined ? view.markdown.length : a.number - 1;
@@ -343,13 +359,53 @@ export function viewTools(db: Db, workspaceId: number): McpTool[] {
           .where("id", "=", view.id)
           .execute();
         tell(workspaceId);
-        const done = `Section ${at + 1} ${a.number === undefined ? "added" : "replaced"}.`;
+        const done = `Section ${at + 1} of view ${view.id} ${a.number === undefined ? "added" : "replaced"}.`;
         if (!view.guide) return done;
         const all = new Set([...others, ...mine]);
         const left = changed.filter((p) => !all.has(p));
         return left.length
           ? `${done} ${left.length} files in no section yet: ${left.join(", ")}`
           : `${done} Every changed file is in a section.`;
+      },
+    },
+    {
+      name: "remove_section",
+      description:
+        "Remove section number N (1 is the first) from a view, the latest unless view is given. The sections after it move up.",
+      inputSchema: {
+        type: "object",
+        properties: { number: { type: "integer" }, ...viewArg },
+        required: ["number"],
+      },
+      call: async (a: { number: number; view?: number }) => {
+        const view = await toolView(db, workspaceId, a.view);
+        if (a.number < 1 || a.number > view.markdown.length)
+          throw new Error(`The view has ${view.markdown.length} sections`);
+        await db
+          .updateTable("views")
+          .set({ sections: JSON.stringify(view.markdown.toSpliced(a.number - 1, 1)) })
+          .where("id", "=", view.id)
+          .execute();
+        tell(workspaceId);
+        return `Section ${a.number} of view ${view.id} removed; it has ${view.markdown.length - 1} left.`;
+      },
+    },
+    {
+      name: "list_views",
+      description:
+        "List the workspace's views, newest first: id, title, range and section headings. Use an id to write to a view other than the latest.",
+      inputSchema: { type: "object", properties: {} },
+      call: async () => {
+        const views = await listViews(db, workspaceId);
+        if (!views.length) return "No views yet.";
+        return views
+          .map((v) =>
+            [
+              `View ${v.id}: ${v.title}${v.guide ? " (guide)" : ""}, ${v.base} → ${v.head}`,
+              ...v.sections.map((s, i) => `  ${i + 1}. ${s.title}`),
+            ].join("\n"),
+          )
+          .join("\n\n");
       },
     },
     {

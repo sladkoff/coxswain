@@ -3,6 +3,23 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-27 — Managing views
+
+### What works
+
+- **Older views can be changed** (#20): `write_section`, `add_explanation` and `add_finding` take `view`, the id
+  `start_view` returns, and write to the latest view without it. `list_views` lists the views with their ids and
+  section headings, and `remove_section` removes a section.
+- **Views can be removed:** right-click a view's chip → _Remove View…_, confirmed, deletes it with its explanations
+  and findings. Removing the newest no longer shows the one before it as if it were new.
+- Checked with a throwaway script against an in-memory database: `list_views`, `remove_section` on an older view and
+  on the latest, unknown ids and section numbers, and the cascade to entries.
+
+### Tech debt
+
+- Paid off: the tools wrote only to the latest view and views couldn't be removed.
+- Two sessions keep their views apart only if the agent passes `view`; nothing ties a view to its session.
+
 ## 2026-09-27 — Views: markdown, diagrams and embedded file diffs
 
 ### What works
@@ -38,8 +55,6 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 - Mermaid is about 1.2 MB of the renderer bundle, in its own chunk.
 - The bottom bar and the Navigator count the whole range while a view that embeds only some of it shows (UX open
   question 2).
-- The tools write only to the workspace's latest view: an older one can't be changed, and views can't be removed, so
-  their chips pile up in the canvas bar.
 
 ## 2026-09-27 — Diff and numbered guides in the canvas bar
 

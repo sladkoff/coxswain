@@ -149,7 +149,7 @@ const agents: Record<
 const paneContext = `You are running inside coxswain, a desktop app for reviewing a pull request's changes. The user sees
 the diff beside this chat. Messages starting with [Comment on …] or [Review · …] are review comments they sent you from
 the diff: make the change asked for, or answer the question. The mcp__coxswain tools put views on the canvas beside the
-diff (start_view, write_section): a guide through the changes, or a view of one aspect (the data model, a data flow, or
+diff (start_view, write_section, remove_section, list_views): a guide through the changes, or a view of one aspect (the data model, a data flow, or
 anything the user asks to see), in markdown with diagrams and embedded file diffs; explanations of lines
 (add_explanation); and, when they ask for a review, findings on lines (add_finding). Use them, and your review skills,
 when the user asks for a guide, a review, or to see or visualise something about the changes.`;

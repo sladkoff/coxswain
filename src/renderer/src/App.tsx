@@ -4,6 +4,7 @@ import { useLocation, useNavigate, useRouter, useSearch } from "@tanstack/react-
 import { type UIEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangedFile, Commit } from "../../core/git";
 import type { NewEntry, ReviewEntry } from "../../core/review";
+import type { View } from "../../core/views";
 import type { Workspace } from "../../core/workspaces";
 import { Agents } from "./Agents";
 import { upsert } from "./ChatEntry";
@@ -169,7 +170,7 @@ export function App() {
     if (newest.current?.workspaceId !== currentWorkspace.id) {
       if (now.viewId === undefined && !now.commit && latest?.head === pr.commits.head)
         void show({ viewId: latest.id }, true);
-    } else if (latest && latest.id !== newest.current.id)
+    } else if (latest && latest.id > newest.current.id)
       void show({ viewId: latest.id, commit: undefined });
     newest.current = { workspaceId: currentWorkspace.id, id: latest?.id ?? 0 };
   }, [currentWorkspace?.id, views, pr.commits]);
@@ -383,6 +384,18 @@ export function App() {
   // A message for the agent pane's composer, from the new view menu; a new object each time, so the same one fills it
   // again. The user sends it from the agent pane; the view shows as soon as the agent starts it.
   const [composerText, setComposerText] = useState<{ text: string }>();
+  // Its explanations and findings go with it; showing it, the canvas falls back to the diff.
+  const removeView = async (v: View, label: string) => {
+    const ok = await window.coxswain.confirm({
+      message: `Remove the view “${label}”?`,
+      detail: "Its sections, explanations and findings are deleted.",
+      action: "Remove",
+    });
+    if (!ok) return;
+    await window.coxswain.removeView(v.id);
+    await changed({ workspaceId: v.workspaceId, what: "view" });
+    await changed({ workspaceId: v.workspaceId, what: "entries" });
+  };
   const newView = async () => setComposerText({ text: await window.coxswain.showNewViewMenu() });
   const pickCommit = (picked: Commit | null) =>
     void show({ commit: picked ?? undefined, viewId: null, file: undefined, at: undefined });
@@ -541,6 +554,7 @@ export function App() {
             onShowView={(id) =>
               void show({ viewId: id, commit: undefined, file: undefined, at: undefined })
             }
+            onRemoveView={removeView}
             onNewView={newView}
             onOpenQuickly={() => setQuickOpen(true)}
             canBack={canBack}

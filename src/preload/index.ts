@@ -146,6 +146,8 @@ const api = {
   // The workspace's views, newest first (ADR 0023, 0026).
   listViews: (workspaceId: number): Promise<View[]> =>
     ipcRenderer.invoke("views:list", workspaceId),
+  // Removes a view with its explanations and findings.
+  removeView: (viewId: number): Promise<void> => ipcRenderer.invoke("views:remove", viewId),
   // The composer's Comment/Agent toggle, kept for every comment box.
   getCommentToAgent: (): Promise<boolean> => ipcRenderer.invoke("settings:comment-to-agent"),
   setCommentToAgent: (toAgent: boolean): Promise<void> =>
@@ -185,6 +187,8 @@ const api = {
     ipcRenderer.invoke("menus:code-lines", labels, more, none),
   // A workspace's context menu in L1; stays pending if dismissed.
   showWorkspaceMenu: (): Promise<"remove"> => ipcRenderer.invoke("menus:workspace"),
+  // A view chip's context menu; pending if dismissed.
+  showViewChipMenu: (): Promise<"remove"> => ipcRenderer.invoke("menus:view-chip"),
   // A native confirmation before a destructive action: `action` names its button. True if confirmed.
   confirm: (c: { message: string; detail: string; action: string }): Promise<boolean> =>
     ipcRenderer.invoke("dialogs:confirm", c),
