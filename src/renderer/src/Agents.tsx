@@ -53,11 +53,12 @@ export function Agents({ workspace, onViewThread, composerText }: Props) {
   }, [composerText]);
 
   // The shown agent session's transcript, once loaded or picked and again when a turn ends (the core says it changed), in
-  // place of the entries streamed during the turn. Not while the turn runs: it would drop the message just sent.
+  // place of the entries streamed during the turn. Not while the turn runs: it would drop the message just sent. The
+  // core has none for a session whose turn another pane started (Send all), but its entries stream here.
   useEffect(() => {
-    if (!last || !transcript || running) return;
+    if (!last || running) return;
     setSession(last);
-    setEntries(transcript);
+    if (transcript) setEntries(transcript);
   }, [transcript, picked]);
 
   useEffect(() => {

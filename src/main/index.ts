@@ -1,4 +1,13 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, shell, type WebContents } from "electron";
+import {
+  app,
+  BrowserWindow,
+  clipboard,
+  dialog,
+  ipcMain,
+  Menu,
+  shell,
+  type WebContents,
+} from "electron";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import icon from "../../resources/icon.png?asset";
@@ -52,6 +61,7 @@ import {
   setCommentToAgent,
   listEntries,
   type NewEntry,
+  reviewPromptText,
   sendReview,
   stopQuestion,
 } from "../core/review";
@@ -341,6 +351,11 @@ app.whenReady().then(() => {
     changed(e.sender, { workspaceId, what: "worktree" });
     changed(e.sender, { workspaceId, what: "transcript" });
     return result;
+  });
+  ipcMain.handle("review:copy-prompt", async (_, workspaceId: number) => {
+    const prompt = await reviewPromptText(db, workspaceId);
+    if (prompt) clipboard.writeText(prompt);
+    return !!prompt;
   });
   ipcMain.handle("review:stop", (_, workspaceId: number) => stopQuestion(db, workspaceId));
   ipcMain.handle("reviewed:list", (_, workspaceId: number, mergeBase: string, head?: string) =>
