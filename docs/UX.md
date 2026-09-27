@@ -8,12 +8,12 @@ Direction for the main screen and navigation. Expected to change as we build; te
 Agent-first. Opening a PR shows the project column (L1), the agent pane (L4) on the left and the canvas (L3) on the
 right. The canvas is one explorer that both the agent and the human annotate; for now it shows _Changes_, the
 workspace's file diffs, with the Navigator (L2) or the commits pane on its left. A bar at the canvas's top holds
-_Files_, _Commits_, _Guide_, then Back and Forward chevrons, a magnifier (Open Quickly) and the cog; a bar at its
+_Files_, _Commits_, _Diff_, a chip per guide, a dashed _New View_ chip, then Back and Forward chevrons, a magnifier (Open Quickly) and the cog; a bar at its
 bottom sums up the review.
 
 ```
 ┌────┬─────────────────────────┬──────────────────────────────────────────┐
-│    │ Session 2 · Codex [New▾]│ Files 3  Commits  Guide              ⚙   │
+│    │ Session 2 · Codex [New▾]│ Files 3  Commits  Diff  Guide 1 [+]  ⚙   │
 │ L1 ├─────────────────────────┼─────────┬────────────────────────────────┤
 │    │ L4 Agent pane           │ L2      │ L3 Canvas                      │
 │ P  │                         │ Navi-   │                                │
@@ -116,10 +116,12 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   comments and answers, asking the agent to make the changes and answer what's open. The chat shows it as a card
   (_Review sent to Agent · N threads_); the bar says _Agent working…_ until the turn ends.
 
-  **Guides.** _Guide_ in the canvas's bar opens a native menu: _Make a Guide_, _Make a Guide with Review_, then _No
-  Guide_ and every guide made so far (when, its head, _(stale)_ once the PR moved on). The two _Make_ items put a
-  message in the agent pane's composer, to edit and send; the agent pane's session makes the guide with coxswain's
-  tools (ADR 0023); asking for one in the agent pane's own words does the same. A guide shows on the canvas as soon
+  **Guides.** _Diff_ in the canvas's bar shows the diff without a guide; it's on while no guide shows. Next to it, a
+  chip per guide, oldest first (_Guide 1_, _Guide 2_, …; its tooltip says when it was made, its head, and _(stale)_
+  once the PR moved on), to switch between them. The dashed _New View_ chip (a layers-plus icon) makes new views:
+  its menu has _New View (guide)_ and _New View (review)_ (a guide with findings). Both put a message in the agent
+  pane's composer, to edit and send; the agent pane's session makes the guide with coxswain's tools (ADR 0023);
+  asking for one in the agent pane's own words does the same. A guide shows on the canvas as soon
   as the agent starts it, and fills in as it adds to it: its groups in reading order, each with its title, how many
   files and its description above its first file diff, and each file note above its file diff; then the files in no
   group under _Not in the guide_; then the _generated_ groups, low-lighted. On the canvas's left, a table of

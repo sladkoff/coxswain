@@ -57,7 +57,7 @@ export function onGuideChange(listener: (workspaceId: number) => void) {
 }
 const tell = (workspaceId: number) => listeners.forEach((l) => l(workspaceId));
 
-// The messages *Make a Guide* and *Make a Guide with Review* put in the agent pane's composer. How to guide is in
+// The messages *New View (guide)* and *New View (review)* put in the agent pane's composer. How to guide is in
 // start_guide's result, so a guide asked for in the agent's own words is made the same way.
 export const guideRequest = (review: boolean) =>
   review

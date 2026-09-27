@@ -1,18 +1,26 @@
 import type { Commit } from "../../core/git";
 import type { Guide } from "../../core/guides";
 import { Button, ToggleButton } from "./components/button";
-import { ChevronLeftIcon, ChevronRightIcon, CogIcon, SearchIcon } from "./components/icons";
+import {
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  CogIcon,
+  LayersPlusIcon,
+  SearchIcon,
+} from "./components/icons";
 import { cn, divider, titleBar } from "./components/styles";
-import { shortDateTime } from "./format";
 
 type Props = {
   files: number | undefined; // how many file diffs are on the canvas
   leftPane: "files" | "commits" | null;
   onToggleLeftPane: (pane: "files" | "commits") => void;
-  ready: boolean; // the PR's commits are loaded, so Commits and Guide can open
+  ready: boolean; // the PR's commits are loaded, so Commits and the views can open
   commit: Commit | null;
   guide: Guide | null;
-  onGuide: () => void;
+  guides: Guide[]; // newest first
+  prHead: string | undefined;
+  onShowGuide: (id: number | null) => void; // null: the diff, no guide
+  onNewView: () => void;
   onOpenQuickly: () => void;
   onViewOptions: () => void;
   canBack: boolean;
@@ -21,7 +29,7 @@ type Props = {
   onForward: () => void;
 };
 
-// The canvas's bar: Files, Commits and Guide on the left; Back, Forward, Open Quickly and the view options on the right. It also
+// The canvas's bar: Files, Commits, Diff, a chip per guide and New View on the left; Back, Forward, Open Quickly and the view options on the right. It also
 // drags the window, so it lines up with the agent pane's. ponytail: no tabs row until the canvas shows a second thing.
 export function CanvasBar(props: Props) {
   return (
@@ -49,13 +57,33 @@ export function CanvasBar(props: Props) {
         {props.commit ? `${props.commit.sha.slice(0, 7)} ${props.commit.subject}` : "Commits"}
       </ToggleButton>
       <ToggleButton
-        title="Make a guide, or pick the guide to show"
+        title="Show the diff without a guide"
         disabled={!props.ready}
-        on={!!props.guide}
-        onClick={props.onGuide}
+        on={!props.guide}
+        onClick={() => props.onShowGuide(null)}
       >
-        {props.guide ? `Guide · ${shortDateTime(props.guide.createdAt)}` : "Guide"}
+        Diff
       </ToggleButton>
+      {props.guides.toReversed().map((g, i) => (
+        <ToggleButton
+          key={g.id}
+          title={`Made ${new Date(g.createdAt).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })} at ${g.head.slice(0, 7)}${g.head === props.prHead ? "" : " (stale)"}`}
+          disabled={!props.ready}
+          on={g.id === props.guide?.id}
+          onClick={() => props.onShowGuide(g.id)}
+        >
+          Guide {i + 1}
+        </ToggleButton>
+      ))}
+      <Button
+        variant="ghost"
+        title="New view"
+        className="rounded border border-dashed border-neutral-400 px-1.5 dark:border-neutral-600 py-0.5 text-neutral-500"
+        disabled={!props.ready}
+        onClick={props.onNewView}
+      >
+        <LayersPlusIcon />
+      </Button>
       <div className="flex-1" />
       <Button
         variant="ghost"
