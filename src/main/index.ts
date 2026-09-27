@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell, type WebContents } from "electron";
+import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import icon from "../../resources/icon.png?asset";
 import {
@@ -50,6 +51,25 @@ import { listReviewed, setReviewed } from "../core/reviewed";
 import { checkSetup } from "../core/setup";
 import type { Changed, NavigatorSettings, ViewSettings } from "../preload";
 import { listWorkspaces, openPullRequestWorkspace, removeWorkspace } from "../core/workspaces";
+
+// Started from the Dock, Finder or a desktop launcher, the app gets a bare PATH without gh, claude or codex, so it takes
+// the login shell's. The markers skip whatever the shell prints on start.
+if (app.isPackaged && process.platform !== "win32") {
+  try {
+    const out = execFileSync(
+      process.env.SHELL || "/bin/sh",
+      ["-ilc", 'printf "__PATH__%s__PATH__" "$PATH"'],
+      {
+        encoding: "utf8",
+        timeout: 5000,
+      },
+    );
+    const path = /__PATH__(.*)__PATH__/.exec(out)?.[1];
+    if (path) process.env.PATH = path;
+  } catch {
+    // Keep the PATH we got; the startup check shows what's missing.
+  }
+}
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -142,7 +162,7 @@ const menu = Menu.buildFromTemplate([
 ]);
 
 app.whenReady().then(() => {
-  // ponytail: set at runtime since there's no packaging yet; build an .icns into the bundle when we package.
+  // Packaged builds carry the icon in the bundle; this is for `pnpm dev`, which runs Electron's own.
   app.dock?.setIcon(icon);
   Menu.setApplicationMenu(menu);
   const db = openDatabase(join(app.getPath("userData"), "coxswain.db"));
