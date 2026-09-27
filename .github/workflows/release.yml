@@ -1,15 +1,43 @@
 name: Release
 
-# Push a tag like v0.1.0 to release; a tag with a pre-release part (v0.1.0-rc.1) makes a GitHub pre-release.
+# Actions → Release → Run workflow, with a version like 0.2.0: bumps package.json on main, tags v0.2.0, builds and
+# creates the GitHub release. A version with a pre-release part (0.2.0-rc.1) makes a GitHub pre-release.
 on:
-  push:
-    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version, e.g. 0.2.0 or 0.2.0-rc.1"
+        required: true
 
 permissions:
   contents: write
 
 jobs:
+  # One job pushes the commit and tag: pushes made with the workflow's token don't start other workflows.
+  tag:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - id: tag
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          version=${VERSION#v}
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || { echo "::error::Not a version: $VERSION"; exit 1; }
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          npm pkg set version="$version"
+          git commit -am "Release v$version"
+          git tag "v$version"
+          git push origin main "v$version"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: tag
     strategy:
       matrix:
         include:
@@ -22,6 +50,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.tag.outputs.tag }}
       - uses: pnpm/action-setup@v4
         with:
           version: 10
@@ -30,9 +60,6 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # The tag is the version: the app shows it in Settings and electron-builder names the files by it.
-      - run: npm pkg set version=${GITHUB_REF_NAME#v}
-        shell: bash
       - run: pnpm build
       - run: pnpm exec electron-builder ${{ matrix.args }} --publish never
       - uses: actions/upload-artifact@v4
@@ -45,15 +72,16 @@ jobs:
             dist/*.AppImage
 
   release:
-    needs: build
+    needs: [tag, build]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
           merge-multiple: true
-      - run: >
-          gh release create "$GITHUB_REF_NAME" artifacts/* --repo "$GITHUB_REPOSITORY" --generate-notes
-          $([[ "$GITHUB_REF_NAME" == *-* ]] && echo --prerelease)
-        env:
+      - env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.tag.outputs.tag }}
+        run: >
+          gh release create "$TAG" artifacts/* --repo "$GITHUB_REPOSITORY" --generate-notes
+          $([[ "$TAG" == *-* ]] && echo --prerelease)

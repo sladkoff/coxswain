@@ -20,11 +20,12 @@ The app has no native Node modules (SQLite is `node:sqlite`), and the agents it 
 1. **electron-builder packages the app**, configured in `package.json` (`build`): a `.dmg` and `.zip` for macOS
    (arm64 and x64), an NSIS installer for Windows x64, an AppImage for Linux x64. The agent SDKs' bundled
    `claude` and `codex` binaries are left out; the user's own are used.
-2. **A pushed `v*` tag is a release.** `.github/workflows/release.yml` sets the version from the tag, builds on one
-   runner per OS and creates the GitHub release with the files and generated notes. A tag with a pre-release part
-   (`v0.1.0-rc.1`) makes a GitHub pre-release.
-3. **The build knows its version and commit**: `__VERSION__` (from `package.json`, i.e. the tag) and `__COMMIT__`
-   (`GITHUB_SHA`, or `git rev-parse` locally) are defined in the renderer and shown in Settings.
+2. **Releases start from a button.** Actions → _Release_ → _Run workflow_ with a version (`.github/workflows/release.yml`)
+   sets it in `package.json`, commits _Release vX_ to `main`, tags `vX`, builds the tag on one runner per OS and
+   creates the GitHub release with the files and GitHub's generated notes (the PRs merged since the last release).
+   A version with a pre-release part (`0.1.0-rc.1`) makes a GitHub pre-release. Pushing a tag by hand does nothing.
+3. **The build knows its version and commit**: `__VERSION__` (from `package.json`) and `__COMMIT__`
+   (`git rev-parse`) are defined in the renderer and shown in Settings.
 4. **CI runs typecheck, lint, format check and build** on every push to `main` and every pull request
    (`.github/workflows/ci.yml`).
 5. **Unsigned for now.** macOS builds aren't signed or notarized, so Gatekeeper blocks the first launch
@@ -36,12 +37,14 @@ The app has no native Node modules (SQLite is `node:sqlite`), and the agents it 
 
 - **Electron Forge**: the official tool, but its makers and publishers are more setup for the same three targets;
   electron-builder is one config block and builds macOS x64 on an arm64 runner.
+- **Releasing on a pushed tag**: works, but leaves `package.json` behind the released version. The workflow's
+  own tag push can't start a second workflow, so bumping, tagging and building are one workflow.
 - **electron-builder's own publishing**: it drafts one release per runner and races; one job creating the release
   from every runner's files is simpler to follow.
 
 ## Consequences
 
-- Releases are a `git tag` and a `git push --tags` away; nothing to run locally.
+- A release is one click with a version; nothing to run locally, and `main` always has the released version.
 - First launches on macOS need the Gatekeeper workaround until we sign with a Developer ID and notarize (secrets in
   the release workflow, `mac.identity` in the config).
 - No auto-update: users download new releases by hand.
