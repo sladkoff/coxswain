@@ -191,13 +191,8 @@ const api = {
   // L1's project menu: the project to switch to, or null for Add Project. Pending if dismissed.
   showProjectsMenu: (fullNames: string[]): Promise<string | null> =>
     ipcRenderer.invoke("menus:projects", fullNames),
-  // The canvas's Guide menu: make one (make: with review), or the guide to show (null: none). Pending if dismissed.
-  showGuideMenu: (
-    workspaceId: number,
-    shown: number | null,
-    prHead: string,
-  ): Promise<{ prompt: string } | { show: number | null }> =>
-    ipcRenderer.invoke("menus:guide", workspaceId, shown, prHead),
+  // The canvas's new view menu: the message for the agent pane's composer that asks for it. Pending if dismissed.
+  showNewViewMenu: (): Promise<string> => ipcRenderer.invoke("menus:new-view"),
   onChanged: (callback: (change: Changed) => void) => {
     const listener = (_: unknown, change: Changed) => callback(change);
     ipcRenderer.on("changed", listener);

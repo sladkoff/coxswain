@@ -30,8 +30,8 @@ the agent's own thoughts. Reviewing is opt-in.
      it only when the user asked for a review.
      A short text appended to Claude Code's system prompt (`paneContext`) tells the agent it runs in coxswain, what the
      comment and review headers mean, and what the tools are for; how to use each stays in its description and result.
-2. **Any message can make a guide.** "Make me a guide" works, since the tools are always there. _Guide_ in the canvas's
-   bar also offers _Make a Guide_ and _Make a Guide with Review_, which put a short message in the agent pane's
+2. **Any message can make a guide.** "Make me a guide" works, since the tools are always there. _New View_ in the canvas's
+   bar also offers _New View (guide)_ and _New View (review)_, which put a short message in the agent pane's
    composer for the user to edit and send. How to guide lives in `start_guide`'s result, not in a setting.
 3. **Guides show in _Changes_.** A guide shown puts its groups in reading order (generated last, then _Not in the
    guide_), with each group's title and description above its first file diff and each file note above its file diff.

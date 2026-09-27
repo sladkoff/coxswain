@@ -30,7 +30,7 @@ import {
   readFileAt,
   readWorktreeFile,
 } from "../core/git";
-import { type Guide, guideRequest, listGuides, onGuideChange } from "../core/guides";
+import { guideRequest, listGuides, onGuideChange } from "../core/guides";
 import { getCurrentUser, listPullRequests, listRepos } from "../core/github";
 import { listProjects, openProject } from "../core/projects";
 import {
@@ -478,32 +478,15 @@ app.whenReady().then(() => {
   );
   ipcMain.handle("guides:list", (_, workspaceId: number) => listGuides(db, workspaceId));
   // The canvas's Guide menu: a prompt for a guide, for the agent pane's composer, or which guide to show. Resolves only on a click, like the menus above.
-  ipcMain.handle("menus:guide", (e, workspaceId: number, shown: number | null, prHead: string) =>
-    listGuides(db, workspaceId).then(
-      (guides) =>
-        new Promise<{ prompt: string } | { show: number | null }>((resolve) =>
-          Menu.buildFromTemplate([
-            { label: "Make a Guide", click: () => resolve({ prompt: guideRequest(false) }) },
-            {
-              label: "Make a Guide with Review",
-              click: () => resolve({ prompt: guideRequest(true) }),
-            },
-            { type: "separator" },
-            {
-              label: "No Guide",
-              type: "radio",
-              checked: shown === null,
-              click: () => resolve({ show: null }),
-            },
-            ...guides.map((g: Guide) => ({
-              label: `${new Date(g.createdAt).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })} · ${g.head.slice(0, 7)}${g.head === prHead ? "" : " (stale)"}`,
-              type: "radio" as const,
-              checked: g.id === shown,
-              click: () => resolve({ show: g.id }),
-            })),
-          ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
-        ),
-    ),
+  ipcMain.handle(
+    "menus:new-view",
+    (e) =>
+      new Promise<string>((resolve) =>
+        Menu.buildFromTemplate([
+          { label: "New View (guide)", click: () => resolve(guideRequest(false)) },
+          { label: "New View (review)", click: () => resolve(guideRequest(true)) },
+        ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
+      ),
   );
   ipcMain.handle("settings:comment-to-agent", () => getCommentToAgent(db));
   ipcMain.handle("settings:set-comment-to-agent", (_, toAgent: boolean) =>

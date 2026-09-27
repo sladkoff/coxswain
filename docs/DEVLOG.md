@@ -3,6 +3,17 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-27 — Diff and numbered guides in the canvas bar
+
+### What works
+
+- **_Diff_ chip** left of the guide chip in the canvas bar: shows the diff without a guide, and is on while none
+  shows. It replaces the Guide menu's _No Guide_.
+- **A chip per guide**, numbered in the order made (_Guide 1_, _Guide 2_, …), to switch between them; the guide's
+  date, head and staleness are in its tooltip. The Guide menu is gone.
+- **_New View_ chip** (dashed, a layers-plus icon) after it: its menu has _New View (guide)_ and _New View
+  (review)_, which fill the agent pane's composer as before. Meant to offer other kinds of view later.
+
 ## 2026-09-27 — Back and forward on the canvas
 
 ### What works

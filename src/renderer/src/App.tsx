@@ -375,20 +375,10 @@ export function App() {
     });
     setCurrentGroup(passed.at(-1) ?? sections.findIndex((x) => x.shown.length));
   };
-  // A message for the agent pane's composer, from the Guide menu; a new object each time, so the same one fills it again.
+  // A message for the agent pane's composer, from the new view menu; a new object each time, so the same one fills it
+  // again. The user sends it from the agent pane; the guide shows as soon as the agent starts it.
   const [composerText, setComposerText] = useState<{ text: string }>();
-  const pickGuide = async () => {
-    if (!currentWorkspace || !pr.commits) return;
-    const picked = await window.coxswain.showGuideMenu(
-      currentWorkspace.id,
-      guide?.id ?? null,
-      pr.commits.head,
-    );
-    if ("show" in picked)
-      return void show({ guide: picked.show, commit: undefined, file: undefined, at: undefined });
-    // The user sends it from the agent pane; the guide shows as soon as the agent starts it.
-    setComposerText({ text: picked.prompt });
-  };
+  const newView = async () => setComposerText({ text: await window.coxswain.showNewViewMenu() });
   const pickCommit = (picked: Commit | null) =>
     void show({ commit: picked ?? undefined, guide: null, file: undefined, at: undefined });
   // The one way to show a whole file: on the canvas, at `line` if given, with the Navigator on Files and the file
@@ -541,7 +531,12 @@ export function App() {
             ready={!!pr.commits}
             commit={commit}
             guide={guide}
-            onGuide={pickGuide}
+            guides={guides ?? []}
+            prHead={pr.commits?.head}
+            onShowGuide={(id) =>
+              void show({ guide: id, commit: undefined, file: undefined, at: undefined })
+            }
+            onNewView={newView}
             onOpenQuickly={() => setQuickOpen(true)}
             canBack={canBack}
             canForward={canForward}
