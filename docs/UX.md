@@ -46,7 +46,7 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
 
   Below it, under _Workspaces_, one row per workspace of the project, in the order they were added, the current one
   filled: the PR's title (from GitHub; its number until it's loaded or when offline), then `#number · branch` in small
-  type, and an icon for an open, draft, merged or closed PR, or a branch; _+ New Workspace_ at the end starts one. Right-clicking a workspace offers _Remove Workspace…_, which asks
+  type, and an icon for an open, draft, merged or closed PR, or a branch; _+ New Workspace_ at the end, and a + next to _Workspaces_ (in reach however long the list), start one. Right-clicking a workspace offers _Remove Workspace…_, which asks
   first: its comments, reviewed files and agent sessions go, its worktree stays on disk. A workspace is either a PR or a branch (ADR 0028), and has
   one worktree; a branch workspace's row shows its branch name. _New Workspace_ opens the new workspace
   screen: at its top, a branch name (the repository's branches on GitHub are offered as it's typed), _from_ and the

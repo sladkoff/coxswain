@@ -85,8 +85,23 @@ export function WorkspaceRail({
             <ChevronDownIcon />
           </span>
         </button>
-        <div className={cn("px-2 pt-3 pb-1 text-[10.5px] font-semibold tracking-wide", muted)}>
-          WORKSPACES
+        {/* New Workspace here too, so it's in reach however long the list gets. */}
+        <div
+          className={cn(
+            "flex items-center pt-2 pr-0.5 pl-2 text-[10.5px] font-semibold tracking-wide",
+            muted,
+          )}
+        >
+          <span className="flex-1">WORKSPACES</span>
+          <Button
+            variant="ghost"
+            title="New workspace"
+            aria-label="New workspace"
+            className="flex size-5 items-center justify-center text-sm leading-none font-normal"
+            onClick={onNew}
+          >
+            +
+          </Button>
         </div>
         {workspaces.map((w) => (
           <WorkspaceRow
