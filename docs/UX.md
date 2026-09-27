@@ -62,7 +62,9 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   _Files_, with the file selected and its folders open. Esc or a click outside closes it.
 
   _View > Back_ (⌥⌘←) and _View > Forward_ (⌥⌘→) step through what the canvas showed in this workspace: each whole
-  file opened (from _Files_, Open Quickly, Go to Definition or Find Usages) and each switch back to the file diffs.
+  file opened (from _Files_, Open Quickly, Go to Definition or Find Usages), each file picked in _Diffs_, and each
+  switch back to the file diffs. Each step comes back scrolled where it was left, the file diffs by the one at the top.
+  The keys work wherever the focus is, the Navigator included.
 
   _Commits_ in the canvas's bar shows the commits pane in the Navigator's place (one or the other): _All Changes_,
   then the PR's commits (and local ones on top), newest first. Picking a commit shows its commit diff on the canvas,

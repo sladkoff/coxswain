@@ -219,34 +219,53 @@ export function App() {
   // `opened` is a whole file picked in Files, shown on the canvas in place of the file diffs.
   const [opened, setOpened] = useState<Opened | null>(null);
   // The canvas's history, for View > Back and Forward (⌥⌘← ⌥⌘→): every change of what it shows (a whole file, or the
-  // file diffs) is a step, however it came about. One workspace's; opening another starts it over.
-  // ponytail: the file diffs' scroll isn't kept, so going back to them lands where they were last scrolled.
-  const history = useRef<{ steps: { view: NavigatorView; opened: Opened | null }[]; at: number }>({
-    steps: [],
-    at: -1,
-  });
-  const navigating = useRef(false);
+  // file diffs) is a step, however it came about. One workspace's; opening another starts it over. Each step keeps
+  // where the canvas was scrolled, and for the file diffs the one at the top: those above it may not be read yet on
+  // the way back, so their heights are guesses and the scroll offset alone would land elsewhere.
+  type Step = { view: NavigatorView; opened: Opened | null; scroll?: Scroll };
+  const history = useRef<{ steps: Step[]; at: number }>({ steps: [], at: -1 });
+  const canvas = useRef<HTMLDivElement>(null);
+  // The scroll to restore once the canvas shows the step Back or Forward moved to.
+  const pendingScroll = useRef<Scroll | undefined>(undefined);
+  // A new step for what the canvas shows now; the steps after the current one are dropped.
+  const record = () => {
+    const h = history.current;
+    const scroller = canvas.current && canvasScroller(canvas.current);
+    h.steps = [
+      ...h.steps.slice(0, h.at + 1),
+      { view, opened, scroll: scroller ? scrollOf(scroller) : undefined },
+    ];
+    h.at = h.steps.length - 1;
+  };
   useEffect(() => {
-    history.current = { steps: [], at: -1 };
+    // Starts on what the canvas shows now: opened is often null already, so setting it doesn't record a step.
+    history.current = { steps: [{ view, opened: null }], at: 0 };
     setOpened(null);
   }, [currentWorkspace?.id]);
   useEffect(() => {
-    // Adjacent steps always differ, so stepping to one changes view or opened and lands here.
-    if (navigating.current) return void (navigating.current = false);
-    const h = history.current;
-    const now = h.steps[h.at];
-    if (now?.view === view && now.opened === opened) return; // StrictMode runs this twice on mount
-    h.steps = [...h.steps.slice(0, h.at + 1), { view, opened }];
-    h.at = h.steps.length - 1;
+    // Already the step: Back or Forward moved to it (or StrictMode ran this twice on mount).
+    const now = history.current.steps[history.current.at];
+    if (now?.view !== view || now.opened !== opened) return record();
+    if (pendingScroll.current && canvas.current)
+      restoreScroll(canvas.current, pendingScroll.current);
+    pendingScroll.current = undefined;
   }, [view, opened]);
   useEffect(
     () =>
       window.coxswain.onNavigate((by) => {
         const h = history.current;
+        const from = h.steps[h.at];
         const step = h.steps[h.at + by];
         if (!step) return;
         h.at += by;
-        navigating.current = true;
+        // Without its line, so the Viewer doesn't scroll to it over the restored scroll.
+        if (step.opened?.kind === "file") step.opened = { ...step.opened, line: undefined };
+        // The same view (a pick in Diffs): no render comes, so scroll now. Otherwise once the new view is drawn.
+        if (from.view === step.view && from.opened === step.opened) {
+          if (step.scroll && canvas.current) restoreScroll(canvas.current, step.scroll);
+          return;
+        }
+        pendingScroll.current = step.scroll;
         setView(step.view);
         setOpened(step.opened);
       }),
@@ -324,7 +343,10 @@ export function App() {
   // the canvas's own scroll: file diffs also scroll sideways inside it.
   const onCanvasScroll = (e: UIEvent<HTMLDivElement>) => {
     const scroller = e.target as HTMLElement;
-    if (!sections || scroller.parentElement !== e.currentTarget) return;
+    if (scroller.parentElement !== e.currentTarget) return;
+    const step = history.current.steps[history.current.at];
+    if (step) step.scroll = scrollOf(scroller);
+    if (!sections) return;
     const top = scroller.getBoundingClientRect().top + 40;
     const passed = sections.flatMap((_, i) => {
       const el = document.getElementById(`guide-group-${i}`);
@@ -370,6 +392,7 @@ export function App() {
   const open = (path: string) => {
     if (view === "files") return openFile(path);
     // ponytail: file diffs above it that are still loading push it down.
+    record(); // a step of its own, though the canvas still shows the file diffs
     document.getElementById(`diff:${path}`)?.scrollIntoView();
   };
   const showFile = view === "files" && opened;
@@ -568,73 +591,78 @@ export function App() {
             <div
               style={{ minWidth: viewerMin }}
               className="flex min-w-0 flex-1 flex-col"
+              ref={canvas}
               onScrollCapture={onCanvasScroll}
             >
               {!pr.commits || !diffDiffs || !shownDiffs ? (
                 <Centered>Loading…</Centered>
-              ) : showFile ? (
-                // One Viewer per file: a reused one would scroll to a line in the file it drew before.
-                <Viewer
-                  key={opened.kind === "file" ? opened.path : undefined}
-                  opened={opened}
-                  {...viewerProps(currentWorkspace, pr.commits.mergeBase)}
-                />
               ) : (
-                // Only the lines on screen are drawn. ponytail: every file is still read from disk up front.
-                <Virtualizer className="min-h-0 flex-1 overflow-auto">
-                  {shownDiffs.length === 0 && (
-                    <div className={cn("p-4 text-xs", muted)}>
-                      {diffDiffs.length ? (
-                        <>
-                          All {diffDiffs.length} files reviewed.{" "}
-                          <Button
-                            variant="link"
-                            onClick={() => setViewSettings((s) => ({ ...s, showReviewed: true }))}
+                <>
+                  {showFile && (
+                    // One Viewer per file: a reused one would scroll to a line in the file it drew before.
+                    <Viewer
+                      key={opened.kind === "file" ? opened.path : undefined}
+                      opened={opened}
+                      {...viewerProps(currentWorkspace, pr.commits.mergeBase)}
+                    />
+                  )}
+                  {/* Only the lines on screen are drawn. Hidden, not unmounted, under a whole file: it keeps its
+                      scroll and read files for Back. ponytail: every file is still read from disk up front. */}
+                  <Virtualizer className={cn("min-h-0 flex-1 overflow-auto", showFile && "hidden")}>
+                    {shownDiffs.length === 0 && (
+                      <div className={cn("p-4 text-xs", muted)}>
+                        {diffDiffs.length ? (
+                          <>
+                            All {diffDiffs.length} files reviewed.{" "}
+                            <Button
+                              variant="link"
+                              onClick={() => setViewSettings((s) => ({ ...s, showReviewed: true }))}
+                            >
+                              Show them
+                            </Button>
+                          </>
+                        ) : (
+                          "No changes"
+                        )}
+                      </div>
+                    )}
+                    {guide && guide.head !== pr.commits.head && <StaleGuideNotice />}
+                    {(sections ?? [{ group: undefined, diffs: diffDiffs, shown: shownDiffs }]).map(
+                      (x, i) =>
+                        x.shown.length > 0 && (
+                          <section
+                            key={i}
+                            id={`guide-group-${i}`}
+                            className={x.group?.tags.includes("generated") ? "opacity-60" : ""}
                           >
-                            Show them
-                          </Button>
-                        </>
-                      ) : (
-                        "No changes"
-                      )}
-                    </div>
-                  )}
-                  {guide && guide.head !== pr.commits.head && <StaleGuideNotice />}
-                  {(sections ?? [{ group: undefined, diffs: diffDiffs, shown: shownDiffs }]).map(
-                    (x, i) =>
-                      x.shown.length > 0 && (
-                        <section
-                          key={i}
-                          id={`guide-group-${i}`}
-                          className={x.group?.tags.includes("generated") ? "opacity-60" : ""}
-                        >
-                          {x.group !== undefined && (
-                            <GuideGroupHeader
-                              group={x.group}
-                              files={x.diffs.length}
-                              reviewed={x.diffs.length - x.shown.length}
-                            />
-                          )}
-                          {x.shown.map((d) => (
-                            <div key={d.file.path} id={`diff:${d.file.path}`}>
-                              {x.group?.notes[d.file.path] && (
-                                <GuideFileNote>{x.group.notes[d.file.path]}</GuideFileNote>
-                              )}
-                              <Viewer
-                                stacked
-                                opened={d}
-                                {...viewerProps(
-                                  currentWorkspace,
-                                  range?.base ?? pr.commits!.mergeBase,
-                                  range?.head,
-                                )}
+                            {x.group !== undefined && (
+                              <GuideGroupHeader
+                                group={x.group}
+                                files={x.diffs.length}
+                                reviewed={x.diffs.length - x.shown.length}
                               />
-                            </div>
-                          ))}
-                        </section>
-                      ),
-                  )}
-                </Virtualizer>
+                            )}
+                            {x.shown.map((d) => (
+                              <div key={d.file.path} id={`diff:${d.file.path}`}>
+                                {x.group?.notes[d.file.path] && (
+                                  <GuideFileNote>{x.group.notes[d.file.path]}</GuideFileNote>
+                                )}
+                                <Viewer
+                                  stacked
+                                  opened={d}
+                                  {...viewerProps(
+                                    currentWorkspace,
+                                    range?.base ?? pr.commits!.mergeBase,
+                                    range?.head,
+                                  )}
+                                />
+                              </div>
+                            ))}
+                          </section>
+                        ),
+                    )}
+                  </Virtualizer>
+                </>
               )}
             </div>
           </div>
@@ -652,6 +680,41 @@ export function App() {
       </div>
     </div>
   );
+}
+
+const canvasScroller = (canvas: HTMLElement) =>
+  canvas.querySelector<HTMLElement>(":scope > .overflow-auto:not(.hidden)");
+
+// Where the canvas is scrolled: its offset, and the file diff at its top with how far it is scrolled past.
+type Scroll = { top: number; anchor?: string; offset: number };
+function scrollOf(scroller: HTMLElement): Scroll {
+  const box = scroller.getBoundingClientRect();
+  const el = document
+    .elementFromPoint(box.left + box.width / 2, box.top + 1)
+    ?.closest<HTMLElement>('[id^="diff:"]');
+  return el
+    ? { top: scroller.scrollTop, anchor: el.id, offset: box.top - el.getBoundingClientRect().top }
+    : { top: scroller.scrollTop, offset: 0 };
+}
+
+// Scrolls the canvas back once what it shows has drawn: the file diff at the top is there, or the file is long enough.
+// ponytail: gives up after 2 s (a huge file still loading) and scrolls as far as it can.
+function restoreScroll(canvas: HTMLElement, s: Scroll) {
+  let tries = 40;
+  const go = () => {
+    const scroller = canvasScroller(canvas);
+    const el = s.anchor ? document.getElementById(s.anchor) : null;
+    const ready = s.anchor
+      ? el
+      : scroller && scroller.scrollHeight - scroller.clientHeight >= s.top;
+    if (!ready && tries-- > 0) return void setTimeout(go, 50);
+    if (!scroller) return;
+    if (el)
+      scroller.scrollTop +=
+        el.getBoundingClientRect().top - scroller.getBoundingClientRect().top + s.offset;
+    else scroller.scrollTop = s.top;
+  };
+  setTimeout(go);
 }
 
 // Stale (ADR 0023): the PR moved on since the guide was made. The guide stays as it was.

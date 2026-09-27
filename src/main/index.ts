@@ -83,6 +83,15 @@ function createWindow() {
     webPreferences: { preload: join(__dirname, "../preload/index.js") },
   });
   win.once("ready-to-show", () => win.show());
+  // Back and Forward before the page sees the key: the file tree takes ⌥⌘← and ⌥⌘→ for itself, so the menu's
+  // accelerators never fire while it has focus.
+  win.webContents.on("before-input-event", (event, input) => {
+    const by = { ArrowLeft: -1, ArrowRight: 1 }[input.key];
+    if (input.type !== "keyDown" || !by || !input.alt || !(input.meta || input.control)) return;
+    if (input.shift) return;
+    event.preventDefault();
+    win.webContents.send("navigate", by);
+  });
   // Links in agent replies open in the browser, never in the app window.
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:/.test(url)) shell.openExternal(url);

@@ -7,13 +7,20 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 
 ### What works
 
-- **_View > Back_ (⌥⌘←) and _Forward_ (⌥⌘→)** step through the canvas's history (#8): whole files opened any way, and
-  returns to the file diffs. Kept in `App.tsx`, per workspace, gone on restart.
+- **_View > Back_ (⌥⌘←) and _Forward_ (⌥⌘→)** step through the canvas's history (#8): whole files opened any way,
+  files picked in _Diffs_, and returns to the file diffs. Kept in `App.tsx`, per workspace, gone on restart.
+- **Each step keeps its scroll.** A whole file by offset; the file diffs by the one at the top and how far into it,
+  since those above it may have been read (and grown) since. The file diffs stay mounted, hidden, under a whole file,
+  so they keep their scroll and the files they read; remounting them made Pierre's Virtualizer reset the scroll.
+- **The keys work with the Navigator focused:** the main process takes them in `before-input-event`, before the file
+  tree (which uses ⌥⌘←/→ itself) can.
+- Checked in the built app driven with Playwright's `_electron`: diffs picks, the _Files_ toggle and whole files,
+  back and forward across them, with a tree row focused.
 
 ### Tech debt
 
-- The file diffs' scroll isn't part of a step, so going back to them lands where they were last scrolled.
 - Back and Forward are always enabled in the menu; at either end they do nothing.
+- The scroll restore gives up after 2 s, e.g. a huge file still loading, and leaves it as far as it got.
 
 ## 2026-09-27 — CI and releases
 
