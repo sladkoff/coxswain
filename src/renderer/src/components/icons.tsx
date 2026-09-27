@@ -159,7 +159,7 @@ export function LayersPlusIcon() {
   );
 }
 
-function GitIcon({ children }: { children: React.ReactNode }) {
+function Icon({ children }: { children: React.ReactNode }) {
   return (
     <svg
       viewBox="0 0 24 24"
@@ -177,32 +177,45 @@ function GitIcon({ children }: { children: React.ReactNode }) {
 
 export function GitBranchIcon() {
   return (
-    <GitIcon>
+    <Icon>
       <line x1="6" x2="6" y1="3" y2="15" />
       <circle cx="18" cy="6" r="3" />
       <circle cx="6" cy="18" r="3" />
       <path d="M18 9a9 9 0 0 1-9 9" />
-    </GitIcon>
+    </Icon>
   );
 }
 
 export function GitMergeIcon() {
   return (
-    <GitIcon>
+    <Icon>
       <circle cx="18" cy="18" r="3" />
       <circle cx="6" cy="6" r="3" />
       <path d="M6 21V9a9 9 0 0 0 9 9" />
-    </GitIcon>
+    </Icon>
   );
 }
 
 export function GitPullRequestIcon() {
   return (
-    <GitIcon>
+    <Icon>
       <circle cx="18" cy="18" r="3" />
       <circle cx="6" cy="6" r="3" />
       <path d="M13 6h3a2 2 0 0 1 2 2v7" />
       <line x1="6" x2="6" y1="9" y2="21" />
-    </GitIcon>
+    </Icon>
+  );
+}
+
+// The Navigator's toggle: a file tree, so it doesn't read as the sidebar's panel icon next to it.
+export function ListTreeIcon() {
+  return (
+    <Icon>
+      <path d="M21 12h-8" />
+      <path d="M21 6H8" />
+      <path d="M21 18h-8" />
+      <path d="M3 6v4c0 1.1.9 2 2 2h3" />
+      <path d="M3 10v6c0 1.1.9 2 2 2h3" />
+    </Icon>
   );
 }

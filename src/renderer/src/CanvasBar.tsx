@@ -6,7 +6,7 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   LayersPlusIcon,
-  PanelLeftIcon,
+  ListTreeIcon,
   SearchIcon,
   SlidersIcon,
   XIcon,
@@ -33,7 +33,7 @@ export function PaneBar(props: {
       )}
     >
       <ToggleButton on title="Hide the navigator (⌘B)" className="p-1" onClick={props.onHide}>
-        <PanelLeftIcon />
+        <ListTreeIcon />
       </ToggleButton>
       <SegmentedControl
         value={props.tab}
@@ -103,7 +103,7 @@ export function CanvasBar(props: Props) {
             className="p-1 text-neutral-500"
             onClick={props.onShowPane}
           >
-            <PanelLeftIcon />
+            <ListTreeIcon />
           </Button>
           <div className={cn("mx-1 h-4 border-l", divider)} />
         </>
