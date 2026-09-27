@@ -130,7 +130,7 @@ export function Agents({ workspace, onViewThread, composerText, onShowSidebar }:
             variant="ghost"
             title="Show the sidebar"
             aria-label="Show the sidebar"
-            className={cn("mr-auto p-1 text-neutral-500", noDrag)}
+            className={cn("shrink-0 p-1 text-neutral-500", noDrag)}
             onClick={onShowSidebar}
           >
             <PanelLeftIcon />
@@ -143,7 +143,8 @@ export function Agents({ workspace, onViewThread, composerText, onShowSidebar }:
           disabled={running}
           onPick={setPicked}
         />
-        <ButtonGroup className={cn("text-xs", noDrag)}>
+        <div className="flex-1" />
+        <ButtonGroup className={cn("shrink-0 text-xs whitespace-nowrap", noDrag)}>
           <Button
             className="py-0.5!"
             disabled={running}
