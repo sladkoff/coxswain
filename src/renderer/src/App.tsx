@@ -52,6 +52,9 @@ export function App() {
   // ponytail: pane widths reset on restart; persist them in SQLite once a settings table exists.
   const [leftWidth, setLeftWidth] = useState(416);
   const [agentsWidth, setAgentsWidth] = useState(416);
+  // L1, the workspace sidebar: shown until hidden with its button, back with the agent pane's. ponytail: resets on
+  // restart, like the pane widths.
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   // The pane on the left of the canvas: the Navigator or the commits, under its own bar. Starts hidden; hiding it
   // keeps which one it was, for ⌘B.
   const [paneOpen, setPaneOpen] = useState(false);
@@ -566,6 +569,12 @@ export function App() {
       run: () => setPaneOpen((o) => !o),
     },
     {
+      id: "toggle-sidebar",
+      title: "Show or Hide the Sidebar",
+      enabled: true,
+      run: () => setSidebarOpen((o) => !o),
+    },
+    {
       id: "toggle-commits",
       title: "Show or Hide Commits",
       enabled: ready,
@@ -712,22 +721,25 @@ export function App() {
   return (
     // Side panes keep their dragged width but shrink with the window before the Viewer goes below viewerMin.
     <div className="flex h-full select-none overflow-hidden text-sm">
-      <WorkspaceRail
-        project={current}
-        cloning={cloning}
-        workspaces={workspaces}
-        current={currentWorkspace}
-        onProjects={async () => {
-          const picked = await window.coxswain.showProjectsMenu(
-            projects.map((p) => `${p.owner}/${p.name}`),
-          );
-          if (picked === null) setScreen("projects");
-          else if (picked !== `${current.owner}/${current.name}`) await selectProject(picked);
-        }}
-        onSelect={(w) => void selectWorkspace(w.id)}
-        onRemove={removeWorkspace}
-        onNew={() => setScreen("new-workspace")}
-      />
+      {sidebarOpen && (
+        <WorkspaceRail
+          project={current}
+          cloning={cloning}
+          workspaces={workspaces}
+          current={currentWorkspace}
+          onProjects={async () => {
+            const picked = await window.coxswain.showProjectsMenu(
+              projects.map((p) => `${p.owner}/${p.name}`),
+            );
+            if (picked === null) setScreen("projects");
+            else if (picked !== `${current.owner}/${current.name}`) await selectProject(picked);
+          }}
+          onSelect={(w) => void selectWorkspace(w.id)}
+          onRemove={removeWorkspace}
+          onNew={() => setScreen("new-workspace")}
+          onHide={() => setSidebarOpen(false)}
+        />
+      )}
 
       {palette !== null && (
         <CommandPalette
@@ -750,6 +762,7 @@ export function App() {
               workspace={currentWorkspace}
               onViewThread={viewThread}
               composerText={composerText}
+              onShowSidebar={sidebarOpen ? undefined : () => setSidebarOpen(true)}
             />
           </div>
           <Splitter min={240} max={800} onResize={setAgentsWidth} />

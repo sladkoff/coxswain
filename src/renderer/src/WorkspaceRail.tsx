@@ -2,13 +2,15 @@ import { useQuery } from "@tanstack/react-query";
 import type { PullRequestTitle } from "../../core/github";
 import type { Project } from "../../core/projects";
 import type { Workspace } from "../../core/workspaces";
+import { Button } from "./components/button";
 import {
   ChevronDownIcon,
   GitBranchIcon,
   GitMergeIcon,
   GitPullRequestIcon,
+  PanelLeftIcon,
 } from "./components/icons";
-import { cn, divider, muted, selectable, titleBar } from "./components/styles";
+import { cn, divider, muted, noDrag, selectable, titleBar } from "./components/styles";
 import { workspaceLabel } from "./format";
 import { core } from "./queries";
 
@@ -21,6 +23,7 @@ type Props = {
   onSelect: (workspace: Workspace) => void;
   onRemove: (workspace: Workspace) => void;
   onNew: () => void;
+  onHide: () => void;
 };
 
 // L1, the sidebar: the current project, then its workspaces by title, then New Workspace. The titles and whether each
@@ -34,6 +37,7 @@ export function WorkspaceRail({
   onSelect,
   onRemove,
   onNew,
+  onHide,
 }: Props) {
   const numbers = workspaces.flatMap((w) => (w.prNumber !== null ? [w.prNumber] : []));
   const titles = useQuery({
@@ -44,7 +48,17 @@ export function WorkspaceRail({
   return (
     <div className={cn("flex w-58 shrink-0 flex-col border-r", divider)}>
       {/* The bar drags the window and holds the macOS window buttons. */}
-      <div className={cn(titleBar, "border-b", divider)} />
+      <div className={cn(titleBar, "justify-end border-b px-2", divider)}>
+        <Button
+          variant="ghost"
+          title="Hide the sidebar"
+          aria-label="Hide the sidebar"
+          className={cn("p-1 text-neutral-500", noDrag)}
+          onClick={onHide}
+        >
+          <PanelLeftIcon />
+        </Button>
+      </div>
       <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-1.5 text-xs">
         {/* The current project. Opens a native menu to switch or add projects. */}
         <button

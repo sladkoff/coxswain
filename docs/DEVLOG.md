@@ -27,6 +27,9 @@ UX, for G3 and G5 ([UX](UX.md) L2, L3).
   PR's title, `#number · branch`, and an open/draft/merged/closed or branch icon; the pill marking the current one is
   gone (its row is filled). Titles and states come from GitHub in one GraphQL request for the workspaces' PR numbers
   (`listPullRequestTitles`), nothing stored; a number that isn't a PR is skipped. Checked in the built app.
+- The sidebar hides entirely with a panel button in its bar; the agent pane's header then makes room for the window
+  buttons and shows the button to bring it back (also _Show or Hide the Sidebar_ in the command palette).
+  ponytail: open or hidden resets on restart, like the pane widths; store it once there's a settings table.
 - ponytail: the bar counts what Hand off takes with the same rule as the review prompt in `core/review.ts`, copied,
   since the renderer imports no core code. Move it to a shared pure module if a third place needs it.
 - Still open: a guide's table of contents stays its own column; making it the pane's first tab (_Sections_) would

@@ -4,7 +4,7 @@ import type { Agent, AgentSession, ChatEntry, Permission, Pick } from "../../cor
 import type { Workspace } from "../../core/workspaces";
 import { Entry, TurnStatus, upsert } from "./ChatEntry";
 import { Button, ButtonGroup } from "./components/button";
-import { ChevronDownIcon } from "./components/icons";
+import { ChevronDownIcon, PanelLeftIcon } from "./components/icons";
 import { TextArea } from "./components/field";
 import { cn, divider, muted, noDrag, titleBar } from "./components/styles";
 import { shortDateTime } from "./format";
@@ -22,9 +22,10 @@ type Props = {
   onViewThread: (threadId: number) => void;
   // Replaces the composer's draft when it changes (the Guide menu's prompts), for the user to edit and send.
   composerText?: { text: string };
+  onShowSidebar?: () => void; // given while the sidebar is hidden: the window buttons are then over this header
 };
 
-export function Agents({ workspace, onViewThread, composerText }: Props) {
+export function Agents({ workspace, onViewThread, composerText, onShowSidebar }: Props) {
   const sessions = useQuery(core("listAgentSessions", workspace.id)).data ?? [];
   // The agent session picked in the header; null is the latest, 'new' one not started yet.
   const [picked, setPicked] = useState<string | null>(null);
@@ -116,7 +117,25 @@ export function Agents({ workspace, onViewThread, composerText }: Props) {
 
   return (
     <>
-      <div className={cn(titleBar, "justify-end gap-1 border-b pr-2 pl-8", divider)}>
+      <div
+        className={cn(
+          titleBar,
+          "justify-end gap-1 border-b pr-2",
+          onShowSidebar ? "pl-20" : "pl-8",
+          divider,
+        )}
+      >
+        {onShowSidebar && (
+          <Button
+            variant="ghost"
+            title="Show the sidebar"
+            aria-label="Show the sidebar"
+            className={cn("mr-auto p-1 text-neutral-500", noDrag)}
+            onClick={onShowSidebar}
+          >
+            <PanelLeftIcon />
+          </Button>
+        )}
         <SessionPicker
           sessions={sessions}
           current={session}

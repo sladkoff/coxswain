@@ -37,7 +37,9 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
 ## Levels
 
 - **L1 — Current project and its workspaces**, a sidebar about 230 px wide; its top bar holds the macOS window
-  buttons. At the top, the current project: its initial, name and owner. Clicking it opens a native menu of the user's projects, the current one
+  buttons and, at its right, a panel button that hides the sidebar entirely; the same button then shows at the agent
+  pane header's left (after the window buttons) to bring it back, and the command palette has _Show or Hide the
+  Sidebar_. At the top, the current project: its initial, name and owner. Clicking it opens a native menu of the user's projects, the current one
   checked, to switch to one; _Add Project…_ at its bottom opens the list of the user's GitHub
   repositories to add one. The rest of the screen belongs to the current project. A project's
   repository must be git, local or cloned, and may be on GitHub.
