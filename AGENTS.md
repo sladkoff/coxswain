@@ -46,6 +46,8 @@ Keeping the docs current is part of every change, not a follow-up.
   the core, with append-only migrations in `src/core/db.ts`. No `localStorage` or IndexedDB.
 - **GitHub token comes from `gh`** and is never stored
   ([ADR 0006](docs/adr/0006-github-integration.md)).
+- **What the canvas shows is the router's location** ([ADR 0025](docs/adr/0025-canvas-history-with-tanstack-router.md)):
+  a field of `CanvasSearch` in `src/renderer/src/router.ts`, changed with `navigate()`, so Back and Forward cover it.
 - **Diffs, files and trees use the Pierre libraries**
   ([ADR 0003](docs/adr/0003-diff-view-and-file-tree.md)), pinned to exact versions.
 - **Desktop conventions** from [ADR 0004](docs/adr/0004-styling-and-native-feel.md): native menus

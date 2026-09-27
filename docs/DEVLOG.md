@@ -7,20 +7,28 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 
 ### What works
 
-- **_View > Back_ (⌥⌘←) and _Forward_ (⌥⌘→)** step through the canvas's history (#8): whole files opened any way,
-  files picked in _Diffs_, and returns to the file diffs. Kept in `App.tsx`, per workspace, gone on restart.
+- **_View > Back_ (⌥⌘←) and _Forward_ (⌥⌘→), and chevrons in the canvas bar** step through the canvas's history
+  (#8, ADR 0025): whole files opened any way, files picked in _Diffs_, the _Diffs_/_Files_ toggle, commits and guides
+  picked, and workspaces opened. Back into another workspace's step opens it again. Greyed out at either end.
+- **The canvas's state is the location** (`CanvasSearch` in `router.ts`): TanStack Router with memory history, one
+  route. A change to what the canvas shows is a `navigate()`, so it's a step without anything else to wire.
 - **Each step keeps its scroll.** A whole file by offset; the file diffs by the one at the top and how far into it,
-  since those above it may have been read (and grown) since. The file diffs stay mounted, hidden, under a whole file,
-  so they keep their scroll and the files they read; remounting them made Pierre's Virtualizer reset the scroll.
+  since those above it may have been read (and grown) since. The file diffs stay mounted, hidden, under a whole file.
+  The restore is applied again until it holds: after a jump, Pierre's Virtualizer applies the fix-up it worked out
+  for the old place. Its own `scrollTo` does the same (tried).
 - **The keys work with the Navigator focused:** the main process takes them in `before-input-event`, before the file
   tree (which uses ⌥⌘←/→ itself) can.
 - Checked in the built app driven with Playwright's `_electron`: diffs picks, the _Files_ toggle and whole files,
-  back and forward across them, with a tree row focused.
+  back and forward across them with a tree row focused, the chevrons, the menu items greying out, and after a resize.
 
 ### Tech debt
 
-- Back and Forward are always enabled in the menu; at either end they do nothing.
-- The scroll restore gives up after 2 s, e.g. a huge file still loading, and leaves it as far as it got.
+- The scroll restore gives up after 2 s, e.g. a huge file still loading, and leaves it as far as it got. It finds
+  file diffs by their DOM id and works against the Virtualizer's own fix-ups; a Pierre update can break it quietly.
+- Showing a thread is a step only when it changes what the canvas shows (it drops a whole file or commit); the scroll
+  to it, and a jump from a guide's table of contents to a group, aren't steps.
+- Settings, Projects and New Workspace are still `screen` state, outside the history.
+- Back across workspaces hasn't been tried with two workspaces open; only one was in the test data.
 
 ## 2026-09-27 — CI and releases
 

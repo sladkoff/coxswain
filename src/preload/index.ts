@@ -208,6 +208,9 @@ const api = {
     ipcRenderer.on("toggle-navigator", listener);
     return () => void ipcRenderer.off("toggle-navigator", listener);
   },
+  // Greys View > Back and Forward out at either end of the canvas's history.
+  setNavigation: (canBack: boolean, canForward: boolean) =>
+    ipcRenderer.send("navigation", canBack, canForward),
   // View > Back (-1) and Forward (1) through the canvas's history.
   onNavigate: (callback: (by: -1 | 1) => void) => {
     const listener = (_: unknown, by: -1 | 1) => callback(by);

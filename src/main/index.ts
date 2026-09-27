@@ -160,13 +160,14 @@ const menu = Menu.buildFromTemplate([
         click: () => sendToWindow("toggle-navigator"),
       },
       { type: "separator" },
-      // ponytail: always enabled; greying them out at either end needs the renderer to report its history.
       {
+        id: "back",
         label: "Back",
         accelerator: "Alt+CmdOrCtrl+Left",
         click: () => sendToWindow("navigate", -1),
       },
       {
+        id: "forward",
         label: "Forward",
         accelerator: "Alt+CmdOrCtrl+Right",
         click: () => sendToWindow("navigate", 1),
@@ -189,6 +190,10 @@ app.whenReady().then(() => {
   // Packaged builds carry the icon in the bundle; this is for `pnpm dev`, which runs Electron's own.
   app.dock?.setIcon(icon);
   Menu.setApplicationMenu(menu);
+  ipcMain.on("navigation", (_, canBack: boolean, canForward: boolean) => {
+    menu.getMenuItemById("back")!.enabled = canBack;
+    menu.getMenuItemById("forward")!.enabled = canForward;
+  });
   const db = openDatabase(join(app.getPath("userData"), "coxswain.db"));
   ipcMain.handle("setup:check", () => checkSetup());
   ipcMain.handle("projects:list", () => listProjects(db));

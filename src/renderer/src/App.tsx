@@ -1,5 +1,6 @@
 import { Virtualizer } from "@pierre/diffs/react";
 import { useQuery } from "@tanstack/react-query";
+import { useLocation, useNavigate, useRouter, useSearch } from "@tanstack/react-router";
 import { type UIEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangedFile, Commit } from "../../core/git";
 import type { GuideGroup } from "../../core/guides";
@@ -19,6 +20,7 @@ import { NewWorkspace } from "./NewWorkspace";
 import { Onboarding } from "./Onboarding";
 import { OpenQuickly } from "./OpenQuickly";
 import { Projects } from "./Projects";
+import type { CanvasSearch } from "./router";
 import { changed, core, markReviewed as mark, queryClient } from "./queries";
 import { Settings } from "./Settings";
 import { Setup } from "./Setup";
@@ -54,7 +56,6 @@ export function App() {
   const toggleLeftPane = (p: "files" | "commits") => setLeftPane((o) => (o === p ? null : p));
   useEffect(() => window.coxswain.onToggleNavigator(() => toggleLeftPane("files")), []);
 
-  const [view, setView] = useState<NavigatorView>("diffs");
   // ponytail: resets on restart, like the Navigator's settings; store them once there's a settings table.
   const [viewSettings, setViewSettings] = useState<ViewSettings>({
     diffStyle: "unified",
@@ -94,27 +95,83 @@ export function App() {
     window.coxswain.cloneProject(current.id).finally(() => setCloning(false));
   }, [current?.id]);
 
+  // What the canvas shows is the location's search (ADR 0025): each change is a history entry, and View > Back and
+  // Forward (⌥⌘← ⌥⌘→) move through them. `s` is the current workspace's; an entry of another one, while Back or
+  // Forward opens that workspace again, shows nothing of it here.
+  const router = useRouter();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const search = useSearch({ from: "__root__" });
+  const s: CanvasSearch = search.ws === currentWorkspace?.id ? search : {};
+  const shown = useRef(s);
+  shown.current = { ...s, ws: currentWorkspace?.id };
+  // How the location last changed: a line is scrolled to only when the file is opened, not on Back or Forward.
+  const lastAction = useRef("PUSH");
+  useEffect(
+    () => router.history.subscribe(({ action }) => void (lastAction.current = action.type)),
+    [router],
+  );
+  const moved = lastAction.current !== "PUSH" && lastAction.current !== "REPLACE";
+  // A new entry with these changes to what the canvas shows. Stable, so the memoised Viewers don't redraw.
+  const show = useCallback(
+    (changes: CanvasSearch, replace = false) =>
+      navigate({ to: "/", search: { ...shown.current, ...changes }, replace }),
+    [navigate],
+  );
+  useEffect(
+    () =>
+      window.coxswain.onNavigate((by) =>
+        by < 0 ? router.history.back() : router.history.forward(),
+      ),
+    [router],
+  );
+  const canBack = location.state.__TSR_index > 0;
+  const canForward = location.state.__TSR_index < router.history.length - 1;
+  useEffect(() => window.coxswain.setNavigation(canBack, canForward), [canBack, canForward]);
+  // Opening a workspace is an entry of its own; Back or Forward to another workspace's entry opens that one again.
+  useEffect(() => {
+    if (currentWorkspace && search.ws !== currentWorkspace.id)
+      void navigate({
+        to: "/",
+        search: { ws: currentWorkspace.id },
+        replace: search.ws === undefined,
+      });
+  }, [currentWorkspace?.id]);
+  useEffect(() => {
+    const w = moved && workspaces.find((w) => w.id === search.ws);
+    if (w && w.id !== currentWorkspace?.id) void selectWorkspace(w.prNumber);
+  }, [location.state.__TSR_key]);
+
+  const view: NavigatorView = s.view ?? "diffs";
   const pr = usePullRequest(currentWorkspace);
-  // The Commits menu: one commit's diff (its parent to it) in place of all changes.
-  const [commit, setCommit] = useState<Commit | null>(null);
-  useEffect(() => setCommit(null), [currentWorkspace?.id, pr.commits]);
+  // The Commits menu: one commit's diff (its parent to it) in place of all changes. Dropped when the PR's head moves.
+  const commit = s.commit ?? null;
+  const head = useRef<{ ws: number; head: string } | null>(null);
+  useEffect(() => {
+    if (!currentWorkspace || !pr.commits) return;
+    const was = head.current;
+    head.current = { ws: currentWorkspace.id, head: pr.commits.head };
+    if (was?.ws === currentWorkspace.id && was.head !== pr.commits.head && shown.current.commit)
+      void show({ commit: undefined }, true);
+  }, [currentWorkspace?.id, pr.commits]);
   // The guide shown over Changes (ADR 0023), or none. The newest shows when it appears, and on opening a workspace if
   // it isn't stale. A guide and a commit are both a pinned range, so picking one drops the other.
   const guides = useQuery({
     ...core("listGuides", currentWorkspace?.id ?? 0),
     enabled: !!currentWorkspace,
   }).data;
-  const [guideId, setGuideId] = useState<number | null>(null);
+  // On opening a workspace the newest shows in place (unless one was chosen); a new guide shows as an entry of its own.
+  const guideId = s.guide ?? null;
   const newest = useRef<{ workspaceId: number; id: number } | null>(null);
   useEffect(() => {
     if (!currentWorkspace || !guides || !pr.commits) return;
     const latest = guides[0];
-    if (newest.current?.workspaceId !== currentWorkspace.id)
-      setGuideId(latest?.head === pr.commits.head ? latest.id : null);
-    else if (latest && latest.id !== newest.current.id) {
-      setGuideId(latest.id);
-      setCommit(null);
-    }
+    const now = shown.current;
+    if (newest.current?.workspaceId !== currentWorkspace.id) {
+      if (now.guide === undefined && !now.commit && latest?.head === pr.commits.head)
+        void show({ guide: latest.id }, true);
+    } else if (latest && latest.id !== newest.current.id)
+      void show({ guide: latest.id, commit: undefined });
     newest.current = { workspaceId: currentWorkspace.id, id: latest?.id ?? 0 };
   }, [currentWorkspace?.id, guides, pr.commits]);
   const guide = (guideId !== null && guides?.find((g) => g.id === guideId)) || null;
@@ -216,61 +273,26 @@ export function App() {
     }));
     changed({ workspaceId: q.workspaceId, what: "entries" });
   }, []);
-  // `opened` is a whole file picked in Files, shown on the canvas in place of the file diffs.
-  const [opened, setOpened] = useState<Opened | null>(null);
-  // The canvas's history, for View > Back and Forward (⌥⌘← ⌥⌘→): every change of what it shows (a whole file, or the
-  // file diffs) is a step, however it came about. One workspace's; opening another starts it over. Each step keeps
-  // where the canvas was scrolled, and for the file diffs the one at the top: those above it may not be read yet on
-  // the way back, so their heights are guesses and the scroll offset alone would land elsewhere.
-  type Step = { view: NavigatorView; opened: Opened | null; scroll?: Scroll };
-  const history = useRef<{ steps: Step[]; at: number }>({ steps: [], at: -1 });
-  const canvas = useRef<HTMLDivElement>(null);
-  // The scroll to restore once the canvas shows the step Back or Forward moved to.
-  const pendingScroll = useRef<Scroll | undefined>(undefined);
-  // A new step for what the canvas shows now; the steps after the current one are dropped.
-  const record = () => {
-    const h = history.current;
-    const scroller = canvas.current && canvasScroller(canvas.current);
-    h.steps = [
-      ...h.steps.slice(0, h.at + 1),
-      { view, opened, scroll: scroller ? scrollOf(scroller) : undefined },
-    ];
-    h.at = h.steps.length - 1;
-  };
-  useEffect(() => {
-    // Starts on what the canvas shows now: opened is often null already, so setting it doesn't record a step.
-    history.current = { steps: [{ view, opened: null }], at: 0 };
-    setOpened(null);
-  }, [currentWorkspace?.id]);
-  useEffect(() => {
-    // Already the step: Back or Forward moved to it (or StrictMode ran this twice on mount).
-    const now = history.current.steps[history.current.at];
-    if (now?.view !== view || now.opened !== opened) return record();
-    if (pendingScroll.current && canvas.current)
-      restoreScroll(canvas.current, pendingScroll.current);
-    pendingScroll.current = undefined;
-  }, [view, opened]);
-  useEffect(
-    () =>
-      window.coxswain.onNavigate((by) => {
-        const h = history.current;
-        const from = h.steps[h.at];
-        const step = h.steps[h.at + by];
-        if (!step) return;
-        h.at += by;
-        // Without its line, so the Viewer doesn't scroll to it over the restored scroll.
-        if (step.opened?.kind === "file") step.opened = { ...step.opened, line: undefined };
-        // The same view (a pick in Diffs): no render comes, so scroll now. Otherwise once the new view is drawn.
-        if (from.view === step.view && from.opened === step.opened) {
-          if (step.scroll && canvas.current) restoreScroll(canvas.current, step.scroll);
-          return;
-        }
-        pendingScroll.current = step.scroll;
-        setView(step.view);
-        setOpened(step.opened);
-      }),
-    [],
+  // `opened` is a whole file picked in Files, shown on the canvas in place of the file diffs. Memoised: the Viewer
+  // rereads when its Opened changes.
+  const line = moved ? undefined : s.line;
+  const opened = useMemo<Opened | null>(
+    () => (s.file ? { kind: "file", path: s.file, line } : null),
+    [s.file, line],
   );
+  // Each entry keeps where the canvas was scrolled, restored on Back and Forward. For the file diffs also the one at
+  // the top: those above it may have been read (and grown) since, so the offset alone would land elsewhere.
+  const canvas = useRef<HTMLDivElement>(null);
+  const scrolls = useRef(new Map<string, Scroll>());
+  const entry = () => router.history.location.state.__TSR_key ?? "";
+  useEffect(() => {
+    const key = location.state.__TSR_key ?? "";
+    const saved = scrolls.current.get(key);
+    const scroller = canvas.current && canvasScroller(canvas.current);
+    if (!moved) {
+      if (!saved && scroller) scrolls.current.set(key, scrollOf(scroller));
+    } else if (saved && canvas.current) restoreScroll(canvas.current, saved);
+  }, [location.state.__TSR_key]);
   // Memoised: the Viewer rereads when its Opened changes.
   const diffs = useMemo(
     () => pr.changed?.map((file) => ({ kind: "diff" as const, file })),
@@ -344,8 +366,7 @@ export function App() {
   const onCanvasScroll = (e: UIEvent<HTMLDivElement>) => {
     const scroller = e.target as HTMLElement;
     if (scroller.parentElement !== e.currentTarget) return;
-    const step = history.current.steps[history.current.at];
-    if (step) step.scroll = scrollOf(scroller);
+    scrolls.current.set(entry(), scrollOf(scroller));
     if (!sections) return;
     const top = scroller.getBoundingClientRect().top + 40;
     const passed = sections.flatMap((_, i) => {
@@ -363,36 +384,31 @@ export function App() {
       guide?.id ?? null,
       pr.commits.head,
     );
-    if ("show" in picked) {
-      setGuideId(picked.show);
-      setCommit(null);
-      setOpened(null);
-      return;
-    }
+    if ("show" in picked)
+      return void show({ guide: picked.show, commit: undefined, file: undefined, at: undefined });
     // The user sends it from the agent pane; the guide shows as soon as the agent starts it.
     setComposerText({ text: picked.prompt });
   };
-  const pickCommit = (picked: Commit | null) => {
-    setCommit(picked);
-    setGuideId(null);
-    setOpened(null);
-  };
+  const pickCommit = (picked: Commit | null) =>
+    void show({ commit: picked ?? undefined, guide: null, file: undefined, at: undefined });
   // The one way to show a whole file: on the canvas, at `line` if given, with the Navigator on Files and the file
   // revealed there. Files, Open Quickly, Go to Definition and Find Usages all go through it. Stable, so the memoised
   // Viewers don't all redraw.
-  const openFile = useCallback((path: string, line?: number) => {
-    setLeftPane("files");
-    setView("files");
-    // The same file again without a line (e.g. the tree selecting the one it revealed) keeps its Opened, so the
-    // Viewer doesn't reread.
-    setOpened((o) =>
-      !line && o?.kind === "file" && o.path === path ? o : { kind: "file", path, line },
-    );
-  }, []);
-  const open = (path: string) => {
+  const openFile = useCallback(
+    (path: string, line?: number) => {
+      setLeftPane("files");
+      // The same file again without a line (e.g. the tree selecting the one it revealed) is no new entry.
+      const now = shown.current;
+      if (!line && now.view === "files" && now.file === path) return;
+      void show({ view: "files", file: path, line, at: undefined });
+    },
+    [show],
+  );
+  // An entry of its own, though the canvas still shows the file diffs.
+  const open = async (path: string) => {
     if (view === "files") return openFile(path);
+    await show({ at: path });
     // ponytail: file diffs above it that are still loading push it down.
-    record(); // a step of its own, though the canvas still shows the file diffs
     document.getElementById(`diff:${path}`)?.scrollIntoView();
   };
   const showFile = view === "files" && opened;
@@ -405,12 +421,15 @@ export function App() {
   };
   // Shows a thread on the canvas: back to the live file diffs, scrolled to its file, then to the thread once the
   // file diff has drawn it. ponytail: an outdated thread isn't between the lines, so this stops at its file.
-  const viewThread = (threadId: number) => {
+  const viewThread = async (threadId: number) => {
     const root = entries.find((e) => e.id === threadId);
     if (!root?.path) return;
-    setOpened(null);
-    setCommit(null);
-    if (root.guideId) setGuideId(root.guideId);
+    await show({
+      file: undefined,
+      at: undefined,
+      commit: undefined,
+      guide: root.guideId ?? shown.current.guide,
+    });
     document.getElementById(`diff:${root.path}`)?.scrollIntoView();
     let tries = 20;
     const find = () => {
@@ -524,6 +543,10 @@ export function App() {
             guide={guide}
             onGuide={pickGuide}
             onOpenQuickly={() => setQuickOpen(true)}
+            canBack={canBack}
+            canForward={canForward}
+            onBack={() => router.history.back()}
+            onForward={() => router.history.forward()}
             onViewOptions={async () =>
               setViewSettings(await window.coxswain.showViewMenu(viewSettings))
             }
@@ -555,7 +578,7 @@ export function App() {
                       <div className="flex shrink-0 justify-end px-2 pt-1.5">
                         <SegmentedControl
                           value={view}
-                          onChange={setView}
+                          onChange={(v) => void show({ view: v === "files" ? "files" : undefined })}
                           options={[
                             { value: "diffs", label: "Diffs" },
                             { value: "files", label: "Files" },
@@ -698,7 +721,9 @@ function scrollOf(scroller: HTMLElement): Scroll {
 }
 
 // Scrolls the canvas back once what it shows has drawn: the file diff at the top is there, or the file is long enough.
-// ponytail: gives up after 2 s (a huge file still loading) and scrolls as far as it can.
+// Then again until it holds: after a jump, the file diffs' Virtualizer applies the fix-up it worked out for the old
+// place (keeping that file diff steady while those around it are drawn). ponytail: gives up after 2 s, e.g. a huge
+// file still loading, and leaves it as far as it got.
 function restoreScroll(canvas: HTMLElement, s: Scroll) {
   let tries = 40;
   const go = () => {
@@ -709,10 +734,12 @@ function restoreScroll(canvas: HTMLElement, s: Scroll) {
       : scroller && scroller.scrollHeight - scroller.clientHeight >= s.top;
     if (!ready && tries-- > 0) return void setTimeout(go, 50);
     if (!scroller) return;
-    if (el)
-      scroller.scrollTop +=
-        el.getBoundingClientRect().top - scroller.getBoundingClientRect().top + s.offset;
-    else scroller.scrollTop = s.top;
+    const by = el
+      ? el.getBoundingClientRect().top - scroller.getBoundingClientRect().top + s.offset
+      : s.top - scroller.scrollTop;
+    if (Math.abs(by) < 2) return;
+    scroller.scrollTop += by;
+    if (tries-- > 0) setTimeout(go, 50);
   };
   setTimeout(go);
 }
