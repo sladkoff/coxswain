@@ -9,7 +9,7 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 
 - **Codex runs in the agent pane** (`@agentclientprotocol/codex-acp` 1.13.1, the user's own `codex` on `PATH`), in
   its _Approve for me_ mode, with coxswain's tools and the pane's instructions (ADR 0018, 10).
-- **_New session_ is a split button** (`SplitButton`): the button starts a session on the agent picked last, its
+- **_New session_ is a split button** (`ButtonGroup`, shaped like shadcn's): the button starts a session on the agent picked last, its
   chevron's native menu on another, Claude Code or Codex. The one picked last is also what questions, reviews and
   guides start a session on when the workspace has none. The session keeps its agent; the
   picker names it.

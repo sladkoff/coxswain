@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from "react";
 import type { Agent, AgentSession, ChatEntry, Permission, Pick } from "../../core/agents";
 import type { Workspace } from "../../core/workspaces";
 import { Entry, TurnStatus, upsert } from "./ChatEntry";
-import { Button, SplitButton } from "./components/button";
+import { Button, ButtonGroup } from "./components/button";
+import { ChevronDownIcon } from "./components/icons";
 import { TextArea } from "./components/field";
 import { cn, divider, muted, noDrag, titleBar } from "./components/styles";
 import { shortDateTime } from "./format";
@@ -122,23 +123,32 @@ export function Agents({ workspace, onViewThread, composerText }: Props) {
           disabled={running}
           onPick={setPicked}
         />
-        <SplitButton
-          className={cn("text-xs", noDrag)}
-          disabled={running}
-          title={`New ${agentNames[newSessionAgent]} session`}
-          onClick={() => newSession(newSessionAgent)}
-          menuTitle="New session on…"
-          onMenu={async () => {
-            const all = Object.keys(agentNames) as Agent[];
-            const n = await window.coxswain.showPickMenu(
-              all.map((a) => agentNames[a]),
-              all.indexOf(newSessionAgent),
-            );
-            newSession(all[n]);
-          }}
-        >
-          New session
-        </SplitButton>
+        <ButtonGroup className={cn("text-xs", noDrag)}>
+          <Button
+            className="py-0.5!"
+            disabled={running}
+            title={`New ${agentNames[newSessionAgent]} session`}
+            onClick={() => newSession(newSessionAgent)}
+          >
+            New session
+          </Button>
+          <Button
+            className="px-1! py-0.5!"
+            disabled={running}
+            title="New session on…"
+            aria-label="New session on…"
+            onClick={async () => {
+              const all = Object.keys(agentNames) as Agent[];
+              const n = await window.coxswain.showPickMenu(
+                all.map((a) => agentNames[a]),
+                all.indexOf(newSessionAgent),
+              );
+              newSession(all[n]);
+            }}
+          >
+            <ChevronDownIcon />
+          </Button>
+        </ButtonGroup>
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2">
         {entries.length === 0 && !running && (

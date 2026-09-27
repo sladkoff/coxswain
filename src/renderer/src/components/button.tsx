@@ -1,5 +1,4 @@
 import type { ComponentProps } from "react";
-import { ChevronDownIcon } from "./icons";
 import { cn, muted, selectable } from "./styles";
 
 const variants = {
@@ -21,32 +20,17 @@ export function Button({
   return <button {...props} className={cn(variants[variant], "disabled:opacity-50", className)} />;
 }
 
-// An action with a choice of how: the main part does it the default way, the chevron opens a menu of the others
-// (onMenu shows a native one, ADR 0004).
-export function SplitButton({
-  onMenu,
-  menuTitle,
-  className,
-  disabled,
-  ...props
-}: ComponentProps<"button"> & { onMenu: () => void; menuTitle: string }) {
+// Buttons joined into one, like shadcn's ButtonGroup: e.g. an action and a chevron for its menu of alternatives.
+export function ButtonGroup({ className, ...props }: ComponentProps<"div">) {
   return (
-    <div className={cn(variants.default, "flex p-0", disabled && "opacity-50", className)}>
-      <button
-        {...props}
-        disabled={disabled}
-        className="rounded-l-md px-2.5 py-1 hover:bg-neutral-100 dark:hover:bg-neutral-800"
-      />
-      <button
-        disabled={disabled}
-        title={menuTitle}
-        aria-label={menuTitle}
-        onClick={onMenu}
-        className="rounded-r-md border-l border-neutral-300 px-1 hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
-      >
-        <ChevronDownIcon />
-      </button>
-    </div>
+    <div
+      role="group"
+      {...props}
+      className={cn(
+        "flex [&>*:not(:first-child)]:rounded-l-none [&>*:not(:first-child)]:border-l-0 [&>*:not(:last-child)]:rounded-r-none",
+        className,
+      )}
+    />
   );
 }
 
