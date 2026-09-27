@@ -83,6 +83,15 @@ function createWindow() {
     webPreferences: { preload: join(__dirname, "../preload/index.js") },
   });
   win.once("ready-to-show", () => win.show());
+  // Back and Forward before the page sees the key: the file tree takes ⌥⌘← and ⌥⌘→ for itself, so the menu's
+  // accelerators never fire while it has focus.
+  win.webContents.on("before-input-event", (event, input) => {
+    const by = { ArrowLeft: -1, ArrowRight: 1 }[input.key];
+    if (input.type !== "keyDown" || !by || !input.alt || !(input.meta || input.control)) return;
+    if (input.shift) return;
+    event.preventDefault();
+    win.webContents.send("navigate", by);
+  });
   // Links in agent replies open in the browser, never in the app window.
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:/.test(url)) shell.openExternal(url);
@@ -106,8 +115,11 @@ function openSettings() {
 
 // ponytail: macOS menu layout only; add a File > Settings entry when we ship Windows/Linux.
 // ponytail: one window for now, so no focused window (e.g. the app isn't frontmost) means that one.
-const sendToWindow = (channel: string) =>
-  (BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0])?.webContents.send(channel);
+const sendToWindow = (channel: string, ...args: unknown[]) =>
+  (BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0])?.webContents.send(
+    channel,
+    ...args,
+  );
 
 const menu = Menu.buildFromTemplate([
   {
@@ -148,6 +160,19 @@ const menu = Menu.buildFromTemplate([
         click: () => sendToWindow("toggle-navigator"),
       },
       { type: "separator" },
+      {
+        id: "back",
+        label: "Back",
+        accelerator: "Alt+CmdOrCtrl+Left",
+        click: () => sendToWindow("navigate", -1),
+      },
+      {
+        id: "forward",
+        label: "Forward",
+        accelerator: "Alt+CmdOrCtrl+Right",
+        click: () => sendToWindow("navigate", 1),
+      },
+      { type: "separator" },
       { role: "reload" },
       { role: "toggleDevTools" },
       { type: "separator" },
@@ -165,6 +190,10 @@ app.whenReady().then(() => {
   // Packaged builds carry the icon in the bundle; this is for `pnpm dev`, which runs Electron's own.
   app.dock?.setIcon(icon);
   Menu.setApplicationMenu(menu);
+  ipcMain.on("navigation", (_, canBack: boolean, canForward: boolean) => {
+    menu.getMenuItemById("back")!.enabled = canBack;
+    menu.getMenuItemById("forward")!.enabled = canForward;
+  });
   const db = openDatabase(join(app.getPath("userData"), "coxswain.db"));
   ipcMain.handle("setup:check", () => checkSetup());
   ipcMain.handle("projects:list", () => listProjects(db));

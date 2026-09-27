@@ -8,7 +8,8 @@ Direction for the main screen and navigation. Expected to change as we build; te
 Agent-first. Opening a PR shows the project column (L1), the agent pane (L4) on the left and the canvas (L3) on the
 right. The canvas is one explorer that both the agent and the human annotate; for now it shows _Changes_, the
 workspace's file diffs, with the Navigator (L2) or the commits pane on its left. A bar at the canvas's top holds
-_Files_, _Commits_, _Guide_, a magnifier (Open Quickly) and the cog; a bar at its bottom sums up the review.
+_Files_, _Commits_, _Guide_, then Back and Forward chevrons, a magnifier (Open Quickly) and the cog; a bar at its
+bottom sums up the review.
 
 ```
 ┌────┬─────────────────────────┬──────────────────────────────────────────┐
@@ -60,6 +61,13 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   _File > Open Quickly…_ (⌘⇧O), or the magnifier left of the canvas bar's cog, opens a search box over the window: typing filters the worktree's files by path (a
   substring, or its letters in order), ↑/↓ pick, Enter opens the file in the canvas and shows the Navigator on
   _Files_, with the file selected and its folders open. Esc or a click outside closes it.
+
+  _View > Back_ (⌥⌘←) and _View > Forward_ (⌥⌘→), or the chevrons in the canvas bar, step through what the canvas
+  showed (ADR 0025): each whole file opened (from _Files_, Open Quickly, Go to Definition or Find Usages), each file
+  picked in _Diffs_, each switch of the _Diffs_/_Files_ toggle, each commit or guide picked, and each workspace opened;
+  Back into another workspace's step opens that workspace again. Each step comes back scrolled where it was left, the
+  file diffs by the one at the top. The keys work wherever the focus is, the Navigator included; the menu items and
+  chevrons are greyed out at either end.
 
   _Commits_ in the canvas's bar shows the commits pane in the Navigator's place (one or the other): _All Changes_,
   then the PR's commits (and local ones on top), newest first. Picking a commit shows its commit diff on the canvas,

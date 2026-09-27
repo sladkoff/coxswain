@@ -23,6 +23,7 @@
     "@pierre/diffs": "1.4.3",
     "@pierre/trees": "1.0.0-beta.6",
     "@tanstack/react-query": "5.103.2",
+    "@tanstack/react-router": "1.170.40",
     "kysely": "0.29.6",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
