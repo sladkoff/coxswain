@@ -8,8 +8,9 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 ### What works
 
 - **CI** (`.github/workflows/ci.yml`): typecheck, lint, format check and build on every push to `main` and every PR.
-- **Releases from tags** (ADR 0024): pushing `v0.1.0` builds macOS (arm64, x64), Windows x64 and Linux x64 with
-  electron-builder and creates the GitHub release with them; `v0.1.0-rc.1` makes a pre-release. `pnpm dist` builds
+- **Releases from a button** (ADR 0024): Actions → _Release_ → _Run workflow_ with `0.2.0` bumps `package.json` on
+  `main`, tags `v0.2.0`, builds macOS (arm64, x64), Windows x64 and Linux x64 with electron-builder and creates the
+  GitHub release with generated notes; `0.2.0-rc.1` makes a pre-release. `pnpm dist` builds
   for the machine you're on into `dist/`.
 - **Settings shows the version and commit** (_About_: `coxswain 0.1.0 · 05c8448`), set at build time.
 - **A packaged app finds `gh`, `claude` and `codex`** when started from the Dock: it takes the login shell's `PATH`.

@@ -4,10 +4,8 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { version } from "./package.json";
 
-// The commit this build is from, shown in Settings with the version. CI sets GITHUB_SHA; locally ask git.
-const commit = (
-  process.env.GITHUB_SHA ?? execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" })
-).slice(0, 7);
+// The commit this build is from, shown in Settings with the version.
+const commit = execFileSync("git", ["rev-parse", "--short", "HEAD"], { encoding: "utf8" }).trim();
 
 export default defineConfig({
   main: {},
