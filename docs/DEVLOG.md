@@ -3,6 +3,27 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-27 — CI and releases
+
+### What works
+
+- **CI** (`.github/workflows/ci.yml`): typecheck, lint, format check and build on every push to `main` and every PR.
+- **Releases from tags** (ADR 0024): pushing `v0.1.0` builds macOS (arm64, x64), Windows x64 and Linux x64 with
+  electron-builder and creates the GitHub release with them; `v0.1.0-rc.1` makes a pre-release. `pnpm dist` builds
+  for the machine you're on into `dist/`.
+- **Settings shows the version and commit** (_About_: `coxswain 0.1.0 · 05c8448`), set at build time.
+- **A packaged app finds `gh`, `claude` and `codex`** when started from the Dock: it takes the login shell's `PATH`.
+  Checked with the macOS arm64 package opened with `open`: the startup check passed and Codex's adapter started
+  from inside the asar.
+- The packaged app has its icon in the bundle and says _coxswain_ in the menu bar.
+
+### Tech debt
+
+- **Unsigned builds**: macOS needs right-click → Open (or `xattr -cr`) on first launch; Windows shows SmartScreen.
+- **Windows can't find the agents yet**: `onPath` in `agents.ts` looks for `claude` and `codex` without `.exe`, and
+  the native menu has no Settings entry outside macOS. Only the macOS build has been run.
+- No auto-update.
+
 ## 2026-09-27 — README, license and contributing
 
 ### What works
@@ -919,7 +940,7 @@ code are found with `grep -rn "ponytail:" src`.
 **GitHub**
 
 - Signing in depends on `gh`; native OAuth is the long-term plan (ADR 0006).
-- `gh` is found through `PATH`, which a packaged app launched from Finder won't have.
+- `gh` is found through `PATH` (a packaged app takes the login shell's, ADR 0024).
 - Open PRs: only the first 100 are listed.
 - Repository search only filters the pages already loaded.
 - No ETags (ADR 0006, decision 7): GitHub data refetches in full after a minute, on window focus (ADR 0017).
@@ -948,7 +969,7 @@ code are found with `grep -rn "ponytail:" src`.
 **Tooling**
 
 - No tests of any kind, and no linter or formatter config.
-- No packaging, signing or auto-update.
+- No signing or auto-update (ADR 0024).
 - electron-vite 5 doesn't know Electron 44 downloads its binary lazily, so `postinstall` runs
   `install-electron`. Remove it once electron-vite catches up.
 - electron-vite 5 holds Vite at 7.

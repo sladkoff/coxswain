@@ -46,7 +46,7 @@ to.
 
 ## Requirements
 
-- [Node.js](https://nodejs.org) and [pnpm](https://pnpm.io)
+- [Node.js](https://nodejs.org) and [pnpm](https://pnpm.io), to run from source
 - `git`
 - The [GitHub CLI](https://cli.github.com), signed in: `gh auth login`. coxswain borrows its token and never stores
   it.
@@ -58,6 +58,11 @@ wherever Electron does, but so far it has only been tested on macOS.
 
 ## Getting started
 
+Download the build for your system from [Releases](https://github.com/sladkoff/coxswain/releases). Builds aren't
+signed yet: on macOS, right-click the app and choose _Open_ the first time (or run `xattr -cr coxswain.app`).
+
+To run from source:
+
 ```sh
 git clone https://github.com/sladkoff/coxswain.git
 cd coxswain
@@ -65,7 +70,7 @@ pnpm install   # also downloads Electron
 pnpm dev       # run with hot reload
 ```
 
-`pnpm start` builds and runs without hot reload. coxswain keeps its clones and worktrees in `~/coxswain/`, and its
+`pnpm start` builds and runs without hot reload; `pnpm dist` packages the app into `dist/`. coxswain keeps its clones and worktrees in `~/coxswain/`, and its
 own data in a SQLite database in the app's data folder. It stores only what GitHub and git don't have: your notes, the
 agent's answers and which files you've reviewed.
 

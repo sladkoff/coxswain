@@ -36,6 +36,10 @@ export function Settings({ onClose }: { onClose: () => void }) {
           </>
         )}
       </Card>
+      <h2 className="mt-6 mb-3 font-medium">About</h2>
+      <Card className="select-text">
+        coxswain {__VERSION__} <span className={muted}>· {__COMMIT__}</span>
+      </Card>
     </Screen>
   );
 }

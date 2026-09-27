@@ -1,7 +1,9 @@
 {
   "name": "coxswain",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
+  "description": "A local mini IDE for reviewing pull requests with local coding agents",
+  "author": "Leonid Rousseau",
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev --watch",
@@ -10,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "postinstall": "install-electron",
     "lint": "oxlint",
-    "format": "oxfmt"
+    "format": "oxfmt",
+    "dist": "electron-vite build && electron-builder"
   },
   "dependencies": {
     "@agentclientprotocol/claude-agent-acp": "0.81.2",
@@ -33,6 +36,7 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^5.2.0",
     "electron": "^44.4.5",
+    "electron-builder": "26.15.3",
     "electron-vite": "^5.0.0",
     "oxfmt": "^0.70.0",
     "oxlint": "^1.85.0",
@@ -44,5 +48,35 @@
     "onlyBuiltDependencies": [
       "esbuild"
     ]
+  },
+  "build": {
+    "appId": "dev.coxswain.app",
+    "productName": "coxswain",
+    "directories": {
+      "output": "dist",
+      "buildResources": "resources"
+    },
+    "files": [
+      "out/**",
+      "resources/**",
+      "!node_modules/@anthropic-ai/claude-agent-sdk-*/**",
+      "!node_modules/@openai/codex*/**"
+    ],
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.developer-tools",
+      "identity": null
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": "AppImage",
+      "category": "Development"
+    },
+    "publish": null
   }
 }
