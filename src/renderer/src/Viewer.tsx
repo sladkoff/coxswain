@@ -3,7 +3,7 @@ import { File, MultiFileDiff } from "@pierre/diffs/react";
 import { useQuery } from "@tanstack/react-query";
 import { memo, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import type { ChatEntry, Permission } from "../../core/agents";
-import type { ChangedFile, FileText } from "../../core/git";
+import type { ChangedFile, CodeLineList, FileText } from "../../core/git";
 import type { NewEntry, ReviewEntry } from "../../core/review";
 import type { Workspace } from "../../core/workspaces";
 import { Button } from "./components/button";
@@ -14,7 +14,7 @@ import { changed, core } from "./queries";
 import { type Draft, DraftBox, lines, ThreadBox } from "./Thread";
 
 // What the Viewer shows: the file diff of a changed file, or a whole file as it is in the worktree, scrolled to a
-// line with `line` (Go to Definition).
+// line with `line` (Go to Definition, Find Usages).
 export type Opened =
   | { kind: "diff"; file: ChangedFile }
   | { kind: "file"; path: string; line?: number };
@@ -46,7 +46,7 @@ type Props = {
   turns: Record<number, Turn>; // by thread
   onAsk: Ask;
   onAnswerPermission: (threadId: number, id: string, optionId: string) => void;
-  onGoToDefinition: (path: string, line: number) => void;
+  onOpenFile: (path: string, line: number) => void; // a whole file on the canvas at that line
   diffStyle: "unified" | "split";
   // One of several file diffs one after another: the parent scrolls, not the Viewer.
   stacked?: boolean;
@@ -116,11 +116,12 @@ export const Viewer = memo(function Viewer(props: Props) {
   useEffect(closeDraft, [opened]);
 
   // Go to Definition: ⌘ over a token underlines it, ⌘-click opens where it's defined, picked from a menu if several.
-  // ponytail: no match, or a git error, does nothing.
-  const hovered = useRef<HTMLElement | null>(null);
+  // A right-click on a token offers it and Find Usages, whose results always show in the menu, even one: it may be the
+  // line clicked. ponytail: the picker is a native menu of the first 30, a results pane if long lists need browsing.
+  const hovered = useRef<{ element: HTMLElement; text: string } | null>(null);
   useEffect(() => {
     const mark = (e: KeyboardEvent) =>
-      hovered.current?.toggleAttribute("data-definition-link", e.metaKey);
+      hovered.current?.element.toggleAttribute("data-definition-link", e.metaKey);
     window.addEventListener("keydown", mark);
     window.addEventListener("keyup", mark);
     return () => {
@@ -128,17 +129,33 @@ export const Viewer = memo(function Viewer(props: Props) {
       window.removeEventListener("keyup", mark);
     };
   }, []);
-  const goToDefinition = async (token: string) => {
-    const found = await window.coxswain.findDefinitions(workspace.id, path, token);
-    if (found.status !== "ok" || !found.definitions.length) return;
-    const ds = found.definitions.slice(0, 20);
+  // Shows a result line: at once if it's the only definition, else picked from a menu that says when there's none.
+  const showLine = async (found: CodeLineList, what: "definition" | "usages") => {
+    const all = found.status === "ok" ? found.lines : [];
+    const ls = all.slice(0, 30);
     const i =
-      ds.length === 1
+      what === "definition" && ls.length === 1
         ? 0
-        : await window.coxswain.showDefinitionsMenu(
-            ds.map((d) => `${d.path}:${d.line}   ${d.text.slice(0, 60)}`),
+        : await window.coxswain.showCodeLinesMenu(
+            ls.map((l) => `${l.path}:${l.line}   ${l.text.slice(0, 60)}`),
+            all.length - ls.length,
+            found.status !== "ok"
+              ? found.message
+              : what === "definition"
+                ? "No definition found"
+                : "No usages found",
           );
-    props.onGoToDefinition(ds[i].path, ds[i].line);
+    props.onOpenFile(ls[i].path, ls[i].line);
+  };
+  const goToDefinition = async (token: string) =>
+    showLine(await window.coxswain.findDefinitions(workspace.id, path, token), "definition");
+  const tokenMenu = async (e: MouseEvent) => {
+    const token = hovered.current?.text;
+    if (!token) return;
+    e.preventDefault();
+    const action = await window.coxswain.showTokenMenu();
+    if (action === "definition") goToDefinition(token);
+    else showLine(await window.coxswain.findUsages(workspace.id, token), "usages");
   };
 
   const options = useMemo(
@@ -157,7 +174,7 @@ export const Viewer = memo(function Viewer(props: Props) {
       onLineSelectionChange: setSelection,
       onTokenEnter: (t: { tokenElement: HTMLElement; tokenText: string }, e: PointerEvent) => {
         if (!/\w/.test(t.tokenText)) return;
-        hovered.current = t.tokenElement;
+        hovered.current = { element: t.tokenElement, text: t.tokenText };
         t.tokenElement.toggleAttribute("data-definition-link", e.metaKey);
       },
       onTokenLeave: (t: { tokenElement: HTMLElement }) => {
@@ -167,7 +184,7 @@ export const Viewer = memo(function Viewer(props: Props) {
       onTokenClick: (t: { tokenText: string }, e: MouseEvent) =>
         e.metaKey && void goToDefinition(t.tokenText),
     }),
-    [props.diffStyle, workspace.id, path, props.onGoToDefinition],
+    [props.diffStyle, workspace.id, path, props.onOpenFile],
   );
 
   const files = useMemo(() => {
@@ -211,7 +228,7 @@ export const Viewer = memo(function Viewer(props: Props) {
     const line = opened.kind === "file" && opened.line;
     if (!line || !files) return;
     setSelection({ start: line, end: line });
-    let tries = 20;
+    let tries = 40;
     const find = () => {
       const el = root.current
         ?.querySelector("diffs-container")
@@ -314,6 +331,7 @@ export const Viewer = memo(function Viewer(props: Props) {
   return (
     <div
       ref={root}
+      onContextMenu={(e) => void tokenMenu(e.nativeEvent)}
       className={props.stacked ? "select-text" : "min-h-0 flex-1 overflow-auto select-text"}
     >
       {showOutdated && opened.kind === "diff" && (

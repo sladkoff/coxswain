@@ -450,9 +450,9 @@ export function readFileAt(
   });
 }
 
-// Where a symbol clicked in a file is defined: a line in a worktree file.
-export type Definition = { path: string; line: number; text: string };
-export type DefinitionList = { status: "ok"; definitions: Definition[] } | GitProblem;
+// A line of a worktree file, e.g. where a name clicked in the canvas is defined or used.
+export type CodeLine = { path: string; line: number; text: string };
+export type CodeLineList = { status: "ok"; lines: CodeLine[] } | GitProblem;
 
 // What reads as a definition of a name, in most languages: a keyword before it, a Go method, or a class method.
 const definitionOf = (name: string) => {
@@ -478,7 +478,7 @@ export function findDefinitions(
   workspaceId: number,
   from: string,
   token: string,
-): Promise<DefinitionList> {
+): Promise<CodeLineList> {
   return withGit(async () => {
     const path = await openedWorktree(db, workspaceId);
     const spec = token.match(importPath)?.[1];
@@ -487,32 +487,35 @@ export function findDefinitions(
       const found = [base, base.replace(/\.js$/, ".ts"), ...extensions.map((x) => base + x)]
         .concat(extensions.map((x) => join(base, "index" + x)))
         .find((p) => !relative(path, resolve(path, p)).startsWith("..") && isFile(join(path, p)));
-      return {
-        status: "ok" as const,
-        definitions: found ? [{ path: found, line: 1, text: "" }] : [],
-      };
+      return { status: "ok" as const, lines: found ? [{ path: found, line: 1, text: "" }] : [] };
     }
-    if (!/^[A-Za-z_$][\w$]*$/.test(token)) return { status: "ok" as const, definitions: [] };
-    // Exit code 1 is no match.
-    const out = await gitText(path, [
-      "grep",
-      "-n",
-      "-z",
-      "-I",
-      "-w",
-      "--untracked",
-      "-F",
-      "-e",
-      token,
-    ]).catch(() => "");
     const definition = definitionOf(token);
-    const definitions = out
-      .split("\n")
-      .map((l) => l.split("\0"))
-      .filter(([, , text]) => text && definition.test(text) && !importLine.test(text))
-      .map(([p, line, text]) => ({ path: p, line: Number(line), text: text.trim() }));
-    return { status: "ok" as const, definitions };
+    const lines = (await grepWord(path, token)).filter(
+      (l) => definition.test(l.text) && !importLine.test(l.text),
+    );
+    return { status: "ok" as const, lines };
   });
+}
+
+// Find Usages: every line of the worktree with the name as a whole word, its definitions and imports included.
+export function findUsages(db: Db, workspaceId: number, token: string): Promise<CodeLineList> {
+  return withGit(async () => ({
+    status: "ok" as const,
+    lines: await grepWord(await openedWorktree(db, workspaceId), token),
+  }));
+}
+
+// The worktree's lines with a name as a whole word; none for a token that isn't a name.
+async function grepWord(path: string, token: string): Promise<CodeLine[]> {
+  if (!/^[A-Za-z_$][\w$]*$/.test(token)) return [];
+  const args = ["grep", "-n", "-z", "-I", "-w", "--untracked", "-F", "-e", token];
+  // Exit code 1 is no match.
+  const out = await gitText(path, args).catch(() => "");
+  return out
+    .split("\n")
+    .map((l) => l.split("\0"))
+    .filter(([, , text]) => text)
+    .map(([p, line, text]) => ({ path: p, line: Number(line), text: text.trim() }));
 }
 
 const isFile = (p: string) => existsSync(p) && statSync(p).isFile();

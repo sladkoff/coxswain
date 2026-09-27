@@ -73,6 +73,10 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   **Go to Definition.** Holding ⌘ over a name or a relative import path in a file diff or a whole file underlines it;
   ⌘-click shows the file where it's defined on the canvas, scrolled to that line and with the line selected, and the
   Navigator on _Files_. With several matches, a native menu lists them (file, line and the line's code) to pick one.
+  Right-clicking a name opens a native menu with _Go to Definition_ and _Find Usages_; _Find Usages_ lists every line
+  of the worktree with that name as a whole word in the same kind of menu (the first 30, then _N more_), and picking
+  one shows it the same way. The menu shows even for one line, and says _No usages found_ or _No definition found_
+  when there are none.
 
   **Threads.** The workspace's entries (glossary) go between the lines while they're current, i.e. their lines still
   read as the code they were written on; the header says _N outdated_ for the others, and a click shows them above

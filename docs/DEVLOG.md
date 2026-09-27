@@ -3,14 +3,23 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
-## 2026-09-27 — Go to Definition
+## 2026-09-27 — Go to Definition and Find Usages
 
 ### What works
 
 - **⌘-click a name to see where it's defined** (`findDefinitions` in `git.ts`, token callbacks in `Viewer.tsx`): in a
   file diff or a whole file, ⌘ over a token underlines it; ⌘-click shows the defining file on the canvas at that
-  line, with the Navigator on _Files_. Several matches open a native menu to pick from (up to 20). A relative import
+  line, with the Navigator on _Files_. Several matches open a native menu to pick from. A relative import
   path (`"./queries"`) opens its file, trying the usual extensions and `index` files.
+- **Right-click a name for _Go to Definition_ or _Find Usages_** (a native menu, `menus:token`). _Find Usages_
+  (`findUsages` in `git.ts`) lists every worktree line with the name as a whole word in the same native picker as
+  several definitions: the first 30, then _N more_.
+- **One way to show a whole file** (`openFile` in `App.tsx`): selecting in _Files_, Open Quickly, Go to Definition and
+  Find Usages all show it on the canvas with the Navigator on _Files_ and the file revealed. Fixed on the way: the
+  tree's second mount effect under StrictMode reset its paths and folded the reveal away when switching to _Files_,
+  and a jump within _Files_ to another file scrolled the file drawn before.
+- **Find Usages always shows its menu**, even for one line (often the one clicked), and both menus say _No usages
+  found_ / _No definition found_ instead of doing nothing.
 
 ### Tech debt
 
@@ -18,7 +27,9 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
   definition of it, and methods written over several lines, C functions and destructured names aren't found. A
   language server in the core (ADR 0003) is the upgrade.
 - Only the worktree is searched; a name clicked on the old side of a file diff finds its definition as it is now.
-- No match, or a git error, does nothing. No way back to where you clicked.
+- No way back to where you clicked.
+- Usages are found by name too: the same word in comments, strings and unrelated code counts. The picker is a native
+  menu capped at 30; a results pane (like a search sidebar) if long lists need browsing.
 
 ## 2026-09-27 — Open Quickly
 

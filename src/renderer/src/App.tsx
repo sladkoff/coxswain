@@ -322,10 +322,20 @@ export function App() {
     setGuideId(null);
     setOpened(null);
   };
+  // The one way to show a whole file: on the canvas, at `line` if given, with the Navigator on Files and the file
+  // revealed there. Files, Open Quickly, Go to Definition and Find Usages all go through it. Stable, so the memoised
+  // Viewers don't all redraw.
+  const openFile = useCallback((path: string, line?: number) => {
+    setLeftPane("files");
+    setView("files");
+    // The same file again without a line (e.g. the tree selecting the one it revealed) keeps its Opened, so the
+    // Viewer doesn't reread.
+    setOpened((o) =>
+      !line && o?.kind === "file" && o.path === path ? o : { kind: "file", path, line },
+    );
+  }, []);
   const open = (path: string) => {
-    // The same file again (e.g. the tree selecting the one it revealed) keeps its Opened, so the Viewer doesn't reread.
-    if (view === "files")
-      return setOpened((o) => (o?.kind === "file" && o.path === path ? o : { kind: "file", path }));
+    if (view === "files") return openFile(path);
     // ponytail: file diffs above it that are still loading push it down.
     document.getElementById(`diff:${path}`)?.scrollIntoView();
   };
@@ -335,17 +345,8 @@ export function App() {
   useEffect(() => window.coxswain.onOpenQuickly(() => setQuickOpen(true)), []);
   const openQuickly = (path: string) => {
     setQuickOpen(false);
-    setLeftPane("files");
-    setView("files");
-    setOpened({ kind: "file", path });
+    openFile(path);
   };
-  // Go to Definition from any Viewer: the file on the canvas at that line, with the Navigator on Files. Stable, so
-  // the memoised Viewers don't all redraw.
-  const goToDefinition = useCallback((path: string, line: number) => {
-    setLeftPane("files");
-    setView("files");
-    setOpened({ kind: "file", path, line });
-  }, []);
   // Shows a thread on the canvas: back to the live file diffs, scrolled to its file, then to the thread once the
   // file diff has drawn it. ponytail: an outdated thread isn't between the lines, so this stops at its file.
   const viewThread = (threadId: number) => {
@@ -374,7 +375,7 @@ export function App() {
     turns,
     onAsk: ask,
     onAnswerPermission: answerPermission,
-    onGoToDefinition: goToDefinition,
+    onOpenFile: openFile,
     diffStyle: viewSettings.diffStyle,
   });
 
@@ -539,7 +540,12 @@ export function App() {
               {!pr.commits || !diffDiffs || !shownDiffs ? (
                 <Centered>Loading…</Centered>
               ) : showFile ? (
-                <Viewer opened={opened} {...viewerProps(currentWorkspace, pr.commits.mergeBase)} />
+                // One Viewer per file: a reused one would scroll to a line in the file it drew before.
+                <Viewer
+                  key={opened.kind === "file" ? opened.path : undefined}
+                  opened={opened}
+                  {...viewerProps(currentWorkspace, pr.commits.mergeBase)}
+                />
               ) : (
                 // Only the lines on screen are drawn. ponytail: every file is still read from disk up front.
                 <Virtualizer className="min-h-0 flex-1 overflow-auto">

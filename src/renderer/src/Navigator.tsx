@@ -219,9 +219,12 @@ function Tree({
     model.scrollToPath(selected, { offset: "center" });
   }, [selected]);
   const visibleKey = visible.join("\0");
-  const first = useRef(true);
+  // Only when the paths changed since the tree last took them: resetting folds every folder, so a second run on
+  // mount (StrictMode) would undo the reveal above.
+  const taken = useRef(visibleKey);
   useEffect(() => {
-    if (first.current) return void (first.current = false);
+    if (taken.current === visibleKey) return;
+    taken.current = visibleKey;
     model.resetPaths(visible);
   }, [visibleKey]);
   return <FileTree model={model} className="min-h-0 flex-1" style={{ height: "100%" }} />;

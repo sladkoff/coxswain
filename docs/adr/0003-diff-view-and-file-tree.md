@@ -35,10 +35,10 @@ We use the Pierre libraries for the review screen and for file exploration:
 **Code navigation is by name, for now.** Go to Definition uses `@pierre/diffs`' token callbacks
 (hover and click on a word) and asks the core, which runs `git grep` over the worktree and keeps the
 lines that read as a definition (a keyword such as `function`, `class`, `def` or `fn` before the
-name). It finds every definition of a name, not the one in scope, and only in the worktree: the clone
+name). Find Usages is the same `git grep` without that filter. It finds every definition of a name, not the one in scope, and only in the worktree: the clone
 is blobless, so grepping a commit would fetch every blob. When that isn't good enough, language
 servers run in the core, and `@pierre/diffs` ships a text document type compatible with VS Code's
-language-server tools; that will be a new ADR. Hover, find references and full editing are deferred;
+language-server tools; that will be a new ADR. Hover and full editing are deferred;
 the editing mode in `@pierre/diffs` is still in beta.
 
 ## Alternatives considered

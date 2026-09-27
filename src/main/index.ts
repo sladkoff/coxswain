@@ -15,6 +15,7 @@ import { openDatabase } from "../core/db";
 import {
   cloneProject,
   findDefinitions,
+  findUsages,
   listChangedFiles,
   listCommits,
   listWorktreeFiles,
@@ -173,6 +174,9 @@ app.whenReady().then(() => {
   );
   ipcMain.handle("git:definitions", (_, workspaceId: number, from: string, token: string) =>
     findDefinitions(db, workspaceId, from, token),
+  );
+  ipcMain.handle("git:usages", (_, workspaceId: number, token: string) =>
+    findUsages(db, workspaceId, token),
   );
   ipcMain.handle("agents:list", (_, workspaceId: number) => listAgentSessions(db, workspaceId));
   ipcMain.handle("agents:start", (_, workspaceId: number) => startAgentSession(db, workspaceId));
@@ -358,14 +362,30 @@ app.whenReady().then(() => {
         ).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
       ),
   );
-  // Go to Definition with several matches: one item per label, resolves with the picked index, only on a click.
+  // A token's context menu in the canvas. Resolves only on a click, like the menus above.
   ipcMain.handle(
-    "menus:definitions",
-    (e, labels: string[]) =>
+    "menus:token",
+    (e) =>
+      new Promise<"definition" | "usages">((resolve) =>
+        Menu.buildFromTemplate([
+          { label: "Go to Definition", click: () => resolve("definition") },
+          { label: "Find Usages", click: () => resolve("usages") },
+        ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
+      ),
+  );
+  // Definitions or usages to pick from: one item per label, then "N more" (disabled) if some didn't fit, or `none`
+  // (disabled) if there are none. Resolves with the picked index, only on a click.
+  ipcMain.handle(
+    "menus:code-lines",
+    (e, labels: string[], more: number, none: string) =>
       new Promise<number>((resolve) =>
-        Menu.buildFromTemplate(
-          labels.map((label, i) => ({ label, click: () => resolve(i) })),
-        ).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
+        Menu.buildFromTemplate([
+          ...(labels.length ? [] : [{ label: none, enabled: false }]),
+          ...labels.map((label, i) => ({ label, click: () => resolve(i) })),
+          ...(more
+            ? [{ type: "separator" as const }, { label: `${more} more`, enabled: false }]
+            : []),
+        ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
       ),
   );
   // A workspace's context menu in L1. Resolves only on a click, like the menus above.

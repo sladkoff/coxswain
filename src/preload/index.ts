@@ -4,7 +4,7 @@ import type {
   ChangedFileList,
   CloneResult,
   Commit,
-  DefinitionList,
+  CodeLineList,
   FileText,
   FileTreeResult,
   GitProblem,
@@ -62,8 +62,11 @@ const api = {
   readFileAt: (workspaceId: number, commit: string, path: string): Promise<FileText> =>
     ipcRenderer.invoke("git:read-file-at", workspaceId, commit, path),
   // Go to Definition: where a token clicked in a worktree file (from) is defined.
-  findDefinitions: (workspaceId: number, from: string, token: string): Promise<DefinitionList> =>
+  findDefinitions: (workspaceId: number, from: string, token: string): Promise<CodeLineList> =>
     ipcRenderer.invoke("git:definitions", workspaceId, from, token),
+  // Find Usages: the worktree's lines with the name as a whole word.
+  findUsages: (workspaceId: number, token: string): Promise<CodeLineList> =>
+    ipcRenderer.invoke("git:usages", workspaceId, token),
   // The startup check: which of git, gh (signed in) and claude are missing.
   checkSetup: (): Promise<SetupCheck> => ipcRenderer.invoke("setup:check"),
   listWorkspaces: (projectId: number): Promise<Workspace[]> =>
@@ -158,9 +161,12 @@ const api = {
   // The agent pane's session menu: the index of the picked label. Pending if dismissed.
   showSessionsMenu: (labels: string[], checked: number): Promise<number> =>
     ipcRenderer.invoke("menus:sessions", labels, checked),
-  // Go to Definition's pick among several: the index of the picked label. Pending if dismissed.
-  showDefinitionsMenu: (labels: string[]): Promise<number> =>
-    ipcRenderer.invoke("menus:definitions", labels),
+  // A token's context menu in the canvas; stays pending if dismissed.
+  showTokenMenu: (): Promise<"definition" | "usages"> => ipcRenderer.invoke("menus:token"),
+  // Definitions or usages to pick from, how many didn't fit, and what to say when there are none: the index of the
+  // picked label. Pending if dismissed.
+  showCodeLinesMenu: (labels: string[], more: number, none: string): Promise<number> =>
+    ipcRenderer.invoke("menus:code-lines", labels, more, none),
   // A workspace's context menu in L1; stays pending if dismissed.
   showWorkspaceMenu: (): Promise<"remove"> => ipcRenderer.invoke("menus:workspace"),
   // A native confirmation before a destructive action: `action` names its button. True if confirmed.
