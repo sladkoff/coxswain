@@ -32,7 +32,7 @@ export type ViewSettings = { diffStyle: "unified" | "split"; showReviewed: boole
 // What the core changed on its own, e.g. when an agent turn ends, so the UI refetches it (ADR 0017).
 export type Changed = {
   workspaceId: number;
-  what: "entries" | "worktree" | "transcript" | "view";
+  what: "entries" | "worktree" | "transcript" | "sessions" | "view";
 };
 
 // The one interface between the UI and the core (ADR 0002).

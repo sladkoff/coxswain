@@ -84,6 +84,8 @@ const migrations = [
     )
   );
   alter table views drop column groups`,
+  // An agent session's title: the agent's own once it names the session, else its first message.
+  `alter table agent_sessions add column title text`,
 ];
 
 // ADR 0016: the tables as the migrations above leave them. Change this with every migration that changes a table.
@@ -102,6 +104,7 @@ type Tables = {
     agent: string;
     agent_session_id: string;
     created_at: string;
+    title: string | null;
   };
   reviewed_files: { workspace_id: number; path: string; fingerprint: string };
   views: {

@@ -9,6 +9,7 @@ import {
   listAgentPicks,
   listAgentSessions,
   newSessionAgent,
+  onSessionTitle,
   type Pick,
   readTranscript,
   runTurn,
@@ -548,6 +549,10 @@ app.whenReady().then(() => {
       changed(w.webContents, { workspaceId, what: "view" });
       changed(w.webContents, { workspaceId, what: "entries" });
     }
+  });
+  onSessionTitle(db, (workspaceId) => {
+    for (const w of BrowserWindow.getAllWindows())
+      changed(w.webContents, { workspaceId, what: "sessions" });
   });
   ipcMain.handle("agents:stop-turn", (_, agentSessionId: string) => stopTurn(db, agentSessionId));
   ipcMain.handle("agents:answer-permission", (_, id: string, optionId: string | null) =>
