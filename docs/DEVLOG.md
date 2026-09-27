@@ -3,6 +3,19 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-27 — Open Quickly
+
+### What works
+
+- **⌘⇧O opens any file of the workspace** (_File > Open Quickly…_ or the magnifier in the canvas bar, `OpenQuickly.tsx`): a search box over the window
+  filters the worktree's files by path; Enter shows the file in the canvas and the Navigator on _Files_.
+- **_Files_ follows the canvas:** the file shown there is selected in the tree, its folders opened and the row
+  scrolled into view, also after the tree reloads.
+
+### Tech debt
+
+- Matches are unranked, the first 50 in tree order. Rank by match quality if long repositories make it noisy.
+
 ## 2026-09-27 — Agent replies stream token by token
 
 ### What works

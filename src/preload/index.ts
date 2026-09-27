@@ -179,6 +179,11 @@ const api = {
     ipcRenderer.on("toggle-navigator", listener);
     return () => void ipcRenderer.off("toggle-navigator", listener);
   },
+  onOpenQuickly: (callback: () => void) => {
+    const listener = () => callback();
+    ipcRenderer.on("open-quickly", listener);
+    return () => void ipcRenderer.off("open-quickly", listener);
+  },
   onOpenSettings: (callback: () => void) => {
     const listener = () => callback();
     ipcRenderer.on("open-settings", listener);

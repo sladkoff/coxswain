@@ -22,12 +22,22 @@ type Props = {
   reviewed: string[];
   showReviewed: boolean;
   entries: ReviewEntry[]; // the workspace's, counted per file
+  selected?: string; // the file shown in the canvas, revealed and selected in Files
   onOpen: (path: string) => void;
 };
 
 // L2: the workspace's changed files (diffs) or its whole file tree (files).
 // The file tree reloads whenever the worktree changes, like the changes.
-export function Navigator({ workspace, pr, view, reviewed, showReviewed, entries, onOpen }: Props) {
+export function Navigator({
+  workspace,
+  pr,
+  view,
+  reviewed,
+  showReviewed,
+  entries,
+  selected,
+  onOpen,
+}: Props) {
   const files = useQuery({
     ...core("listWorktreeFiles", workspace.id),
     enabled: view === "files" && !!pr.changed,
@@ -81,6 +91,7 @@ export function Navigator({ workspace, pr, view, reviewed, showReviewed, entries
         hidden={view === "diffs" && !showReviewed ? reviewed : []}
         expanded={view === "diffs"}
         flat={view === "diffs" && settings.layout === "list"}
+        selected={view === "files" ? selected : undefined}
         onOpen={onOpen}
       />
     </div>
@@ -104,6 +115,7 @@ type TreeProps = {
   hidden: string[]; // left out of the tree, e.g. reviewed files
   expanded: boolean;
   flat: boolean; // every file as a top-level row with its full path, no folders
+  selected?: string; // a path of the tree, not a list row
   onOpen: (path: string) => void;
 };
 
@@ -119,7 +131,17 @@ function listRows(paths: string[]): (p: string) => string {
   return (p) => (seen.get(baseName(p))! > 1 ? p.replaceAll("/", "∕") : baseName(p));
 }
 
-function Tree({ paths, changed, reviewed, items, hidden, expanded, flat, onOpen }: TreeProps) {
+function Tree({
+  paths,
+  changed,
+  reviewed,
+  items,
+  hidden,
+  expanded,
+  flat,
+  selected,
+  onOpen,
+}: TreeProps) {
   const [row] = useState(() => (flat ? listRows(paths) : (p: string) => p));
   const visible = paths.filter((p) => !hidden.includes(p)).map(row);
   const [counts] = useState(
@@ -186,6 +208,16 @@ function Tree({ paths, changed, reviewed, items, hidden, expanded, flat, onOpen 
     model.applyGitStatusPatch({ remove: toggled.map((f) => f.path) });
     model.applyGitStatusPatch({ set: toggled });
   }, [reviewed, itemsKey]);
+  // Reveal: open its folder (and theirs), make it the only selection, scroll it into view. Again after a remount.
+  useEffect(() => {
+    if (!selected || model.getItem(selected)?.isSelected()) return;
+    const folder = dirName(selected);
+    const dir = folder && model.getItem(`${folder}/`);
+    if (dir && "expand" in dir) dir.expand();
+    for (const p of model.getSelectedPaths()) model.getItem(p)?.deselect();
+    model.getItem(selected)?.select();
+    model.scrollToPath(selected, { offset: "center" });
+  }, [selected]);
   const visibleKey = visible.join("\0");
   const first = useRef(true);
   useEffect(() => {

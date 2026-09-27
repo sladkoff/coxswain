@@ -17,6 +17,7 @@ import { GuideToc } from "./GuideToc";
 import { Navigator, type NavigatorView } from "./Navigator";
 import { NewWorkspace } from "./NewWorkspace";
 import { Onboarding } from "./Onboarding";
+import { OpenQuickly } from "./OpenQuickly";
 import { Projects } from "./Projects";
 import { changed, core, markReviewed as mark, queryClient } from "./queries";
 import { Settings } from "./Settings";
@@ -322,11 +323,22 @@ export function App() {
     setOpened(null);
   };
   const open = (path: string) => {
-    if (view === "files") return setOpened({ kind: "file", path });
+    // The same file again (e.g. the tree selecting the one it revealed) keeps its Opened, so the Viewer doesn't reread.
+    if (view === "files")
+      return setOpened((o) => (o?.kind === "file" && o.path === path ? o : { kind: "file", path }));
     // ponytail: file diffs above it that are still loading push it down.
     document.getElementById(`diff:${path}`)?.scrollIntoView();
   };
   const showFile = view === "files" && opened;
+  // Open Quickly (⌘⇧O): any file of the worktree, shown on the canvas with the Navigator on Files.
+  const [quickOpen, setQuickOpen] = useState(false);
+  useEffect(() => window.coxswain.onOpenQuickly(() => setQuickOpen(true)), []);
+  const openQuickly = (path: string) => {
+    setQuickOpen(false);
+    setLeftPane("files");
+    setView("files");
+    setOpened({ kind: "file", path });
+  };
   // Shows a thread on the canvas: back to the live file diffs, scrolled to its file, then to the thread once the
   // file diff has drawn it. ponytail: an outdated thread isn't between the lines, so this stops at its file.
   const viewThread = (threadId: number) => {
@@ -410,6 +422,13 @@ export function App() {
         onNew={() => setScreen("new-workspace")}
       />
 
+      {currentWorkspace && quickOpen && (
+        <OpenQuickly
+          workspaceId={currentWorkspace.id}
+          onOpen={openQuickly}
+          onClose={() => setQuickOpen(false)}
+        />
+      )}
       {currentWorkspace && (
         <>
           {/* The agent pane, always shown for a workspace. */}
@@ -439,6 +458,7 @@ export function App() {
             commit={commit}
             guide={guide}
             onGuide={pickGuide}
+            onOpenQuickly={() => setQuickOpen(true)}
             onViewOptions={async () =>
               setViewSettings(await window.coxswain.showViewMenu(viewSettings))
             }
@@ -485,6 +505,7 @@ export function App() {
                         reviewed={reviewed}
                         showReviewed={viewSettings.showReviewed}
                         entries={entries}
+                        selected={opened?.kind === "file" ? opened.path : undefined}
                         onOpen={open}
                       />
                     </>

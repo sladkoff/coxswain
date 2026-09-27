@@ -1,7 +1,7 @@
 import type { Commit } from "../../core/git";
 import type { Guide } from "../../core/guides";
 import { Button, ToggleButton } from "./components/button";
-import { CogIcon } from "./components/icons";
+import { CogIcon, SearchIcon } from "./components/icons";
 import { cn, divider, titleBar } from "./components/styles";
 import { shortDateTime } from "./format";
 
@@ -13,11 +13,12 @@ type Props = {
   commit: Commit | null;
   guide: Guide | null;
   onGuide: () => void;
+  onOpenQuickly: () => void;
   onViewOptions: () => void;
 };
 
-// The canvas's bar: Files, Commits and Guide on the left, the view options on the right. It also drags the window, so
-// it lines up with the agent pane's. ponytail: no tabs row until the canvas shows a second thing.
+// The canvas's bar: Files, Commits and Guide on the left, Open Quickly and the view options on the right. It also
+// drags the window, so it lines up with the agent pane's. ponytail: no tabs row until the canvas shows a second thing.
 export function CanvasBar(props: Props) {
   return (
     <div
@@ -52,6 +53,14 @@ export function CanvasBar(props: Props) {
         {props.guide ? `Guide · ${shortDateTime(props.guide.createdAt)}` : "Guide"}
       </ToggleButton>
       <div className="flex-1" />
+      <Button
+        variant="ghost"
+        title="Open Quickly (⌘⇧O)"
+        className="p-1 text-neutral-500"
+        onClick={props.onOpenQuickly}
+      >
+        <SearchIcon />
+      </Button>
       <Button
         variant="ghost"
         title="View options"

@@ -8,7 +8,7 @@ Direction for the main screen and navigation. Expected to change as we build; te
 Agent-first. Opening a PR shows the project column (L1), the agent pane (L4) on the left and the canvas (L3) on the
 right. The canvas is one explorer that both the agent and the human annotate; for now it shows _Changes_, the
 workspace's file diffs, with the Navigator (L2) or the commits pane on its left. A bar at the canvas's top holds
-_Files_, _Commits_, _Guide_ and the cog; a bar at its bottom sums up the review.
+_Files_, _Commits_, _Guide_, a magnifier (Open Quickly) and the cog; a bar at its bottom sums up the review.
 
 ```
 ┌────┬─────────────────────────┬──────────────────────────────────────────┐
@@ -56,6 +56,10 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   its +/− lines). A changed file with notes or questions shows how many after its +/− lines (`✎ 2`; hovering says how
   many of each). Selecting a file in _Diffs_ scrolls the canvas to its file diff; selecting one in _Files_ shows the
   whole file in the canvas, until the toggle goes back to _Diffs_.
+
+  _File > Open Quickly…_ (⌘⇧O), or the magnifier left of the canvas bar's cog, opens a search box over the window: typing filters the worktree's files by path (a
+  substring, or its letters in order), ↑/↓ pick, Enter opens the file in the canvas and shows the Navigator on
+  _Files_, with the file selected and its folders open. Esc or a click outside closes it.
 
   _Commits_ in the canvas's bar shows the commits pane in the Navigator's place (one or the other): _All Changes_,
   then the PR's commits (and local ones on top), newest first. Picking a commit shows its commit diff on the canvas,

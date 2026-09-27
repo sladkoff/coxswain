@@ -99,7 +99,18 @@ const menu = Menu.buildFromTemplate([
       { role: "quit" },
     ],
   },
-  { role: "fileMenu" },
+  {
+    label: "File",
+    submenu: [
+      {
+        label: "Open Quickly…",
+        accelerator: "CmdOrCtrl+Shift+O",
+        click: () => sendToWindow("open-quickly"),
+      },
+      { type: "separator" },
+      { role: "close" },
+    ],
+  },
   { role: "editMenu" },
   {
     label: "View",
