@@ -23,7 +23,7 @@ shows — _Diff_ with its range, a chip per view, a dashed _New View_ chip — t
 │ #34│                         │                     │ and the human      │
 │ +  │ [message box]           │                     │ annotate it)       │
 │    │                         ├─────────────────────┴────────────────────┤
-│    │                         │ 3 threads · 1 waiting  ▰▱ 1 of 2 reviewed│
+│    │                         │▾ 3 threads ●1 │ ▰▱ 1/2 │ +33 −0 Hand off▾│
 └────┴─────────────────────────┴──────────────────────────────────────────┘
           ⌘K from anywhere: switch to anything, do anything
 ```
