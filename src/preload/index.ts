@@ -165,16 +165,21 @@ const api = {
     return () => void ipcRenderer.off("review:turn-end", listener);
   },
   // head: a pinned range (a view); without it, the worktree (ADR 0014).
-  listReviewed: (workspaceId: number, mergeBase: string, head?: string): Promise<string[]> =>
-    ipcRenderer.invoke("reviewed:list", workspaceId, mergeBase, head),
+  listReviewed: (
+    workspaceId: number,
+    mergeBase: string,
+    head?: string,
+    kind?: "diff" | "file",
+  ): Promise<string[]> => ipcRenderer.invoke("reviewed:list", workspaceId, mergeBase, head, kind),
   setReviewed: (
     workspaceId: number,
     mergeBase: string,
     path: string,
     reviewed: boolean,
     head?: string,
+    kind?: "diff" | "file",
   ): Promise<void> =>
-    ipcRenderer.invoke("reviewed:set", workspaceId, mergeBase, path, reviewed, head),
+    ipcRenderer.invoke("reviewed:set", workspaceId, mergeBase, path, reviewed, head, kind),
   // The workspace's views, newest first (ADR 0023, 0026).
   listViews: (workspaceId: number): Promise<View[]> =>
     ipcRenderer.invoke("views:list", workspaceId),

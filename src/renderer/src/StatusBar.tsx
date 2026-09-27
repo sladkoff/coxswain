@@ -1,5 +1,4 @@
 import { useState } from "react";
-import type { ChangedFile } from "../../core/git";
 import type { ReviewEntry } from "../../core/review";
 import { Button } from "./components/button";
 import { ProgressBar } from "./components/layout";
@@ -11,7 +10,7 @@ import type { Turn } from "./Viewer";
 type Props = {
   workspaceId: number;
   entries: ReviewEntry[];
-  files: ChangedFile[];
+  files: { path: string; additions?: number; deletions?: number }[];
   reviewed: string[];
   turns: Record<number, Turn>;
   onViewThread: (threadId: number) => void;
@@ -40,8 +39,8 @@ export function StatusBar(props: Props) {
   );
   const answering = threads.filter((e) => props.turns[e.id]?.running).length;
   const reviewed = props.files.filter((f) => props.reviewed.includes(f.path)).length;
-  const add = props.files.reduce((n, f) => n + f.additions, 0);
-  const del = props.files.reduce((n, f) => n + f.deletions, 0);
+  const add = props.files.reduce((n, f) => n + (f.additions ?? 0), 0);
+  const del = props.files.reduce((n, f) => n + (f.deletions ?? 0), 0);
   const parts = [
     count(threads.length, "thread") + (which.length ? ` (${which.join(", ")})` : ""),
     answering ? `${answering} waiting on the agent` : "",
@@ -98,10 +97,12 @@ export function StatusBar(props: Props) {
         </Button>
         {error && <ErrorText className="truncate">{error}</ErrorText>}
         <div className="flex-1" />
-        <span className="tabular-nums">
-          <span className="text-green-600">+{add}</span>{" "}
-          <span className="text-red-600">−{del}</span>
-        </span>
+        {props.files.some((f) => f.additions !== undefined) && (
+          <span className="tabular-nums">
+            <span className="text-green-600">+{add}</span>{" "}
+            <span className="text-red-600">−{del}</span>
+          </span>
+        )}
         <div className="flex items-center gap-1.5 tabular-nums">
           <ProgressBar value={reviewed} max={props.files.length} className="w-16" />
           {reviewed} of {count(props.files.length, "file")} reviewed

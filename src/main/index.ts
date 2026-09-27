@@ -384,13 +384,22 @@ app.whenReady().then(() => {
     return !!prompt;
   });
   ipcMain.handle("review:stop", (_, workspaceId: number) => stopQuestion(db, workspaceId));
-  ipcMain.handle("reviewed:list", (_, workspaceId: number, mergeBase: string, head?: string) =>
-    listReviewed(db, workspaceId, mergeBase, head),
+  ipcMain.handle(
+    "reviewed:list",
+    (_, workspaceId: number, mergeBase: string, head?: string, kind?: "diff" | "file") =>
+      listReviewed(db, workspaceId, mergeBase, head, kind),
   );
   ipcMain.handle(
     "reviewed:set",
-    (_, workspaceId: number, mergeBase: string, path: string, reviewed: boolean, head?: string) =>
-      setReviewed(db, workspaceId, mergeBase, path, reviewed, head),
+    (
+      _,
+      workspaceId: number,
+      mergeBase: string,
+      path: string,
+      reviewed: boolean,
+      head?: string,
+      kind?: "diff" | "file",
+    ) => setReviewed(db, workspaceId, mergeBase, path, reviewed, head, kind),
   );
   ipcMain.handle("agents:run-turn", async (e, agentSessionId: string, prompt: string) => {
     const workspaceId = await agentSessionWorkspace(db, agentSessionId);

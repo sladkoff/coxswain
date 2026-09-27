@@ -18,10 +18,10 @@ import {
   findPullRequest,
   getPullRequestHead,
   type GitHubProblem,
-} from "./github";
-import { getProject } from "./projects";
-import { snapshotOf } from "./snapshot";
-import { getWorkspaceRepo, setWorkspacePullRequest } from "./workspaces";
+} from "./github.ts";
+import { getProject } from "./projects.ts";
+import { snapshotOf } from "./snapshot.ts";
+import { getWorkspaceRepo, setWorkspacePullRequest } from "./workspaces.ts";
 
 // ADR 0008: coxswain's own blobless clone per project, and one worktree per workspace on the PR's head branch, or on
 // the workspace's own branch (ADR 0028).
@@ -506,6 +506,16 @@ export function listWorktreeFiles(db: Db, workspaceId: number): Promise<FileTree
   });
 }
 
+// Blob paths at a pinned revision, including unchanged files; excludes directories and submodule commits.
+export async function listFilesAt(db: Db, workspaceId: number, commit: string): Promise<string[]> {
+  if (!isCommit(commit)) throw new GitError(`Not a commit: ${commit}`);
+  const out = await gitText(await openedWorktree(db, workspaceId), ["ls-tree", "-r", "-z", commit]);
+  return out.split("\0").flatMap((entry) => {
+    const tab = entry.indexOf("\t");
+    return tab >= 0 && entry.slice(0, tab).split(" ")[1] === "blob" ? [entry.slice(tab + 1)] : [];
+  });
+}
+
 const asText = (bytes: Buffer): FileText =>
   bytes.includes(0)
     ? { status: "ok", text: null, binary: true }
@@ -525,13 +535,15 @@ export function readWorktreeFile(db: Db, workspaceId: number, file: string): Pro
 
 // Identifies file diffs by their contents: the old side (base) and the new side's bytes, from the worktree, or at
 // head for a pinned range (ADR 0014). Changes when either does, e.g. after an agent's edit or new commits on the PR;
-// a file diff with no local changes gets the same fingerprint either way.
+// a file diff with no local changes gets the same fingerprint either way. Whole files ignore base and use a
+// separate namespace, so their marks never apply to a diff (ADR 0014).
 export async function diffFingerprints(
   db: Db,
   workspaceId: number,
   base: string,
   files: string[],
   head?: string,
+  kind: "diff" | "file" = "diff",
 ): Promise<Map<string, string>> {
   const path = await openedWorktree(db, workspaceId);
   const contents = head
@@ -539,11 +551,14 @@ export async function diffFingerprints(
     : new Map(files.map((f) => [f, worktreeBytes(path, f)]));
   const hash = (f: string) => {
     const bytes = contents.get(f);
-    return createHash("sha1")
-      .update(base)
-      .update("\0")
-      .update(bytes ?? "deleted")
-      .digest("hex");
+    return (
+      (kind === "file" ? "file:" : "") +
+      createHash("sha1")
+        .update(kind === "file" ? "file" : base)
+        .update("\0")
+        .update(bytes ?? "deleted")
+        .digest("hex")
+    );
   };
   return new Map(files.map((f) => [f, hash(f)]));
 }

@@ -3,6 +3,25 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-28 — Views of existing code without a diff
+
+Issue #31, for G3 and G5 (ADRs 0014, 0023, 0026).
+
+- Views can start on a clean branch and explain existing code with prose and diagrams. The agent's instructions
+  describe source-file embeds: `file path=…` fences show the whole file at the view's snapshot, including unchanged
+  files. Diff embeds still require a change; guides use diffs for their changed files.
+- Embedded source files use Pierre's file viewer, with inline comments, explanations and findings. Paths are checked
+  against the pinned git tree; directories and submodules cannot be embedded as files. Every path is embedded once.
+- Whole files have separate Reviewed fingerprints, based on their contents, independent of the diff or merge base.
+  Existing diff marks are preserved. File headers, section counts, the table of contents and the bottom bar agree;
+  the bottom bar counts the view's embeds. Show Reviewed Files and section navigation work for source files too.
+- Reviewed for commit and scope diffs now follows the displayed range, as view review state already did.
+- Regression tests cover empty diffs, mixed embeds, invalid paths and diagrams, annotations, guide coverage,
+  snapshot reads and independent review state across edits and base changes. Checked in the built app with a
+  disposable clean repository: source file, diagram, explanation, Reviewed hiding, progress and section navigation;
+  then mixed source/diff embeds, independent checkboxes and the all-reviewed message.
+- Source embeds show whole files; selecting a line range for an embed remains deferred. No schema migration needed.
+
 ## 2026-09-28 — Branch workspaces, local changes and turn diffs
 
 The local development loop (#3, ADR 0028), for G5.

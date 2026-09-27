@@ -18,6 +18,9 @@ import { type Draft, DraftBox, lines, ThreadBox } from "./Thread";
 export type Opened =
   | { kind: "diff"; file: ChangedFile }
   | { kind: "file"; path: string; line?: number };
+export const openedPath = (opened: Opened) =>
+  opened.kind === "diff" ? opened.file.path : opened.path;
+
 // A question's turn in a thread: the reply streamed so far (live) until it's saved as an answer entry, and a tool use
 // waiting for the user's approval.
 export type Turn = {
@@ -35,15 +38,13 @@ type Box = { entry?: ReviewEntry; draft?: Draft };
 type Props = {
   workspace: Workspace;
   mergeBase: string;
-  // A commit diff (picked under Commits): the new side is this commit, and mergeBase its parent.
-  // ponytail: notes on it keep the commit's line numbers and say "as in the worktree", and Reviewed marks the file
-  // reviewed for all changes; anchor entries and reviewed state to the commit if that misleads.
+  // A pinned range: file and diff contents, notes and Reviewed all use this revision.
   head?: string;
   opened: Opened;
   entries: ReviewEntry[]; // the workspace's
   // This file diff's, not the list: a tick must only redraw the file diff ticked.
   reviewed: boolean;
-  onReviewedChange: (path: string, reviewed: boolean) => void;
+  onReviewedChange: (path: string, reviewed: boolean, kind?: "file") => void;
   turns: Record<number, Turn>; // by thread
   onAsk: Ask;
   onAnswerPermission: (threadId: number, id: string, optionId: string) => void;
@@ -82,7 +83,7 @@ export const Viewer = memo(function Viewer(props: Props) {
     setDraft(null);
     setSelection(null);
   };
-  const path = opened.kind === "diff" ? opened.file.path : opened.path;
+  const path = openedPath(opened);
   // A stacked file diff reads its file only once it scrolls near the screen: a big PR has thousands, and reading
   // them all at once queues every other call behind thousands of git processes.
   const [near, setNear] = useState(!props.stacked);
@@ -197,7 +198,7 @@ export const Viewer = memo(function Viewer(props: Props) {
   }, [o, n]);
   const annotations = useMemo(() => {
     // Threads show under their first question, so only anchored entries without a parent get a box.
-    // A whole file only shows the worktree, so only entries on the new side belong in it.
+    // A whole file shows the new side (snapshot or worktree), so only new-side entries belong in it.
     // Only current entries go between the lines (ADR 0015); outdated ones open from the header.
     const boxes: { side: "old" | "new"; line: number; box: Box }[] = [
       ...entries
@@ -240,9 +241,12 @@ export const Viewer = memo(function Viewer(props: Props) {
     find();
   }, [opened, !!files]);
 
-  if (!near && opened.kind === "diff") {
+  if (!near) {
     // Roughly the file diff's height, so scrolling to a file further down lands near it.
-    const height = 44 + 20 * Math.min(opened.file.additions + opened.file.deletions + 6, 200);
+    const height =
+      opened.kind === "diff"
+        ? 44 + 20 * Math.min(opened.file.additions + opened.file.deletions + 6, 200)
+        : 400;
     return (
       <div
         ref={placeholder}
@@ -335,7 +339,7 @@ export const Viewer = memo(function Viewer(props: Props) {
       onContextMenu={(e) => void tokenMenu(e.nativeEvent)}
       className={props.stacked ? "select-text" : "min-h-0 flex-1 overflow-auto select-text"}
     >
-      {showOutdated && opened.kind === "diff" && (
+      {showOutdated && (
         <OutdatedThreads entries={outdated} renderThread={(entry) => render({ entry })} />
       )}
       {opened.kind === "file" ? (
@@ -345,6 +349,18 @@ export const Viewer = memo(function Viewer(props: Props) {
           selectedLines={selection}
           lineAnnotations={annotations.file}
           renderAnnotation={(a) => render(a.metadata)}
+          renderHeaderMetadata={
+            props.stacked
+              ? () => (
+                  <DiffHeaderActions
+                    outdated={outdated.length}
+                    onToggleOutdated={() => setShowOutdated((s) => !s)}
+                    reviewed={props.reviewed}
+                    onReviewedChange={(on) => props.onReviewedChange(path, on, "file")}
+                  />
+                )
+              : undefined
+          }
         />
       ) : (
         <MultiFileDiff<Box>
