@@ -7,23 +7,24 @@ Direction for the main screen and navigation. Expected to change as we build; te
 
 Agent-first. Opening a PR shows the project column (L1), the agent pane (L4) on the left and the canvas (L3) on the
 right. The canvas is one explorer that both the agent and the human annotate; for now it shows _Changes_, the
-workspace's file diffs, with the Navigator (L2) or the commits pane on its left. A bar at the canvas's top holds
-_Files_, _Commits_, _Diff_, a chip per view, a dashed _New View_ chip, then Back and Forward chevrons, a magnifier (Open Quickly) and the cog; a bar at its
-bottom sums up the review.
+workspace's file diffs, with the Navigator (L2) or the commits pane on its left. The top bar follows the columns: over
+the left pane, its own bar (hide it, and _Changes_ · _Files_ · _Commits_ to switch it); over the canvas, what the canvas
+shows — _Diff_ with its range, a chip per view, a dashed _New View_ chip — then Back and Forward chevrons, a magnifier
+(Open Quickly) and the display options (sliders). A bar at its bottom sums up the review.
 
 ```
 ┌────┬─────────────────────────┬──────────────────────────────────────────┐
-│    │ Fix auth · Codex [New▾] │ Files 3 Commits Diff All|PR|Local [+] ⚙  │
-│ L1 ├─────────────────────────┼─────────┬────────────────────────────────┤
-│    │ L4 Agent pane           │ L2      │ L3 Canvas                      │
-│ P  │                         │ Navi-   │                                │
-│ ── │ agent chat              │ gator   │  files, diffs and diagrams     │
-│▌#12│                         │ or      │  (the agent and the human      │
-│ #34│                         │ Commits │   annotate it)                 │
-│ +  │ [message box]           │         ├────────────────────────────────┤
-│    │                         │         │ 3 threads · 1 waiting  +33 −0  │
-│    │                         │         │ ▰▱ 1 of 2 reviewed  Send all   │
-└────┴─────────────────────────┴─────────┴────────────────────────────────┘
+│    │ Fix auth · Codex [New▾] │▣ Changes|Files|Comm…│Diff·All▾ Guide [+]⚌│
+│ L1 ├─────────────────────────┼─────────────────────┼────────────────────┤
+│    │ L4 Agent pane           │ L2 Navigator        │ L3 Canvas          │
+│ P  │                         │ or Commits          │                    │
+│ ── │ agent chat              │                     │ files, diffs and   │
+│▌#12│                         │                     │ diagrams (the agent│
+│ #34│                         │                     │ and the human      │
+│ +  │ [message box]           │                     │ annotate it)       │
+│    │                         ├─────────────────────┴────────────────────┤
+│    │                         │ 3 threads · 1 waiting  ▰▱ 1 of 2 reviewed│
+└────┴─────────────────────────┴──────────────────────────────────────────┘
           ⌘K from anywhere: switch to anything, do anything
 ```
 
@@ -51,47 +52,53 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   PR whose branch has a workspace makes that workspace the PR's, and so does opening a branch workspace once GitHub
   has a PR for its branch. While the project is being cloned, its icon pulses.
 
-- **L2 — Navigator**, on the left of the canvas. Hidden at first; _Files N_ in the canvas's bar (N the number of
-  changed files), _View > Toggle Navigator_ or ⌘B shows and hides it. Its border can be dragged. A toggle in its
-  header switches between _Diffs_, the changed files as a tree with their status and +/− lines, and _Files_, the
-  whole file tree of the workspace, with folders that contain changes marked. Both come from the worktree, so
-  _Diffs_ shows the PR's file diffs and local changes (e.g. an agent's) together, a file with local changes marked with
-  an amber ● after its +/− lines, and reloads after each turn. The
-  top says how many of the files are reviewed; reviewed files are hidden unless _Show Reviewed Files_ is on, and then
-  show a ✓. A cog button opens a native menu: _As Tree_ or _As List_ (a flat list, each file's folder dimmed next to
-  its +/− lines). A changed file with notes or questions shows how many after its +/− lines (`✎ 2`; hovering says how
-  many of each). Selecting a file in _Diffs_ scrolls the canvas to its file diff; selecting one in _Files_ shows the
-  whole file in the canvas, until the toggle goes back to _Diffs_.
+- **L2 — Navigator**, on the left of the canvas, under its own bar, as wide as it. Hidden at first; the panel button
+  at the canvas bar's left, _View > Toggle Navigator_ or ⌘B shows it, and the same button at its bar's left hides it
+  (it comes back as it was, on the Navigator or the commits pane). Its border can be dragged. A segmented control in its
+  bar switches between _Changes N_ (N the number of changed files), the changed files as a tree with their status and
+  +/− lines, _Files_, the whole file tree of the workspace, with folders that contain changes marked, and _Commits_
+  (below). Both lists come from the worktree, so _Changes_ shows the PR's file diffs and local changes (e.g. an
+  agent's) together, a file with local changes marked with an amber ● after its +/− lines, and reloads after each
+  turn. Reviewed files are hidden unless _Show Reviewed Files_ is on, and then show a ✓; the bottom bar counts them.
+  The display options list _Files as Tree_ or _Files as List_ (a flat list, each file's folder dimmed next to its +/−
+  lines). A changed file with notes or questions shows how many after its +/− lines (`✎ 2`; hovering says how many of
+  each). Selecting a file in _Changes_ scrolls the canvas to its file diff; selecting one in _Files_ shows the whole
+  file in the canvas, until the control goes back to _Changes_.
 
   _View > Command Palette…_ (⌘K) opens the command palette over the window, starting with `>`: typing after the `>`
   finds an action by name (fuzzy, best match first, its shortcut on the right), ↑/↓ pick, Enter runs it. Without the
-  `>` it finds files: _File > Open Quickly…_ (⌘⇧O), or the magnifier left of the canvas bar's cog, opens it that way.
+  `>` it finds files: _File > Open Quickly…_ (⌘⇧O), or the magnifier left of the canvas bar's display options, opens it that way.
   Typing filters the worktree's files by path (fuzzy: a match in the file name, then elsewhere, then its letters in
   order), and Enter opens the file in the canvas and shows the Navigator on _Files_, with the file selected and its
-  folders open. Esc or a click outside closes it. Actions it lists: Back and Forward, show or hide Files and Commits,
+  folders open. Esc or a click outside closes it. Actions it lists: Back and Forward, show or hide the Navigator and Commits,
   show the diff or a view, each New View, Unified or Split diffs, show or hide reviewed files, open a workspace, New
   Workspace, switch project, Add Project, Settings. Actions that can't run now (Back at the start) aren't listed.
 
   _View > Back_ (⌥⌘←) and _View > Forward_ (⌥⌘→), or the chevrons in the canvas bar, step through what the canvas
   showed (ADR 0025): each whole file opened (from _Files_, Open Quickly, Go to Definition or Find Usages), each file
-  picked in _Diffs_, each switch of the _Diffs_/_Files_ toggle, each commit or view picked, and each workspace opened;
+  picked in _Changes_, each switch between _Changes_ and _Files_, each commit or view picked, and each workspace opened;
   Back into another workspace's step opens that workspace again. Each step comes back scrolled where it was left, the
   file diffs by the one at the top. The keys work wherever the focus is, the Navigator included; the menu items and
   chevrons are greyed out at either end.
 
-  _Commits_ in the canvas's bar shows the commits pane in the Navigator's place (one or the other): _All Changes_,
+  _Commits_ in the pane's bar shows the commits pane in the Navigator's place (one or the other): _All Changes_,
   then, if any agent turn changed the worktree, _Agent turns_ (when, and the turn's first message) and _Commits_: the
   PR's commits (and local ones on top, marked _local_), newest first. Picking a commit shows its commit diff on the
-  canvas, and picking a turn its turn diff (glossary); the button then names the commit or _Turn: …_. At the top, how
+  canvas, and picking a turn its turn diff (glossary); the _Diff_ tab's range then names the commit or _Turn: …_, with ✕
+  back to all changes. At the top, how
   many commits aren't pushed, with _Push_ (confirmed; never forced) or, for a branch workspace without a PR, _Open Pull
   Request…_ (confirmed: pushes, opens a draft PR into its base branch and shows it in the browser). A push that fails
   says why there.
 
-  **Scope.** While the diff shows (no view, no commit), a segmented control next to _Diff_ picks the scope (glossary):
-  _All_, _PR_ (_Pushed_ for a branch without a PR) or _Local_. _PR_ is pinned like a commit; _Local_ is live.
+  **Range.** The _Diff_ tab carries what the diff shows, always, a view showing or not, so the chips after it never
+  move: the scope (glossary) _All_, _PR_ (_Pushed_ for a branch without a PR) or _Local_, or the commit or turn picked.
+  Clicking it opens a native menu: _All Changes_, _The PR's Changes_ (_Pushed Changes_), _Local Changes_, and _Commit
+  or Agent Turn…_, which shows the commits pane. Picking a scope shows the diff. _PR_ is pinned like a commit; _Local_
+  is live.
 
-- **L3 — Canvas.** All file diffs of the workspace one after another, to scroll through. The cog in its bar opens a
-  native menu: _Unified_ or _Split_ file diffs, and _Show Reviewed Files_; off, reviewed file diffs are hidden, and
+- **L3 — Canvas.** All file diffs of the workspace one after another, to scroll through. The display options (sliders)
+  in its bar open a native menu: _Unified_ or _Split_ file diffs, _Show Reviewed Files_, and the Navigator's _Files as
+  Tree_ or _Files as List_; off, reviewed file diffs are hidden, and
   when all are, the canvas says _All N files reviewed_ with _Show them_. A file diff's header has a _Reviewed_
   checkbox.
 

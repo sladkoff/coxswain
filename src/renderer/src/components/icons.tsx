@@ -1,6 +1,6 @@
 // Icons from Lucide (ISC licence).
 
-export function CogIcon() {
+export function SlidersIcon() {
   return (
     <svg
       viewBox="0 0 24 24"
@@ -11,8 +11,49 @@ export function CogIcon() {
       strokeLinecap="round"
       strokeLinejoin="round"
     >
-      <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
-      <circle cx="12" cy="12" r="3" />
+      <path d="M10 5H3" />
+      <path d="M12 19H3" />
+      <path d="M14 3v4" />
+      <path d="M16 17v4" />
+      <path d="M21 12h-9" />
+      <path d="M21 19h-5" />
+      <path d="M21 5h-7" />
+      <path d="M8 10v4" />
+      <path d="M8 12H3" />
+    </svg>
+  );
+}
+
+export function PanelLeftIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="size-3.5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect width="18" height="18" x="3" y="3" rx="2" />
+      <path d="M9 3v18" />
+    </svg>
+  );
+}
+
+export function XIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="size-3"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
     </svg>
   );
 }

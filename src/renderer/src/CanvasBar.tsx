@@ -2,26 +2,68 @@ import type { Commit } from "../../core/git";
 import type { View } from "../../core/views";
 import { Button, SegmentedControl, ToggleButton } from "./components/button";
 import {
+  ChevronDownIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
-  CogIcon,
   LayersPlusIcon,
+  PanelLeftIcon,
   SearchIcon,
+  SlidersIcon,
+  XIcon,
 } from "./components/icons";
-import { cn, divider, titleBar } from "./components/styles";
+import { cn, divider, muted, selectable, titleBar } from "./components/styles";
+
+export type PaneTab = "diffs" | "files" | "commits";
+
+// The bar over the pane left of the canvas, as wide as it: hide it, and switch it between Changes (the Navigator's
+// file diffs), Files (the whole file tree) and Commits. It drags the window, like the canvas's bar.
+export function PaneBar(props: {
+  tab: PaneTab;
+  files: number | undefined; // how many file diffs are on the canvas
+  ready: boolean; // the PR's commits are loaded, so Commits can open
+  onTab: (tab: PaneTab) => void;
+  onHide: () => void;
+}) {
+  return (
+    <div
+      className={cn(
+        titleBar,
+        "gap-1.5 border-b px-2 text-xs [&_button]:[-webkit-app-region:no-drag]",
+        divider,
+      )}
+    >
+      <ToggleButton on title="Hide the navigator (⌘B)" className="p-1" onClick={props.onHide}>
+        <PanelLeftIcon />
+      </ToggleButton>
+      <SegmentedControl
+        value={props.tab}
+        onChange={(t) => (t !== "commits" || props.ready) && props.onTab(t)}
+        options={[
+          {
+            value: "diffs",
+            label: `Changes ${props.files ?? ""}`.trim(),
+            title: "The changed files",
+          },
+          { value: "files", label: "Files", title: "The whole file tree of the workspace" },
+          { value: "commits", label: "Commits", title: "The commits and agent turns" },
+        ]}
+      />
+    </div>
+  );
+}
 
 type Props = {
-  files: number | undefined; // how many file diffs are on the canvas
-  leftPane: "files" | "commits" | null;
-  onToggleLeftPane: (pane: "files" | "commits") => void;
-  ready: boolean; // the PR's commits are loaded, so Commits and the views can open
+  paneOpen: boolean; // the pane left of the canvas shows, with its own bar
+  onShowPane: () => void;
+  ready: boolean; // the PR's commits are loaded, so the diff's range and the views can open
   commit: Commit | null;
   view: View | null;
   views: View[]; // newest first
   snapshot: string | null; // the worktree now; a view pinned to another is stale
   scope: "all" | "pushed" | "local";
   hasPr: boolean; // what's pushed is the PR's
-  onScope: (scope: "all" | "pushed" | "local") => void;
+  onRangeMenu: () => void; // the Diff tab's range: a scope, or a commit or turn from the Commits pane
+  onClearCommit: () => void;
   onShowView: (id: number | null) => void; // null: the diff, no view
   onRemoveView: (view: View, label: string) => void;
   onNewView: () => void;
@@ -33,10 +75,18 @@ type Props = {
   onForward: () => void;
 };
 
-// The canvas's bar: Files, Commits, Diff (with its scope while it shows), a chip per view and New View on the left; Back, Forward, Open Quickly and the view options on the right. It also
-// drags the window, so it lines up with the agent pane's. ponytail: no tabs row until the canvas shows a second thing.
+// The canvas's bar: what the canvas shows on the left (Diff with its range, a chip per view, New View), then Back,
+// Forward, Open Quickly and the display options. Showing or switching the left pane is the pane's own bar; while it's
+// hidden, a button here shows it. It also drags the window, so it lines up with the agent pane's.
 export function CanvasBar(props: Props) {
   const titles = viewTitles(props.views);
+  const onDiff = !props.view;
+  // Always shown, a view showing or not, so the chips next to it never move.
+  const range = props.commit
+    ? props.commit.turn
+      ? `Turn: ${props.commit.subject}`
+      : props.commit.sha.slice(0, 7)
+    : { all: "All", pushed: props.hasPr ? "PR" : "Pushed", local: "Local" }[props.scope];
   return (
     <div
       className={cn(
@@ -45,55 +95,60 @@ export function CanvasBar(props: Props) {
         divider,
       )}
     >
-      <ToggleButton
-        title="Show or hide the files (⌘B)"
-        on={props.leftPane === "files"}
-        onClick={() => props.onToggleLeftPane("files")}
-      >
-        Files {props.files ?? ""}
-      </ToggleButton>
-      <ToggleButton
-        title="Show or hide the commits, to see one commit's changes"
-        disabled={!props.ready}
-        className="max-w-80 truncate"
-        on={props.leftPane === "commits" || !!props.commit}
-        onClick={() => props.onToggleLeftPane("commits")}
-      >
-        {props.commit
-          ? props.commit.turn
-            ? `Turn: ${props.commit.subject}`
-            : `${props.commit.sha.slice(0, 7)} ${props.commit.subject}`
-          : "Commits"}
-      </ToggleButton>
-      <ToggleButton
-        title="Show the diff without a view"
-        disabled={!props.ready}
-        on={!props.view}
-        onClick={() => props.onShowView(null)}
-      >
-        Diff
-      </ToggleButton>
-      {!props.view && !props.commit && props.ready && (
-        <SegmentedControl
-          value={props.scope}
-          onChange={props.onScope}
-          options={[
-            { value: "all", label: "All", title: "Everything since the merge base" },
-            {
-              value: "pushed",
-              label: props.hasPr ? "PR" : "Pushed",
-              title: props.hasPr
-                ? "Only the PR's changes, as on GitHub"
-                : "Only what's pushed to GitHub",
-            },
-            {
-              value: "local",
-              label: "Local",
-              title: "Only the local changes: uncommitted, untracked and not pushed",
-            },
-          ]}
-        />
+      {!props.paneOpen && (
+        <>
+          <Button
+            variant="ghost"
+            title="Show the navigator (⌘B)"
+            className="p-1 text-neutral-500"
+            onClick={props.onShowPane}
+          >
+            <PanelLeftIcon />
+          </Button>
+          <div className={cn("mx-1 h-4 border-l", divider)} />
+        </>
       )}
+      <div
+        className={cn(
+          "flex items-center rounded",
+          selectable(onDiff),
+          !onDiff && muted,
+          !props.ready && "opacity-50",
+        )}
+      >
+        <button
+          title="Show the diff without a view"
+          disabled={!props.ready}
+          aria-pressed={onDiff}
+          className="py-0.5 pr-1.5 pl-2"
+          onClick={() => props.onShowView(null)}
+        >
+          Diff
+        </button>
+        <button
+          title={props.commit ? props.commit.subject : "What the diff shows"}
+          disabled={!props.ready}
+          className={cn(
+            "flex max-w-60 items-center gap-0.5 border-l py-0.5 pr-1 pl-1.5",
+            divider,
+            props.commit && "pr-0.5",
+          )}
+          onClick={props.onRangeMenu}
+        >
+          <span className="truncate">{range}</span>
+          {!props.commit && <ChevronDownIcon />}
+        </button>
+        {props.commit && (
+          <button
+            title="Back to all changes"
+            aria-label="Back to all changes"
+            className="py-1 pr-1.5 pl-0.5"
+            onClick={props.onClearCommit}
+          >
+            <XIcon />
+          </button>
+        )}
+      </div>
       {props.views.toReversed().map((v) => (
         <ToggleButton
           key={v.id}
@@ -148,11 +203,11 @@ export function CanvasBar(props: Props) {
       </Button>
       <Button
         variant="ghost"
-        title="View options"
+        title="Display options"
         className="p-1 text-neutral-500"
         onClick={props.onViewOptions}
       >
-        <CogIcon />
+        <SlidersIcon />
       </Button>
     </div>
   );

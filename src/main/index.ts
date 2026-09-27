@@ -72,7 +72,7 @@ import {
 } from "../core/review";
 import { listReviewed, setReviewed } from "../core/reviewed";
 import { checkSetup } from "../core/setup";
-import type { Changed, NavigatorSettings, ViewSettings } from "../preload";
+import type { Changed, RangePick, ViewSettings } from "../preload";
 import {
   listWorkspaces,
   openBranchWorkspace,
@@ -414,29 +414,8 @@ app.whenReady().then(() => {
     changed(e.sender, { workspaceId, what: "transcript" });
     return result;
   });
-  // Resolves only on a click: the menu's close callback can run before the click, so it can't tell a dismissal
-  // from a pick. A dismissed menu leaves the promise pending; nothing else waits on it.
-  ipcMain.handle(
-    "menus:navigator",
-    (e, s: NavigatorSettings) =>
-      new Promise<NavigatorSettings>((resolve) =>
-        Menu.buildFromTemplate([
-          {
-            label: "As Tree",
-            type: "radio",
-            checked: s.layout === "tree",
-            click: () => resolve({ ...s, layout: "tree" }),
-          },
-          {
-            label: "As List",
-            type: "radio",
-            checked: s.layout === "list",
-            click: () => resolve({ ...s, layout: "list" }),
-          },
-        ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
-      ),
-  );
-  // A thread's ⋯ menu. Resolves only on a click, like the menu above.
+  // A thread's ⋯ menu. Resolves only on a click: the menu's close callback can run before the click, so it can't tell
+  // a dismissal from a pick. A dismissed menu leaves the promise pending; nothing else waits on it.
   ipcMain.handle(
     "menus:thread",
     (e, can: { edit: boolean; send: boolean }) =>
@@ -473,6 +452,42 @@ app.whenReady().then(() => {
             checked: s.showReviewed,
             click: () => resolve({ ...s, showReviewed: !s.showReviewed }),
           },
+          { type: "separator" },
+          {
+            label: "Files as Tree",
+            type: "radio",
+            checked: s.layout === "tree",
+            click: () => resolve({ ...s, layout: "tree" }),
+          },
+          {
+            label: "Files as List",
+            type: "radio",
+            checked: s.layout === "list",
+            click: () => resolve({ ...s, layout: "list" }),
+          },
+        ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
+      ),
+  );
+  // The Diff tab's range: a scope (none checked while a commit or turn shows), or the Commits pane to pick one.
+  ipcMain.handle(
+    "menus:range",
+    (e, scope: "all" | "pushed" | "local" | null, hasPr: boolean) =>
+      new Promise<RangePick>((resolve) =>
+        Menu.buildFromTemplate([
+          ...(
+            [
+              ["all", "All Changes"],
+              ["pushed", hasPr ? "The PR's Changes" : "Pushed Changes"],
+              ["local", "Local Changes"],
+            ] as const
+          ).map(([value, label]) => ({
+            label,
+            type: "checkbox" as const,
+            checked: scope === value,
+            click: () => resolve(value),
+          })),
+          { type: "separator" },
+          { label: "Commit or Agent Turn…", click: () => resolve("commits") },
         ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
       ),
   );

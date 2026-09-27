@@ -3,6 +3,24 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-28 — A top bar that follows the columns
+
+UX, for G3 and G5 ([UX](UX.md) L2, L3).
+
+- The left pane has its own bar, as wide as it: a panel button to hide it and _Changes N_ · _Files_ · _Commits_. That
+  replaces the canvas bar's _Files_ and _Commits_ buttons and the Navigator's _Diffs_/_Files_ toggle, which is now
+  _Changes_/_Files_. ⌘B hides and shows the pane as it was; while it's hidden, the panel button sits at the canvas
+  bar's left.
+- The canvas bar holds only what the canvas shows. The _Diff_ tab carries its range (_All ▾_, _PR ▾_, _Local ▾_, or the
+  commit or turn picked, with ✕), shown whether a view shows or not, so the view chips no longer move. Its native menu
+  picks a scope or _Commit or Agent Turn…_ (the commits pane).
+- One display options menu (sliders icon, was the cog): Unified/Split, Show Reviewed Files and _Files as Tree_/_As
+  List_. The Navigator's own cog and its "N of M reviewed" line are gone; the bottom bar counts reviewed files.
+- Checked in the built app, on a copy of the database: pane hidden with a guide showing, _Changes_, _Files_, a commit
+  picked from _Commits_ and cleared with ✕. The two native menus weren't opened in that check.
+- Still open: a guide's table of contents stays its own column; making it the pane's first tab (_Sections_) would
+  save a column.
+
 ## 2026-09-28 — Views of existing code without a diff
 
 Issue #31, for G3 and G5 (ADRs 0014, 0023, 0026).
