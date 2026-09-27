@@ -4,11 +4,12 @@ import { useLocation, useNavigate, useRouter, useSearch } from "@tanstack/react-
 import { type UIEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangedFile, Commit } from "../../core/git";
 import type { NewEntry, ReviewEntry } from "../../core/review";
-import type { View } from "../../core/views";
+import type { View, ViewRequest } from "../../core/views";
 import type { Workspace } from "../../core/workspaces";
 import { Agents } from "./Agents";
 import { upsert } from "./ChatEntry";
-import { CanvasBar } from "./CanvasBar";
+import { CanvasBar, viewTitles } from "./CanvasBar";
+import { type Action, CommandPalette } from "./CommandPalette";
 import { Commits } from "./Commits";
 import { Button, SegmentedControl } from "./components/button";
 import { Centered, Splitter, viewerMin } from "./components/layout";
@@ -16,7 +17,6 @@ import { cn, divider, muted, titleBar } from "./components/styles";
 import { Navigator, type NavigatorView } from "./Navigator";
 import { NewWorkspace } from "./NewWorkspace";
 import { Onboarding } from "./Onboarding";
-import { OpenQuickly } from "./OpenQuickly";
 import { Projects } from "./Projects";
 import type { CanvasSearch } from "./router";
 import { changed, core, markReviewed as mark, queryClient } from "./queries";
@@ -36,7 +36,6 @@ const noPaths: string[] = [];
 
 export function App() {
   const [screen, setScreen] = useState<"main" | "settings" | "projects" | "new-workspace">("main");
-  useEffect(() => window.coxswain.onOpenSettings(() => setScreen("settings")), []);
   const close = () => setScreen("main");
 
   const setup = useQuery(core("checkSetup"));
@@ -54,7 +53,6 @@ export function App() {
   // The pane on the left of the canvas: the Navigator (files) or the commits. Starts hidden.
   const [leftPane, setLeftPane] = useState<"files" | "commits" | null>(null);
   const toggleLeftPane = (p: "files" | "commits") => setLeftPane((o) => (o === p ? null : p));
-  useEffect(() => window.coxswain.onToggleNavigator(() => toggleLeftPane("files")), []);
 
   // ponytail: resets on restart, like the Navigator's settings; store them once there's a settings table.
   const [viewSettings, setViewSettings] = useState<ViewSettings>({
@@ -117,13 +115,6 @@ export function App() {
     (changes: CanvasSearch, replace = false) =>
       navigate({ to: "/", search: { ...shown.current, ...changes }, replace }),
     [navigate],
-  );
-  useEffect(
-    () =>
-      window.coxswain.onNavigate((by) =>
-        by < 0 ? router.history.back() : router.history.forward(),
-      ),
-    [router],
   );
   const canBack = location.state.__TSR_index > 0;
   const canForward = location.state.__TSR_index < router.history.length - 1;
@@ -407,6 +398,8 @@ export function App() {
     await changed({ workspaceId: v.workspaceId, what: "entries" });
   };
   const newView = async () => setComposerText({ text: await window.coxswain.showNewViewMenu() });
+  const showView = (id: number | null) =>
+    void show({ viewId: id, commit: undefined, file: undefined, at: undefined });
   const pickCommit = (picked: Commit | null) =>
     void show({ commit: picked ?? undefined, viewId: null, file: undefined, at: undefined });
   // The one way to show a whole file: on the canvas, at `line` if given, with the Navigator on Files and the file
@@ -430,11 +423,11 @@ export function App() {
     document.getElementById(`diff:${path}`)?.scrollIntoView();
   };
   const showFile = view === "files" && opened;
-  // Open Quickly (⌘⇧O): any file of the worktree, shown on the canvas with the Navigator on Files.
-  const [quickOpen, setQuickOpen] = useState(false);
-  useEffect(() => window.coxswain.onOpenQuickly(() => setQuickOpen(true)), []);
+  // The command palette, with its first query while it's open: ">" for actions (⌘K), "" for files (Open Quickly, ⌘⇧O).
+  // A file picked is shown on the canvas with the Navigator on Files.
+  const [palette, setPalette] = useState<string | null>(null);
   const openQuickly = (path: string) => {
-    setQuickOpen(false);
+    setPalette(null);
     openFile(path);
   };
   // Shows a thread on the canvas: back to the live file diffs, scrolled to its file, then to the thread once the
@@ -457,6 +450,122 @@ export function App() {
     };
     find();
   };
+
+  // The action registry (ADR 0027): everything the command palette lists and the native menu runs, by id. Rebuilt each
+  // render, so each action's enabled and run see the current state.
+  const onMain = screen === "main" && !!current && palette === null;
+  const ready = !!currentWorkspace && !!pr.commits;
+  const titles = viewTitles(views ?? []);
+  const newViewAction = (kind: ViewRequest, title: string): Action => ({
+    id: `new-view:${kind}`,
+    title,
+    enabled: ready,
+    run: async () => setComposerText({ text: await window.coxswain.newViewRequest(kind) }),
+  });
+  const actions: Action[] = [
+    {
+      id: "command-palette",
+      title: "Command Palette",
+      shortcut: "⌘K",
+      enabled: onMain,
+      run: () => setPalette(">"),
+    },
+    {
+      id: "open-quickly",
+      title: "Open Quickly…",
+      shortcut: "⌘⇧O",
+      enabled: onMain,
+      run: () => setPalette(""),
+    },
+    {
+      id: "back",
+      title: "Back",
+      shortcut: "⌥⌘←",
+      enabled: canBack,
+      run: () => router.history.back(),
+    },
+    {
+      id: "forward",
+      title: "Forward",
+      shortcut: "⌥⌘→",
+      enabled: canForward,
+      run: () => router.history.forward(),
+    },
+    {
+      id: "toggle-navigator",
+      title: "Show or Hide Files",
+      shortcut: "⌘B",
+      enabled: !!currentWorkspace,
+      run: () => toggleLeftPane("files"),
+    },
+    {
+      id: "toggle-commits",
+      title: "Show or Hide Commits",
+      enabled: ready,
+      run: () => toggleLeftPane("commits"),
+    },
+    {
+      id: "show-diff",
+      title: "Show the Diff Without a View",
+      enabled: ready && !!canvasView,
+      run: () => showView(null),
+    },
+    ...(views ?? []).map((v) => ({
+      id: `show-view:${v.id}`,
+      title: `Show View: ${titles.get(v.id)}`,
+      enabled: ready && v.id !== canvasView?.id,
+      run: () => showView(v.id),
+    })),
+    newViewAction("guide", "New View (guide)"),
+    newViewAction("review", "New View (review)"),
+    newViewAction("data model", "New View (data model)"),
+    newViewAction("data flow", "New View (data flow)"),
+    newViewAction("custom", "New View…"),
+    {
+      id: "diff-unified",
+      title: "Unified Diffs",
+      enabled: viewSettings.diffStyle !== "unified",
+      run: () => setViewSettings((v) => ({ ...v, diffStyle: "unified" })),
+    },
+    {
+      id: "diff-split",
+      title: "Split Diffs",
+      enabled: viewSettings.diffStyle !== "split",
+      run: () => setViewSettings((v) => ({ ...v, diffStyle: "split" })),
+    },
+    {
+      id: "toggle-reviewed",
+      title: viewSettings.showReviewed ? "Hide Reviewed Files" : "Show Reviewed Files",
+      run: () => setViewSettings((v) => ({ ...v, showReviewed: !v.showReviewed })),
+    },
+    ...workspaces.map((w) => ({
+      id: `workspace:${w.id}`,
+      title: `Open Workspace: PR #${w.prNumber}`,
+      enabled: w.id !== currentWorkspace?.id,
+      run: () => void selectWorkspace(w.prNumber),
+    })),
+    {
+      id: "new-workspace",
+      title: "New Workspace…",
+      enabled: !!current,
+      run: () => setScreen("new-workspace"),
+    },
+    ...(projects ?? []).map((p) => ({
+      id: `project:${p.id}`,
+      title: `Switch to Project: ${p.owner}/${p.name}`,
+      enabled: p.id !== current?.id,
+      run: () => void selectProject(`${p.owner}/${p.name}`),
+    })),
+    { id: "add-project", title: "Add Project…", run: () => setScreen("projects") },
+    { id: "settings", title: "Settings…", shortcut: "⌘,", run: () => setScreen("settings") },
+  ];
+  const latestActions = useRef(actions);
+  latestActions.current = actions;
+  const run = (id: string) => {
+    const action = latestActions.current.find((a) => a.id === id);
+    if (action && action.enabled !== false) action.run();
+  };
+  useEffect(() => window.coxswain.onAction(run), []);
 
   const viewerProps = (workspace: Workspace, mergeBase: string, head?: string) => ({
     workspace,
@@ -523,11 +632,13 @@ export function App() {
         onNew={() => setScreen("new-workspace")}
       />
 
-      {currentWorkspace && quickOpen && (
-        <OpenQuickly
-          workspaceId={currentWorkspace.id}
+      {palette !== null && (
+        <CommandPalette
+          workspaceId={currentWorkspace?.id}
+          actions={actions}
+          initialQuery={palette}
           onOpen={openQuickly}
-          onClose={() => setQuickOpen(false)}
+          onClose={() => setPalette(null)}
         />
       )}
       {currentWorkspace && (
@@ -560,16 +671,14 @@ export function App() {
             view={canvasView}
             views={views ?? []}
             prHead={pr.commits?.head}
-            onShowView={(id) =>
-              void show({ viewId: id, commit: undefined, file: undefined, at: undefined })
-            }
+            onShowView={showView}
             onRemoveView={removeView}
             onNewView={newView}
-            onOpenQuickly={() => setQuickOpen(true)}
+            onOpenQuickly={() => run("open-quickly")}
             canBack={canBack}
             canForward={canForward}
-            onBack={() => router.history.back()}
-            onForward={() => router.history.forward()}
+            onBack={() => run("back")}
+            onForward={() => run("forward")}
             onViewOptions={async () =>
               setViewSettings(await window.coxswain.showViewMenu(viewSettings))
             }

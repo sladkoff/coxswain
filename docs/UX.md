@@ -58,9 +58,14 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   many of each). Selecting a file in _Diffs_ scrolls the canvas to its file diff; selecting one in _Files_ shows the
   whole file in the canvas, until the toggle goes back to _Diffs_.
 
-  _File > Open Quickly…_ (⌘⇧O), or the magnifier left of the canvas bar's cog, opens a search box over the window: typing filters the worktree's files by path (a
-  substring, or its letters in order), ↑/↓ pick, Enter opens the file in the canvas and shows the Navigator on
-  _Files_, with the file selected and its folders open. Esc or a click outside closes it.
+  _View > Command Palette…_ (⌘K) opens the command palette over the window, starting with `>`: typing after the `>`
+  finds an action by name (fuzzy, best match first, its shortcut on the right), ↑/↓ pick, Enter runs it. Without the
+  `>` it finds files: _File > Open Quickly…_ (⌘⇧O), or the magnifier left of the canvas bar's cog, opens it that way.
+  Typing filters the worktree's files by path (fuzzy: a match in the file name, then elsewhere, then its letters in
+  order), and Enter opens the file in the canvas and shows the Navigator on _Files_, with the file selected and its
+  folders open. Esc or a click outside closes it. Actions it lists: Back and Forward, show or hide Files and Commits,
+  show the diff or a view, each New View, Unified or Split diffs, show or hide reviewed files, open a workspace, New
+  Workspace, switch project, Add Project, Settings. Actions that can't run now (Back at the start) aren't listed.
 
   _View > Back_ (⌥⌘←) and _View > Forward_ (⌥⌘→), or the chevrons in the canvas bar, step through what the canvas
   showed (ADR 0025): each whole file opened (from _Files_, Open Quickly, Go to Definition or Find Usages), each file
@@ -150,8 +155,8 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
 ## Across all levels
 
 - The borders of the agent pane and the Navigator can be dragged to resize them; the canvas takes the rest.
-- **⌘K** is always available, both to switch to anything (project, workspace, PR, file,
-  agent session) and to run any command.
+- **⌘K** is always available on the main screen, both to switch to anything (project, workspace, file; PRs not yet
+  opened and agent sessions still to come) and to run any action.
 - Projects, repositories and PRs must be quick to reach: L1 and ⌘K.
 - Agent sessions must be quick to reach: L4's picker in the current workspace, and ⌘K for all of them.
 

@@ -33,6 +33,7 @@ type Props = {
 // The canvas's bar: Files, Commits, Diff, a chip per view and New View on the left; Back, Forward, Open Quickly and the view options on the right. It also
 // drags the window, so it lines up with the agent pane's. ponytail: no tabs row until the canvas shows a second thing.
 export function CanvasBar(props: Props) {
+  const titles = viewTitles(props.views);
   return (
     <div
       className={cn(
@@ -65,27 +66,22 @@ export function CanvasBar(props: Props) {
       >
         Diff
       </ToggleButton>
-      {props.views.toReversed().map((v, i, all) => {
-        // A title made before gets a number: Guide, Guide 2, …
-        const n = all.slice(0, i).filter((o) => o.title === v.title).length;
-        return (
-          <ToggleButton
-            key={v.id}
-            title={`Made ${new Date(v.createdAt).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })} at ${v.head.slice(0, 7)}${v.head === props.prHead ? "" : " (stale)"}`}
-            disabled={!props.ready}
-            className="max-w-40 truncate"
-            on={v.id === props.view?.id}
-            onClick={() => props.onShowView(v.id)}
-            onContextMenu={async () => {
-              if ((await window.coxswain.showViewChipMenu()) === "remove")
-                props.onRemoveView(v, n > 0 ? `${v.title} ${n + 1}` : v.title);
-            }}
-          >
-            {v.title}
-            {n > 0 && ` ${n + 1}`}
-          </ToggleButton>
-        );
-      })}
+      {props.views.toReversed().map((v) => (
+        <ToggleButton
+          key={v.id}
+          title={`Made ${new Date(v.createdAt).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })} at ${v.head.slice(0, 7)}${v.head === props.prHead ? "" : " (stale)"}`}
+          disabled={!props.ready}
+          className="max-w-40 truncate"
+          on={v.id === props.view?.id}
+          onClick={() => props.onShowView(v.id)}
+          onContextMenu={async () => {
+            if ((await window.coxswain.showViewChipMenu()) === "remove")
+              props.onRemoveView(v, titles.get(v.id)!);
+          }}
+        >
+          {titles.get(v.id)}
+        </ToggleButton>
+      ))}
       <Button
         variant="ghost"
         title="New view"
@@ -131,5 +127,16 @@ export function CanvasBar(props: Props) {
         <CogIcon />
       </Button>
     </div>
+  );
+}
+
+// Each view's title by id; a title used by an older view gets a number: Guide, Guide 2, …
+export function viewTitles(views: View[]) {
+  const oldestFirst = views.toReversed();
+  return new Map(
+    oldestFirst.map((v, i) => {
+      const n = oldestFirst.slice(0, i).filter((o) => o.title === v.title).length;
+      return [v.id, n > 0 ? `${v.title} ${n + 1}` : v.title];
+    }),
   );
 }

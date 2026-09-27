@@ -30,7 +30,14 @@ import {
   readFileAt,
   readWorktreeFile,
 } from "../core/git";
-import { listViews, onViewChange, removeView, setDiagramCheck, viewRequests } from "../core/views";
+import {
+  listViews,
+  onViewChange,
+  removeView,
+  setDiagramCheck,
+  type ViewRequest,
+  viewRequests,
+} from "../core/views";
 import { getCurrentUser, listPullRequests, listRepos } from "../core/github";
 import { listProjects, openProject } from "../core/projects";
 import {
@@ -90,7 +97,7 @@ function createWindow() {
     if (input.type !== "keyDown" || !by || !input.alt || !(input.meta || input.control)) return;
     if (input.shift) return;
     event.preventDefault();
-    win.webContents.send("navigate", by);
+    win.webContents.send("action", by < 0 ? "back" : "forward");
   });
   // Links in agent replies open in the browser, never in the app window.
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -109,16 +116,13 @@ function createWindow() {
 const changed = (to: WebContents, change: Changed) =>
   !to.isDestroyed() && to.send("changed", change);
 
-function openSettings() {
-  BrowserWindow.getFocusedWindow()?.webContents.send("open-settings");
-}
-
 // ponytail: macOS menu layout only; add a File > Settings entry when we ship Windows/Linux.
 // ponytail: one window for now, so no focused window (e.g. the app isn't frontmost) means that one.
-const sendToWindow = (channel: string, ...args: unknown[]) =>
+// The menu's items run the UI's actions by id (ADR 0027); the UI knows what each one does and when it's possible.
+const runAction = (id: string) =>
   (BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0])?.webContents.send(
-    channel,
-    ...args,
+    "action",
+    id,
   );
 
 // ADR 0026: the view tools' diagrams are drawn in the window, which has mermaid and a DOM, and each one's error comes
@@ -151,7 +155,7 @@ const menu = Menu.buildFromTemplate([
     submenu: [
       { role: "about" },
       { type: "separator" },
-      { label: "Settings…", accelerator: "CmdOrCtrl+,", click: openSettings },
+      { label: "Settings…", accelerator: "CmdOrCtrl+,", click: () => runAction("settings") },
       { type: "separator" },
       { role: "services" },
       { type: "separator" },
@@ -168,7 +172,7 @@ const menu = Menu.buildFromTemplate([
       {
         label: "Open Quickly…",
         accelerator: "CmdOrCtrl+Shift+O",
-        click: () => sendToWindow("open-quickly"),
+        click: () => runAction("open-quickly"),
       },
       { type: "separator" },
       { role: "close" },
@@ -179,22 +183,28 @@ const menu = Menu.buildFromTemplate([
     label: "View",
     submenu: [
       {
+        label: "Command Palette…",
+        accelerator: "CmdOrCtrl+K",
+        click: () => runAction("command-palette"),
+      },
+      { type: "separator" },
+      {
         label: "Toggle Navigator",
         accelerator: "CmdOrCtrl+B",
-        click: () => sendToWindow("toggle-navigator"),
+        click: () => runAction("toggle-navigator"),
       },
       { type: "separator" },
       {
         id: "back",
         label: "Back",
         accelerator: "Alt+CmdOrCtrl+Left",
-        click: () => sendToWindow("navigate", -1),
+        click: () => runAction("back"),
       },
       {
         id: "forward",
         label: "Forward",
         accelerator: "Alt+CmdOrCtrl+Right",
-        click: () => sendToWindow("navigate", 1),
+        click: () => runAction("forward"),
       },
       { type: "separator" },
       { role: "reload" },
@@ -512,6 +522,7 @@ app.whenReady().then(() => {
         }),
       ),
   );
+  ipcMain.handle("views:request", (_, kind: ViewRequest) => viewRequests[kind]);
   // The canvas's New View menu: a prompt for a view, for the agent pane's composer. Resolves only on a click, like the menus above.
   ipcMain.handle(
     "menus:new-view",
