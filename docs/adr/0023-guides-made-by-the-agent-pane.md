@@ -23,12 +23,16 @@ the agent's own thoughts. Reviewing is opt-in.
    session when it's opened, resumed or loaded, and allowed without asking (`mcp__coxswain`). Its tools:
    - `start_view`: a new view, a guide or another kind, pinned to the merge base → the PR head as coxswain last saw
      it. Returns the range, the changed files and how to write a good view.
-   - `write_section`: appends a section of markdown to the workspace's latest view, or replaces one. What a view holds
-     is in [ADR 0026](0026-views-in-markdown-with-mermaid.md); embedded paths are checked against the view's changed
-     files, and a file is embedded once.
+   - `write_section`: appends a section of markdown to a view, or replaces one. What a view holds is in
+     [ADR 0026](0026-views-in-markdown-with-mermaid.md); embedded paths are checked against the view's changed files,
+     and a file is embedded once.
+   - `remove_section`: removes a section from a view.
+   - `list_views`: the workspace's views, with their ids, titles, ranges and section headings.
    - `add_explanation`: an explanation (glossary) on lines of the view's range.
    - `add_finding`: a finding (glossary) on lines, the agent's own concern or suggestion. Its description says to use
      it only when the user asked for a review.
+     The tools that write take the view's id (`view`, returned by `start_view` and listed by `list_views`) and write to
+     the workspace's latest view without it, so an older view can be changed and two sessions each keep to their own.
      A short text appended to Claude Code's system prompt (`paneContext`) tells the agent it runs in coxswain, what the
      comment and review headers mean, and what the tools are for; how to use each stays in its description and result.
 2. **Any message can make a view.** "Make me a guide" or "show me the data model" works, since the tools are always
@@ -39,10 +43,12 @@ the agent's own thoughts. Reviewing is opt-in.
    after them under _Not in the guide_. Explanations and findings are entries (kinds `explanation`, `finding`) with the
    view's id, shown as threads between the lines only while their view is shown, so the user can reply or send them
    back to the agent.
-4. **Views stay pinned and are all kept.** A view shows its range (merge base → head then), like a commit diff, not
-   the live worktree; once the PR head moves on it's _stale_. Every view is kept and can be shown again from its chip
-   in the canvas bar, for going back or for debugging. The newest is shown when it appears, and on opening a workspace if
-   it isn't stale.
+4. **Views stay pinned and are kept until the user removes them.** A view shows its range (merge base → head then),
+   like a commit diff, not the live worktree; once the PR head moves on it's _stale_. Every view is kept and can be
+   shown again from its chip in the canvas bar, for going back or for debugging. Removing one is the user's choice:
+   right-click its chip → _Remove View…_, confirmed, deletes it with its explanations and findings (`entries.view_id`
+   cascades). The agent can't remove a view. The newest is shown when it appears, and on opening a workspace if it
+   isn't stale.
 5. **Reviewed carries over between views** for file diffs that didn't change
    ([ADR 0014](0014-reviewed-follows-file-diff-contents.md)).
 
@@ -61,5 +67,5 @@ the agent's own thoughts. Reviewing is opt-in.
 
 - A guide costs what the agent pane's session costs, on its model, and fills in as the agent calls the tools.
 - A guide is made in whichever session the agent pane talks to; its reasoning stays in that transcript.
-- The workspace's latest view is the one the tools add to, so two sessions making views at once would mix them.
+- Two sessions making views at once keep apart only if the agent passes `view`; without it, both write to the newest.
 - Local changes aren't in a view.

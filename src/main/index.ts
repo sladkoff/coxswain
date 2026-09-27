@@ -30,7 +30,7 @@ import {
   readFileAt,
   readWorktreeFile,
 } from "../core/git";
-import { listViews, onViewChange, setDiagramCheck, viewRequests } from "../core/views";
+import { listViews, onViewChange, removeView, setDiagramCheck, viewRequests } from "../core/views";
 import { getCurrentUser, listPullRequests, listRepos } from "../core/github";
 import { listProjects, openProject } from "../core/projects";
 import {
@@ -501,6 +501,17 @@ app.whenReady().then(() => {
       ).response === 0,
   );
   ipcMain.handle("views:list", (_, workspaceId: number) => listViews(db, workspaceId));
+  ipcMain.handle("views:remove", (_, viewId: number) => removeView(db, viewId));
+  // A view chip's context menu in the canvas bar. Resolves only on a click, like the menus above.
+  ipcMain.handle(
+    "menus:view-chip",
+    (e) =>
+      new Promise<"remove">((resolve) =>
+        Menu.buildFromTemplate([{ label: "Remove View…", click: () => resolve("remove") }]).popup({
+          window: BrowserWindow.fromWebContents(e.sender) ?? undefined,
+        }),
+      ),
+  );
   // The canvas's New View menu: a prompt for a view, for the agent pane's composer. Resolves only on a click, like the menus above.
   ipcMain.handle(
     "menus:new-view",

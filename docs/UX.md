@@ -118,7 +118,9 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
 
   **Views.** _Diff_ in the canvas's bar shows the diff without a view; it's on while no view shows. Next to it, a
   chip per view, oldest first, named by its title (_Guide_, _Data flow_; a repeated title gets a number, _Guide 2_; its
-  tooltip says when it was made, its head, and _(stale)_ once the PR moved on), to switch between them. The dashed
+  tooltip says when it was made, its head, and _(stale)_ once the PR moved on), to switch between them. Right-clicking a
+  chip offers _Remove View…_, which asks first and deletes the view with its explanations and findings; if it was
+  showing, the canvas goes back to the diff. The dashed
   _New View_ chip (a layers-plus icon) makes new views: its menu has _New View (guide)_, _New View (review)_ (a guide
   with findings), _New View (data model)_, _New View (data flow)_ and _New View…_ (a message to finish). Each puts a
   message in the agent pane's composer, to edit and send; the agent pane's session makes the view with coxswain's

@@ -20,6 +20,7 @@ type Props = {
   views: View[]; // newest first
   prHead: string | undefined;
   onShowView: (id: number | null) => void; // null: the diff, no view
+  onRemoveView: (view: View, label: string) => void;
   onNewView: () => void;
   onOpenQuickly: () => void;
   onViewOptions: () => void;
@@ -75,6 +76,10 @@ export function CanvasBar(props: Props) {
             className="max-w-40 truncate"
             on={v.id === props.view?.id}
             onClick={() => props.onShowView(v.id)}
+            onContextMenu={async () => {
+              if ((await window.coxswain.showViewChipMenu()) === "remove")
+                props.onRemoveView(v, n > 0 ? `${v.title} ${n + 1}` : v.title);
+            }}
           >
             {v.title}
             {n > 0 && ` ${n + 1}`}

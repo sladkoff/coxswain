@@ -36,7 +36,8 @@ gracefully when it's wrong. It must still embed file diffs as the user reviews t
 4. **A guide is a view with `guide` set:** it goes through every changed file, and the files no section embeds show
    after it under _Not in the guide_. Other views show only what they embed.
 5. **Tools:** `start_view` (title, guide) and `write_section` (append, or replace section N) replace `start_guide` and
-   `add_group`; `add_explanation` and `add_finding` stay. `start_view`'s result carries the syntax and how to write a
+   `add_group`; `add_explanation` and `add_finding` stay; `remove_section` and `list_views` manage views
+   ([ADR 0023](0023-guides-made-by-the-agent-pane.md)). `start_view`'s result carries the syntax and how to write a
    guide or another view.
 
 ## Alternatives considered
