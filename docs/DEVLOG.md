@@ -3,6 +3,14 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-27 — README, license and contributing
+
+### What works
+
+- **The repository has a front page:** `README.md` with a screenshot (`docs/screenshot.png`, an agent review of
+  honojs/hono#5201), the features, requirements and getting started; `LICENSE` (MIT) and `CONTRIBUTING.md` (issues
+  first, AI-assisted PRs welcome).
+
 ## 2026-09-27 — Codex, and model and effort in the composer
 
 ### What works
