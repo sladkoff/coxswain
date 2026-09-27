@@ -19,6 +19,7 @@ import { Onboarding } from "./Onboarding";
 import { Projects } from "./Projects";
 import { changed, core, markReviewed as mark, queryClient } from "./queries";
 import { Settings } from "./Settings";
+import { Setup } from "./Setup";
 import { StatusBar } from "./StatusBar";
 import { usePullRequest } from "./usePullRequest";
 import type { ViewSettings } from "../../preload";
@@ -34,6 +35,7 @@ export function App() {
   useEffect(() => window.coxswain.onOpenSettings(() => setScreen("settings")), []);
   const close = () => setScreen("main");
 
+  const setup = useQuery(core("checkSetup"));
   const projects = useQuery(core("listProjects")).data;
   const current = projects?.[0]; // listed most recently opened first
   const selectProject = async (fullName: string) => {
@@ -355,6 +357,9 @@ export function App() {
     diffStyle: viewSettings.diffStyle,
   });
 
+  if (!setup.data) return null; // local and quick, like the projects below
+  if (setup.data.problems.length)
+    return <Setup check={setup.data} onRetry={() => void setup.refetch()} />;
   if (screen === "settings") return <Settings onClose={close} />;
   if (screen === "projects")
     return (

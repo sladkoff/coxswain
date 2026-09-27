@@ -34,7 +34,7 @@ export type RepoPage = { status: "ok"; repos: Repo[]; hasMore: boolean } | GitHu
 
 // ADR 0006: the token comes from `gh` each time and is never stored.
 // ponytail: relies on PATH, a Finder-launched packaged app won't see Homebrew's gh; fix when we package.
-async function ghToken(): Promise<string | null> {
+export async function ghToken(): Promise<string | null> {
   try {
     const { stdout } = await promisify(execFile)("gh", [
       "auth",

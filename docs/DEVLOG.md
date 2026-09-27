@@ -21,7 +21,6 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
   A thread's reply count now says "replies", not "replys".
 - **Lint and format:** `pnpm lint` (oxlint, default rules, clean) and `pnpm format` (oxfmt, default settings). The
   whole repo, docs included, was formatted once.
-
 - **The project icon is a menu.** Clicking L1's project icon pops a native menu of the projects, the current one
   checked; picking one switches to it, and _Add Project…_ opens the Projects screen.
 - **Threads no longer widen the file diff.** A resolved thread's one-line header set the code column's width, so a
@@ -35,10 +34,13 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
   agent sessions are deleted (the schema's cascade); the worktree stays, and adding the PR again adopts it.
 - **One confirmation dialog** for destructive actions, native (`window.coxswain.confirm`, `dialogs:confirm`). Removing
   a workspace and deleting a thread both use it.
+- **Startup check** (`core/setup.ts`): `git`, `gh` signed in and `claude` on PATH, all local so it passes offline.
+  Anything missing shows the Setup screen full window, with the fix for each and the PATH looked on.
 
 ### Tech debt
 
 - `cn` joins classes without resolving conflicts (`ponytail:` in `styles.ts`); add tailwind-merge with shadcn.
+- The startup check doesn't check that `claude` is signed in (`ponytail:` in `setup.ts`); its first turn says so.
 
 ## 2026-09-27 — Cleanup: no timeline, docs as they stand
 

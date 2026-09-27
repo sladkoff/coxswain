@@ -40,6 +40,7 @@ import {
   stopQuestion,
 } from "../core/review";
 import { listReviewed, setReviewed } from "../core/reviewed";
+import { checkSetup } from "../core/setup";
 import type { Changed, NavigatorSettings, ViewSettings } from "../preload";
 import { listWorkspaces, openPullRequestWorkspace, removeWorkspace } from "../core/workspaces";
 
@@ -127,6 +128,7 @@ app.whenReady().then(() => {
   app.dock?.setIcon(icon);
   Menu.setApplicationMenu(menu);
   const db = openDatabase(join(app.getPath("userData"), "coxswain.db"));
+  ipcMain.handle("setup:check", () => checkSetup());
   ipcMain.handle("projects:list", () => listProjects(db));
   ipcMain.handle("projects:open", (_, fullName: string) => openProject(db, fullName));
   ipcMain.handle("github:current-user", () => getCurrentUser());

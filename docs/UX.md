@@ -26,6 +26,12 @@ _Files_, _Commits_, _Guide_ and the cog; a bar at its bottom sums up the review.
           ⌘K from anywhere: switch to anything, do anything
 ```
 
+## Before the main screen
+
+At startup the app checks for `git`, the GitHub CLI (`gh`, signed in) and Claude Code (`claude`) on its PATH. If any
+is missing, a full-window screen lists each problem with the command that fixes it, the PATH it looked on, and
+_Check again_; nothing else shows until all are there. Then, with no project yet, the welcome screen.
+
 ## Levels
 
 - **L1 — Current project and its workspaces.** At the top, an icon for the current project, like a

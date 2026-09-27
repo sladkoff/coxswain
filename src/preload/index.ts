@@ -13,6 +13,7 @@ import type { CurrentUser, PullRequestList, RepoPage } from "../core/github";
 import type { Guide } from "../core/guides";
 import type { Project } from "../core/projects";
 import type { NewEntry, ReviewEntry } from "../core/review";
+import type { SetupCheck } from "../core/setup";
 import type { Workspace } from "../core/workspaces";
 
 // The Navigator's settings in its cog menu. layout: changed files as a tree or as a flat list.
@@ -59,6 +60,8 @@ const api = {
     ipcRenderer.invoke("git:read-worktree-file", workspaceId, path),
   readFileAt: (workspaceId: number, commit: string, path: string): Promise<FileText> =>
     ipcRenderer.invoke("git:read-file-at", workspaceId, commit, path),
+  // The startup check: which of git, gh (signed in) and claude are missing.
+  checkSetup: (): Promise<SetupCheck> => ipcRenderer.invoke("setup:check"),
   listWorkspaces: (projectId: number): Promise<Workspace[]> =>
     ipcRenderer.invoke("workspaces:list", projectId),
   openPullRequestWorkspace: (projectId: number, prNumber: number): Promise<Workspace> =>

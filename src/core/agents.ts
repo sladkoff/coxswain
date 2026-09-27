@@ -108,7 +108,7 @@ const agents: Record<
 };
 
 // ponytail: PATH as the app got it, like `gh`; a login shell's PATH if coxswain is started from the Dock.
-function claudeOnPath(): string {
+export function claudeOnPath(): string {
   const found = (process.env.PATH ?? "")
     .split(delimiter)
     .map((dir) => join(dir, "claude"))
