@@ -58,8 +58,18 @@ wherever Electron does, but so far it has only been tested on macOS.
 
 ## Getting started
 
-Download the build for your system from [Releases](https://github.com/sladkoff/coxswain/releases). Builds aren't
-signed yet: on macOS, right-click the app and choose _Open_ the first time (or run `xattr -cr coxswain.app`).
+On macOS or Linux, install the latest release with:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/sladkoff/coxswain/main/install.sh | sh
+```
+
+It puts `coxswain.app` in `/Applications` (or `~/Applications`) on macOS, and the AppImage at `~/.local/bin/coxswain`
+on Linux. Add a version to install that one instead: `… | sh -s -- 0.2.0-rc.1`. Run it again to update.
+
+On Windows, or to download by hand, take the build for your system from
+[Releases](https://github.com/sladkoff/coxswain/releases). Builds aren't signed yet: on macOS, a downloaded app needs
+right-click → _Open_ the first time (or `xattr -cr coxswain.app`); the install script doesn't.
 
 To run from source:
 

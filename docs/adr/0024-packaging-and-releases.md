@@ -19,7 +19,8 @@ The app has no native Node modules (SQLite is `node:sqlite`), and the agents it 
 
 1. **electron-builder packages the app**, configured in `package.json` (`build`): a `.dmg` and `.zip` for macOS
    (arm64 and x64), an NSIS installer for Windows x64, an AppImage for Linux x64. The agent SDKs' bundled
-   `claude` and `codex` binaries are left out; the user's own are used.
+   `claude` and `codex` binaries are left out; the user's own are used. Files are named
+   `coxswain-<version>-<os>-<arch>.<ext>` (the AppImage says `x86_64` for x64).
 2. **Releases start from a button.** Actions → _Release_ → _Run workflow_ with a version (`.github/workflows/release.yml`)
    sets it in `package.json`, commits _Release vX_ to `main`, tags `vX`, builds the tag on one runner per OS and
    creates the GitHub release with the files and GitHub's generated notes (the PRs merged since the last release).
@@ -30,7 +31,11 @@ The app has no native Node modules (SQLite is `node:sqlite`), and the agents it 
    (`.github/workflows/ci.yml`).
 5. **Unsigned for now.** macOS builds aren't signed or notarized, so Gatekeeper blocks the first launch
    (right-click → Open, or `xattr -cr coxswain.app`). Windows builds aren't signed either.
-6. **A packaged app takes the login shell's `PATH`** at startup (macOS and Linux), because one started from the
+6. **`install.sh` installs on macOS and Linux**, piped from `curl` (README): it resolves the latest release by
+   following the `/releases/latest` redirect (no API, no `jq`), or takes a version, downloads the `.zip` or AppImage
+   for the machine's architecture and puts it in `/Applications` or `~/.local/bin`. A file curl downloads isn't
+   quarantined, so Gatekeeper doesn't block the unsigned app.
+7. **A packaged app takes the login shell's `PATH`** at startup (macOS and Linux), because one started from the
    Dock or a launcher gets a bare `PATH` without `gh`, `claude` or `codex`.
 
 ## Alternatives considered

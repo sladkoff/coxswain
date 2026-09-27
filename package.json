@@ -55,6 +55,7 @@
   "build": {
     "appId": "dev.coxswain.app",
     "productName": "coxswain",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "directories": {
       "output": "dist",
       "buildResources": "resources"

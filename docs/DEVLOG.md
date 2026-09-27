@@ -3,6 +3,19 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-27 — Install script
+
+### What works
+
+- **`curl … install.sh | sh`** installs the latest release on macOS (`.zip` into `/Applications`) or Linux (AppImage
+  into `~/.local/bin`), or a given version. Release files are now named `coxswain-<version>-<os>-<arch>`, so the
+  script can build the URL.
+
+### Tech debt
+
+- The repo is private, so the curl line only works once it's public.
+- No Windows script and no Linux arm64 release build.
+
 ## 2026-09-27 — Send all, at once; Copy as prompt
 
 ### What works
