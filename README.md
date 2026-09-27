@@ -30,11 +30,14 @@ to.
 - **Pull requests as workspaces.** Add a GitHub repository, open any of its PRs, and coxswain checks it out in its
   own git worktree. Code stays on your machine.
 - **Comments become agent work.** Leave notes on lines of the diff, then _Send all to agent_: the agent implements
-  them in the PR's worktree, and its changes show up in the same diff, next to the PR's own.
+  them in the PR's worktree, and its changes show up in the same diff, next to the PR's own. Or _Copy as prompt_ and
+  paste them into any other agent.
 - **Ask about the code.** Send a comment as a question and the agent answers in the thread, right between the lines
   it's about.
-- **Guided reviews.** Ask the agent for a guide and it sorts the diff into themed groups in a sensible reading order,
-  with a note on each file and explanations on the tricky lines. Generated files go last.
+- **Views of the PR.** Ask the agent for a view and it writes one: markdown sections with tables, mermaid diagrams
+  and the file diffs they're about embedded, threads and all. A _guide_ sorts the whole diff into themed groups in a
+  sensible reading order, with a note on each file and explanations on the tricky lines; generated files go last.
+  Ask for a data model or data flow view, or anything else. Each view gets a chip in the canvas bar.
 - **Agent reviews, on request.** Ask for a review and the agent leaves findings on lines: bugs, risks and
   suggestions, each its own thread.
 - **Claude Code and Codex.** Both run in the agent pane over the [Agent Client Protocol](https://agentclientprotocol.com),
@@ -42,6 +45,8 @@ to.
 - **Track what you've reviewed.** Mark file diffs as reviewed; they stay reviewed until their contents change, for
   instance after an agent's edit.
 - **Just enough IDE.** Browse the whole file tree, Open Quickly (⌘⇧O), Go to Definition (⌘-click) and Find Usages.
+  Back and Forward (⌥⌘← ⌥⌘→) step through what the canvas showed, scroll kept.
+- **Command palette.** ⌘K, then `>` and a few letters, runs any action; without `>` it opens a file.
 - **Light and dark mode.** Follows your system's appearance automatically.
 
 ## Requirements

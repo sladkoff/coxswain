@@ -3,6 +3,13 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-27 — README for the first release
+
+### What works
+
+- **The README lists the features since it was written** (#24): views with diagrams and embedded file diffs, _Copy as
+  prompt_, Back and Forward, and the command palette.
+
 ## 2026-09-27 — Install script
 
 ### What works
