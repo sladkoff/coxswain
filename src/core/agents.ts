@@ -18,6 +18,7 @@ export type AgentSession = {
   agent: Agent;
   agentSessionId: string;
   createdAt: string;
+  title: string | null;
 };
 
 // One line of the chat: something the user said, text the agent wrote, or a tool the agent used. comment: the user's
@@ -172,6 +173,8 @@ const adapters = new Map<Agent, Promise<Adapter>>();
 // Each running session's handlers, for the updates and permission requests the adapter sends.
 const listening = new Map<string, Listener>();
 type Listener = { update: (u: acp.SessionUpdate) => void; handlers: RunHandlers };
+// Told when an agent names one of its sessions.
+const titleListeners = new Set<(sessionId: string, title: string) => void>();
 // Permission requests waiting for the user, by id.
 const pending = new Map<
   string,
@@ -187,9 +190,13 @@ function adapter(name: Agent): Promise<Adapter> {
     const conn = acp
       .client({ name: "coxswain" })
       .onRequest(acp.methods.client.session.requestPermission, (ctx) => askPermission(ctx.params))
-      .onNotification(acp.methods.client.session.update, (ctx) =>
-        listening.get(ctx.params.sessionId)?.update(ctx.params.update),
-      )
+      .onNotification(acp.methods.client.session.update, (ctx) => {
+        const u = ctx.params.update;
+        // Claude Code names a session a moment after its first turn ends, when no run listens any more.
+        if (u.sessionUpdate === "session_info_update" && u.title)
+          titleListeners.forEach((l) => l(ctx.params.sessionId, u.title!));
+        listening.get(ctx.params.sessionId)?.update(u);
+      })
       .connect(
         acp.ndJsonStream(
           Writable.toWeb(child.stdin!),
@@ -567,7 +574,38 @@ const columns = [
   "agent",
   "agent_session_id as agentSessionId",
   "created_at as createdAt",
+  "title",
 ] as const;
+
+// Stores the title an agent gives a session (Claude Code generates one after the first turn) and tells the listener the
+// session's workspace. The title replaces the first-message one runTurn gave it.
+export function onSessionTitle(db: Db, listener: (workspaceId: number) => void) {
+  const save = async (sessionId: string, title: string) => {
+    const row = await db
+      .updateTable("agent_sessions")
+      .set({ title })
+      .where("agent_session_id", "=", sessionId)
+      .returning("workspace_id")
+      .executeTakeFirst();
+    if (row) listener(row.workspace_id);
+  };
+  const l = (sessionId: string, title: string) => void save(sessionId, title).catch(() => {});
+  titleListeners.add(l);
+  return () => void titleListeners.delete(l);
+}
+
+// A session's title until its agent names it: its first message's first line, without a comment's or review's header.
+// Codex names a session only when the user does, so its sessions keep this one.
+export const firstMessageTitle = (prompt: string) =>
+  (
+    prompt
+      .replace(commentHeader, "")
+      .replace(reviewHeader, "")
+      .split("\n")
+      .find((l) => l.trim()) ?? ""
+  )
+    .trim()
+    .slice(0, 80);
 
 // The workspace's agent sessions in the agent pane, oldest first; the last one is the current one, which questions go
 // to too (ADR 0021).
@@ -728,6 +766,12 @@ export async function runTurn(
   try {
     const { id: workspaceId, agent } = await sessionOf(db, agentSessionId);
     const cwd = await readyWorktree(db, workspaceId);
+    await db
+      .updateTable("agent_sessions")
+      .set({ title: firstMessageTitle(prompt) || null })
+      .where("agent_session_id", "=", agentSessionId)
+      .where("title", "is", null)
+      .execute();
     handlers.onEntry?.(withComment({ kind: "user", text: prompt }));
     await run(
       agent,

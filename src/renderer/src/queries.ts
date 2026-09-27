@@ -58,6 +58,8 @@ const affects: Record<Changed["what"], Reads[]> = {
   ],
   // A turn's session reports its agent's choices of model and effort afresh.
   transcript: ["listAgentSessions", "readTranscript", "listAgentPicks"],
+  // An agent named a session.
+  sessions: ["listAgentSessions"],
   view: ["listViews"],
 };
 

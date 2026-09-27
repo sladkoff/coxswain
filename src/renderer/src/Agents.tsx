@@ -197,7 +197,7 @@ export function Agents({ workspace, onViewThread, composerText }: Props) {
 }
 
 // The header's pick of agent session: a button naming the shown one, and a native menu (ADR 0004) of them all, each
-// by when it started, with the new one not started yet at the bottom.
+// by its title and when it started, with the new one not started yet at the bottom. Untitled until its first message.
 function SessionPicker(props: {
   sessions: AgentSession[];
   current: AgentSession | null;
@@ -208,8 +208,9 @@ function SessionPicker(props: {
   const { sessions, current } = props;
   if (!sessions.length) return null;
   const i = sessions.findIndex((s) => s.agentSessionId === current?.agentSessionId);
+  const name = (s: AgentSession, n: number) => s.title ?? `Session ${n + 1}`;
   const labels = sessions.map(
-    (s, n) => `Session ${n + 1} · ${agentNames[s.agent]} · ${shortDateTime(s.createdAt)}`,
+    (s, n) => `${name(s, n)} · ${agentNames[s.agent]} · ${shortDateTime(s.createdAt)}`,
   );
   if (i < 0) labels.push("New session");
   const pick = async () => {
@@ -219,11 +220,11 @@ function SessionPicker(props: {
   return (
     <Button
       variant="ghost"
-      className={cn("mr-auto text-xs", noDrag)}
+      className={cn("mr-auto min-w-0 truncate text-xs", noDrag)}
       disabled={props.disabled}
       onClick={pick}
     >
-      {i < 0 ? "New session" : `Session ${i + 1}`} · {agentNames[current?.agent ?? props.agent]}
+      {i < 0 ? "New session" : name(sessions[i], i)} · {agentNames[current?.agent ?? props.agent]}
     </Button>
   );
 }

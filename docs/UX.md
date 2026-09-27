@@ -13,7 +13,7 @@ bottom sums up the review.
 
 ```
 ┌────┬─────────────────────────┬──────────────────────────────────────────┐
-│    │ Session 2 · Codex [New▾]│ Files 3  Commits  Diff  Guide [+]    ⚙   │
+│    │ Fix auth · Codex [New▾] │ Files 3  Commits  Diff  Guide [+]    ⚙   │
 │ L1 ├─────────────────────────┼─────────┬────────────────────────────────┤
 │    │ L4 Agent pane           │ L2      │ L3 Canvas                      │
 │ P  │                         │ Navi-   │                                │
@@ -143,8 +143,8 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   PR has new commits, an amber bar says so. Picking a commit hides the view, and the other way round.
 
 - **L4 — Agent pane**, left of the canvas, always shown; its border can be dragged. A chat with one of the
-  workspace's agent sessions, the latest unless another is picked in the header's session picker (_Session N_; its
-  native menu lists them all with their dates): its turns, with each tool the agent used as one line, comments and reviews sent from the canvas as cards,
+  workspace's agent sessions, the latest unless another is picked in the header's session picker (the session's title, _Session N_ before
+  its first message; its native menu lists them all with their dates): its turns, with each tool the agent used as one line, comments and reviews sent from the canvas as cards,
   and a message box at the bottom (Enter sends, Shift+Enter adds a line). _New session_ in the header, a split button, starts another
   agent session on the agent picked last; its chevron's native menu picks another (_Claude Code_, _Codex_), which the
   session keeps; the picker names each session's agent. Under the message box, the agent picks: the model and the

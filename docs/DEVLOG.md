@@ -3,6 +3,21 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-27 — Agent session titles
+
+### What works
+
+- **Agent sessions have titles** (#14): the session picker names each session by its title instead of _Session N_.
+  Claude Code's adapter generates one after the first turn and sends it as a `session_info_update`; the core stores
+  it in `agent_sessions.title` (a new migration) and tells the UI. Until then, and for Codex, which names a session
+  only when the user does, the title is the first message's first line, without a comment's or review's header.
+- View titles were already the agent's (`start_view`'s `title`); unchanged.
+
+### Tech debt
+
+- Sessions started before this keep _Session N_ until their next message.
+- A title can't be renamed in coxswain.
+
 ## 2026-09-27 — Command palette and action registry
 
 ### What works
