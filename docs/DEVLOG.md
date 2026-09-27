@@ -35,6 +35,10 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 - Reviewed file diffs are hidden in every view as in a guide, which can hide the one file diff a data model view is
   about; _Show Reviewed Files_ brings it back.
 - Mermaid is about 1.2 MB of the renderer bundle, in its own chunk.
+- The bottom bar and the Navigator count the whole range while a view that embeds only some of it shows (UX open
+  question 2).
+- The tools write only to the workspace's latest view: an older one can't be changed, and views can't be removed, so
+  their chips pile up in the canvas bar.
 
 ## 2026-09-27 — Diff and numbered guides in the canvas bar
 

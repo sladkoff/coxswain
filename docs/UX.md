@@ -159,7 +159,9 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
    your PRs)? Probably an inbox; where it lives and what goes in it is to be decided.
 2. **Views:** should a view embed only some lines of a file diff, not the whole of it? Should a section get its own
    _Reviewed_? Does the agent pane need to show that a view is being made? Should the agent see its diagrams drawn,
-   to fix one that doesn't parse?
+   to fix one that doesn't parse? A view that embeds only some of the changes still counts all of them: the bottom bar's
+   _N of M reviewed_ and the Navigator's _Files N_ are over the whole range, not the view. Correct, but it reads as if
+   the view left work undone; should they count the view's file diffs while one shows?
 3. **The review as a whole:** where do you write a comment that isn't on lines? _Post_ is still open. Should the PR's
    GitHub comments and reviews show in coxswain, and where?
 4. **Agents in L4:** tabs, a list, or split panes, and how running and finished agent sessions look.
