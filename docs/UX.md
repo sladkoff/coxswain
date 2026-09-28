@@ -84,8 +84,8 @@ branch`, when it was updated, and _Has a workspace_ if it does. _Branch_: one fi
   agent's) together, a file with local changes marked with an amber ● after its +/− lines, and reloads after each
   turn. Reviewed files are hidden unless _Show Reviewed Files_ is on, and then show a ✓; the bottom bar counts them.
   The display options list _Files as Tree_ or _Files as List_ (a flat list, each file's folder dimmed next to its +/−
-  lines). A changed file with notes or questions shows how many after its +/− lines (`✎ 2`; hovering says how many of
-  each). Selecting a file in _Changes_ scrolls the canvas to its file diff; selecting one in _Files_ shows the whole
+  lines). A changed file with threads (yours, and the agent's while its view shows) shows a speech bubble after its +/−
+  lines (hovering says how many of each kind). Selecting a file in _Changes_ scrolls the canvas to its file diff; selecting one in _Files_ shows the whole
   file in the canvas, until the control goes back to _Changes_.
 
   _View > Command Palette…_ (⌘K) opens the command palette over the window, starting with `>`: typing after the `>`
@@ -193,7 +193,7 @@ branch`, when it was updated, and _Has a workspace_ if it does. _Branch_: one fi
   (tool-made, tests, what the user said doesn't matter), and sections of only those, are low-lighted, with no label:
   the heading says why. On the canvas's left, a table of contents: how many embedded file diffs are
   reviewed in all with a bar, then every section with how many of its file diffs are reviewed (✓ when all are) and, if
-  any, how many notes and questions are on them (`✎ 2`). The section being read is marked as you scroll; a click jumps
+  any, how many threads are on them, yours and the agent's (a muted speech bubble and the number). The section being read is marked as you scroll; a click jumps
   to it, first showing reviewed file diffs if all of its are. Explanations (labelled _Explanation_) and, with review,
   findings (labelled _Finding_) are threads between the lines, which can be replied to like any other; they show only
   with their view. A view shows the changes as they were, local ones included (pinned to a snapshot, like a

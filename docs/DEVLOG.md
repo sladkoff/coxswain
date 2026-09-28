@@ -24,6 +24,13 @@ box, and keeps it in place until it holds. Picking the same thread again scrolls
 thread in a guide and a diff from the top and bottom of the canvas, twice. `ponytail:` a screen per step, about a
 second per thousand lines of a long file.
 
+**Thread counts** in the Navigator and a view's table of contents count every thread on a file, the agent's
+explanations and findings too (they only show with their view); hovering says how many of each. The table of
+contents shows a muted speech bubble and the number instead of a blue ✎; the Navigator shows only the bubble. Its row
+decorations are text or one icon, not both, so `ponytail:` the bubble is CSS matched to a text part by its colour. It's
+a served SVG, not a `data:` URL, which the CSP's `img-src` blocks. The Navigator's decoration (lines, ✓, ●,
+bubble) now keeps its width and a long name is cut short instead; before, a long name hid it.
+
 ## 2026-09-28 — Muted files instead of files left out
 
 For G3, from a guide asked to pass over "generated files and tests and files containing just convention fixes": the
