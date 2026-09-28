@@ -63,7 +63,7 @@ type Props = {
   commit: Commit | null;
   view: View | null;
   views: View[]; // newest first
-  snapshot: string | null; // the worktree now; a view pinned to another is stale
+  snapshot: string | null; // the worktree now; a view of the worktree pinned to another is stale
   scope: "all" | "pushed" | "local";
   hasPr: boolean; // what's pushed is the PR's
   onRangeMenu: () => void; // the Diff tab's range: a scope, or a commit or turn from the Commits pane
@@ -157,7 +157,7 @@ export function CanvasBar(props: Props) {
       {props.views.toReversed().map((v) => (
         <ToggleButton
           key={v.id}
-          title={`Made ${new Date(v.createdAt).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })} at ${v.head.slice(0, 7)}${props.snapshot && v.head !== props.snapshot ? " (stale)" : ""}`}
+          title={`Made ${new Date(v.createdAt).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })} at ${v.head.slice(0, 7)}${!v.worktree ? `, of ${v.base.slice(0, 7)} → ${v.head.slice(0, 7)}` : props.snapshot && v.head !== props.snapshot ? " (stale)" : ""}`}
           disabled={!props.ready}
           className="max-w-40 truncate"
           on={v.id === props.view?.id}

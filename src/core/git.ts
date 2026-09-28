@@ -336,6 +336,17 @@ export async function listBranches(db: Db, projectId: number): Promise<BranchLis
   });
 }
 
+// A commit named by a (possibly short) hash, as its full hash; throws if the worktree has no such commit.
+export async function resolveCommit(db: Db, workspaceId: number, rev: string): Promise<string> {
+  if (!/^[0-9a-f]{4,40}$/.test(rev)) throw new GitError(`Not a commit hash: ${rev}`);
+  const path = await openedWorktree(db, workspaceId);
+  return (
+    await gitText(path, ["rev-parse", "--verify", "--quiet", `${rev}^{commit}`]).catch(() => {
+      throw new GitError(`${rev} isn't a commit in the worktree`);
+    })
+  ).trim();
+}
+
 // ADR 0030: the worktree's HEAD and `git status`, which the watcher compares from one check to the next.
 export async function worktreeState(
   db: Db,

@@ -186,7 +186,9 @@ branch`, when it was updated, and _Has a workspace_ if it does. _Branch_: one fi
   chip offers _Remove View…_, which asks first and deletes the view with its explanations and findings; if it was
   showing, the canvas goes back to the diff. The dashed
   _New View_ chip (a layers-plus icon) makes new views: its menu has _New View (guide)_, _New View (review)_ (a guide
-  with findings), _New View (data model)_, _New View (data flow)_ and _New View…_ (a message to finish). Each puts a
+  with findings), _New View (data model)_, _New View (data flow)_ and _New View…_ (a message to finish). While the diff shows a commit, an agent
+  turn or the _PR_/_Pushed_ or _Local_ scope, the menu's first line names it (_Of commit 1c8d547 (…)_, greyed out) and
+  the view is of that range only, like the command palette's New View actions. Each puts a
   message in the agent pane's composer, to edit and send; the agent pane's session makes the view with coxswain's
   tools (ADR 0023); asking for one in the agent pane's own words does the same. A view shows on the canvas as soon as
   the agent starts it, and fills in as it adds to it: its sections in order, each with its heading and how many file

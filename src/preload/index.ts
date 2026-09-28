@@ -27,7 +27,7 @@ import type {
   PullRequestTitles,
   RepoPage,
 } from "../core/github";
-import type { View, ViewRequest } from "../core/views";
+import type { View, ViewRange, ViewRequest } from "../core/views";
 import type { Project } from "../core/projects";
 import type { NewEntry, ReviewEntry } from "../core/review";
 import type { SetupCheck } from "../core/setup";
@@ -281,9 +281,12 @@ const api = {
   showProjectsMenu: (fullNames: string[]): Promise<string | null> =>
     ipcRenderer.invoke("menus:projects", fullNames),
   // The canvas's new view menu: the message for the agent pane's composer that asks for it. Pending if dismissed.
-  showNewViewMenu: (): Promise<string> => ipcRenderer.invoke("menus:new-view"),
+  // range: what the canvas shows, when it isn't all of the workspace's changes.
+  showNewViewMenu: (range: ViewRange | null): Promise<string> =>
+    ipcRenderer.invoke("menus:new-view", range),
   // The same message for one kind of view, for the command palette's New View actions.
-  newViewRequest: (kind: ViewRequest): Promise<string> => ipcRenderer.invoke("views:request", kind),
+  newViewRequest: (kind: ViewRequest, range: ViewRange | null): Promise<string> =>
+    ipcRenderer.invoke("views:request", kind, range),
   onChanged: (callback: (change: Changed) => void) => {
     const listener = (_: unknown, change: Changed) => callback(change);
     ipcRenderer.on("changed", listener);

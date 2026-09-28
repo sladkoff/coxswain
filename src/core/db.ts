@@ -147,6 +147,9 @@ export const migrations = [
     finished_at text,
     updated_at text not null
   )`,
+  // A view pinned to the worktree (1) goes stale when the worktree moves on; one of a commit, a turn or what's on
+  // GitHub (0) doesn't.
+  `alter table views add column worktree integer not null default 1`,
 ];
 
 // ADR 0016: the tables as the migrations above leave them. Change this with every migration that changes a table.
@@ -214,6 +217,7 @@ type Tables = {
     head: string;
     title: string;
     guide: number; // 1: a guide, which goes through every changed file
+    worktree: Generated<number>; // 1: pinned to a snapshot of the worktree, so it can go stale
     sections: Generated<string>; // JSON, the markdown of each section
     created_at: string;
   };

@@ -165,7 +165,8 @@ the diff: make the change asked for, or answer the question. The mcp__coxswain t
 diff (start_view, write_section, remove_section, list_views, file_summaries): a guide through the changes, or a view of one aspect (the data model, a data flow, or
 anything the user asks to see), in markdown with diagrams, embedded source files and file diffs, even without changes; explanations of lines
 (add_explanation); and, when they ask for a review, findings on lines (add_finding). Use them, and your review skills,
-when the user asks for a guide, a review, or to trace, explain or visualise code, with or without changes.`;
+when the user asks for a guide, a review, or to trace, explain or visualise code, with or without changes. A message
+that starts "For … only (start_view with base … and head …)" is about that part of the changes: pass those to start_view.`;
 
 // PATH as the app got it, like `gh` (a packaged app takes the login shell's, src/main/index.ts).
 export const claudeOnPath = () => onPath("claude", "Claude Code");

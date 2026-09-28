@@ -5,7 +5,7 @@ import type { View } from "../../core/views";
 import type { ReviewEntry } from "../../core/review";
 
 test("default canvas waits for views and snapshot instead of flashing the diff", () => {
-  const views = [{ id: 7, head: "head" }] as View[];
+  const views = [{ id: 7, head: "head", worktree: true }] as View[];
   assert.equal(defaultViewId({}, undefined, "head"), undefined);
   assert.equal(defaultViewId({}, views, null), undefined);
   assert.equal(
@@ -15,6 +15,11 @@ test("default canvas waits for views and snapshot instead of flashing the diff",
   );
   assert.equal(defaultViewId({}, views, "head"), 7);
   assert.equal(defaultViewId({}, views, "other"), null);
+  assert.equal(
+    defaultViewId({}, [{ id: 8, head: "commit", worktree: false }] as View[], "other"),
+    8,
+    "a view of a commit never goes stale",
+  );
   assert.equal(defaultViewId({}, [], "head"), null);
   assert.equal(
     defaultViewId({ viewId: null }, views, "head"),

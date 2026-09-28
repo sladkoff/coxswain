@@ -193,6 +193,24 @@ test("views without diffs pin files, validate embeds and keep file review separa
     call("write_section", { markdown: "## Changed\n```file path=a.ts\n```" }),
     /embed its diff in a guide/,
   );
+  // A view of one commit: its own range, not stale when the worktree moves on.
+  const commit = execFileSync("git", ["rev-parse", "HEAD"], {
+    cwd: worktree,
+    encoding: "utf8",
+  }).trim();
+  await call("start_view", {
+    title: "Commit",
+    guide: false,
+    base: commit.slice(0, 8),
+    head: commit,
+  });
+  const [ofCommit] = await listViews(db, 1);
+  assert.deepEqual([ofCommit.base, ofCommit.head, ofCommit.worktree], [commit, commit, false]);
+  await assert.rejects(
+    call("start_view", { title: "Nope", guide: false, head: "abcdef1234" }),
+    /isn't a commit/,
+  );
+  await call("start_view", { title: "Guide", guide: true });
   const coverage = await call("write_section", {
     markdown: "## Changes\n```diff path=a.ts\n```\n```diff path=b.ts\n```",
   });

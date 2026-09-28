@@ -54,8 +54,9 @@ import {
   onViewChange,
   removeView,
   setDiagramCheck,
+  type ViewRange,
   type ViewRequest,
-  viewRequests,
+  viewRequest,
 } from "../core/views";
 import { getCurrentUser, listPullRequestTitles, listPullRequests, listRepos } from "../core/github";
 import { listProjects, openProject } from "../core/projects";
@@ -655,21 +656,30 @@ app.whenReady().then(() => {
         }),
       ),
   );
-  ipcMain.handle("views:request", (_, kind: ViewRequest) => viewRequests[kind]);
+  ipcMain.handle("views:request", (_, kind: ViewRequest, range: ViewRange | null) =>
+    viewRequest(kind, range),
+  );
   // The canvas's New View menu: a prompt for a view, for the agent pane's composer. Resolves only on a click, like the menus above.
   ipcMain.handle(
     "menus:new-view",
-    (e) =>
-      new Promise<string>((resolve) =>
+    (e, range: ViewRange | null) =>
+      new Promise<string>((resolve) => {
+        const item = (label: string, kind: ViewRequest) => ({
+          label,
+          click: () => resolve(viewRequest(kind, range)),
+        });
         Menu.buildFromTemplate([
-          { label: "New View (guide)", click: () => resolve(viewRequests.guide) },
-          { label: "New View (review)", click: () => resolve(viewRequests.review) },
+          ...(range
+            ? [{ label: `Of ${range.what}`, enabled: false }, { type: "separator" as const }]
+            : []),
+          item("New View (guide)", "guide"),
+          item("New View (review)", "review"),
           { type: "separator" },
-          { label: "New View (data model)", click: () => resolve(viewRequests["data model"]) },
-          { label: "New View (data flow)", click: () => resolve(viewRequests["data flow"]) },
-          { label: "New View…", click: () => resolve(viewRequests.custom) },
-        ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
-      ),
+          item("New View (data model)", "data model"),
+          item("New View (data flow)", "data flow"),
+          item("New View…", "custom"),
+        ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined });
+      }),
   );
   // ADR 0029: file summaries run on the summary agent, one-shot; Activity shows their jobs as they change.
   setSummaryRunner(({ agent, ...o }) => askOnce(agent, o));

@@ -3,6 +3,20 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-28 — Views of a commit, a turn or a scope
+
+For G3 ([ADR 0023](adr/0023-guides-made-by-the-agent-pane.md)).
+
+- **`start_view` takes a range:** `base` and `head` commits (short hashes resolved), or `head: "worktree"` for the
+  snapshot, the default. A view pinned to commits isn't stale when the worktree moves on (`views.worktree`, migration
+  7), so it opens as the newest view too.
+- **New View knows what the diff shows:** with a commit, an agent turn, _PR_/_Pushed_ or _Local_ picked, the New View
+  menu names it and the message starts "For commit 1c8d547 (…) only (start_view with base … and head …)"; the pane's
+  instructions say to pass that on. The view's summaries follow, since `start_view` summarises its own range: a
+  commit's few files, cached for next time.
+- Tests: `views.test.ts` (a commit view's range, an unknown commit), `canvas-state.test.ts` (a commit view isn't
+  stale). `pnpm typecheck`, `pnpm test` (17), `pnpm lint`, `pnpm format` and `pnpm build` pass.
+
 ## 2026-09-28 — Watching the workspace, and its sync state
 
 For G3 and G5 ([ADR 0030](adr/0030-workspace-watcher-and-sync-state.md), [UX](UX.md) Sync state).

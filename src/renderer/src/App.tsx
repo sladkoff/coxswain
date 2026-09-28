@@ -5,7 +5,7 @@ import { type UIEvent, useCallback, useEffect, useMemo, useRef, useState } from 
 import type { Commit } from "../../core/git";
 import type { PullRequest } from "../../core/github";
 import type { NewEntry, ReviewEntry } from "../../core/review";
-import type { View, ViewRequest } from "../../core/views";
+import type { View, ViewRange, ViewRequest } from "../../core/views";
 import type { Workspace } from "../../core/workspaces";
 import { Agents } from "./Agents";
 import { upsert } from "./ChatEntry";
@@ -210,6 +210,29 @@ export function App() {
         : pr.commits && scope === "local"
           ? { base: pr.commits.head }
           : null;
+
+  // What a new view is asked for: the commit, turn or scope the diff shows, or null for all of the workspace's changes
+  // (also while a view shows).
+  const viewRange: ViewRange | null = commit
+    ? commit.turn
+      ? { what: `the agent turn "${commit.subject}"`, base: commit.parent, head: commit.sha }
+      : {
+          what: `commit ${commit.sha.slice(0, 7)} ("${commit.subject}")`,
+          base: commit.parent,
+          head: commit.sha,
+        }
+    : !canvasView && pr.commits && scope === "pushed"
+      ? {
+          what:
+            currentWorkspace?.prNumber != null
+              ? "the PR's changes on GitHub"
+              : "the pushed changes",
+          base: pr.commits.mergeBase,
+          head: pr.commits.head,
+        }
+      : !canvasView && pr.commits && scope === "local"
+        ? { what: "the local changes, not on GitHub yet", base: pr.commits.head, head: null }
+        : null;
 
   // The workspace's entries, as the canvas shows them (ADR 0015: the live diff, or the range picked). An explanation or
   // finding shows only with its view.
@@ -450,7 +473,7 @@ export function App() {
   };
   const newView = async () =>
     setComposerText({
-      text: await window.coxswain.showNewViewMenu(),
+      text: await window.coxswain.showNewViewMenu(viewRange),
       workspaceId: currentWorkspace!.id,
     });
   const showView = (id: number | null) =>
@@ -580,7 +603,7 @@ export function App() {
     enabled: ready,
     run: async () =>
       setComposerText({
-        text: await window.coxswain.newViewRequest(kind),
+        text: await window.coxswain.newViewRequest(kind, viewRange),
         workspaceId: currentWorkspace!.id,
       }),
   });
@@ -980,7 +1003,7 @@ export function App() {
                             </div>
                           )
                         )}
-                        {canvasView && pr.snapshot && canvasView.head !== pr.snapshot && (
+                        {canvasView?.worktree && pr.snapshot && canvasView.head !== pr.snapshot && (
                           <StaleViewNotice />
                         )}
                         {(

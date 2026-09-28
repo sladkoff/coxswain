@@ -7,6 +7,7 @@ import {
   openedBefore,
   openWorktree,
   readTexts,
+  resolveCommit,
   snapshot,
 } from "./git.ts";
 import { fileSummaries, summarise } from "./summaries.ts";
@@ -22,11 +23,14 @@ export type ViewPart =
   | { kind: "prose"; text: string }
   | { kind: "diff" | "file"; path: string; generated: boolean };
 export type ViewSection = { title: string; parts: ViewPart[] };
+// worktree: its head was a snapshot of the worktree, so it's stale once the worktree moves on; a view of a commit, a
+// turn or what's on GitHub never is.
 export type View = {
   id: number;
   workspaceId: number;
   title: string;
   guide: boolean;
+  worktree: boolean;
   base: string;
   head: string;
   sections: ViewSection[];
@@ -88,18 +92,20 @@ const columns = [
   "workspace_id as workspaceId",
   "title",
   "guide",
+  "worktree",
   "base",
   "head",
   "sections",
   "created_at as createdAt",
 ] as const;
-type Row = { guide: number; sections: string };
+type Row = { guide: number; worktree: number; sections: string };
 const markdownOf = (r: Row): string[] => JSON.parse(r.sections);
 const fromRow = <R extends Row>(
   r: R,
-): Omit<R, "guide" | "sections"> & Pick<View, "guide" | "sections"> => ({
+): Omit<R, "guide" | "worktree" | "sections"> & Pick<View, "guide" | "worktree" | "sections"> => ({
   ...r,
   guide: !!r.guide,
+  worktree: !!r.worktree,
   sections: markdownOf(r).map(parseSection),
 });
 
@@ -140,6 +146,16 @@ export const viewRequests = {
   custom: "Make a view with coxswain's tools of ",
 };
 export type ViewRequest = keyof typeof viewRequests;
+
+// What the canvas shows when a view is asked for, if not all of the workspace's changes: a commit, an agent turn, or a
+// scope (ADR 0028). head null: the worktree as it is when the view starts.
+export type ViewRange = { what: string; base: string; head: string | null };
+
+// The message for the agent pane's composer: the request, after the range it's for, which start_view is told to take.
+export const viewRequest = (kind: ViewRequest, range: ViewRange | null) =>
+  range
+    ? `For ${range.what} only (start_view with base "${range.base}" and head "${range.head ?? "worktree"}"): ${viewRequests[kind]}`
+    : viewRequests[kind];
 
 const howToView = `How to write the view: add its sections in reading order with write_section. Each section is markdown
 (GitHub-flavoured: tables, lists, code) and starts with a "## " heading, which lists it in the view's table of contents.
@@ -338,7 +354,7 @@ export function viewTools(db: Db, workspaceId: number): McpTool[] {
     {
       name: "start_view",
       description:
-        "Start a new view of code or changes in coxswain, the app the user reads them in: sections of markdown, with diagrams, source files and file diffs the user can comment on. No diff is required. A guide is a view that walks through every changed file in reading order; other views show one aspect (the data model, a data flow, whatever the user asked for). Returns the range the view is pinned to, the changed files and how to write the view.",
+        "Start a new view of code or changes in coxswain, the app the user reads them in: sections of markdown, with diagrams, source files and file diffs the user can comment on. No diff is required. A guide is a view that walks through every changed file in reading order; other views show one aspect (the data model, a data flow, whatever the user asked for). By default it covers all of the workspace's changes, from the merge base to the worktree; give base and head when the user asks about one commit, an agent turn or a part of the changes. Returns the range the view is pinned to, the changed files and how to write the view.",
       inputSchema: {
         type: "object",
         properties: {
@@ -350,18 +366,33 @@ export function viewTools(db: Db, workspaceId: number): McpTool[] {
             type: "boolean",
             description: "It walks through every changed file (a guide or a review)",
           },
+          base: {
+            type: "string",
+            description:
+              "The commit the view's changes start from, e.g. a commit's parent; leave out for the merge base",
+          },
+          head: {
+            type: "string",
+            description:
+              'The commit they end at, or "worktree" for the worktree as it is now, uncommitted changes included (the default)',
+          },
         },
         required: ["title", "guide"],
       },
-      call: async (v: { title: string; guide: boolean }) => {
+      call: async (v: { title: string; guide: boolean; base?: string; head?: string }) => {
         const at = (await openedBefore(db, workspaceId)) ?? (await openWorktree(db, workspaceId));
         if (at.status !== "ok")
           throw new Error("message" in at ? at.message : `GitHub: ${at.status}`);
-        // ADR 0028: pinned to the worktree as it is, local changes and all.
-        const now = await snapshot(db, workspaceId);
-        if (now.status !== "ok") throw new Error(now.message);
-        const head = now.sha;
-        const files = await changedFiles(db, { workspaceId, base: at.mergeBase, head });
+        const base = v.base ? await resolveCommit(db, workspaceId, v.base) : at.mergeBase;
+        // ADR 0028: pinned to the worktree as it is, local changes and all, unless a commit is given.
+        const ofWorktree = !v.head || v.head === "worktree";
+        let head: string;
+        if (ofWorktree) {
+          const now = await snapshot(db, workspaceId);
+          if (now.status !== "ok") throw new Error(now.message);
+          head = now.sha;
+        } else head = await resolveCommit(db, workspaceId, v.head!);
+        const files = await changedFiles(db, { workspaceId, base, head });
         if (!v.title.trim()) throw new Error("title is empty");
         const { id } = await db
           .insertInto("views")
@@ -369,7 +400,8 @@ export function viewTools(db: Db, workspaceId: number): McpTool[] {
             workspace_id: workspaceId,
             title: v.title.trim(),
             guide: v.guide ? 1 : 0,
-            base: at.mergeBase,
+            worktree: ofWorktree ? 1 : 0,
+            base,
             head,
             created_at: new Date().toISOString(),
           })
@@ -377,15 +409,15 @@ export function viewTools(db: Db, workspaceId: number): McpTool[] {
           .executeTakeFirstOrThrow();
         tell(workspaceId);
         // ADR 0029: what has no summary yet starts being summarised now; what's ready is listed with each file.
-        await summarise(db, workspaceId, at.mergeBase, head, "view");
-        const summaries = await summaryLines(db, workspaceId, { base: at.mergeBase, head }, files);
+        await summarise(db, workspaceId, base, head, "view");
+        const summaries = await summaryLines(db, workspaceId, { base, head }, files);
         const listed = files.map(
           (f) =>
             `${f.status} +${f.additions} -${f.deletions} ${f.previousPath ? `${f.previousPath} -> ` : ""}${f.path}: ${summaries.get(f.path)}`,
         );
         return [
-          `View ${id} started; the other tools write to it when given view: ${id}, or to the latest view without it. It's pinned to ${at.mergeBase} (the merge base) → ${head} (the worktree as it is now, uncommitted changes included, as a commit).`,
-          `Read a diff with \`git diff ${at.mergeBase} ${head} -- <path>\`. Line numbers are the file's at the head (side "new") or, for removed lines, at the base (side "old").`,
+          `View ${id} started; the other tools write to it when given view: ${id}, or to the latest view without it. It's pinned to ${base}${base === at.mergeBase ? " (the merge base)" : ""} → ${head}${ofWorktree ? " (the worktree as it is now, uncommitted changes included, as a commit)" : ""}.`,
+          `Read a diff with \`git diff ${base} ${head} -- <path>\`. Line numbers are the file's at the head (side "new") or, for removed lines, at the base (side "old").`,
           `Read a source file with \`git show ${head}:<path>\`; list available files with \`git ls-tree -r --name-only ${head}\`. Source-file line annotations use side "new".`,
           `Changed files (status, lines added and removed, path: file summary):\n${listed.join("\n") || "None. You can still explain existing code with source files, prose and diagrams."}`,
           ...(files.length ? [aboutSummaries] : []),
