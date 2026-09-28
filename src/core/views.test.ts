@@ -12,7 +12,8 @@ const temp = mkdtempSync(join(os.tmpdir(), "coxswain-views-"));
 const home = mock.method(os, "homedir", () => temp);
 syncBuiltinESMExports();
 const { listFilesAt, readFileAt, snapshot } = await import("./git.ts");
-const { parseSection, viewTools, listViews, setDiagramCheck } = await import("./views.ts");
+const { parseSection, viewTools, listViews, setDiagramCheck, turnEnded } =
+  await import("./views.ts");
 const { listReviewed, setReviewed } = await import("./reviewed.ts");
 home.mock.restore();
 syncBuiltinESMExports();
@@ -96,6 +97,17 @@ test("views without diffs pin files, validate embeds and keep file review separa
     view: view.id,
     markdown: '## Source\n```file path=a.ts\n```\n```file path="directory/a b.ts"\n```',
   });
+  // Being written until the turn ends; writing to it again starts that over.
+  assert.equal((await listViews(db, 1))[0].writing, true);
+  turnEnded(1);
+  assert.equal((await listViews(db, 1))[0].writing, false);
+  await call("remove_section", { view: view.id, number: 2 });
+  assert.equal((await listViews(db, 1))[0].writing, true);
+  await call("write_section", {
+    view: view.id,
+    markdown: '## Source\n```file path=a.ts\n```\n```file path="directory/a b.ts"\n```',
+  });
+  turnEnded(1);
   for (const path of ["missing.ts", "directory", "../a.ts", "/a.ts"]) {
     await assert.rejects(
       call("write_section", { markdown: `## Invalid\n\`\`\`file path=${path}\n\`\`\`` }),

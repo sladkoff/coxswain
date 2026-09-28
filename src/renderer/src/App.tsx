@@ -26,6 +26,7 @@ import { workspaceLabel } from "./format";
 import { Setup } from "./Setup";
 import { StatusBar } from "./StatusBar";
 import { usePullRequest } from "./usePullRequest";
+import { SpinnerIcon } from "./components/icons";
 import { viewDiff, ViewProse, ViewSectionHeader } from "./ViewSection";
 import { ViewToc } from "./ViewToc";
 import type { ViewSettings } from "../../preload";
@@ -949,6 +950,7 @@ export function App() {
                     reviewedFiles={reviewedFiles}
                     entries={entries}
                     current={currentSection}
+                    writing={!!canvasView?.writing}
                     onPick={pickSection}
                   />
                 )}
@@ -971,6 +973,7 @@ export function App() {
                           {...viewerProps(currentWorkspace, pr.commits!.mergeBase)}
                         />
                       )}
+                      {canvasView?.writing && !showFile && <WritingViewNotice />}
                       {/* Only the lines on screen are drawn. Hidden, not unmounted, under a whole file: it keeps its
                       scroll and read files for Back. ponytail: every file is still read from disk up front. */}
                       <Virtualizer
@@ -1034,6 +1037,7 @@ export function App() {
                                     title={x.title}
                                     files={x.files.length}
                                     reviewed={x.files.filter(isReviewed).length}
+                                    writing={!!canvasView?.writing}
                                   />
                                 )}
                                 {(x.parts as SectionPart[]).map((p, j) =>
@@ -1154,6 +1158,23 @@ function StaleViewNotice() {
   return (
     <div className="border-b border-amber-200 bg-amber-50 px-4 py-1.5 text-xs dark:border-amber-900 dark:bg-amber-950">
       The code has changed since this view. It still shows the changes as they were.
+    </div>
+  );
+}
+
+// Being written (glossary): a turn that changed the view still runs, so more may come. Above the view, not in its
+// scroll, so it stays in sight.
+function WritingViewNotice() {
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-2 border-b bg-neutral-50 px-4 py-1.5 text-xs dark:bg-neutral-900",
+        divider,
+        muted,
+      )}
+    >
+      <SpinnerIcon />
+      The agent is still writing this view. Read on; more may come.
     </div>
   );
 }

@@ -3,6 +3,19 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-28 — Views being written
+
+For G3: while the agent writes a view, it grows section by section and looked done at every step.
+
+- **_Being written_** (glossary, ADR 0023): a view from a tool's change to it until the workspace's turn ends, done,
+  stopped or failed. No `finish_view` tool; the turn's end is the signal. In memory in `src/core/views.ts`
+  (`turnEnded`, called from `runTurn`), and `View.writing` for the UI.
+- A line above the view, outside its scroll, says it's still being written, with a spinner; so does its chip. A
+  guide's files in no section yet show under _Not yet in the guide_.
+- Tech debt: `ponytail:` any turn of the workspace ending finishes all its views, since the tools don't know the
+  session; key by session if two turns at once in a workspace become common. The line stays up while the agent
+  works on in the same turn after its last section.
+
 ## 2026-09-28 — Muted files instead of files left out
 
 For G3, from a guide asked to pass over "generated files and tests and files containing just convention fixes": the

@@ -10,7 +10,7 @@ import type { Db } from "./db";
 import { type Commit, worktreePath } from "./git";
 import { snapshotOf } from "./snapshot";
 import { SessionStates } from "./session-state";
-import { viewTools } from "./views";
+import { turnEnded, viewTools } from "./views";
 import { getWorkspaceRepo } from "./workspaces";
 
 // ADR 0018: every agent run is a session over the Agent Client Protocol, in one adapter process per agent.
@@ -897,6 +897,7 @@ export async function runTurn(
         streaming,
       );
     } finally {
+      turnEnded(workspaceId);
       const after = before && (await snapshotOf(cwd).catch(() => null));
       if (after && after !== before)
         await db

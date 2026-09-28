@@ -4,6 +4,7 @@ import { ProgressBar } from "./components/layout";
 import { cn, divider, muted, selectable } from "./components/styles";
 import { Prose } from "./components/text";
 import { countItems, itemsTitle } from "./format";
+import { notInGuide } from "./ViewSection";
 
 // A view section as the canvas shows it: its title and embedded files and diffs; title null is a guide's files in no section.
 type Section = { title: string | null; files: Opened[]; muted: boolean };
@@ -14,6 +15,7 @@ type Props = {
   reviewedFiles: string[];
   entries: ReviewEntry[];
   current: number; // the section at the top of the canvas's scroll
+  writing: boolean; // the view is being written
   onPick: (i: number) => void;
 };
 
@@ -21,7 +23,8 @@ type Props = {
 // every section with how many of its file diffs are reviewed (✓ when all are) and the notes and questions on them. The
 // section being read is marked; a click scrolls to it.
 // ponytail: fixed width, no Splitter; make it resizable like the Navigator if titles get cut.
-export function ViewToc({ sections, reviewed, reviewedFiles, entries, current, onPick }: Props) {
+export function ViewToc(props: Props) {
+  const { sections, reviewed, reviewedFiles, entries, current, onPick } = props;
   const isReviewed = (d: Opened) =>
     (d.kind === "file" ? reviewedFiles : reviewed).includes(openedPath(d));
   const all = sections.flatMap((s) => s.files);
@@ -67,7 +70,7 @@ export function ViewToc({ sections, reviewed, reviewedFiles, entries, current, o
             )}
           >
             <span className="min-w-0 flex-1">
-              {s.title !== null ? <Prose inline>{s.title}</Prose> : "Not in the guide"}
+              {s.title !== null ? <Prose inline>{s.title}</Prose> : notInGuide(props.writing)}
             </span>
             {itemCount > 0 && (
               <span

@@ -11,16 +11,21 @@ const viewProse = cn(
   "dark:[&_.mermaid]:border-neutral-800 dark:[&_.mermaid]:bg-neutral-950",
 );
 
+// The heading of a guide's files in no section; while it's being written they may be in one yet.
+export const notInGuide = (writing: boolean) =>
+  writing ? "Not yet in the guide" : "Not in the guide";
+
 // Above a view section: its title and how many file diffs it embeds. title null: the files in no section of a guide.
 export function ViewSectionHeader(props: {
   title: string | null;
   files: number;
   reviewed: number;
+  writing: boolean;
 }) {
   return (
     <div className="flex flex-col gap-1 px-6 pt-8 pb-2 select-text">
       <h2 className="text-lg font-semibold tracking-tight">
-        {props.title !== null ? <Prose inline>{props.title}</Prose> : "Not in the guide"}
+        {props.title !== null ? <Prose inline>{props.title}</Prose> : notInGuide(props.writing)}
       </h2>
       {props.files > 0 && (
         <div className={cn("text-xs", muted)}>

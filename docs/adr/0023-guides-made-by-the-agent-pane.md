@@ -62,6 +62,11 @@ the agent's own thoughts. Reviewing is opt-in.
    right-click its chip → _Remove View…_, confirmed, deletes it with its explanations and findings (`entries.view_id`
    cascades). The agent can't remove a view. The newest is shown when it appears, and on opening a workspace if it
    isn't stale.
+   A view is _being written_ (glossary) from a tool's change to it (starting it, a section, an explanation or a
+   finding) until the workspace's turn ends, however it ends. There's no tool to finish a view: the agent could forget
+   to call it or be stopped first, and the turn's end is known anyway. It's kept in memory in the core, not in
+   `views`: after a restart no turn runs. Changing an older view makes it being written again. The tools don't know
+   which session calls them, so any turn of the workspace ending finishes all its views.
 5. **Reviewed carries over between views** for file diffs that didn't change
    ([ADR 0014](0014-reviewed-follows-file-diff-contents.md)).
 

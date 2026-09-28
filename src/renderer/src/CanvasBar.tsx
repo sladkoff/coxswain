@@ -10,6 +10,7 @@ import {
   ListTreeIcon,
   SearchIcon,
   SlidersIcon,
+  SpinnerIcon,
   XIcon,
 } from "./components/icons";
 import { cn, divider, muted, selectable, titleBar } from "./components/styles";
@@ -157,7 +158,7 @@ export function CanvasBar(props: Props) {
           key={v.id}
           title={`Made ${new Date(v.createdAt).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })} at ${v.head.slice(0, 7)}${!v.worktree ? `, of ${v.base.slice(0, 7)} → ${v.head.slice(0, 7)}` : props.snapshot && v.head !== props.snapshot ? " (stale)" : ""}`}
           disabled={!props.ready}
-          className="max-w-40 truncate"
+          className="flex max-w-40 items-center gap-1"
           on={v.id === props.view?.id}
           onClick={() => props.onShowView(v.id)}
           onContextMenu={async () => {
@@ -165,7 +166,8 @@ export function CanvasBar(props: Props) {
               props.onRemoveView(v, titles.get(v.id)!);
           }}
         >
-          {titles.get(v.id)}
+          <span className="truncate">{titles.get(v.id)}</span>
+          {v.writing && <SpinnerIcon />}
         </ToggleButton>
       ))}
       <Button

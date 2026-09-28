@@ -25,7 +25,7 @@ export type ViewPart =
   | { kind: "diff" | "file"; path: string; muted: boolean };
 export type ViewSection = { title: string; parts: ViewPart[] };
 // worktree: its head was a snapshot of the worktree, so it's stale once the worktree moves on; a view of a commit, a
-// turn or what's on GitHub never is.
+// turn or what's on GitHub never is. writing: being written (glossary), a turn that changed it still runs.
 export type View = {
   id: number;
   workspaceId: number;
@@ -36,6 +36,7 @@ export type View = {
   head: string;
   sections: ViewSection[];
   createdAt: string;
+  writing: boolean;
 };
 
 // A source or diff fence: ```file path=src/a.ts or ```diff path="a b.ts", optionally muted (or generated, the word it
@@ -100,15 +101,17 @@ const columns = [
   "sections",
   "created_at as createdAt",
 ] as const;
-type Row = { guide: number; worktree: number; sections: string };
+type Row = { id: number; guide: number; worktree: number; sections: string };
 const markdownOf = (r: Row): string[] => JSON.parse(r.sections);
 const fromRow = <R extends Row>(
   r: R,
-): Omit<R, "guide" | "worktree" | "sections"> & Pick<View, "guide" | "worktree" | "sections"> => ({
+): Omit<R, "guide" | "worktree" | "sections"> &
+  Pick<View, "guide" | "worktree" | "sections" | "writing"> => ({
   ...r,
   guide: !!r.guide,
   worktree: !!r.worktree,
   sections: markdownOf(r).map(parseSection),
+  writing: writing.has(r.id),
 });
 
 // The workspace's views, newest first.
@@ -125,6 +128,7 @@ export async function listViews(db: Db, workspaceId: number): Promise<View[]> {
 // Removes a view, with its explanations and findings (entries.view_id cascades).
 export async function removeView(db: Db, viewId: number): Promise<void> {
   await db.deleteFrom("views").where("id", "=", viewId).execute();
+  writing.delete(viewId);
 }
 
 // Told when a tool changed a workspace's view or its entries, so the UI refetches them while the agent works.
@@ -134,6 +138,22 @@ export function onViewChange(listener: (workspaceId: number) => void) {
   return () => void listeners.delete(listener);
 }
 const tell = (workspaceId: number) => listeners.forEach((l) => l(workspaceId));
+
+// Being written (glossary): the views a tool changed in the turn still running, each with its workspace. Only in memory:
+// the turn is gone after a restart too. There's no step for the agent to finish a view; it could forget it, or be stopped.
+// ponytail: the tools don't know which session calls them, so any turn of the workspace ending finishes them all; key
+// them by session if two turns at once in one workspace become common.
+const writing = new Map<number, number>();
+const beingWritten = (workspaceId: number, viewId: number) => {
+  writing.set(viewId, workspaceId);
+  tell(workspaceId);
+};
+// A turn of the workspace ended (done, stopped or failed): its views are written.
+export function turnEnded(workspaceId: number) {
+  let any = false;
+  for (const [viewId, w] of writing) if (w === workspaceId) any = writing.delete(viewId);
+  if (any) tell(workspaceId);
+}
 
 // The messages the New View menu puts in the agent pane's composer. How to make a view is in start_view's result, so
 // one asked for in the agent's own words is made the same way.
@@ -244,6 +264,7 @@ async function changeView<T>(
     .catch(() => {})
     .then(async () => change(await toolView(db, workspaceId, viewId)));
   changing.set(viewId, next);
+  beingWritten(workspaceId, viewId);
   try {
     return await next;
   } finally {
@@ -411,6 +432,7 @@ async function addOnLines(
   if (start < 1 || end > lines.length)
     throw new Error(`${a.path} has ${lines.length} lines on the ${a.side} side`);
   if (!a.body.trim()) throw new Error("body is empty");
+  beingWritten(workspaceId, view.id);
   await db
     .insertInto("entries")
     .values({
@@ -504,7 +526,7 @@ export function viewTools(db: Db, workspaceId: number): McpTool[] {
           })
           .returning("id")
           .executeTakeFirstOrThrow();
-        tell(workspaceId);
+        beingWritten(workspaceId, id);
         // ADR 0029: what has no summary yet starts being summarised now; what's ready is listed with each file.
         await summarise(db, workspaceId, base, head, "view");
         const summaries = await summaryLines(db, workspaceId, { base, head }, files);
