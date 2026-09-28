@@ -198,19 +198,24 @@ export function Agents({ workspace, onViewThread, composerText, onShowSidebar }:
           placeholder={`Ask ${agentNames[agent]}…`}
           className="px-3 pt-2.5 text-sm"
         />
-        <div className="flex items-center gap-0.5 px-1.5 pb-1.5">
-          <AgentPickers workspaceId={workspace.id} agent={agent} />
-          <div className="flex-1" />
+        {/* However narrow the pane: the picks shrink and truncate, Working keeps only its spinner, Send and Stop stay. */}
+        <div className="@container flex min-w-0 items-center gap-0.5 px-1.5 pb-1.5">
+          <div className="flex min-w-0 flex-1 items-center gap-0.5">
+            <AgentPickers workspaceId={workspace.id} agent={agent} />
+          </div>
           {running && session ? (
             <>
-              <span className={cn("mr-1.5 flex items-center gap-1.5 text-xs", muted)}>
+              <span
+                title="Working"
+                className={cn("mr-1.5 flex shrink-0 items-center gap-1.5 text-xs", muted)}
+              >
                 <span className="size-2.5 animate-spin rounded-full border-[1.5px] border-neutral-400 border-t-transparent" />
-                Working
+                <span className="hidden @[17rem]:inline">Working</span>
               </span>
               <button
                 title="Stop the turn"
                 aria-label="Stop"
-                className="flex size-7 items-center justify-center rounded-full bg-neutral-900 text-white hover:bg-neutral-700 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300"
+                className="flex size-7 shrink-0 items-center justify-center rounded-full bg-neutral-900 text-white hover:bg-neutral-700 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300"
                 onClick={() => window.coxswain.stopTurn(session.agentSessionId)}
               >
                 <StopIcon />
@@ -221,7 +226,7 @@ export function Agents({ workspace, onViewThread, composerText, onShowSidebar }:
               title="Send (Enter; Shift+Enter for a new line)"
               aria-label="Send"
               disabled={!draft.trim() || running || loading}
-              className="flex size-7 items-center justify-center rounded-full bg-neutral-900 text-white hover:bg-neutral-700 disabled:bg-neutral-200 disabled:text-neutral-400 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300 dark:disabled:bg-neutral-800 dark:disabled:text-neutral-500"
+              className="flex size-7 shrink-0 items-center justify-center rounded-full bg-neutral-900 text-white hover:bg-neutral-700 disabled:bg-neutral-200 disabled:text-neutral-400 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300 dark:disabled:bg-neutral-800 dark:disabled:text-neutral-500"
               onClick={send}
             >
               <ArrowUpIcon />
@@ -291,19 +296,24 @@ function AgentPickers({ workspaceId, agent }: { workspaceId: number; agent: Agen
     await window.coxswain.setAgentPick(agent, which, choices[n].value);
     queryClient.invalidateQueries({ queryKey: query.queryKey });
   };
+  const label = (which: Pick) =>
+    picks[which]!.choices.find((c) => c.value === picks[which]!.current)?.name ??
+    picks[which]!.current;
   return (["model", "effort"] as const).map(
     (which) =>
       picks[which] && (
         <Button
           key={which}
           variant="ghost"
-          title={which === "model" ? "Model" : "Effort"}
-          className={cn("flex items-center gap-1 px-1.5 py-1 text-xs", muted)}
+          title={`${which === "model" ? "Model" : "Effort"}: ${label(which)}`}
+          className={cn(
+            "flex min-w-0 items-center gap-1 px-1.5 py-1 text-xs whitespace-nowrap [&>svg]:shrink-0",
+            muted,
+          )}
           onClick={() => pick(which)}
         >
           {which === "model" ? <SparklesIcon /> : <GaugeIcon />}
-          {picks[which].choices.find((c) => c.value === picks[which]!.current)?.name ??
-            picks[which].current}
+          <span className="truncate">{label(which)}</span>
           <ChevronDownIcon />
         </Button>
       ),
