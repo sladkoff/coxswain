@@ -561,6 +561,15 @@ export function App() {
     }
     if (!root?.path || root.workspaceId !== shown.current.ws) return;
     setViewSettings((settings) => ({ ...settings, showReviewed: true }));
+    // Already on the canvas (its file shows and it's current there, e.g. a note written in the view shown): scroll to
+    // it in place rather than leave for the range it was written in.
+    const here = entries.find((e) => e.id === threadId);
+    if (
+      here?.state === "current" &&
+      !showFile &&
+      canvasFiles.some((f) => openedPath(f) === root.path)
+    )
+      return show({ thread: threadId, at: root.path });
     await show(threadLocation(root));
   };
   const canvasReady =
