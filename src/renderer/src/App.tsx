@@ -395,9 +395,10 @@ export function App() {
   const sections = useMemo(() => {
     if (!canvasView || !diffDiffs) return null;
     const byPath = new Map(diffDiffs.map((d) => [d.file.path, d]));
-    const section = (title: string | null, parts: SectionPart[], generated: boolean) => {
+    // Muted (glossary): a section of only muted embeds is low-lighted whole; its heading says why.
+    const section = (title: string | null, parts: SectionPart[], allMuted: boolean) => {
       const files = parts.flatMap((p) => (p.kind === "code" ? [p.d] : []));
-      return { title, parts, generated, files, shown: files.filter(isShown) };
+      return { title, parts, muted: allMuted, files, shown: files.filter(isShown) };
     };
     const listed = new Set<string>();
     const all = canvasView.sections.map((x) => {
@@ -407,17 +408,17 @@ export function App() {
           p.kind === "file" ? { kind: "file", path: p.path } : byPath.get(p.path);
         if (!d) return [];
         if (p.kind === "diff") listed.add(p.path);
-        return [{ kind: "code", d, generated: p.generated }];
+        return [{ kind: "code", d, muted: p.muted }];
       });
       const embeds = parts.filter((p) => p.kind === "code");
-      return section(x.title, parts, embeds.length > 0 && embeds.every((p) => p.generated));
+      return section(x.title, parts, embeds.length > 0 && embeds.every((p) => p.muted));
     });
     const rest = diffDiffs.filter((d) => !listed.has(d.file.path));
     if (canvasView.guide && rest.length)
       all.push(
         section(
           null,
-          rest.map((d) => ({ kind: "code", d, generated: false })),
+          rest.map((d) => ({ kind: "code", d, muted: false })),
           false,
         ),
       );
@@ -1009,10 +1010,10 @@ export function App() {
                           sections ?? [
                             {
                               title: undefined,
-                              generated: false,
+                              muted: false,
                               files: diffDiffs,
                               shown: shownDiffs,
-                              parts: shownDiffs.map((d) => ({ kind: "code", d, generated: false })),
+                              parts: shownDiffs.map((d) => ({ kind: "code", d, muted: false })),
                             },
                           ]
                         ).map(
@@ -1021,14 +1022,13 @@ export function App() {
                               <section
                                 key={i}
                                 id={`view-section-${i}`}
-                                className={x.generated ? "opacity-60" : ""}
+                                className={x.muted ? "opacity-60" : ""}
                               >
                                 {x.title !== undefined && (
                                   <ViewSectionHeader
                                     title={x.title}
                                     files={x.files.length}
                                     reviewed={x.files.filter(isReviewed).length}
-                                    generated={x.generated}
                                   />
                                 )}
                                 {(x.parts as SectionPart[]).map((p, j) =>
@@ -1039,7 +1039,7 @@ export function App() {
                                       <div
                                         key={openedPath(p.d)}
                                         id={`diff:${openedPath(p.d)}`}
-                                        className={p.generated && !x.generated ? "opacity-60" : ""}
+                                        className={p.muted && !x.muted ? "opacity-60" : ""}
                                       >
                                         <Viewer
                                           stacked
@@ -1086,9 +1086,7 @@ export function App() {
 }
 
 // A part of a view section on the canvas: its markdown, or a source file or file diff it embeds.
-type SectionPart =
-  | { kind: "prose"; text: string }
-  | { kind: "code"; d: Opened; generated: boolean };
+type SectionPart = { kind: "prose"; text: string } | { kind: "code"; d: Opened; muted: boolean };
 // A section shows unless all its files and diffs are hidden (reviewed); one with none always does.
 const sectionShown = (x: { files: unknown[]; shown: unknown[] }) =>
   !x.files.length || x.shown.length > 0;

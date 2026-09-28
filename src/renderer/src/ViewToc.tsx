@@ -6,7 +6,7 @@ import { Prose } from "./components/text";
 import { countItems, itemsTitle } from "./format";
 
 // A view section as the canvas shows it: its title and embedded files and diffs; title null is a guide's files in no section.
-type Section = { title: string | null; files: Opened[]; generated: boolean };
+type Section = { title: string | null; files: Opened[]; muted: boolean };
 
 type Props = {
   sections: Section[];
@@ -63,7 +63,7 @@ export function ViewToc({ sections, reviewed, reviewedFiles, entries, current, o
             className={cn(
               "flex items-baseline gap-2 rounded px-1.5 py-1 text-left",
               selectable(i === current),
-              ((done && s.files.length > 0) || s.generated) && muted,
+              ((done && s.files.length > 0) || s.muted) && muted,
             )}
           >
             <span className="min-w-0 flex-1">

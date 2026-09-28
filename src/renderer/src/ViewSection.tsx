@@ -11,7 +11,6 @@ export function ViewSectionHeader(props: {
   title: string | null;
   files: number;
   reviewed: number;
-  generated: boolean;
 }) {
   return (
     <div className="flex flex-col gap-1.5 px-4 pt-6 pb-1 select-text">
@@ -20,7 +19,6 @@ export function ViewSectionHeader(props: {
       </h2>
       {props.files > 0 && (
         <div className={cn("text-xs", muted)}>
-          {props.generated && "Generated · "}
           {count(props.files, "file")}
           {props.reviewed > 0 && `, ${props.reviewed} reviewed`}
         </div>

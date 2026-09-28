@@ -185,8 +185,9 @@ branch`, when it was updated, and _Has a workspace_ if it does. _Branch_: one fi
   the agent starts it, and fills in as it adds to it: its sections in order, each with its heading and how many file
   diffs it embeds, then its markdown (ADR 0026): prose, tables, mermaid diagrams, and embedded file diffs, which work
   as in the diff (threads, _Reviewed_). A diagram that doesn't parse shows its code and the error. A guide goes
-  through every file: those no section embeds come after it under _Not in the guide_. Generated file diffs, and
-  sections of only those, are low-lighted. On the canvas's left, a table of contents: how many embedded file diffs are
+  through every file: those no section embeds come after it under _Not in the guide_. Muted file diffs (tool-made, tests,
+  what the user said doesn't matter), and sections of only those, are low-lighted, with no label: the heading says
+  why. On the canvas's left, a table of contents: how many embedded file diffs are
   reviewed in all with a bar, then every section with how many of its file diffs are reviewed (✓ when all are) and, if
   any, how many notes and questions are on them (`✎ 2`). The section being read is marked as you scroll; a click jumps
   to it, first showing reviewed file diffs if all of its are. Explanations (labelled _Explanation_) and, with review,

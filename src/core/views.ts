@@ -18,10 +18,11 @@ import { fileSummaries, summarise } from "./summaries.ts";
 // removes one.
 
 // A section as the canvas shows it: its heading, then prose (markdown, with mermaid fences drawn as diagrams) and the
-// source files and file diffs its fences embed. generated: the file is made by a tool, not written by hand; it's low-lighted.
+// source files and file diffs its fences embed. muted (glossary): the reader can pass over it (made by a tool, tests, a
+// mechanical change, or what the user said doesn't matter); it's low-lighted.
 export type ViewPart =
   | { kind: "prose"; text: string }
-  | { kind: "diff" | "file"; path: string; generated: boolean };
+  | { kind: "diff" | "file"; path: string; muted: boolean };
 export type ViewSection = { title: string; parts: ViewPart[] };
 // worktree: its head was a snapshot of the worktree, so it's stale once the worktree moves on; a view of a commit, a
 // turn or what's on GitHub never is.
@@ -37,7 +38,8 @@ export type View = {
   createdAt: string;
 };
 
-// A source or diff fence: ```file path=src/a.ts or ```diff path="a b.ts", optionally generated, closed by ```.
+// A source or diff fence: ```file path=src/a.ts or ```diff path="a b.ts", optionally muted (or generated, the word it
+// had first, which still means the same), closed by ```.
 // A fence without path= is an ordinary code block.
 const codeFence = /^ {0,3}```(diff|file)\s+(?=.*\bpath=)(.*)$/;
 const fenceEnd = /^ {0,3}```\s*$/;
@@ -64,7 +66,7 @@ export function parseSection(markdown: string): ViewSection {
     parts.push({
       kind: fence[1] as "diff" | "file",
       path: path[1] ?? path[2],
-      generated: /\bgenerated\b/.test(fence[2].replace(pathAttr, "")),
+      muted: /\b(muted|generated)\b/.test(fence[2].replace(pathAttr, "")),
     });
     while (i + 1 < lines.length && !fenceEnd.test(lines[i + 1])) i++;
     i++;
@@ -165,9 +167,9 @@ Three kinds of fenced blocks do more than show code:
   column; split a big one. write_section draws each diagram before saving the section, and refuses it with mermaid's
   error if one doesn't draw.
 - A file diff: \`\`\`diff path=<a changed file, as listed above>, closed by \`\`\` right after, embeds that file's diff as the
-  user reviews it, where they can comment. Add the word generated after the path for a file made by a tool rather than
-  written by hand (lockfiles, generated clients or models, snapshots, build output); it's low-lighted. Each file can be
-  embedded once in a view. A \`\`\`diff block without path= is an ordinary code block.
+  user reviews it, where they can comment. Add the word muted after the path for a file the reader can pass over: made
+  by a tool (lockfiles, generated clients or models, snapshots, build output), or one the user said doesn't matter to
+  them; it's low-lighted, and so is a section of only muted files. Each file can be embedded once in a view. A \`\`\`diff block without path= is an ordinary code block.
 - A whole source file: \`\`\`file path=<repository-relative path>, closed by \`\`\` right after, embeds its contents at
   the view's snapshot, even if it has no changes. Quote paths containing spaces. It supports line comments,
   explanations and its own Reviewed mark, separate from the file's diff. Use this to trace existing code.
@@ -180,11 +182,13 @@ const howToGuide = `How to make the guide:
   change, and lines you explain or (in a review) judge. Every diff read makes each later step slower, so don't read
   them all.
 - Sort the changed files into sections, each about one theme (a feature, a refactor, tests, configuration, ...), in
-  the order a reviewer should read them: the core change first, supporting changes after, files made by a tool last.
-  Give each section a short heading, one to three sentences saying what the reviewer is looking at and what to check,
-  and then, for each of its files, one sentence on what to look at in it followed by its diff fence. Embed every
-  changed file in exactly one section; any left out show after the guide, under "Not in the guide". Add a diagram
-  where it shows how pieces connect better than words.
+  the order a reviewer should read them: the core change first, supporting changes after, muted ones last. Give each
+  section a short heading, one to three sentences saying what the reviewer is looking at and what to check, and then,
+  for each of its files, one sentence on what to look at in it followed by its diff fence. Add a diagram where it shows
+  how pieces connect better than words.
+- Embed every changed file in exactly one section; never leave one out. Files made by a tool, and those the user says
+  they don't care about (tests, mechanical fixes, whatever they name), go in sections of their own at the end with
+  every fence muted: a heading that says what they are and one line for the section, no sentence per file.
 - Where lines need explaining (a subtle condition, why something moved, how pieces connect), add an explanation on
   them with add_explanation. Explain; don't judge. A few good ones beat many obvious ones.
 - Only if the user asked for a review: add findings with add_finding on lines where you see a bug, a risk, a missing
@@ -195,7 +199,8 @@ const howToGuide = `How to make the guide:
   you add to it; don't repeat it in the chat.`;
 
 const howToOther = `This view shows only what you put in it: embed just the source files or file diffs that matter to what it's about,
-and explain the rest with prose, tables and diagrams. When you're done, say in a line or two what it shows; it shows in
+and explain the rest with prose, tables and diagrams. Don't embed files only to mute them; mute an embed only when it's
+there for context rather than the point, e.g. a generated type the data passes through. When you're done, say in a line or two what it shows; it shows in
 the app as you add to it, so don't repeat it in the chat.`;
 
 // The files of a view's range, to check the tools' paths against, and those at its head. Both are of commits, which

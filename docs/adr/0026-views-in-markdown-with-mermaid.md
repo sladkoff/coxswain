@@ -29,10 +29,10 @@ gracefully when it's wrong. It must still embed file diffs as the user reviews t
      each diagram before saving the section (main asks the renderer over IPC, `setDiagramCheck`), and refuses it with
      mermaid's error if one doesn't draw, so the agent fixes it. One that still fails (e.g. saved while no window was
      open) shows its code and the error. Works wherever `Prose` renders, so also in chat and threads.
-   - ` ```diff path=<file> ` (optionally `generated`): embeds that changed file's diff, the same Viewer as the live
+   - ` ```diff path=<file> ` (optionally `muted`, or `generated`, which means the same): embeds that changed file's diff, the same Viewer as the live
      diff, with threads, explanations, findings and _Reviewed_. A file is embedded at most once per view. A ` ```diff `
      block without `path=` stays an ordinary code block.
-   - ` ```file path=<file> ` (optionally `generated`): embeds a whole source file at the view's snapshot, using
+   - ` ```file path=<file> ` (optionally `muted`): embeds a whole source file at the view's snapshot, using
      Pierre's File viewer with threads, explanations and a separate _Reviewed_ mark (ADR 0014). Unchanged files are
      allowed. Paths must name blobs at the snapshot, not directories or submodules. Each path appears at most once
      across file and diff embeds. Source-file explanations use side `new`; old-side annotations require a changed file.

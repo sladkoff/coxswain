@@ -3,6 +3,20 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-28 — Muted files instead of files left out
+
+For G3, from a guide asked to pass over "generated files and tests and files containing just convention fixes": the
+agent left those files out, so they showed under _Not in the guide_, because the instructions said files left out
+show there and the only low-light word, `generated`, meant tool-made files.
+
+- **_Muted_ replaces _Generated_** (glossary): a file the reader can pass over, for whatever reason. Fences say
+  `muted`; `generated` still reads the same, so older views are unchanged. The field is `muted` in the core and UI.
+  A muted section no longer says "Generated ·": its heading says why.
+- **Guides never leave a file out:** tool-made files and those the user doesn't care about go in muted sections at the
+  end, one line per section and no sentence per file. _Not in the guide_ stays for files missed by accident.
+- **Other views** don't embed files just to mute them; muting is for an embed there for context.
+- `pnpm typecheck`, `pnpm test` (16), `pnpm lint`, `pnpm format`, `pnpm build` pass. Not checked with a real run yet.
+
 ## 2026-09-28 — start_view first, and named commits
 
 For G3, from a guide on #5311 with Claude Code (Opus 5.5): 4 min 20 s, 209 s in the model (28.8k tokens written),

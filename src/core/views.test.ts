@@ -33,11 +33,14 @@ test("sections mix prose, source files, diffs and diagrams", () => {
   assert.equal(section.title, "Trace");
   assert.deepEqual(section.parts.slice(0, 3), [
     { kind: "prose", text: "Explanation" },
-    { kind: "file", path: "a b.ts", generated: true },
-    { kind: "diff", path: "changed.ts", generated: false },
+    { kind: "file", path: "a b.ts", muted: true },
+    { kind: "diff", path: "changed.ts", muted: false },
   ]);
   assert.equal(section.parts[3].kind, "prose");
   assert.equal(parseSection("## Code\n```file\nordinary code\n```").parts[0].kind, "prose");
+  assert.deepEqual(parseSection("## Tests\n```diff path=a.test.ts muted\n```").parts, [
+    { kind: "diff", path: "a.test.ts", muted: true },
+  ]);
 });
 
 test("views without diffs pin files, validate embeds and keep file review separate", async (t) => {
