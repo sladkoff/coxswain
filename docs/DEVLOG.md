@@ -3,6 +3,168 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-28 — Views being written
+
+For G3: while the agent writes a view, it grows section by section and looked done at every step.
+
+- **_Being written_** (glossary, ADR 0023): a view from a tool's change to it until the workspace's turn ends, done,
+  stopped or failed. No `finish_view` tool; the turn's end is the signal. In memory in `src/core/views.ts`
+  (`turnEnded`, called from `runTurn`), and `View.writing` for the UI.
+- A line above the view, outside its scroll, says it's still being written, with a spinner; so does its chip. A
+  guide's files in no section yet show under _Not yet in the guide_.
+- Tech debt: `ponytail:` any turn of the workspace ending finishes all its views, since the tools don't know the
+  session; key by session if two turns at once in a workspace become common. The line stays up while the agent
+  works on in the same turn after its last section.
+
+**Going to a thread** (the Threads list, _View thread_): a thread already on the canvas, such as a note written in the
+view shown, is scrolled to in place instead of opening the range it was written in. The scroll now finds threads
+further away: the file diffs' Virtualizer draws only the lines near the viewport, and keeps a thread's element
+without a box until its lines are drawn, so `scrollToThread` goes to the file, pages down it until the thread has a
+box, and keeps it in place until it holds. Picking the same thread again scrolls again. Checked by clicking every
+thread in a guide and a diff from the top and bottom of the canvas, twice. `ponytail:` a screen per step, about a
+second per thousand lines of a long file.
+
+**Thread counts** in the Navigator and a view's table of contents count every thread on a file, the agent's
+explanations and findings too (they only show with their view); hovering says how many of each. The table of
+contents shows a muted speech bubble and the number instead of a blue ✎; the Navigator shows only the bubble. Its row
+decorations are text or one icon, not both, so `ponytail:` the bubble is CSS matched to a text part by its colour. It's
+a served SVG, not a `data:` URL, which the CSP's `img-src` blocks. The Navigator's decoration (lines, ✓, ●,
+bubble) now keeps its width and a long name is cut short instead; before, a long name hid it.
+
+## 2026-09-28 — Muted files instead of files left out
+
+For G3, from a guide asked to pass over "generated files and tests and files containing just convention fixes": the
+agent left those files out, so they showed under _Not in the guide_, because the instructions said files left out
+show there and the only low-light word, `generated`, meant tool-made files.
+
+- **_Muted_ replaces _Generated_** (glossary): a file the reader can pass over, for whatever reason. Fences say
+  `muted`; `generated` still reads the same, so older views are unchanged. The field is `muted` in the core and UI.
+  A muted section no longer says "Generated ·": its heading says why.
+- **Guides never leave a file out:** tool-made files and those the user doesn't care about go in muted sections at the
+  end, one line per section and no sentence per file. _Not in the guide_ stays for files missed by accident.
+- **Other views** don't embed files just to mute them; muting is for an embed there for context.
+- `pnpm typecheck`, `pnpm test` (16), `pnpm lint`, `pnpm format`, `pnpm build` pass. Not checked with a real run yet.
+
+## 2026-09-28 — start_view first, and named commits
+
+For G3, from a guide on #5311 with Claude Code (Opus 5.5): 4 min 20 s, 209 s in the model (28.8k tokens written),
+30 s in tools (coxswain's calls 0.0–0.3 s; the rest Claude Code's Bash, 2–4 s a call).
+
+- It spent its first 43 s working out the range with git (the branch merges `main`), then sent `head: "HEAD"`, which
+  was refused. `start_view` now says to call it first, since it works out the range itself, and `base`/`head` take
+  HEAD, branches, tags and `~`/`^` as well as hashes. Names git could read as an option or a range are refused.
+- Tests: names resolve; `--output=x`, `HEAD..main` and names with spaces don't. `pnpm typecheck`, `pnpm test` (16),
+  `pnpm lint`, `pnpm format`, `pnpm build` pass.
+
+## 2026-09-28 — No auto-review for coxswain's tools, and batched writes
+
+For G3 ([ADR 0023](adr/0023-guides-made-by-the-agent-pane.md)), from the third guide on #5311: 4 min 30 s, 94 s in
+tools of which ~65 s were 28 coxswain calls at ~2.3 s each, while coxswain answers in ~0.07 s.
+
+- Codex's log (`~/.codex/logs_2.sqlite`) shows why: each MCP call went to its Guardian auto-review (`reason=Policy`),
+  a model turn of its own. Codex (`requires_mcp_tool_approval`, 0.155) reviews a call unless the tool is
+  `readOnlyHint`, or both `destructiveHint: false` and `openWorldHint: false`. coxswain's tools now say what they do:
+  `list_views` and `file_summaries` read only; `start_view`, `write_section`, `add_explanation` and `add_finding`
+  write only coxswain's views and entries; `remove_section` stays destructive, so it's still reviewed.
+- **Batches:** `write_section` takes `sections` (in order; one that doesn't fit stops, the ones before it are kept
+  and said), `add_explanation` takes `explanations` and `add_finding` `findings` (each one that doesn't fit is
+  reported, the rest added). The guide instructions ask for them.
+- Tests: batches, a bad item in each, the annotations. `pnpm typecheck`, `pnpm test` (16), `pnpm lint`, `pnpm
+format`, `pnpm build` pass. Not measured yet on #5311.
+
+## 2026-09-28 — Tool results Codex keeps whole, and faster section writes
+
+For G3 ([ADR 0029](adr/0029-file-summaries-and-activity.md)), from the second guide on #5311: 4 min 37 s, 10 steps,
+191 s in the model, 79 s in tools, 743k input tokens (the first: 17 steps and 477 s in the model before it was half
+done).
+
+- **Codex cuts tool results of more than ~10k tokens in the middle**: `start_view` (16.4k) lost 40% of the file list
+  and summaries, and four more results were cut. The file list now comes by folder (a long path once) and in parts of
+  at most 20,000 characters: `start_view` lists what fits, puts the instructions first, and says `file_summaries
+from: N` for the rest; `file_summaries` takes `from`. #5311 is three parts.
+- **`write_section` no longer lists the range's changed files each time** (15–31 s per batch of six sections on
+  #5311): a pinned range's changed files and files at its head are read once and kept.
+- A job whose last write fails (the database closed) logs it instead of an unhandled rejection.
+- Tests: paging lists every file once. `pnpm typecheck`, `pnpm test` (16), `pnpm lint`, `pnpm format`, `pnpm build`
+  pass.
+- `ponytail:` the changed-files cache keeps every range asked about while the app runs; an LRU if it grows.
+
+## 2026-09-28 — Guides read fewer diffs
+
+For G3 ([ADR 0029](adr/0029-file-summaries-and-activity.md)), from a guide on #5311 that still took ~10 minutes.
+
+- Its Codex transcript: summaries were there and used to plan, but the instructions also said to read a diff before
+  writing about a file, and a guide writes about every file. 17 steps, 477 s in the model against 49 s in tools,
+  1.44 M input tokens for 8.7k written: each 25–40k-character diff read is re-read by every later step.
+- **The guide instructions now** write each file's sentence from its summary and read diffs only where a summary
+  doesn't do (none or unclear, the heart of the change, lines explained or judged), and write several sections per
+  step. `file_summaries` says it's for summaries still being written; `start_view` lists the rest.
+- **Summaries are shorter:** one sentence of at most 25 words (stored up to 300 characters). The key carries the
+  prompt's version, so the old, longer ones are written again once.
+- Not measured yet: the same guide with these changes.
+
+## 2026-09-28 — Views of a commit, a turn or a scope
+
+For G3 ([ADR 0023](adr/0023-guides-made-by-the-agent-pane.md)).
+
+- **`start_view` takes a range:** `base` and `head` commits (short hashes resolved), or `head: "worktree"` for the
+  snapshot, the default. A view pinned to commits isn't stale when the worktree moves on (`views.worktree`, migration
+  7), so it opens as the newest view too.
+- **New View knows what the diff shows:** with a commit, an agent turn, _PR_/_Pushed_ or _Local_ picked, the New View
+  menu names it and the message starts "For commit 1c8d547 (…) only (start_view with base … and head …)"; the pane's
+  instructions say to pass that on. The view's summaries follow, since `start_view` summarises its own range: a
+  commit's few files, cached for next time.
+- Tests: `views.test.ts` (a commit view's range, an unknown commit), `canvas-state.test.ts` (a commit view isn't
+  stale). `pnpm typecheck`, `pnpm test` (16), `pnpm lint`, `pnpm format` and `pnpm build` pass.
+
+## 2026-09-28 — Watching the workspace for commits
+
+For G3 and G5 ([ADR 0030](adr/0030-workspace-watcher.md)).
+
+- **The workspace on screen is watched:** every 3 s the core reads its HEAD. A commit, pull or reset, in coxswain or
+  a terminal, refreshes the diff and commits within seconds and is summarised ahead.
+- **GitHub is checked every 2 minutes** while a workspace shows (the worktree query's refetch interval), in the
+  background too.
+- **Activity's _This workspace_ line:** how many of its committed file diffs have a summary at HEAD.
+- A sync state badge in the canvas bar (↓ behind, ↑ not pushed, ● uncommitted, or ✓) was built and taken out again:
+  it added little over the Commits pane.
+- Tests: `watch.test.ts` (a commit is a move, an edit isn't). `pnpm typecheck`, `pnpm test` (16), `pnpm lint`,
+  `pnpm format` and `pnpm build` pass.
+- `ponytail:` one workspace watched at a time, by polling git; file system events as a hint if many workspaces make
+  it slow. Uncommitted edits outside an agent turn still don't refresh the diff.
+
+## 2026-09-28 — File summaries and Activity
+
+Issue #36, for G3 ([ADR 0029](adr/0029-file-summaries-and-activity.md), [UX](UX.md) Activity).
+
+- **File summaries are back, for the agent.** A small model (Settings > _File summaries_: Claude Code or Codex, and a
+  model; Haiku by default, matched by family to Claude Code's model IDs) sums up each changed file. They're stored in
+  `file_summaries` (migration 5) by file diff fingerprint, so a changed file diff is summarised again and an unchanged
+  one never is. Lockfiles, deletions, pure renames and binary files are summarised by coxswain without a model call.
+- **Summary jobs** run ahead when a workspace's worktree is opened or checked again and after each agent turn (merge
+  base → HEAD, committed changes only), and for each view `start_view` starts (its snapshot, uncommitted changes
+  included). Batches as the old pipeline had them, at most 6 one-shot runs at once (`askOnce`: no tools, own system
+  prompt, no thinking, session closed after), JSON answers checked in the core, two retries with backoff, files left
+  out asked for one by one. A failure retrying can't fix (no such model, agent missing) stops the job after one run,
+  and summarising ahead then waits for the settings to change.
+- **The agent gets them:** `start_view` lists each file with its summary (or _being written_ / _no summary_), the new
+  `file_summaries` tool fetches them and can wait, and the guide instructions say to plan from them and read a diff
+  before writing about a file.
+- **Activity** at the canvas bar's right: turns while a job runs, a red dot after a failure, and a list of jobs with
+  progress (red when failed), reuse, model, runs, range, files in flight, the last error and Stop. Jobs are stored in
+  `summary_jobs` (migration 6), so they show after a restart; one running when the app quit is marked stopped at the
+  next start. The main process logs each finished job.
+- **Paid off:** `write_section` and `remove_section` no longer lose sections written at once; they change a view one
+  at a time.
+- Tests: `summaries.test.ts` runs jobs against a real repository with a fake summary agent (retries, files left out,
+  reuse, the view tools, sections written at once, a fatal failure, stored and interrupted jobs). `pnpm typecheck`, `pnpm test` (15 tests),
+  `pnpm lint`, `pnpm format` and `pnpm build` pass. Seen in the running dev app on #5311: Activity showed the jobs and
+  their errors, which caught `haiku` not matching Claude Code's `claude-haiku-4-5`; the family match that fixes it
+  hasn't been seen running yet.
+- `ponytail:` batch sizes and parallelism are fixed, from #5311; lockfiles are recognised by name only; summaries of
+  file diffs no range has any more are never pruned; the last 500 jobs are kept.
+- Not measured yet: how much faster a guide to #5311 gets. Worth timing once summaries have run ahead.
+
 ## 2026-09-28 — Workspace and session continuity
 
 Issue #29, for G3 and G5 (ADRs 0017, 0018, 0025, 0026).
@@ -67,6 +229,12 @@ UX, for G3 and G5 ([UX](UX.md) L2, L3).
 - New workspace has two tabs, _Pull request_ and _Branch_. The branch tab drops the browser's datalist: its one field
   filters the GitHub branches as a list (pick one to work on it) and offers _New branch `name`_ from a base picked in
   the native menu.
+- Views read more easily: each section starts below a line with a larger heading and `N files · N reviewed`; embedded
+  file diffs are cards (rounded, bordered, a little apart; `overflow: clip` so their sticky headers still stick); prose
+  sits close above the diff it leads into and apart from the one before it; text is capped at 72ch while diagrams and
+  tables take the column's width, a diagram on a light card. Diagram labels no longer inherit the prose's
+  break-anywhere, which could wrap a label inside its fixed box and cut it off (seen on an ER diagram; not re-checked
+  with one, the guide at hand had flowcharts). The plain diff keeps its flush list.
 - ponytail: the bar counts what Hand off takes with the same rule as the review prompt in `core/review.ts`, copied,
   since the renderer imports no core code. Move it to a shared pure module if a third place needs it.
 - Still open: a guide's table of contents stays its own column; making it the pane's first tab (_Sections_) would

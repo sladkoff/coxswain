@@ -5,7 +5,7 @@ import { type UIEvent, useCallback, useEffect, useMemo, useRef, useState } from 
 import type { Commit } from "../../core/git";
 import type { PullRequest } from "../../core/github";
 import type { NewEntry, ReviewEntry } from "../../core/review";
-import type { View, ViewRequest } from "../../core/views";
+import type { View, ViewRange, ViewRequest } from "../../core/views";
 import type { Workspace } from "../../core/workspaces";
 import { Agents } from "./Agents";
 import { upsert } from "./ChatEntry";
@@ -26,7 +26,8 @@ import { workspaceLabel } from "./format";
 import { Setup } from "./Setup";
 import { StatusBar } from "./StatusBar";
 import { usePullRequest } from "./usePullRequest";
-import { ViewProse, ViewSectionHeader } from "./ViewSection";
+import { SpinnerIcon } from "./components/icons";
+import { viewDiff, ViewProse, ViewSectionHeader } from "./ViewSection";
 import { ViewToc } from "./ViewToc";
 import type { ViewSettings } from "../../preload";
 import { openedPath, type Opened, type Turn, Viewer } from "./Viewer";
@@ -211,6 +212,29 @@ export function App() {
           ? { base: pr.commits.head }
           : null;
 
+  // What a new view is asked for: the commit, turn or scope the diff shows, or null for all of the workspace's changes
+  // (also while a view shows).
+  const viewRange: ViewRange | null = commit
+    ? commit.turn
+      ? { what: `the agent turn "${commit.subject}"`, base: commit.parent, head: commit.sha }
+      : {
+          what: `commit ${commit.sha.slice(0, 7)} ("${commit.subject}")`,
+          base: commit.parent,
+          head: commit.sha,
+        }
+    : !canvasView && pr.commits && scope === "pushed"
+      ? {
+          what:
+            currentWorkspace?.prNumber != null
+              ? "the PR's changes on GitHub"
+              : "the pushed changes",
+          base: pr.commits.mergeBase,
+          head: pr.commits.head,
+        }
+      : !canvasView && pr.commits && scope === "local"
+        ? { what: "the local changes, not on GitHub yet", base: pr.commits.head, head: null }
+        : null;
+
   // The workspace's entries, as the canvas shows them (ADR 0015: the live diff, or the range picked). An explanation or
   // finding shows only with its view.
   const base = range?.base ?? pr.commits?.mergeBase;
@@ -372,9 +396,10 @@ export function App() {
   const sections = useMemo(() => {
     if (!canvasView || !diffDiffs) return null;
     const byPath = new Map(diffDiffs.map((d) => [d.file.path, d]));
-    const section = (title: string | null, parts: SectionPart[], generated: boolean) => {
+    // Muted (glossary): a section of only muted embeds is low-lighted whole; its heading says why.
+    const section = (title: string | null, parts: SectionPart[], allMuted: boolean) => {
       const files = parts.flatMap((p) => (p.kind === "code" ? [p.d] : []));
-      return { title, parts, generated, files, shown: files.filter(isShown) };
+      return { title, parts, muted: allMuted, files, shown: files.filter(isShown) };
     };
     const listed = new Set<string>();
     const all = canvasView.sections.map((x) => {
@@ -384,17 +409,17 @@ export function App() {
           p.kind === "file" ? { kind: "file", path: p.path } : byPath.get(p.path);
         if (!d) return [];
         if (p.kind === "diff") listed.add(p.path);
-        return [{ kind: "code", d, generated: p.generated }];
+        return [{ kind: "code", d, muted: p.muted }];
       });
       const embeds = parts.filter((p) => p.kind === "code");
-      return section(x.title, parts, embeds.length > 0 && embeds.every((p) => p.generated));
+      return section(x.title, parts, embeds.length > 0 && embeds.every((p) => p.muted));
     });
     const rest = diffDiffs.filter((d) => !listed.has(d.file.path));
     if (canvasView.guide && rest.length)
       all.push(
         section(
           null,
-          rest.map((d) => ({ kind: "code", d, generated: false })),
+          rest.map((d) => ({ kind: "code", d, muted: false })),
           false,
         ),
       );
@@ -450,7 +475,7 @@ export function App() {
   };
   const newView = async () =>
     setComposerText({
-      text: await window.coxswain.showNewViewMenu(),
+      text: await window.coxswain.showNewViewMenu(viewRange),
       workspaceId: currentWorkspace!.id,
     });
   const showView = (id: number | null) =>
@@ -525,6 +550,8 @@ export function App() {
     openFile(path);
   };
   // Revealing a thread must happen before its file/section can mount. Preserve its Reviewed mark.
+  // Bumped by each thread picked: picking the one shown again leaves the location as it is, but should scroll again.
+  const [threadPicks, setThreadPicks] = useState(0);
   const viewThread = async (threadId: number) => {
     let root = allEntries?.find((e) => e.id === threadId);
     // A chat card can refer to a thread outside the currently filtered view.
@@ -536,7 +563,17 @@ export function App() {
     }
     if (!root?.path || root.workspaceId !== shown.current.ws) return;
     setViewSettings((settings) => ({ ...settings, showReviewed: true }));
-    await show(threadLocation(root));
+    // Already on the canvas (its file shows and it's current there, e.g. a note written in the view shown): scroll to
+    // it in place rather than leave for the range it was written in.
+    const here = entries.find((e) => e.id === threadId);
+    if (
+      here?.state === "current" &&
+      !showFile &&
+      canvasFiles.some((f) => openedPath(f) === root.path)
+    )
+      await show({ thread: threadId, at: root.path });
+    else await show(threadLocation(root));
+    setThreadPicks((n) => n + 1);
   };
   const canvasReady =
     viewId !== undefined &&
@@ -567,7 +604,7 @@ export function App() {
   useEffect(() => {
     if (!s.thread || !s.at || !canvasReady || !canvas.current) return;
     return scrollToThread(canvas.current, s.at, s.thread);
-  }, [location.state.__TSR_key, s.thread, s.at, canvasReady]);
+  }, [location.state.__TSR_key, s.thread, s.at, canvasReady, threadPicks]);
 
   // The action registry (ADR 0027): everything the command palette lists and the native menu runs, by id. Rebuilt each
   // render, so each action's enabled and run see the current state.
@@ -580,7 +617,7 @@ export function App() {
     enabled: ready,
     run: async () =>
       setComposerText({
-        text: await window.coxswain.newViewRequest(kind),
+        text: await window.coxswain.newViewRequest(kind, viewRange),
         workspaceId: currentWorkspace!.id,
       }),
   });
@@ -741,7 +778,7 @@ export function App() {
   if (!setup.data) return null; // local and quick, like the projects below
   if (setup.data.problems.length)
     return <Setup check={setup.data} onRetry={() => void setup.refetch()} />;
-  if (screen === "settings") return <Settings onClose={close} />;
+  if (screen === "settings") return <Settings onClose={close} workspaceId={currentWorkspace?.id} />;
   // Projects and New workspace are dialogs over the screen below them.
   const dialog =
     screen === "projects" ? (
@@ -885,6 +922,7 @@ export function App() {
             )}
             <div className="flex min-w-0 flex-1 flex-col">
               <CanvasBar
+                workspaceId={currentWorkspace.id}
                 paneOpen={paneOpen}
                 onShowPane={() => setPaneOpen(true)}
                 ready={!!pr.commits}
@@ -911,6 +949,7 @@ export function App() {
                 canForward={canForward}
                 onBack={() => run("back")}
                 onForward={() => run("forward")}
+                onSettings={() => setScreen("settings")}
                 onViewOptions={async () =>
                   setViewSettings(await window.coxswain.showViewMenu(viewSettings))
                 }
@@ -923,6 +962,7 @@ export function App() {
                     reviewedFiles={reviewedFiles}
                     entries={entries}
                     current={currentSection}
+                    writing={!!canvasView?.writing}
                     onPick={pickSection}
                   />
                 )}
@@ -945,6 +985,7 @@ export function App() {
                           {...viewerProps(currentWorkspace, pr.commits!.mergeBase)}
                         />
                       )}
+                      {canvasView?.writing && !showFile && <WritingViewNotice />}
                       {/* Only the lines on screen are drawn. Hidden, not unmounted, under a whole file: it keeps its
                       scroll and read files for Back. ponytail: every file is still read from disk up front. */}
                       <Virtualizer
@@ -977,17 +1018,17 @@ export function App() {
                             </div>
                           )
                         )}
-                        {canvasView && pr.snapshot && canvasView.head !== pr.snapshot && (
+                        {canvasView?.worktree && pr.snapshot && canvasView.head !== pr.snapshot && (
                           <StaleViewNotice />
                         )}
                         {(
                           sections ?? [
                             {
                               title: undefined,
-                              generated: false,
+                              muted: false,
                               files: diffDiffs,
                               shown: shownDiffs,
-                              parts: shownDiffs.map((d) => ({ kind: "code", d, generated: false })),
+                              parts: shownDiffs.map((d) => ({ kind: "code", d, muted: false })),
                             },
                           ]
                         ).map(
@@ -996,25 +1037,38 @@ export function App() {
                               <section
                                 key={i}
                                 id={`view-section-${i}`}
-                                className={x.generated ? "opacity-60" : ""}
+                                className={cn(
+                                  x.muted && "opacity-60",
+                                  // A view's sections: a line between them, room at the end.
+                                  x.title !== undefined && "border-t pb-4 first:border-t-0",
+                                  divider,
+                                )}
                               >
                                 {x.title !== undefined && (
                                   <ViewSectionHeader
                                     title={x.title}
                                     files={x.files.length}
                                     reviewed={x.files.filter(isReviewed).length}
-                                    generated={x.generated}
+                                    writing={!!canvasView?.writing}
                                   />
                                 )}
                                 {(x.parts as SectionPart[]).map((p, j) =>
                                   p.kind === "prose" ? (
-                                    <ViewProse key={j}>{p.text}</ViewProse>
+                                    <ViewProse
+                                      key={j}
+                                      after={(x.parts as SectionPart[])[j - 1]?.kind === "code"}
+                                    >
+                                      {p.text}
+                                    </ViewProse>
                                   ) : (
                                     isShown(p.d) && (
                                       <div
                                         key={openedPath(p.d)}
                                         id={`diff:${openedPath(p.d)}`}
-                                        className={p.generated && !x.generated ? "opacity-60" : ""}
+                                        className={cn(
+                                          p.muted && !x.muted && "opacity-60",
+                                          x.title !== undefined && viewDiff,
+                                        )}
                                       >
                                         <Viewer
                                           stacked
@@ -1061,9 +1115,7 @@ export function App() {
 }
 
 // A part of a view section on the canvas: its markdown, or a source file or file diff it embeds.
-type SectionPart =
-  | { kind: "prose"; text: string }
-  | { kind: "code"; d: Opened; generated: boolean };
+type SectionPart = { kind: "prose"; text: string } | { kind: "code"; d: Opened; muted: boolean };
 // A section shows unless all its files and diffs are hidden (reviewed); one with none always does.
 const sectionShown = (x: { files: unknown[]; shown: unknown[] }) =>
   !x.files.length || x.shown.length > 0;
@@ -1122,28 +1174,66 @@ function StaleViewNotice() {
   );
 }
 
-// Scroll the file into the virtualizer's viewport first, then wait for its annotation to be drawn.
-// The observer handles async file reads without a fixed retry deadline and is cancelled on navigation.
+// Being written (glossary): a turn that changed the view still runs, so more may come. Above the view, not in its
+// scroll, so it stays in sight.
+function WritingViewNotice() {
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-2 border-b bg-neutral-50 px-4 py-1.5 text-xs dark:bg-neutral-900",
+        divider,
+        muted,
+      )}
+    >
+      <SpinnerIcon />
+      The agent is still writing this view. Read on; more may come.
+    </div>
+  );
+}
+
+// Scrolls to a thread once it's drawn. The file diffs' Virtualizer draws only the lines near the viewport, so a thread
+// further away isn't there yet: go to its file, page down it until the thread is drawn, then keep it in place until it
+// holds (after a jump the Virtualizer applies a fix-up worked out for the old place, as in restoreScroll). Waits for the
+// file while it loads; stops when the user scrolls, and is cancelled on navigation. ponytail: a screen per step, about
+// a second per thousand lines of a long file; ask the library for the line's position if that's too slow.
 function scrollToThread(canvas: HTMLElement, path: string, threadId: number) {
-  let frame = 0;
-  let observer: MutationObserver;
-  const find = () => {
+  let timer: ReturnType<typeof setTimeout>;
+  let steps = 200;
+  let held = 0;
+  const events = ["wheel", "keydown", "pointerdown"] as const;
+  const stop = () => {
+    clearTimeout(timer);
+    events.forEach((e) => canvas.removeEventListener(e, stop));
+  };
+  const go = () => {
+    timer = setTimeout(go, 50);
+    const scroller = canvasScroller(canvas);
     const file = document.getElementById(`diff:${path}`);
-    if (!file || !canvas.contains(file)) return;
+    if (!scroller || !file || !canvas.contains(file)) return;
+    if (steps-- <= 0) return stop();
+    const view = scroller.getBoundingClientRect();
+    // The library keeps a thread's element while its lines aren't drawn, but without a box.
     const thread = document.getElementById(`thread:${threadId}`);
-    if (thread && canvas.contains(thread)) {
-      thread.scrollIntoView({ block: "center" });
-      observer.disconnect();
-    } else file.scrollIntoView({ block: "start" });
+    if (thread && canvas.contains(thread) && thread.getClientRects().length) {
+      // Centred, or its top a little below the canvas's when it's taller than the canvas.
+      const box = thread.getBoundingClientRect();
+      const by =
+        box.height > view.height - 80
+          ? box.top - view.top - 40
+          : box.top + box.height / 2 - (view.top + view.height / 2);
+      if (Math.abs(by) < 2) return void (++held >= 4 && stop());
+      held = 0;
+      scroller.scrollTop += by;
+      return;
+    }
+    // At its top (give or take a pixel, which scrollTop rounds away) or past it: page down.
+    const f = file.getBoundingClientRect();
+    scroller.scrollTop +=
+      f.top > view.top + 2 || f.bottom < view.top
+        ? f.top - view.top
+        : Math.min(view.height * 0.8, Math.max(0, f.bottom - view.bottom));
   };
-  observer = new MutationObserver(() => {
-    cancelAnimationFrame(frame);
-    frame = requestAnimationFrame(find);
-  });
-  observer.observe(canvas, { childList: true, subtree: true });
-  frame = requestAnimationFrame(find);
-  return () => {
-    observer.disconnect();
-    cancelAnimationFrame(frame);
-  };
+  events.forEach((e) => canvas.addEventListener(e, stop));
+  timer = setTimeout(go);
+  return stop;
 }

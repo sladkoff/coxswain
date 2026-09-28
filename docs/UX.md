@@ -10,11 +10,12 @@ right. The canvas is one explorer that both the agent and the human annotate; fo
 workspace's file diffs, with the Navigator (L2) or the commits pane on its left. The top bar follows the columns: over
 the left pane, its own bar (hide it, and _Changes_ · _Files_ · _Commits_ to switch it); over the canvas, what the canvas
 shows — _Diff_ with its range, a chip per view, a dashed _New View_ chip — then Back and Forward chevrons, a magnifier
-(Open Quickly) and the display options (sliders). A bar at its bottom sums up the review.
+(Open Quickly), the display options (sliders) and Activity (a pulse icon; see below). A bar at its bottom sums up the
+review.
 
 ```
 ┌────┬─────────────────────────┬──────────────────────────────────────────┐
-│    │ Fix auth · Codex [New▾] │▣ Changes|Files|Comm…│Diff·All▾ Guide [+]⚌│
+│    │ Fix auth · Codex [New▾] │▣ Changes|Files|Comm…│Diff·All▾ Guide[+]⚌∿│
 │ L1 ├─────────────────────────┼─────────────────────┼────────────────────┤
 │    │ L4 Agent pane           │ L2 Navigator        │ L3 Canvas          │
 │ P  │                         │ or Commits          │                    │
@@ -27,6 +28,19 @@ shows — _Diff_ with its range, a chip per view, a dashed _New View_ chip — t
 └────┴─────────────────────────┴──────────────────────────────────────────┘
           ⌘K overlays the canvas; existing diagrams stay in place
 ```
+
+## Activity
+
+The last button in the canvas bar shows what coxswain does in the background: for now summary jobs (glossary,
+[ADR 0029](adr/0029-file-summaries-and-activity.md)). It's a pulse icon, a turning ring while a job runs, with a red
+dot when one failed since the list was last opened. Clicking it opens the list under it, the latest 50 jobs of every workspace, newest first, kept across restarts. Each shows _Summarising_, _Summarised_, _Failed_ or _Stopped_, the workspace, _ahead_ or _for a view_, how long it took
+and when; a progress bar (full and red once failed); files that had a summary, were summarised and failed; the agent,
+the model it ran on, runs and range; the files being summarised now; the last error; and Stop while it runs. Its header
+names the summary agent and model, with _Settings…_; under it, _This workspace_: how many of the workspace on screen's
+committed file diffs have a summary at its HEAD, with _Up to date_, _Summarising…_, _Not yet_ or _For views only_. Esc or a click outside closes it.
+
+Settings has _File summaries_: the agent (_Claude Code_ · _Codex_), the model (a native menu of what the agent offers,
+asked in the workspace on screen; greyed out without one) and _Summarise_: _Ahead_ or _Only for views_.
 
 ## Before the main screen
 
@@ -70,8 +84,8 @@ branch`, when it was updated, and _Has a workspace_ if it does. _Branch_: one fi
   agent's) together, a file with local changes marked with an amber ● after its +/− lines, and reloads after each
   turn. Reviewed files are hidden unless _Show Reviewed Files_ is on, and then show a ✓; the bottom bar counts them.
   The display options list _Files as Tree_ or _Files as List_ (a flat list, each file's folder dimmed next to its +/−
-  lines). A changed file with notes or questions shows how many after its +/− lines (`✎ 2`; hovering says how many of
-  each). Selecting a file in _Changes_ scrolls the canvas to its file diff; selecting one in _Files_ shows the whole
+  lines). A changed file with threads (yours, and the agent's while its view shows) shows a speech bubble after its +/−
+  lines (hovering says how many of each kind). Selecting a file in _Changes_ scrolls the canvas to its file diff; selecting one in _Files_ shows the whole
   file in the canvas, until the control goes back to _Changes_.
 
   _View > Command Palette…_ (⌘K) opens the command palette over the window, starting with `>`: typing after the `>`
@@ -163,16 +177,23 @@ branch`, when it was updated, and _Has a workspace_ if it does. _Branch_: one fi
   chip offers _Remove View…_, which asks first and deletes the view with its explanations and findings; if it was
   showing, the canvas goes back to the diff. The dashed
   _New View_ chip (a layers-plus icon) makes new views: its menu has _New View (guide)_, _New View (review)_ (a guide
-  with findings), _New View (data model)_, _New View (data flow)_ and _New View…_ (a message to finish). Each puts a
+  with findings), _New View (data model)_, _New View (data flow)_ and _New View…_ (a message to finish). While the diff shows a commit, an agent
+  turn or the _PR_/_Pushed_ or _Local_ scope, the menu's first line names it (_Of commit 1c8d547 (…)_, greyed out) and
+  the view is of that range only, like the command palette's New View actions. Each puts a
   message in the agent pane's composer, to edit and send; the agent pane's session makes the view with coxswain's
   tools (ADR 0023); asking for one in the agent pane's own words does the same. A view shows on the canvas as soon as
-  the agent starts it, and fills in as it adds to it: its sections in order, each with its heading and how many file
+  the agent starts it, and fills in as it adds to it. While it's being written, a line above it, outside its scroll,
+  says so with a spinner (_The agent is still writing this view. Read on; more may come._), its chip turns a spinner,
+  and a guide's files in no section yet show under _Not yet in the guide_. The view shows its sections in order, each with its heading and how many file
   diffs it embeds, then its markdown (ADR 0026): prose, tables, mermaid diagrams, and embedded file diffs, which work
-  as in the diff (threads, _Reviewed_). A diagram that doesn't parse shows its code and the error. A guide goes
-  through every file: those no section embeds come after it under _Not in the guide_. Generated file diffs, and
-  sections of only those, are low-lighted. On the canvas's left, a table of contents: how many embedded file diffs are
+  as in the diff (threads, _Reviewed_). Laid out to skim: a line above each section; embedded file diffs as cards; prose
+  close above the diff it leads into and apart from the one before; text at most 72 characters wide, diagrams and
+  tables the column's width, a diagram on its own card. A diagram that doesn't parse shows its code and the error. A
+  guide goes through every file: those no section embeds come after it under _Not in the guide_. Muted file diffs
+  (tool-made, tests, what the user said doesn't matter), and sections of only those, are low-lighted, with no label:
+  the heading says why. On the canvas's left, a table of contents: how many embedded file diffs are
   reviewed in all with a bar, then every section with how many of its file diffs are reviewed (✓ when all are) and, if
-  any, how many notes and questions are on them (`✎ 2`). The section being read is marked as you scroll; a click jumps
+  any, how many threads are on them, yours and the agent's (a muted speech bubble and the number). The section being read is marked as you scroll; a click jumps
   to it, first showing reviewed file diffs if all of its are. Explanations (labelled _Explanation_) and, with review,
   findings (labelled _Finding_) are threads between the lines, which can be replied to like any other; they show only
   with their view. A view shows the changes as they were, local ones included (pinned to a snapshot, like a

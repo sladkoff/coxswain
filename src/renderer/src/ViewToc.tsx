@@ -3,10 +3,12 @@ import type { ReviewEntry } from "../../core/review";
 import { ProgressBar } from "./components/layout";
 import { cn, divider, muted, selectable } from "./components/styles";
 import { Prose } from "./components/text";
-import { countItems, itemsTitle } from "./format";
+import { MessageSquareIcon } from "./components/icons";
+import { countItems, type ItemCount, itemsTitle, threadCount } from "./format";
+import { notInGuide } from "./ViewSection";
 
 // A view section as the canvas shows it: its title and embedded files and diffs; title null is a guide's files in no section.
-type Section = { title: string | null; files: Opened[]; generated: boolean };
+type Section = { title: string | null; files: Opened[]; muted: boolean };
 
 type Props = {
   sections: Section[];
@@ -14,14 +16,16 @@ type Props = {
   reviewedFiles: string[];
   entries: ReviewEntry[];
   current: number; // the section at the top of the canvas's scroll
+  writing: boolean; // the view is being written
   onPick: (i: number) => void;
 };
 
 // A view's table of contents, left of the canvas while a view shows: how many file diffs are reviewed in all, then
-// every section with how many of its file diffs are reviewed (✓ when all are) and the notes and questions on them. The
+// every section with how many of its file diffs are reviewed (✓ when all are) and the threads on them. The
 // section being read is marked; a click scrolls to it.
 // ponytail: fixed width, no Splitter; make it resizable like the Navigator if titles get cut.
-export function ViewToc({ sections, reviewed, reviewedFiles, entries, current, onPick }: Props) {
+export function ViewToc(props: Props) {
+  const { sections, reviewed, reviewedFiles, entries, current, onPick } = props;
   const isReviewed = (d: Opened) =>
     (d.kind === "file" ? reviewedFiles : reviewed).includes(openedPath(d));
   const all = sections.flatMap((s) => s.files);
@@ -45,17 +49,11 @@ export function ViewToc({ sections, reviewed, reviewedFiles, entries, current, o
       {sections.map((s, i) => {
         const n = s.files.filter(isReviewed).length;
         const done = n === s.files.length;
-        const c = s.files.reduce(
-          (sum, d) => {
-            const f = items.get(openedPath(d));
-            return {
-              notes: sum.notes + (f?.notes ?? 0),
-              questions: sum.questions + (f?.questions ?? 0),
-            };
-          },
-          { notes: 0, questions: 0 },
-        );
-        const itemCount = c.notes + c.questions;
+        const c: ItemCount = { note: 0, question: 0, explanation: 0, finding: 0 };
+        for (const d of s.files)
+          for (const [k, n] of Object.entries(items.get(openedPath(d)) ?? {}))
+            c[k as keyof ItemCount] += n;
+        const itemCount = threadCount(c);
         return (
           <button
             key={i}
@@ -63,18 +61,22 @@ export function ViewToc({ sections, reviewed, reviewedFiles, entries, current, o
             className={cn(
               "flex items-baseline gap-2 rounded px-1.5 py-1 text-left",
               selectable(i === current),
-              ((done && s.files.length > 0) || s.generated) && muted,
+              ((done && s.files.length > 0) || s.muted) && muted,
             )}
           >
             <span className="min-w-0 flex-1">
-              {s.title !== null ? <Prose inline>{s.title}</Prose> : "Not in the guide"}
+              {s.title !== null ? <Prose inline>{s.title}</Prose> : notInGuide(props.writing)}
             </span>
             {itemCount > 0 && (
               <span
                 title={itemsTitle(c)}
-                className="shrink-0 text-blue-600 tabular-nums dark:text-blue-400"
+                className={cn(
+                  "shrink-0 tabular-nums [&>svg]:mr-1 [&>svg]:inline [&>svg]:align-[-2px]",
+                  muted,
+                )}
               >
-                ✎ {itemCount}
+                <MessageSquareIcon />
+                {itemCount}
               </span>
             )}
             {s.files.length > 0 && (

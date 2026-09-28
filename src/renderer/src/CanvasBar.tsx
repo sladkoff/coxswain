@@ -1,5 +1,6 @@
 import type { Commit } from "../../core/git";
 import type { View } from "../../core/views";
+import { Activity } from "./Activity";
 import { Button, SegmentedControl, ToggleButton } from "./components/button";
 import {
   ChevronDownIcon,
@@ -9,6 +10,7 @@ import {
   ListTreeIcon,
   SearchIcon,
   SlidersIcon,
+  SpinnerIcon,
   XIcon,
 } from "./components/icons";
 import { cn, divider, muted, selectable, titleBar } from "./components/styles";
@@ -53,13 +55,14 @@ export function PaneBar(props: {
 }
 
 type Props = {
+  workspaceId: number;
   paneOpen: boolean; // the pane left of the canvas shows, with its own bar
   onShowPane: () => void;
   ready: boolean; // the PR's commits are loaded, so the diff's range and the views can open
   commit: Commit | null;
   view: View | null;
   views: View[]; // newest first
-  snapshot: string | null; // the worktree now; a view pinned to another is stale
+  snapshot: string | null; // the worktree now; a view of the worktree pinned to another is stale
   scope: "all" | "pushed" | "local";
   hasPr: boolean; // what's pushed is the PR's
   onRangeMenu: () => void; // the Diff tab's range: a scope, or a commit or turn from the Commits pane
@@ -69,6 +72,7 @@ type Props = {
   onNewView: () => void;
   onOpenQuickly: () => void;
   onViewOptions: () => void;
+  onSettings: () => void;
   canBack: boolean;
   canForward: boolean;
   onBack: () => void;
@@ -76,7 +80,7 @@ type Props = {
 };
 
 // The canvas's bar: what the canvas shows on the left (Diff with its range, a chip per view, New View), then Back,
-// Forward, Open Quickly and the display options. Showing or switching the left pane is the pane's own bar; while it's
+// Forward, Open Quickly, the display options and Activity. Showing or switching the left pane is the pane's own bar; while it's
 // hidden, a button here shows it. It also drags the window, so it lines up with the agent pane's.
 export function CanvasBar(props: Props) {
   const titles = viewTitles(props.views);
@@ -152,9 +156,9 @@ export function CanvasBar(props: Props) {
       {props.views.toReversed().map((v) => (
         <ToggleButton
           key={v.id}
-          title={`Made ${new Date(v.createdAt).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })} at ${v.head.slice(0, 7)}${props.snapshot && v.head !== props.snapshot ? " (stale)" : ""}`}
+          title={`Made ${new Date(v.createdAt).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })} at ${v.head.slice(0, 7)}${!v.worktree ? `, of ${v.base.slice(0, 7)} → ${v.head.slice(0, 7)}` : props.snapshot && v.head !== props.snapshot ? " (stale)" : ""}`}
           disabled={!props.ready}
-          className="max-w-40 truncate"
+          className="flex max-w-40 items-center gap-1"
           on={v.id === props.view?.id}
           onClick={() => props.onShowView(v.id)}
           onContextMenu={async () => {
@@ -162,7 +166,8 @@ export function CanvasBar(props: Props) {
               props.onRemoveView(v, titles.get(v.id)!);
           }}
         >
-          {titles.get(v.id)}
+          <span className="truncate">{titles.get(v.id)}</span>
+          {v.writing && <SpinnerIcon />}
         </ToggleButton>
       ))}
       <Button
@@ -209,6 +214,7 @@ export function CanvasBar(props: Props) {
       >
         <SlidersIcon />
       </Button>
+      <Activity workspaceId={props.workspaceId} onSettings={props.onSettings} />
     </div>
   );
 }

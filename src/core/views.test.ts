@@ -12,7 +12,8 @@ const temp = mkdtempSync(join(os.tmpdir(), "coxswain-views-"));
 const home = mock.method(os, "homedir", () => temp);
 syncBuiltinESMExports();
 const { listFilesAt, readFileAt, snapshot } = await import("./git.ts");
-const { parseSection, viewTools, listViews, setDiagramCheck } = await import("./views.ts");
+const { parseSection, viewTools, listViews, setDiagramCheck, turnEnded } =
+  await import("./views.ts");
 const { listReviewed, setReviewed } = await import("./reviewed.ts");
 home.mock.restore();
 syncBuiltinESMExports();
@@ -33,11 +34,14 @@ test("sections mix prose, source files, diffs and diagrams", () => {
   assert.equal(section.title, "Trace");
   assert.deepEqual(section.parts.slice(0, 3), [
     { kind: "prose", text: "Explanation" },
-    { kind: "file", path: "a b.ts", generated: true },
-    { kind: "diff", path: "changed.ts", generated: false },
+    { kind: "file", path: "a b.ts", muted: true },
+    { kind: "diff", path: "changed.ts", muted: false },
   ]);
   assert.equal(section.parts[3].kind, "prose");
   assert.equal(parseSection("## Code\n```file\nordinary code\n```").parts[0].kind, "prose");
+  assert.deepEqual(parseSection("## Tests\n```diff path=a.test.ts muted\n```").parts, [
+    { kind: "diff", path: "a.test.ts", muted: true },
+  ]);
 });
 
 test("views without diffs pin files, validate embeds and keep file review separate", async (t) => {
@@ -84,7 +88,7 @@ test("views without diffs pin files, validate embeds and keep file review separa
   const call = (name: string, args: object) =>
     tools.find((tool) => tool.name === name)!.call(args as never);
   const start = await call("start_view", { title: "Trace", guide: false });
-  assert.match(start, /None\. You can still explain existing code/);
+  assert.match(start, /none\. You can still explain existing code/);
   const [view] = await listViews(db, 1);
   assert.equal(view.base, view.head);
   const worktree = join(temp, "coxswain/worktrees/test/repo/branch-feature");
@@ -93,6 +97,17 @@ test("views without diffs pin files, validate embeds and keep file review separa
     view: view.id,
     markdown: '## Source\n```file path=a.ts\n```\n```file path="directory/a b.ts"\n```',
   });
+  // Being written until the turn ends; writing to it again starts that over.
+  assert.equal((await listViews(db, 1))[0].writing, true);
+  turnEnded(1);
+  assert.equal((await listViews(db, 1))[0].writing, false);
+  await call("remove_section", { view: view.id, number: 2 });
+  assert.equal((await listViews(db, 1))[0].writing, true);
+  await call("write_section", {
+    view: view.id,
+    markdown: '## Source\n```file path=a.ts\n```\n```file path="directory/a b.ts"\n```',
+  });
+  turnEnded(1);
   for (const path of ["missing.ts", "directory", "../a.ts", "/a.ts"]) {
     await assert.rejects(
       call("write_section", { markdown: `## Invalid\n\`\`\`file path=${path}\n\`\`\`` }),
@@ -193,6 +208,31 @@ test("views without diffs pin files, validate embeds and keep file review separa
     call("write_section", { markdown: "## Changed\n```file path=a.ts\n```" }),
     /embed its diff in a guide/,
   );
+  // A view of one commit: its own range, not stale when the worktree moves on.
+  const commit = execFileSync("git", ["rev-parse", "HEAD"], {
+    cwd: worktree,
+    encoding: "utf8",
+  }).trim();
+  await call("start_view", {
+    title: "Commit",
+    guide: false,
+    base: commit.slice(0, 8),
+    head: commit,
+  });
+  const [ofCommit] = await listViews(db, 1);
+  assert.deepEqual([ofCommit.base, ofCommit.head, ofCommit.worktree], [commit, commit, false]);
+  await assert.rejects(
+    call("start_view", { title: "Nope", guide: false, head: "abcdef1234" }),
+    /isn't a commit/,
+  );
+  await call("start_view", { title: "Named", guide: false, base: "HEAD~0", head: "HEAD" });
+  assert.equal((await listViews(db, 1))[0].head, commit, "names resolve to their commit");
+  for (const rev of ["--output=x", "HEAD..main", "a b"])
+    await assert.rejects(
+      call("start_view", { title: "Bad", guide: false, head: rev }),
+      /Not a commit/,
+    );
+  await call("start_view", { title: "Guide", guide: true });
   const coverage = await call("write_section", {
     markdown: "## Changes\n```diff path=a.ts\n```\n```diff path=b.ts\n```",
   });

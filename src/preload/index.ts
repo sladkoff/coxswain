@@ -26,12 +26,13 @@ import type {
   PullRequestTitles,
   RepoPage,
 } from "../core/github";
-import type { View, ViewRequest } from "../core/views";
+import type { View, ViewRange, ViewRequest } from "../core/views";
 import type { Project } from "../core/projects";
 import type { NewEntry, ReviewEntry } from "../core/review";
 import type { SetupCheck } from "../core/setup";
 import type { Workspace } from "../core/workspaces";
 import type { SessionState } from "../core/session-state";
+import type { SummaryCoverage, SummaryJob, SummarySettings } from "../core/summaries";
 
 // The Navigator's settings in its cog menu. layout: changed files as a tree or as a flat list.
 // The canvas bar's settings in its cog menu. showReviewed: reviewed file diffs stay in the Navigator and on the canvas.
@@ -208,6 +209,23 @@ const api = {
     ipcRenderer.invoke("views:list", workspaceId),
   // Removes a view with its explanations and findings.
   removeView: (viewId: number): Promise<void> => ipcRenderer.invoke("views:remove", viewId),
+  // ADR 0030: watches the workspace on screen for its HEAD moving; null stops.
+  watchWorkspace: (workspaceId: number | null): Promise<void> =>
+    ipcRenderer.invoke("workspaces:watch", workspaceId),
+  // How many of the workspace's committed file diffs have a file summary.
+  summaryCoverage: (workspaceId: number): Promise<SummaryCoverage | null> =>
+    ipcRenderer.invoke("summaries:coverage", workspaceId),
+  // ADR 0029: the file summary jobs Activity shows, newest first, and how they change.
+  listSummaryJobs: (): Promise<SummaryJob[]> => ipcRenderer.invoke("summaries:jobs"),
+  onSummaryJobs: (callback: (jobs: SummaryJob[]) => void) => {
+    const listener = (_: unknown, jobs: SummaryJob[]) => callback(jobs);
+    ipcRenderer.on("summaries:jobs", listener);
+    return () => void ipcRenderer.off("summaries:jobs", listener);
+  },
+  stopSummaryJob: (id: number): Promise<void> => ipcRenderer.invoke("summaries:stop", id),
+  getSummarySettings: (): Promise<SummarySettings> => ipcRenderer.invoke("summaries:settings"),
+  setSummarySettings: (s: Partial<SummarySettings>): Promise<void> =>
+    ipcRenderer.invoke("summaries:set-settings", s),
   // The composer's Comment/Agent toggle, kept for every comment box.
   getCommentToAgent: (): Promise<boolean> => ipcRenderer.invoke("settings:comment-to-agent"),
   setCommentToAgent: (toAgent: boolean): Promise<void> =>
@@ -259,9 +277,12 @@ const api = {
   showProjectsMenu: (fullNames: string[]): Promise<string | null> =>
     ipcRenderer.invoke("menus:projects", fullNames),
   // The canvas's new view menu: the message for the agent pane's composer that asks for it. Pending if dismissed.
-  showNewViewMenu: (): Promise<string> => ipcRenderer.invoke("menus:new-view"),
+  // range: what the canvas shows, when it isn't all of the workspace's changes.
+  showNewViewMenu: (range: ViewRange | null): Promise<string> =>
+    ipcRenderer.invoke("menus:new-view", range),
   // The same message for one kind of view, for the command palette's New View actions.
-  newViewRequest: (kind: ViewRequest): Promise<string> => ipcRenderer.invoke("views:request", kind),
+  newViewRequest: (kind: ViewRequest, range: ViewRange | null): Promise<string> =>
+    ipcRenderer.invoke("views:request", kind, range),
   onChanged: (callback: (change: Changed) => void) => {
     const listener = (_: unknown, change: Changed) => callback(change);
     ipcRenderer.on("changed", listener);

@@ -14,10 +14,18 @@ type Reads = {
 }[keyof Api];
 
 const github = { staleTime: 60_000, refetchOnWindowFocus: true };
-const extra: Partial<Record<Reads, { staleTime?: number; refetchOnWindowFocus?: boolean }>> = {
+type Extra = {
+  staleTime?: number;
+  refetchOnWindowFocus?: boolean;
+  refetchInterval?: number;
+  refetchIntervalInBackground?: boolean;
+};
+const extra: Partial<Record<Reads, Extra>> = {
   readAgentState: { staleTime: Infinity },
+  listSummaryJobs: { staleTime: Infinity }, // the core pushes them (below)
   readFileAt: { staleTime: Infinity }, // a file at a commit never changes
-  openWorktree: github, // asks GitHub for the PR's head and fetches it
+  // Asks GitHub for the PR's head and fetches it; again every 2 minutes while the workspace shows (ADR 0030).
+  openWorktree: { ...github, refetchInterval: 120_000, refetchIntervalInBackground: true },
   listPullRequests: github,
   listPullRequestTitles: github,
 };
@@ -70,6 +78,7 @@ const affects: Record<Changed["what"], Reads[]> = {
     "readWorktreeFile",
     "listReviewed",
     "listEntries",
+    "summaryCoverage",
   ],
   // A turn's session reports its agent's choices of model and effort afresh.
   transcript: ["listAgentSessions", "listAgentPicks"],
@@ -110,4 +119,15 @@ window.coxswain.onAgentState((id, state) => {
   queryClient.setQueryData(core("readAgentState", id).queryKey, (before) =>
     before && before.revision > state.revision ? before : state,
   );
+});
+
+// ADR 0029: the core sends the file summary jobs whenever one changes.
+// Coverage is counted again when a job starts or ends, not at every step of one.
+let runningJobs = "";
+window.coxswain.onSummaryJobs((jobs) => {
+  queryClient.setQueryData(core("listSummaryJobs").queryKey, jobs);
+  const running = jobs.flatMap((j) => (j.state === "running" ? [j.id] : [])).join();
+  if (running === runningJobs) return;
+  runningJobs = running;
+  void queryClient.invalidateQueries({ queryKey: ["summaryCoverage"] });
 });

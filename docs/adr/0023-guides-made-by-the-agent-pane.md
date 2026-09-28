@@ -22,11 +22,20 @@ the agent's own thoughts. Reviewing is opt-in.
    ([ADR 0018](0018-agents-over-acp.md), 2) serves a stable path per workspace, `coxswain`, given to every agent pane
    session when it's opened, resumed or loaded, and allowed without asking (`mcp__coxswain`). Its tools:
    - `start_view`: a new view, a guide or another kind, pinned to the merge base → a snapshot of the worktree,
-     local changes included ([ADR 0028](0028-branch-workspaces-and-snapshots.md). Returns the range, the changed files, how to read source files, and how to write a good view; no changes are required.
+     local changes included ([ADR 0028](0028-branch-workspaces-and-snapshots.md)), or to the `base` and `head`
+     commits given: one commit, an agent turn, what's on GitHub, or GitHub's head → the worktree for the local
+     changes. Returns the range, the changed files, how to read source files, and how to write a good view; no changes are required.
    - `write_section`: appends a section of markdown to a view, or replaces one. What a view holds is in
      [ADR 0026](0026-views-in-markdown-with-mermaid.md); embedded diff paths are checked against the changed files and source paths against the snapshot,
      and a file is embedded once.
-   - `remove_section`: removes a section from a view.
+   - `remove_section`: removes a section from a view. It and `write_section` change a view one at a time
+     ([ADR 0029](0029-file-summaries-and-activity.md)). `write_section` takes several sections at once, and
+     `add_explanation` and `add_finding` several of theirs: one call for many.
+   - Every tool says what it does in MCP's annotations: `list_views` and `file_summaries` only read; the rest write
+     only coxswain's views and entries (not destructive, not open-world), but `remove_section` is destructive. Codex's
+     auto-review looks at every call to a tool that doesn't say so, about 2.5 s each.
+   - `file_summaries`: the file summaries of a view's changed files, which `start_view` lists too
+     ([ADR 0029](0029-file-summaries-and-activity.md)); it can wait for those being written.
    - `list_views`: the workspace's views, with their ids, titles, ranges and section headings.
    - `add_explanation`: an explanation (glossary) on lines of the view's range.
    - `add_finding`: a finding (glossary) on lines, the agent's own concern or suggestion. Its description says to use
@@ -37,18 +46,27 @@ the agent's own thoughts. Reviewing is opt-in.
      comment and review headers mean, and what the tools are for; how to use each stays in its description and result.
 2. **Any message can make a view.** "Make me a guide" or "show me the data model" works, since the tools are always
    there. _New View_ in the canvas's bar also offers a guide, a review, a data model, a data flow or a message of
-   the user's own, each a short message put in the agent pane's composer for the user to edit and send. How to guide
+   the user's own, each a short message put in the agent pane's composer for the user to edit and send. While the
+   diff shows a commit, a turn or the _PR_/_Pushed_ or _Local_ scope, the message starts with that range ("For commit
+   1c8d547 (…) only (start_view with base … and head …): …") and the menu names it; the pane's instructions say to
+   pass it on. How to guide
    lives in `start_view`'s result, not in a setting.
 3. **Views show on the canvas.** A view shown puts its sections in order, and for a guide the files it doesn't embed
    after them under _Not in the guide_. Explanations and findings are entries (kinds `explanation`, `finding`) with the
    view's id, shown as threads between the lines only while their view is shown, so the user can reply or send them
    back to the agent.
 4. **Views stay pinned and are kept until the user removes them.** A view shows its range (merge base → head then),
-   like a commit diff, not the live worktree; once the worktree moves on (its snapshot changes) it's _stale_. Every view is kept and can be
+   like a commit diff, not the live worktree; once the worktree moves on (its snapshot changes) a view of the
+   worktree is _stale_. A view pinned to commits (`views.worktree` 0) never is. Every view is kept and can be
    shown again from its chip in the canvas bar, for going back or for debugging. Removing one is the user's choice:
    right-click its chip → _Remove View…_, confirmed, deletes it with its explanations and findings (`entries.view_id`
    cascades). The agent can't remove a view. The newest is shown when it appears, and on opening a workspace if it
    isn't stale.
+   A view is _being written_ (glossary) from a tool's change to it (starting it, a section, an explanation or a
+   finding) until the workspace's turn ends, however it ends. There's no tool to finish a view: the agent could forget
+   to call it or be stopped first, and the turn's end is known anyway. It's kept in memory in the core, not in
+   `views`: after a restart no turn runs. Changing an older view makes it being written again. The tools don't know
+   which session calls them, so any turn of the workspace ending finishes all its views.
 5. **Reviewed carries over between views** for file diffs that didn't change
    ([ADR 0014](0014-reviewed-follows-file-diff-contents.md)).
 

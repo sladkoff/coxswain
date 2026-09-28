@@ -14,7 +14,9 @@ export function defaultViewId(
   if (s.viewId !== undefined) return s.viewId;
   if (s.commit || s.scope) return null;
   if (!views || !snapshotReady) return undefined;
-  return views[0]?.head === snapshot ? views[0].id : null;
+  // The newest view, unless it's of the worktree and the worktree moved on.
+  const newest = views[0];
+  return newest && (!newest.worktree || newest.head === snapshot) ? newest.id : null;
 }
 
 // The entry records the range where it was written. Clear incompatible selections so it is

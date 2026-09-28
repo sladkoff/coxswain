@@ -26,6 +26,12 @@ body {
   }
 }
 
+/* A diagram's labels are sized by mermaid as drawn: text around it that breaks anywhere would wrap them in their boxes
+   and cut them off. */
+.mermaid {
+  overflow-wrap: normal;
+}
+
 /* Agent replies rendered from Markdown (Agents.tsx). Dense, like the rest of the app. */
 .markdown > * + * {
   margin-top: 0.5rem;

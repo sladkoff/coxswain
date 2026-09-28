@@ -113,6 +113,43 @@ export const migrations = [
     title text not null,
     created_at text not null
   )`,
+  // ADR 0029: file summaries, one per fingerprint of a file diff's contents (ADR 0014). model: what wrote it,
+  // "coxswain" for those written without a model (lockfiles, deletions, binary files).
+  `create table file_summaries (
+    workspace_id integer not null references workspaces (id) on delete cascade,
+    path text not null,
+    fingerprint text not null,
+    summary text not null,
+    model text not null,
+    created_at text not null,
+    primary key (workspace_id, path, fingerprint)
+  )`,
+  // ADR 0029: summary jobs, for Activity. A job still running when coxswain quit is stopped at the next start, as of
+  // updated_at, when its progress was last stored.
+  `create table summary_jobs (
+    id integer primary key,
+    workspace_id integer not null references workspaces (id) on delete cascade,
+    workspace text not null,
+    why text not null check (why in ('ahead', 'view')),
+    base text not null,
+    head text not null,
+    agent text not null,
+    model text not null,
+    ran_on text,
+    files integer not null,
+    reused integer not null,
+    done integer not null,
+    failed integer not null,
+    calls integer not null,
+    state text not null check (state in ('running', 'done', 'failed', 'stopped')),
+    error text,
+    started_at text not null,
+    finished_at text,
+    updated_at text not null
+  )`,
+  // A view pinned to the worktree (1) goes stale when the worktree moves on; one of a commit, a turn or what's on
+  // GitHub (0) doesn't.
+  `alter table views add column worktree integer not null default 1`,
 ];
 
 // ADR 0016: the tables as the migrations above leave them. Change this with every migration that changes a table.
@@ -144,6 +181,35 @@ type Tables = {
     title: string | null;
   };
   reviewed_files: { workspace_id: number; path: string; fingerprint: string };
+  summary_jobs: {
+    id: Generated<number>;
+    workspace_id: number;
+    workspace: string;
+    why: "ahead" | "view";
+    base: string;
+    head: string;
+    agent: "claude" | "codex";
+    model: string;
+    ran_on: string | null;
+    files: number;
+    reused: number;
+    done: number;
+    failed: number;
+    calls: number;
+    state: "running" | "done" | "failed" | "stopped";
+    error: string | null;
+    started_at: string;
+    finished_at: string | null;
+    updated_at: string;
+  };
+  file_summaries: {
+    workspace_id: number;
+    path: string;
+    fingerprint: string;
+    summary: string;
+    model: string;
+    created_at: string;
+  };
   views: {
     id: Generated<number>;
     workspace_id: number;
@@ -151,6 +217,7 @@ type Tables = {
     head: string;
     title: string;
     guide: number; // 1: a guide, which goes through every changed file
+    worktree: Generated<number>; // 1: pinned to a snapshot of the worktree, so it can go stale
     sections: Generated<string>; // JSON, the markdown of each section
     created_at: string;
   };

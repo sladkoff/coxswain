@@ -15,6 +15,7 @@ import {
   type Agent,
   agentSessionWorkspace,
   answerPermission,
+  askOnce,
   listAgentPicks,
   listTurns,
   listAgentSessions,
@@ -46,13 +47,15 @@ import {
   readWorktreeFile,
   snapshot,
 } from "../core/git";
+import { onHeadMoved, watchWorkspace } from "../core/watch";
 import {
   listViews,
   onViewChange,
   removeView,
   setDiagramCheck,
+  type ViewRange,
   type ViewRequest,
-  viewRequests,
+  viewRequest,
 } from "../core/views";
 import { getCurrentUser, listPullRequestTitles, listPullRequests, listRepos } from "../core/github";
 import { listProjects, openProject } from "../core/projects";
@@ -72,6 +75,18 @@ import {
   stopQuestion,
 } from "../core/review";
 import { listReviewed, setReviewed } from "../core/reviewed";
+import {
+  getSummarySettings,
+  listSummaryJobs,
+  onSummaryJobs,
+  setSummaryRunner,
+  setSummarySettings,
+  stopInterruptedJobs,
+  stopSummaryJob,
+  summariseAhead,
+  summaryCoverage,
+  type SummarySettings,
+} from "../core/summaries";
 import { checkSetup } from "../core/setup";
 import type { Changed, RangePick, ViewSettings } from "../preload";
 import {
@@ -276,7 +291,22 @@ app.whenReady().then(() => {
   ipcMain.handle("workspaces:remove", (_, workspaceId: number) => removeWorkspace(db, workspaceId));
   ipcMain.handle("git:clone", (_, projectId: number) => cloneProject(db, projectId));
   ipcMain.handle("git:opened-before", (_, workspaceId: number) => openedBefore(db, workspaceId));
-  ipcMain.handle("git:open-worktree", (_, workspaceId: number) => openWorktree(db, workspaceId));
+  // ADR 0029: a workspace opened or checked again is summarised ahead, in the background.
+  ipcMain.handle("git:open-worktree", async (_, workspaceId: number) => {
+    const opened = await openWorktree(db, workspaceId);
+    if (opened.status === "ok") void summariseAhead(db, workspaceId);
+    return opened;
+  });
+  // ADR 0030: the workspace on screen is watched. Its HEAD moving is a change to the worktree (commits, the diff) and
+  // is summarised ahead.
+  ipcMain.handle("workspaces:watch", (_, workspaceId: number | null) =>
+    watchWorkspace(db, workspaceId),
+  );
+  onHeadMoved((workspaceId) => {
+    for (const w of BrowserWindow.getAllWindows())
+      changed(w.webContents, { workspaceId, what: "worktree" });
+    void summariseAhead(db, workspaceId);
+  });
   ipcMain.handle("git:commits", (_, workspaceId: number, mergeBase: string) =>
     listCommits(db, workspaceId, mergeBase),
   );
@@ -364,6 +394,7 @@ app.whenReady().then(() => {
       changed(e.sender, { workspaceId, what: "entries" }); // the answer
       changed(e.sender, { workspaceId, what: "worktree" }); // the agent may have changed files
       changed(e.sender, { workspaceId, what: "transcript" });
+      void summariseAhead(db, workspaceId);
       send("review:turn-end", threadId, result);
     });
     return asked.question;
@@ -392,6 +423,7 @@ app.whenReady().then(() => {
     });
     changed(e.sender, { workspaceId, what: "worktree" });
     changed(e.sender, { workspaceId, what: "transcript" });
+    void summariseAhead(db, workspaceId);
     return result;
   });
   ipcMain.handle("review:copy-prompt", async (_, workspaceId: number) => {
@@ -428,6 +460,7 @@ app.whenReady().then(() => {
     });
     changed(e.sender, { workspaceId, what: "worktree" });
     changed(e.sender, { workspaceId, what: "transcript" });
+    void summariseAhead(db, workspaceId); // the agent may have committed
     return result;
   });
   // A thread's ⋯ menu. Resolves only on a click: the menu's close callback can run before the click, so it can't tell
@@ -617,22 +650,47 @@ app.whenReady().then(() => {
         }),
       ),
   );
-  ipcMain.handle("views:request", (_, kind: ViewRequest) => viewRequests[kind]);
+  ipcMain.handle("views:request", (_, kind: ViewRequest, range: ViewRange | null) =>
+    viewRequest(kind, range),
+  );
   // The canvas's New View menu: a prompt for a view, for the agent pane's composer. Resolves only on a click, like the menus above.
   ipcMain.handle(
     "menus:new-view",
-    (e) =>
-      new Promise<string>((resolve) =>
+    (e, range: ViewRange | null) =>
+      new Promise<string>((resolve) => {
+        const item = (label: string, kind: ViewRequest) => ({
+          label,
+          click: () => resolve(viewRequest(kind, range)),
+        });
         Menu.buildFromTemplate([
-          { label: "New View (guide)", click: () => resolve(viewRequests.guide) },
-          { label: "New View (review)", click: () => resolve(viewRequests.review) },
+          ...(range
+            ? [{ label: `Of ${range.what}`, enabled: false }, { type: "separator" as const }]
+            : []),
+          item("New View (guide)", "guide"),
+          item("New View (review)", "review"),
           { type: "separator" },
-          { label: "New View (data model)", click: () => resolve(viewRequests["data model"]) },
-          { label: "New View (data flow)", click: () => resolve(viewRequests["data flow"]) },
-          { label: "New View…", click: () => resolve(viewRequests.custom) },
-        ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
-      ),
+          item("New View (data model)", "data model"),
+          item("New View (data flow)", "data flow"),
+          item("New View…", "custom"),
+        ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined });
+      }),
   );
+  // ADR 0029: file summaries run on the summary agent, one-shot; Activity shows their jobs as they change.
+  setSummaryRunner(({ agent, ...o }) => askOnce(agent, o));
+  void stopInterruptedJobs(db);
+  ipcMain.handle("summaries:jobs", () => listSummaryJobs(db));
+  ipcMain.handle("summaries:coverage", (_, workspaceId: number) =>
+    summaryCoverage(db, workspaceId),
+  );
+  ipcMain.handle("summaries:stop", (_, id: number) => stopSummaryJob(id));
+  ipcMain.handle("summaries:settings", () => getSummarySettings(db));
+  ipcMain.handle("summaries:set-settings", (_, s: Partial<SummarySettings>) =>
+    setSummarySettings(db, s),
+  );
+  onSummaryJobs((jobs) => {
+    for (const w of BrowserWindow.getAllWindows())
+      if (!w.webContents.isDestroyed()) w.webContents.send("summaries:jobs", jobs);
+  });
   ipcMain.handle("settings:comment-to-agent", () => getCommentToAgent(db));
   ipcMain.handle("settings:set-comment-to-agent", (_, toAgent: boolean) =>
     setCommentToAgent(db, toAgent),

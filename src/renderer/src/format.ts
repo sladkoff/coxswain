@@ -26,28 +26,26 @@ export function ago(iso: string) {
 export const workspaceLabel = (w: Workspace) =>
   w.prNumber !== null ? `PR #${w.prNumber}` : `Branch ${w.branch}`;
 
-// The workspace's notes and questions on each file, as the Navigator shows them.
-// Replies, follow-ups and answers are part of their thread, so they don't count.
-export type ItemCount = { notes: number; questions: number };
+// The threads on each file, as the Navigator and a view's table of contents show them: yours (notes, questions) and
+// the agent's (explanations, findings; only with their view, whose entries the canvas has). Replies, follow-ups and
+// answers are part of their thread, so they don't count.
+type ThreadKind = "note" | "question" | "explanation" | "finding";
+export type ItemCount = Record<ThreadKind, number>;
+const threadKinds: ThreadKind[] = ["note", "question", "explanation", "finding"];
 export function countItems(entries: ReviewEntry[]): Map<string, ItemCount> {
   const counts = new Map<string, ItemCount>();
   for (const e of entries) {
     // Only what's about the code on screen (ADR 0015): not outdated entries.
-    if (
-      !e.path ||
-      e.parentId ||
-      e.state !== "current" ||
-      (e.kind !== "note" && e.kind !== "question")
-    )
-      continue;
-    const c = counts.get(e.path) ?? { notes: 0, questions: 0 };
-    if (e.kind === "note") c.notes++;
-    if (e.kind === "question") c.questions++;
+    if (!e.path || e.parentId || e.state !== "current" || e.kind === "answer") continue;
+    const c = counts.get(e.path) ?? { note: 0, question: 0, explanation: 0, finding: 0 };
+    c[e.kind]++;
     counts.set(e.path, c);
   }
   return counts;
 }
+export const threadCount = (c: ItemCount) => threadKinds.reduce((n, k) => n + c[k], 0);
 export const itemsTitle = (c: ItemCount) =>
-  [c.notes && count(c.notes, "note"), c.questions && count(c.questions, "question")]
-    .filter(Boolean)
+  threadKinds
+    .filter((k) => c[k])
+    .map((k) => count(c[k], k))
     .join(", ");

@@ -9,6 +9,7 @@ import { ProblemMessage } from "./components/text";
 import { countItems, type ItemCount, itemsTitle } from "./format";
 import { core } from "./queries";
 import type { PullRequestData } from "./usePullRequest";
+import bubbleUrl from "./assets/message-square.svg?no-inline";
 
 export type NavigatorView = "diffs" | "files";
 
@@ -95,7 +96,7 @@ type TreeProps = {
   changed: ChangedFile[];
   local?: ChangedFile[];
   reviewed: string[];
-  items: Map<string, ItemCount>; // notes and questions per path
+  items: Map<string, ItemCount>; // threads per path
   hidden: string[]; // left out of the tree, e.g. reviewed files
   expanded: boolean;
   flat: boolean; // every file as a top-level row with its full path, no folders
@@ -145,6 +146,7 @@ function Tree({
   const itemsOf = (m: Map<string, ItemCount>) => new Map([...m].map(([p, c]) => [row(p), c]));
   const itemsNow = useRef(itemsOf(items));
   const { model } = useFileTree({
+    unsafeCSS: threadMarkCSS,
     paths: visible,
     gitStatus: changed.map((f) => ({ path: row(f.path), status: f.status })),
     initialExpansion: expanded ? "open" : "closed",
@@ -161,7 +163,7 @@ function Tree({
         ...(reviewed ? [{ text: "\u2003✓ ", color: "#16a34a" }] : []),
         { text: reviewed ? c.lines : `\u2003${c.lines}` },
         ...(c.local ? [{ text: "\u2003●", color: "#d97706" }] : []),
-        ...(i ? [{ text: `\u2003✎ ${i.notes + i.questions}`, color: "#2563eb" }] : []),
+        ...(i ? [{ text: "\u2003", color: threadMark }] : []),
       ];
       const title =
         [reviewed && "Reviewed", c.local && "Local changes", i && itemsTitle(i)]
@@ -176,13 +178,12 @@ function Tree({
       if (file) onOpen(file);
     },
   });
-  const itemsKey = [...items].map(([p, c]) => `${p}:${c.notes}:${c.questions}`).join("\0");
+  const itemsKey = JSON.stringify([...items]);
   useEffect(() => {
     const [reviewedBefore, itemsBefore] = [reviewedNow.current, itemsNow.current];
     reviewedNow.current = new Set(reviewed.map(row));
     itemsNow.current = itemsOf(items);
-    const count = (m: Map<string, ItemCount>, p: string) =>
-      `${m.get(p)?.notes}:${m.get(p)?.questions}`;
+    const count = (m: Map<string, ItemCount>, p: string) => JSON.stringify(m.get(p));
     const toggled = changed
       .map((f) => ({ path: row(f.path), status: f.status }))
       .filter(
@@ -217,3 +218,24 @@ function Tree({
   }, [visibleKey]);
   return <FileTree model={model} className="min-h-0 flex-1" style={{ height: "100%" }} />;
 }
+
+// A file with threads shows a speech bubble, as a view's table of contents does. A row's decoration is text or one
+// icon, not both, so the bubble is drawn by CSS after the text part of this colour (the tree sets it as a style), from
+// a file the app serves: the CSP's img-src doesn't take data: URLs.
+// ponytail: matches the part by its colour; use a decoration icon part if @pierre/trees gets one.
+// The decoration keeps its width and a long name is cut short instead: the tree lets the name take it all, which hid
+// the lines and the bubble of every file with a long name.
+const threadMark = "#8a8a8f";
+const threadMarkCSS = `[data-item-section="decoration"] {
+  flex: 0 0 auto;
+  margin-inline-start: auto;
+}
+span[style*="rgb(138, 138, 143)"]::after {
+  content: "";
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  vertical-align: -1px;
+  background: currentColor;
+  mask: url("${bubbleUrl}") center / contain no-repeat;
+}`;

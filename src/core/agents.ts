@@ -10,7 +10,7 @@ import type { Db } from "./db";
 import { type Commit, worktreePath } from "./git";
 import { snapshotOf } from "./snapshot";
 import { SessionStates } from "./session-state";
-import { viewTools } from "./views";
+import { turnEnded, viewTools } from "./views";
 import { getWorkspaceRepo } from "./workspaces";
 
 // ADR 0018: every agent run is a session over the Agent Client Protocol, in one adapter process per agent.
@@ -68,13 +68,15 @@ export type Permission = {
 };
 
 // session: carry on this agent session. mcp: MCP servers the session gets: coxswain's tools for the agent pane
-// (ADR 0023). picks: the model and effort to set, the user's (agentPicks).
+// (ADR 0023). picks: the model and effort to set, the user's (agentPicks). oneShot: a system prompt for a run with no
+// tools that isn't kept (askOnce).
 type RunOptions = {
   cwd: string;
   prompt: string;
   session?: string;
   mcp?: acp.McpServer[];
   picks?: Picks;
+  oneShot?: string;
 };
 // onPermission resolves with the option picked, or null to cancel. Without it, every request is rejected.
 type RunHandlers = {
@@ -108,13 +110,21 @@ const agents: Record<
       env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", CLAUDE_CODE_EXECUTABLE: claudeOnPath() },
     }),
     // Names checked against the adapter's OPTION_REBUILDS_SESSION (0.81.2).
+    // A one-shot run replaces Claude Code's system prompt, has no tools, doesn't think and isn't kept in its session list.
     meta: (o) => ({
       ...(o.mcp?.length && { systemPrompt: { append: paneContext } }),
+      ...(o.oneShot && { systemPrompt: o.oneShot }),
       claudeCode: {
         options: {
           // Agents the user runs (another Electron app, say) mustn't inherit Electron-as-Node from the adapter.
           env: { ELECTRON_RUN_AS_NODE: "" },
           ...(o.mcp?.length && { allowedTools: ["mcp__coxswain"] }),
+          ...(o.oneShot && {
+            tools: [],
+            strictMcpConfig: true,
+            thinking: { type: "disabled" },
+            persistSession: false,
+          }),
         },
       },
     }),
@@ -152,10 +162,11 @@ const agents: Record<
 const paneContext = `You are running inside coxswain, a desktop app for exploring code, reviewing changes and building features. The user sees
 the diff beside this chat. Messages starting with [Comment on …] or [Review · …] are review comments they sent you from
 the diff: make the change asked for, or answer the question. The mcp__coxswain tools put views on the canvas beside the
-diff (start_view, write_section, remove_section, list_views): a guide through the changes, or a view of one aspect (the data model, a data flow, or
+diff (start_view, write_section, remove_section, list_views, file_summaries): a guide through the changes, or a view of one aspect (the data model, a data flow, or
 anything the user asks to see), in markdown with diagrams, embedded source files and file diffs, even without changes; explanations of lines
 (add_explanation); and, when they ask for a review, findings on lines (add_finding). Use them, and your review skills,
-when the user asks for a guide, a review, or to trace, explain or visualise code, with or without changes.`;
+when the user asks for a guide, a review, or to trace, explain or visualise code, with or without changes. A message
+that starts "For … only (start_view with base … and head …)" is about that part of the changes: pass those to start_view.`;
 
 // PATH as the app got it, like `gh` (a packaged app takes the login shell's, src/main/index.ts).
 export const claudeOnPath = () => onPath("claude", "Claude Code");
@@ -304,9 +315,15 @@ function toolTitle(u: { title: string; name?: string | null }): string {
 // offers.
 const configs = new Map<string, acp.SessionConfigOption[]>();
 const latest = new Map<Agent, acp.SessionConfigOption[]>();
-const configOf = (name: Agent, sessionId: string, config: acp.SessionConfigOption[]) => {
+// A one-shot run's aren't the latest: its model isn't the composer's.
+const configOf = (
+  name: Agent,
+  sessionId: string,
+  config: acp.SessionConfigOption[],
+  isLatest = true,
+) => {
   configs.set(sessionId, config);
-  latest.set(name, config);
+  if (isLatest) latest.set(name, config);
 };
 
 // Opens a session for a run: a new one, or the given one, resumed if this adapter process hasn't got it open. Sets the
@@ -332,20 +349,21 @@ async function openSession(name: Agent, o: RunOptions): Promise<{ a: Adapter; se
     }));
   a.open.add(sessionId);
   config ??= configs.get(sessionId);
-  if (config) configOf(name, sessionId, config);
+  if (config) configOf(name, sessionId, config, !o.oneShot);
   for (const pick of ["model", "effort"] as const) {
     const value = o.picks?.[pick] ?? agents[name].picks[pick];
     const option: acp.SessionConfigOption | undefined = config?.find(
       (c) => c.category === category[pick],
     );
-    if (!value || option?.type !== "select" || option.currentValue === value) continue;
-    if (!choicesOf(option).some((x) => x.value === value)) continue;
+    if (!value || option?.type !== "select") continue;
+    const picked = pickOf(choicesOf(option), value, !!o.oneShot);
+    if (!picked || option.currentValue === picked) continue;
     const set: acp.SetSessionConfigOptionResponse = await a.agent.request(
       acp.methods.agent.session.setConfigOption,
-      { sessionId, configId: option.id, value },
+      { sessionId, configId: option.id, value: picked },
     );
     config = set.configOptions;
-    configOf(name, sessionId, set.configOptions);
+    configOf(name, sessionId, set.configOptions, !o.oneShot);
   }
   await a.agent.request(acp.methods.agent.session.setMode, {
     sessionId,
@@ -355,6 +373,13 @@ async function openSession(name: Agent, o: RunOptions): Promise<{ a: Adapter; se
 }
 
 type Choice = { value: string; name: string };
+// The choice with that value; for a one-shot run also the first whose value has it in it, since Claude Code lists
+// full model IDs ("claude-haiku-4-5") and a summary model is asked for by family ("haiku").
+const pickOf = (choices: Choice[], value: string, byFamily: boolean) =>
+  (
+    choices.find((x) => x.value === value) ??
+    (byFamily ? choices.find((x) => x.value.includes(value)) : undefined)
+  )?.value;
 const choicesOf = (o: acp.SessionConfigOption & { type: "select" }): Choice[] =>
   o.options
     .flatMap((x) => ("options" in x ? x.options : [x]))
@@ -397,6 +422,70 @@ export async function run(name: Agent, o: RunOptions, handlers: RunHandlers = {}
   } finally {
     listening.delete(sessionId);
     for (const p of pending.values()) if (p.sessionId === sessionId) p.resolve(null);
+  }
+}
+
+// ADR 0029: one run of a file summary job, in a session of its own that's closed after: no tools or MCP servers, and
+// instructions in place of Claude Code's system prompt (Codex keeps its own, with the pane's). model: "" the agent's
+// default. Resolves with the reply's text and the model it ran on, by the agent's name for it. Rejects with fatal set
+// when trying again can't help: the agent isn't installed, or doesn't offer the model.
+export async function askOnce(
+  name: Agent,
+  o: { cwd: string; prompt: string; model: string; instructions: string; signal: AbortSignal },
+): Promise<{ text: string; model: string | null }> {
+  const fatal = (message: string) => Object.assign(new Error(message), { fatal: true });
+  let opened: Awaited<ReturnType<typeof openSession>>;
+  try {
+    opened = await openSession(name, {
+      cwd: o.cwd,
+      prompt: o.prompt,
+      oneShot: o.instructions,
+      picks: o.model ? { model: o.model } : {},
+    });
+  } catch (e) {
+    const message = (e as Error).message;
+    throw /not installed or not on PATH/.test(message) ? fatal(message) : e;
+  }
+  const { a, sessionId } = opened;
+  let text = "";
+  try {
+    const option = configs.get(sessionId)?.find((c) => c.category === category.model);
+    const choices = option?.type === "select" ? choicesOf(option) : [];
+    if (o.model && choices.length && !pickOf(choices, o.model, true))
+      throw fatal(
+        `${name} has no model "${o.model}" (it has ${choices.map((c) => c.value).join(", ")}); pick another in Settings`,
+      );
+    const ranOn =
+      option?.type === "select"
+        ? (choices.find((c) => c.value === option.currentValue)?.name ??
+          String(option.currentValue))
+        : null;
+    listening.set(sessionId, {
+      update: (u) => {
+        if (u.sessionUpdate === "agent_message_chunk" && u.content.type === "text")
+          text += u.content.text;
+      },
+      handlers: {},
+    });
+    const stop = () => void cancel(name, sessionId);
+    if (o.signal.aborted) stop();
+    o.signal.addEventListener("abort", stop, { once: true });
+    try {
+      const { stopReason } = await a.agent.request(acp.methods.agent.session.prompt, {
+        sessionId,
+        prompt: [{ type: "text", text: o.prompt }],
+      });
+      if (stopReason === "cancelled") throw new Error("Stopped");
+      if (stopReason === "refusal") throw new Error(`${name} refused`);
+    } finally {
+      o.signal.removeEventListener("abort", stop);
+    }
+    return { text, model: ranOn };
+  } finally {
+    listening.delete(sessionId);
+    configs.delete(sessionId);
+    a.open.delete(sessionId);
+    a.agent.request(acp.methods.agent.session.close, { sessionId }).catch(() => {});
   }
 }
 
@@ -448,10 +537,13 @@ export async function stopAgents() {
 
 // An MCP tool coxswain serves. call returns the tool's text for the agent; throwing makes it an error the agent reads.
 // Arguments are checked against inputSchema before call.
+// annotations: MCP's hints. Codex has its auto-review look at every call to a tool that isn't read-only, or that may be
+// destructive or reach outside (open world), about 2.5 s each; coxswain's tools say what they do.
 export type McpTool = {
   name: string;
   description: string;
   inputSchema: object;
+  annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean; openWorldHint?: boolean };
   call: (args: never) => Promise<string>;
 };
 
@@ -506,10 +598,11 @@ function toolServer(): Promise<Server> {
       if (msg.method === "tools/list")
         return reply({
           result: {
-            tools: tools.map(({ name, description, inputSchema }) => ({
+            tools: tools.map(({ name, description, inputSchema, annotations }) => ({
               name,
               description,
               inputSchema,
+              ...(annotations && { annotations }),
             })),
           },
         });
@@ -804,6 +897,7 @@ export async function runTurn(
         streaming,
       );
     } finally {
+      turnEnded(workspaceId);
       const after = before && (await snapshotOf(cwd).catch(() => null));
       if (after && after !== before)
         await db

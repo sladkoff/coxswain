@@ -9,6 +9,7 @@ Object.defineProperty(globalThis, "window", {
   value: {
     coxswain: {
       onChanged: () => () => {},
+      onSummaryJobs: () => () => {},
       onAgentState: (callback: typeof onState) => {
         onState = callback;
       },

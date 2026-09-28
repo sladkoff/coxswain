@@ -1,11 +1,16 @@
+import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import type { CurrentUser } from "../../core/github";
-import { Button } from "./components/button";
+import type { SummarySettings } from "../../core/summaries";
+import { Button, SegmentedControl } from "./components/button";
+import { ChevronDownIcon } from "./components/icons";
 import { Card, Screen } from "./components/layout";
-import { muted } from "./components/styles";
-import { ProblemMessage } from "./components/text";
+import { cn, muted } from "./components/styles";
+import { ErrorText, ProblemMessage } from "./components/text";
+import { core, queryClient } from "./queries";
 
-export function Settings({ onClose }: { onClose: () => void }) {
+// workspaceId: the one on screen, whose worktree an agent is asked in for its models.
+export function Settings({ onClose, workspaceId }: { onClose: () => void; workspaceId?: number }) {
   const [user, setUser] = useState<CurrentUser | null>(null);
   const check = () => {
     setUser(null);
@@ -36,10 +41,100 @@ export function Settings({ onClose }: { onClose: () => void }) {
           </>
         )}
       </Card>
+      <h2 className="mt-6 mb-3 font-medium">File summaries</h2>
+      <Summaries workspaceId={workspaceId} />
       <h2 className="mt-6 mb-3 font-medium">About</h2>
       <Card className="select-text">
         coxswain {__VERSION__} <span className={muted}>· {__COMMIT__}</span>
       </Card>
     </Screen>
+  );
+}
+
+// ADR 0029: the summary agent and model, and whether to summarise ahead. The model is picked from what the agent
+// offers, asked in the workspace on screen; without one, only its default can be picked.
+function Summaries({ workspaceId }: { workspaceId?: number }) {
+  const settings = useQuery(core("getSummarySettings")).data;
+  const picks = useQuery({
+    ...core("listAgentPicks", workspaceId ?? 0, settings?.agent ?? "claude"),
+    enabled: !!settings && workspaceId !== undefined,
+  });
+  const [error, setError] = useState<string | null>(null);
+  if (!settings) return <Card className={muted}>Loading…</Card>;
+  const save = async (s: Partial<SummarySettings>) => {
+    setError(null);
+    try {
+      await window.coxswain.setSummarySettings(s);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+    await queryClient.invalidateQueries({ queryKey: core("getSummarySettings").queryKey });
+  };
+  const choices = [
+    { value: "", name: "The agent's default" },
+    ...(picks.data?.model?.choices.filter((c) => c.value !== "default") ?? []),
+  ];
+  const model = choices.find((c) => c.value === settings.model)?.name ?? settings.model;
+  return (
+    <Card className="flex flex-col gap-3">
+      <p className={muted}>
+        A small model sums up each changed file in a sentence or two, so the agent can plan a view
+        without reading every diff first. Activity, at the top right, shows it working.
+      </p>
+      <div className="flex items-center gap-3">
+        <span className="w-24 shrink-0">Agent</span>
+        <SegmentedControl
+          value={settings.agent}
+          // Each agent keeps its own model; the core reads it back.
+          onChange={(agent) => save({ agent })}
+          options={[
+            { value: "claude", label: "Claude Code" },
+            { value: "codex", label: "Codex" },
+          ]}
+        />
+      </div>
+      <div className="flex items-center gap-3">
+        <span className="w-24 shrink-0">Model</span>
+        <Button
+          className="flex items-center gap-1"
+          disabled={workspaceId === undefined || picks.isFetching}
+          title={
+            workspaceId === undefined ? "Open a workspace to see the agent's models" : undefined
+          }
+          onClick={async () => {
+            const i = await window.coxswain.showPickMenu(
+              choices.map((c) => c.name),
+              choices.findIndex((c) => c.value === settings.model),
+            );
+            await save({ model: choices[i].value });
+          }}
+        >
+          {model || "The agent's default"} <ChevronDownIcon />
+        </Button>
+        {picks.isFetching && <span className={muted}>Asking the agent…</span>}
+      </div>
+      <div className="flex items-center gap-3">
+        <span className="w-24 shrink-0">Summarise</span>
+        <SegmentedControl
+          value={settings.ahead}
+          onChange={(ahead) => save({ ahead })}
+          options={[
+            {
+              value: true,
+              label: "Ahead",
+              title: "When a workspace opens or its commits move on, and for views",
+            },
+            { value: false, label: "Only for views", title: "When the agent starts a view" },
+          ]}
+        />
+      </div>
+      <p className={cn("text-xs", muted)}>
+        Ahead summarises a workspace's commits as soon as it opens, so views of big changes start
+        faster; uncommitted changes wait for a view. It spends model calls on workspaces that may
+        never get one.
+      </p>
+      {picks.isError && <ErrorText>Couldn't ask the agent for its models.</ErrorText>}
+      {error && <ErrorText>{error}</ErrorText>}
+    </Card>
   );
 }
