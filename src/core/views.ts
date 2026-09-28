@@ -626,7 +626,7 @@ export function viewTools(db: Db, workspaceId: number): McpTool[] {
           );
           const left = changed.filter((p) => !all.has(p));
           return left.length
-            ? `${saved} ${left.length} files in no section yet: ${left.join(", ")}`
+            ? `${saved} ${left.length} files in no section yet: ${left.slice(0, 10).join(", ")}${left.length > 10 ? `, and ${left.length - 10} more` : ""}`
             : `${saved} Every changed file is in a section.`;
         }),
     },
