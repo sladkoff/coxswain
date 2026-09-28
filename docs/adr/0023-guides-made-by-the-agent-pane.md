@@ -26,7 +26,10 @@ the agent's own thoughts. Reviewing is opt-in.
    - `write_section`: appends a section of markdown to a view, or replaces one. What a view holds is in
      [ADR 0026](0026-views-in-markdown-with-mermaid.md); embedded diff paths are checked against the changed files and source paths against the snapshot,
      and a file is embedded once.
-   - `remove_section`: removes a section from a view.
+   - `remove_section`: removes a section from a view. It and `write_section` change a view one at a time
+     ([ADR 0029](0029-file-summaries-and-activity.md)).
+   - `file_summaries`: the file summaries of a view's changed files, which `start_view` lists too
+     ([ADR 0029](0029-file-summaries-and-activity.md)); it can wait for those being written.
    - `list_views`: the workspace's views, with their ids, titles, ranges and section headings.
    - `add_explanation`: an explanation (glossary) on lines of the view's range.
    - `add_finding`: a finding (glossary) on lines, the agent's own concern or suggestion. Its description says to use

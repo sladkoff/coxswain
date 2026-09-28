@@ -287,7 +287,7 @@ async function catchUp(path: string, upstream: string, moved: string): Promise<s
   return behind && dirty ? `${moved}; not updated because of local changes` : null;
 }
 
-async function openedWorktree(db: Db, workspaceId: number): Promise<string> {
+export async function openedWorktree(db: Db, workspaceId: number): Promise<string> {
   const w = await getWorkspaceRepo(db, workspaceId);
   const path = worktreePath(w.owner, w.name, w);
   if (!existsSync(join(path, ".git"))) throw new GitError("The worktree is not ready yet");
@@ -504,6 +504,25 @@ export function listWorktreeFiles(db: Db, workspaceId: number): Promise<FileTree
     const paths = out.split("\0").filter((p) => p && existsSync(join(path, p)));
     return { status: "ok" as const, paths };
   });
+}
+
+// The worktree's HEAD commit: its committed changes, without the uncommitted ones.
+export async function headCommit(db: Db, workspaceId: number): Promise<string> {
+  return (await gitText(await openedWorktree(db, workspaceId), ["rev-parse", "HEAD"])).trim();
+}
+
+// One changed file's diff between two commits, as `git diff` prints it; a rename names both paths so it's found.
+export async function readFileDiff(
+  db: Db,
+  workspaceId: number,
+  base: string,
+  head: string,
+  file: Pick<ChangedFile, "path" | "previousPath">,
+): Promise<string> {
+  if (!isCommit(base)) throw new GitError(`Not a commit: ${base}`);
+  if (!isCommit(head)) throw new GitError(`Not a commit: ${head}`);
+  const paths = file.previousPath ? [file.previousPath, file.path] : [file.path];
+  return gitText(await openedWorktree(db, workspaceId), ["diff", "-M", base, head, "--", ...paths]);
 }
 
 // Blob paths at a pinned revision, including unchanged files; excludes directories and submodule commits.

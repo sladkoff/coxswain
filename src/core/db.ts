@@ -113,6 +113,17 @@ export const migrations = [
     title text not null,
     created_at text not null
   )`,
+  // ADR 0029: file summaries, one per fingerprint of a file diff's contents (ADR 0014). model: what wrote it,
+  // "coxswain" for those written without a model (lockfiles, deletions, binary files).
+  `create table file_summaries (
+    workspace_id integer not null references workspaces (id) on delete cascade,
+    path text not null,
+    fingerprint text not null,
+    summary text not null,
+    model text not null,
+    created_at text not null,
+    primary key (workspace_id, path, fingerprint)
+  )`,
 ];
 
 // ADR 0016: the tables as the migrations above leave them. Change this with every migration that changes a table.
@@ -144,6 +155,14 @@ type Tables = {
     title: string | null;
   };
   reviewed_files: { workspace_id: number; path: string; fingerprint: string };
+  file_summaries: {
+    workspace_id: number;
+    path: string;
+    fingerprint: string;
+    summary: string;
+    model: string;
+    created_at: string;
+  };
   views: {
     id: Generated<number>;
     workspace_id: number;

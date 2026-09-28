@@ -3,6 +3,37 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-28 — File summaries and Activity
+
+Issue #36, for G3 ([ADR 0029](adr/0029-file-summaries-and-activity.md), [UX](UX.md) Activity).
+
+- **File summaries are back, for the agent.** A small model (Settings > _File summaries_: Claude Code or Codex, and a
+  model; Haiku by default, matched by family to Claude Code's model IDs) sums up each changed file. They're stored in
+  `file_summaries` (migration 5) by file diff fingerprint, so a changed file diff is summarised again and an unchanged
+  one never is. Lockfiles, deletions, pure renames and binary files are summarised by coxswain without a model call.
+- **Summary jobs** run ahead when a workspace's worktree is opened or checked again and after each agent turn (merge
+  base → HEAD, committed changes only), and for each view `start_view` starts (its snapshot, uncommitted changes
+  included). Batches as the old pipeline had them, at most 6 one-shot runs at once (`askOnce`: no tools, own system
+  prompt, no thinking, session closed after), JSON answers checked in the core, two retries with backoff, files left
+  out asked for one by one. A failure retrying can't fix (no such model, agent missing) stops the job after one run,
+  and summarising ahead then waits for the settings to change.
+- **The agent gets them:** `start_view` lists each file with its summary (or _being written_ / _no summary_), the new
+  `file_summaries` tool fetches them and can wait, and the guide instructions say to plan from them and read a diff
+  before writing about a file.
+- **Activity** at the canvas bar's right: turns while a job runs, a red dot after a failure, and a list of jobs with
+  progress (red when failed), reuse, model, runs, range, files in flight, the last error and Stop. The main process
+  logs each finished job.
+- **Paid off:** `write_section` and `remove_section` no longer lose sections written at once; they change a view one
+  at a time.
+- Tests: `summaries.test.ts` runs jobs against a real repository with a fake summary agent (retries, files left out,
+  reuse, the view tools, sections written at once, a fatal failure). `pnpm typecheck`, `pnpm test` (15 tests),
+  `pnpm lint`, `pnpm format` and `pnpm build` pass. Seen in the running dev app on #5311: Activity showed the jobs and
+  their errors, which caught `haiku` not matching Claude Code's `claude-haiku-4-5`; the family match that fixes it
+  hasn't been seen running yet.
+- `ponytail:` batch sizes and parallelism are fixed, from #5311; lockfiles are recognised by name only; summaries of
+  file diffs no range has any more are never pruned; jobs are kept in memory only.
+- Not measured yet: how much faster a guide to #5311 gets. Worth timing once summaries have run ahead.
+
 ## 2026-09-28 — Workspace and session continuity
 
 Issue #29, for G3 and G5 (ADRs 0017, 0018, 0025, 0026).

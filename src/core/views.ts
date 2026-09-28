@@ -9,6 +9,7 @@ import {
   readTexts,
   snapshot,
 } from "./git.ts";
+import { fileSummaries, summarise } from "./summaries.ts";
 
 // ADR 0023, 0026: a view (glossary) is made by the agent pane's session with the tools below. It's pinned to base →
 // head, the merge base → a snapshot of the worktree when it was started (ADR 0028), and holds sections of markdown; its explanations and findings
@@ -158,7 +159,8 @@ Each path can be embedded once, as either a file or a diff. Views can contain on
 Write a sentence or two before an embedded file or diff saying what to look at in it.`;
 
 const howToGuide = `How to make the guide:
-- Read the diffs, and the code around them where it helps.
+- Plan the sections from the file summaries above rather than reading every diff first; get those still being written
+  with file_summaries. Then read the diffs, and the code around them where it helps, before you write about a file.
 - Sort the changed files into sections, each about one theme (a feature, a refactor, tests, configuration, ...), in
   the order a reviewer should read them: the core change first, supporting changes after, files made by a tool last.
   Give each section a short heading, one to three sentences saying what the reviewer is looking at and what to check,
@@ -185,6 +187,54 @@ async function changedFiles(
   if (listed.status !== "ok") throw new Error(listed.message);
   return listed.files;
 }
+
+// write_section and remove_section change a view one at a time, each on the view as the one before left it: two
+// sessions or subagents writing at once would otherwise both start from the same sections, and the last write would win.
+const changing = new Map<number, Promise<unknown>>();
+async function changeView<T>(
+  db: Db,
+  workspaceId: number,
+  id: number | undefined,
+  change: (view: Awaited<ReturnType<typeof toolView>>) => Promise<T>,
+): Promise<T> {
+  const viewId = (await toolView(db, workspaceId, id)).id;
+  const next = (changing.get(viewId) ?? Promise.resolve())
+    .catch(() => {})
+    .then(async () => change(await toolView(db, workspaceId, viewId)));
+  changing.set(viewId, next);
+  try {
+    return await next;
+  } finally {
+    if (changing.get(viewId) === next) changing.delete(viewId);
+  }
+}
+
+// The files' summaries (ADR 0029) as lines for the agent: each file's, or why there's none.
+async function summaryLines(
+  db: Db,
+  workspaceId: number,
+  view: Pick<View, "base" | "head">,
+  files: ChangedFile[],
+  wait = 0,
+): Promise<Map<string, string>> {
+  const summaries = await fileSummaries(
+    db,
+    workspaceId,
+    view.base,
+    view.head,
+    files.map((f) => f.path),
+    wait,
+  );
+  return new Map(
+    summaries.map((s) => [
+      s.path,
+      s.summary ??
+        (s.state === "pending" ? "(summary being written)" : "(no summary: read its diff)"),
+    ]),
+  );
+}
+const aboutSummaries =
+  "File summaries are written ahead by a small model from each diff alone: use them to plan and to pick which diffs to read, not as facts to repeat. Those still being written come with file_summaries.";
 
 // The view a tool writes to: the one with the id given, or the workspace's latest.
 async function toolView(db: Db, workspaceId: number, id: number | undefined) {
@@ -326,15 +376,19 @@ export function viewTools(db: Db, workspaceId: number): McpTool[] {
           .returning("id")
           .executeTakeFirstOrThrow();
         tell(workspaceId);
+        // ADR 0029: what has no summary yet starts being summarised now; what's ready is listed with each file.
+        await summarise(db, workspaceId, at.mergeBase, head, "view");
+        const summaries = await summaryLines(db, workspaceId, { base: at.mergeBase, head }, files);
         const listed = files.map(
           (f) =>
-            `${f.status} +${f.additions} -${f.deletions} ${f.previousPath ? `${f.previousPath} -> ` : ""}${f.path}`,
+            `${f.status} +${f.additions} -${f.deletions} ${f.previousPath ? `${f.previousPath} -> ` : ""}${f.path}: ${summaries.get(f.path)}`,
         );
         return [
           `View ${id} started; the other tools write to it when given view: ${id}, or to the latest view without it. It's pinned to ${at.mergeBase} (the merge base) → ${head} (the worktree as it is now, uncommitted changes included, as a commit).`,
           `Read a diff with \`git diff ${at.mergeBase} ${head} -- <path>\`. Line numbers are the file's at the head (side "new") or, for removed lines, at the base (side "old").`,
           `Read a source file with \`git show ${head}:<path>\`; list available files with \`git ls-tree -r --name-only ${head}\`. Source-file line annotations use side "new".`,
-          `Changed files (status, lines added and removed, path):\n${listed.join("\n") || "None. You can still explain existing code with source files, prose and diagrams."}`,
+          `Changed files (status, lines added and removed, path: file summary):\n${listed.join("\n") || "None. You can still explain existing code with source files, prose and diagrams."}`,
+          ...(files.length ? [aboutSummaries] : []),
           howToView,
           v.guide ? howToGuide : howToOther,
         ].join("\n\n");
@@ -356,58 +410,58 @@ export function viewTools(db: Db, workspaceId: number): McpTool[] {
         },
         required: ["markdown"],
       },
-      call: async (a: { markdown: string; number?: number; view?: number }) => {
-        const view = await toolView(db, workspaceId, a.view);
-        const markdown = a.markdown.trim();
-        if (!/^## \S/.test(markdown)) throw new Error('A section starts with a "## " heading');
-        const at = a.number === undefined ? view.markdown.length : a.number - 1;
-        if (at < 0 || at > view.markdown.length - (a.number === undefined ? 0 : 1))
-          throw new Error(`The view has ${view.markdown.length} sections`);
-        const changed = (await changedFiles(db, view)).map((f) => f.path);
-        const others = embedded(view.sections.filter((_, i) => i !== at));
-        const mine = embedded([parseSection(markdown)]);
-        const files = mine.some((p) => p.kind === "file")
-          ? await listFilesAt(db, workspaceId, view.head)
-          : [];
-        for (const [i, p] of mine.entries()) {
-          if (!(p.kind === "diff" ? changed : files).includes(p.path))
-            throw new Error(
-              p.kind === "diff"
-                ? `${p.path} isn't changed in the view's range`
-                : `${p.path} isn't a file at the view's snapshot`,
-            );
-          if (
-            others.some((o) => o.path === p.path) ||
-            mine.slice(0, i).some((o) => o.path === p.path)
-          )
-            throw new Error(`${p.path} is already embedded in the view`);
-          if (view.guide && p.kind === "file" && changed.includes(p.path))
-            throw new Error(
-              `${p.path} is changed; embed its diff in a guide, or use a non-guide view for source files`,
-            );
-        }
-        const errors = (await checkDiagrams(diagrams(markdown))).flatMap((e, i) =>
-          e ? [`Diagram ${i + 1} doesn't draw: ${e}`] : [],
-        );
-        if (errors.length)
-          throw new Error(`${errors.join("\n")}\nFix it and write the section again.`);
-        const sections = view.markdown.toSpliced(at, a.number === undefined ? 0 : 1, markdown);
-        await db
-          .updateTable("views")
-          .set({ sections: JSON.stringify(sections) })
-          .where("id", "=", view.id)
-          .execute();
-        tell(workspaceId);
-        const done = `Section ${at + 1} of view ${view.id} ${a.number === undefined ? "added" : "replaced"}.`;
-        if (!view.guide) return done;
-        const all = new Set(
-          [...others, ...mine].filter((p) => p.kind === "diff").map((p) => p.path),
-        );
-        const left = changed.filter((p) => !all.has(p));
-        return left.length
-          ? `${done} ${left.length} files in no section yet: ${left.join(", ")}`
-          : `${done} Every changed file is in a section.`;
-      },
+      call: (a: { markdown: string; number?: number; view?: number }) =>
+        changeView(db, workspaceId, a.view, async (view) => {
+          const markdown = a.markdown.trim();
+          if (!/^## \S/.test(markdown)) throw new Error('A section starts with a "## " heading');
+          const at = a.number === undefined ? view.markdown.length : a.number - 1;
+          if (at < 0 || at > view.markdown.length - (a.number === undefined ? 0 : 1))
+            throw new Error(`The view has ${view.markdown.length} sections`);
+          const changed = (await changedFiles(db, view)).map((f) => f.path);
+          const others = embedded(view.sections.filter((_, i) => i !== at));
+          const mine = embedded([parseSection(markdown)]);
+          const files = mine.some((p) => p.kind === "file")
+            ? await listFilesAt(db, workspaceId, view.head)
+            : [];
+          for (const [i, p] of mine.entries()) {
+            if (!(p.kind === "diff" ? changed : files).includes(p.path))
+              throw new Error(
+                p.kind === "diff"
+                  ? `${p.path} isn't changed in the view's range`
+                  : `${p.path} isn't a file at the view's snapshot`,
+              );
+            if (
+              others.some((o) => o.path === p.path) ||
+              mine.slice(0, i).some((o) => o.path === p.path)
+            )
+              throw new Error(`${p.path} is already embedded in the view`);
+            if (view.guide && p.kind === "file" && changed.includes(p.path))
+              throw new Error(
+                `${p.path} is changed; embed its diff in a guide, or use a non-guide view for source files`,
+              );
+          }
+          const errors = (await checkDiagrams(diagrams(markdown))).flatMap((e, i) =>
+            e ? [`Diagram ${i + 1} doesn't draw: ${e}`] : [],
+          );
+          if (errors.length)
+            throw new Error(`${errors.join("\n")}\nFix it and write the section again.`);
+          const sections = view.markdown.toSpliced(at, a.number === undefined ? 0 : 1, markdown);
+          await db
+            .updateTable("views")
+            .set({ sections: JSON.stringify(sections) })
+            .where("id", "=", view.id)
+            .execute();
+          tell(workspaceId);
+          const done = `Section ${at + 1} of view ${view.id} ${a.number === undefined ? "added" : "replaced"}.`;
+          if (!view.guide) return done;
+          const all = new Set(
+            [...others, ...mine].filter((p) => p.kind === "diff").map((p) => p.path),
+          );
+          const left = changed.filter((p) => !all.has(p));
+          return left.length
+            ? `${done} ${left.length} files in no section yet: ${left.join(", ")}`
+            : `${done} Every changed file is in a section.`;
+        }),
     },
     {
       name: "remove_section",
@@ -418,17 +472,52 @@ export function viewTools(db: Db, workspaceId: number): McpTool[] {
         properties: { number: { type: "integer" }, ...viewArg },
         required: ["number"],
       },
-      call: async (a: { number: number; view?: number }) => {
+      call: (a: { number: number; view?: number }) =>
+        changeView(db, workspaceId, a.view, async (view) => {
+          if (a.number < 1 || a.number > view.markdown.length)
+            throw new Error(`The view has ${view.markdown.length} sections`);
+          await db
+            .updateTable("views")
+            .set({ sections: JSON.stringify(view.markdown.toSpliced(a.number - 1, 1)) })
+            .where("id", "=", view.id)
+            .execute();
+          tell(workspaceId);
+          return `Section ${a.number} of view ${view.id} removed; it has ${view.markdown.length - 1} left.`;
+        }),
+    },
+    {
+      name: "file_summaries",
+      description:
+        "The file summaries of a view's changed files (the latest view unless view is given): a sentence or two on what changed in each, written ahead by a small model from its diff alone. Use them to plan a view and to pick which diffs to read. Summaries missing are started again; wait gives those being written up to that many seconds.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          paths: {
+            type: "array",
+            items: { type: "string" },
+            description: "Changed files to get; leave out for all",
+          },
+          wait: {
+            type: "integer",
+            description: "Seconds to wait for summaries being written, up to 120",
+          },
+          ...viewArg,
+        },
+      },
+      call: async (a: { paths?: string[]; wait?: number; view?: number }) => {
         const view = await toolView(db, workspaceId, a.view);
-        if (a.number < 1 || a.number > view.markdown.length)
-          throw new Error(`The view has ${view.markdown.length} sections`);
-        await db
-          .updateTable("views")
-          .set({ sections: JSON.stringify(view.markdown.toSpliced(a.number - 1, 1)) })
-          .where("id", "=", view.id)
-          .execute();
-        tell(workspaceId);
-        return `Section ${a.number} of view ${view.id} removed; it has ${view.markdown.length - 1} left.`;
+        const changed = await changedFiles(db, view);
+        const unknown = (a.paths ?? []).filter((p) => !changed.some((f) => f.path === p));
+        if (unknown.length)
+          throw new Error(`Not changed in the view's range: ${unknown.join(", ")}`);
+        const files = a.paths ? changed.filter((f) => a.paths!.includes(f.path)) : changed;
+        if (!files.length) return "The view has no changed files.";
+        await summarise(db, workspaceId, view.base, view.head, "view");
+        const wait = Math.min(Math.max(a.wait ?? 0, 0), 120) * 1000;
+        const lines = await summaryLines(db, workspaceId, view, files, wait);
+        return [...files.map((f) => `${f.path}: ${lines.get(f.path)}`), "", aboutSummaries].join(
+          "\n",
+        );
       },
     },
     {

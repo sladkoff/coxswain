@@ -1,5 +1,6 @@
 import type { Commit } from "../../core/git";
 import type { View } from "../../core/views";
+import { Activity } from "./Activity";
 import { Button, SegmentedControl, ToggleButton } from "./components/button";
 import {
   ChevronDownIcon,
@@ -69,6 +70,7 @@ type Props = {
   onNewView: () => void;
   onOpenQuickly: () => void;
   onViewOptions: () => void;
+  onSettings: () => void;
   canBack: boolean;
   canForward: boolean;
   onBack: () => void;
@@ -76,7 +78,7 @@ type Props = {
 };
 
 // The canvas's bar: what the canvas shows on the left (Diff with its range, a chip per view, New View), then Back,
-// Forward, Open Quickly and the display options. Showing or switching the left pane is the pane's own bar; while it's
+// Forward, Open Quickly, the display options and Activity. Showing or switching the left pane is the pane's own bar; while it's
 // hidden, a button here shows it. It also drags the window, so it lines up with the agent pane's.
 export function CanvasBar(props: Props) {
   const titles = viewTitles(props.views);
@@ -209,6 +211,7 @@ export function CanvasBar(props: Props) {
       >
         <SlidersIcon />
       </Button>
+      <Activity onSettings={props.onSettings} />
     </div>
   );
 }

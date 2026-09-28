@@ -158,13 +158,16 @@ export function Centered({ children }: { children: ReactNode }) {
   );
 }
 
+// failed: it won't get further; shown full, in red.
 export function ProgressBar({
   value,
   max,
+  failed,
   className,
 }: {
   value: number;
   max: number;
+  failed?: boolean;
   className?: string;
 }) {
   return (
@@ -174,7 +177,10 @@ export function ProgressBar({
         className,
       )}
     >
-      <div className="h-full bg-green-600" style={{ width: `${max ? (value / max) * 100 : 0}%` }} />
+      <div
+        className={cn("h-full", failed ? "bg-red-500" : "bg-green-600")}
+        style={{ width: `${failed ? 100 : max ? (value / max) * 100 : 0}%` }}
+      />
     </div>
   );
 }

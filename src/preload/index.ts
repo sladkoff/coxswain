@@ -32,6 +32,7 @@ import type { NewEntry, ReviewEntry } from "../core/review";
 import type { SetupCheck } from "../core/setup";
 import type { Workspace } from "../core/workspaces";
 import type { SessionState } from "../core/session-state";
+import type { SummaryJob, SummarySettings } from "../core/summaries";
 
 // The Navigator's settings in its cog menu. layout: changed files as a tree or as a flat list.
 // The canvas bar's settings in its cog menu. showReviewed: reviewed file diffs stay in the Navigator and on the canvas.
@@ -208,6 +209,17 @@ const api = {
     ipcRenderer.invoke("views:list", workspaceId),
   // Removes a view with its explanations and findings.
   removeView: (viewId: number): Promise<void> => ipcRenderer.invoke("views:remove", viewId),
+  // ADR 0029: the file summary jobs Activity shows, newest first, and how they change.
+  listSummaryJobs: (): Promise<SummaryJob[]> => ipcRenderer.invoke("summaries:jobs"),
+  onSummaryJobs: (callback: (jobs: SummaryJob[]) => void) => {
+    const listener = (_: unknown, jobs: SummaryJob[]) => callback(jobs);
+    ipcRenderer.on("summaries:jobs", listener);
+    return () => void ipcRenderer.off("summaries:jobs", listener);
+  },
+  stopSummaryJob: (id: number): Promise<void> => ipcRenderer.invoke("summaries:stop", id),
+  getSummarySettings: (): Promise<SummarySettings> => ipcRenderer.invoke("summaries:settings"),
+  setSummarySettings: (s: Partial<SummarySettings>): Promise<void> =>
+    ipcRenderer.invoke("summaries:set-settings", s),
   // The composer's Comment/Agent toggle, kept for every comment box.
   getCommentToAgent: (): Promise<boolean> => ipcRenderer.invoke("settings:comment-to-agent"),
   setCommentToAgent: (toAgent: boolean): Promise<void> =>

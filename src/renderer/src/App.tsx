@@ -741,7 +741,7 @@ export function App() {
   if (!setup.data) return null; // local and quick, like the projects below
   if (setup.data.problems.length)
     return <Setup check={setup.data} onRetry={() => void setup.refetch()} />;
-  if (screen === "settings") return <Settings onClose={close} />;
+  if (screen === "settings") return <Settings onClose={close} workspaceId={currentWorkspace?.id} />;
   // Projects and New workspace are dialogs over the screen below them.
   const dialog =
     screen === "projects" ? (
@@ -911,6 +911,7 @@ export function App() {
                 canForward={canForward}
                 onBack={() => run("back")}
                 onForward={() => run("forward")}
+                onSettings={() => setScreen("settings")}
                 onViewOptions={async () =>
                   setViewSettings(await window.coxswain.showViewMenu(viewSettings))
                 }

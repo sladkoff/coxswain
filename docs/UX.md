@@ -10,11 +10,12 @@ right. The canvas is one explorer that both the agent and the human annotate; fo
 workspace's file diffs, with the Navigator (L2) or the commits pane on its left. The top bar follows the columns: over
 the left pane, its own bar (hide it, and _Changes_ · _Files_ · _Commits_ to switch it); over the canvas, what the canvas
 shows — _Diff_ with its range, a chip per view, a dashed _New View_ chip — then Back and Forward chevrons, a magnifier
-(Open Quickly) and the display options (sliders). A bar at its bottom sums up the review.
+(Open Quickly), the display options (sliders) and Activity (a pulse icon; see below). A bar at its bottom sums up the
+review.
 
 ```
 ┌────┬─────────────────────────┬──────────────────────────────────────────┐
-│    │ Fix auth · Codex [New▾] │▣ Changes|Files|Comm…│Diff·All▾ Guide [+]⚌│
+│    │ Fix auth · Codex [New▾] │▣ Changes|Files|Comm…│Diff·All▾ Guide[+]⚌∿│
 │ L1 ├─────────────────────────┼─────────────────────┼────────────────────┤
 │    │ L4 Agent pane           │ L2 Navigator        │ L3 Canvas          │
 │ P  │                         │ or Commits          │                    │
@@ -27,6 +28,19 @@ shows — _Diff_ with its range, a chip per view, a dashed _New View_ chip — t
 └────┴─────────────────────────┴──────────────────────────────────────────┘
           ⌘K overlays the canvas; existing diagrams stay in place
 ```
+
+## Activity
+
+The last button in the canvas bar shows what coxswain does in the background: for now summary jobs (glossary,
+[ADR 0029](adr/0029-file-summaries-and-activity.md)). It's a pulse icon, a turning ring while a job runs, with a red
+dot when one failed since the list was last opened. Clicking it opens the list under it, newest first, jobs of every
+workspace: _Summarising_, _Summarised_, _Failed_ or _Stopped_, the workspace, _ahead_ or _for a view_, how long it took
+and when; a progress bar (full and red once failed); files that had a summary, were summarised and failed; the agent,
+the model it ran on, runs and range; the files being summarised now; the last error; and Stop while it runs. Its header
+names the summary agent and model, with _Settings…_. Esc or a click outside closes it.
+
+Settings has _File summaries_: the agent (_Claude Code_ · _Codex_), the model (a native menu of what the agent offers,
+asked in the workspace on screen; greyed out without one) and _Summarise_: _Ahead_ or _Only for views_.
 
 ## Before the main screen
 

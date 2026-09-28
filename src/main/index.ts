@@ -15,6 +15,7 @@ import {
   type Agent,
   agentSessionWorkspace,
   answerPermission,
+  askOnce,
   listAgentPicks,
   listTurns,
   listAgentSessions,
@@ -72,6 +73,16 @@ import {
   stopQuestion,
 } from "../core/review";
 import { listReviewed, setReviewed } from "../core/reviewed";
+import {
+  getSummarySettings,
+  listSummaryJobs,
+  onSummaryJobs,
+  setSummaryRunner,
+  setSummarySettings,
+  stopSummaryJob,
+  summariseAhead,
+  type SummarySettings,
+} from "../core/summaries";
 import { checkSetup } from "../core/setup";
 import type { Changed, RangePick, ViewSettings } from "../preload";
 import {
@@ -276,7 +287,12 @@ app.whenReady().then(() => {
   ipcMain.handle("workspaces:remove", (_, workspaceId: number) => removeWorkspace(db, workspaceId));
   ipcMain.handle("git:clone", (_, projectId: number) => cloneProject(db, projectId));
   ipcMain.handle("git:opened-before", (_, workspaceId: number) => openedBefore(db, workspaceId));
-  ipcMain.handle("git:open-worktree", (_, workspaceId: number) => openWorktree(db, workspaceId));
+  // ADR 0029: a workspace opened or checked again is summarised ahead, in the background.
+  ipcMain.handle("git:open-worktree", async (_, workspaceId: number) => {
+    const opened = await openWorktree(db, workspaceId);
+    if (opened.status === "ok") void summariseAhead(db, workspaceId);
+    return opened;
+  });
   ipcMain.handle("git:commits", (_, workspaceId: number, mergeBase: string) =>
     listCommits(db, workspaceId, mergeBase),
   );
@@ -364,6 +380,7 @@ app.whenReady().then(() => {
       changed(e.sender, { workspaceId, what: "entries" }); // the answer
       changed(e.sender, { workspaceId, what: "worktree" }); // the agent may have changed files
       changed(e.sender, { workspaceId, what: "transcript" });
+      void summariseAhead(db, workspaceId);
       send("review:turn-end", threadId, result);
     });
     return asked.question;
@@ -392,6 +409,7 @@ app.whenReady().then(() => {
     });
     changed(e.sender, { workspaceId, what: "worktree" });
     changed(e.sender, { workspaceId, what: "transcript" });
+    void summariseAhead(db, workspaceId);
     return result;
   });
   ipcMain.handle("review:copy-prompt", async (_, workspaceId: number) => {
@@ -428,6 +446,7 @@ app.whenReady().then(() => {
     });
     changed(e.sender, { workspaceId, what: "worktree" });
     changed(e.sender, { workspaceId, what: "transcript" });
+    void summariseAhead(db, workspaceId); // the agent may have committed
     return result;
   });
   // A thread's ⋯ menu. Resolves only on a click: the menu's close callback can run before the click, so it can't tell
@@ -633,6 +652,18 @@ app.whenReady().then(() => {
         ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
       ),
   );
+  // ADR 0029: file summaries run on the summary agent, one-shot; Activity shows their jobs as they change.
+  setSummaryRunner(({ agent, ...o }) => askOnce(agent, o));
+  ipcMain.handle("summaries:jobs", () => listSummaryJobs());
+  ipcMain.handle("summaries:stop", (_, id: number) => stopSummaryJob(id));
+  ipcMain.handle("summaries:settings", () => getSummarySettings(db));
+  ipcMain.handle("summaries:set-settings", (_, s: Partial<SummarySettings>) =>
+    setSummarySettings(db, s),
+  );
+  onSummaryJobs((jobs) => {
+    for (const w of BrowserWindow.getAllWindows())
+      if (!w.webContents.isDestroyed()) w.webContents.send("summaries:jobs", jobs);
+  });
   ipcMain.handle("settings:comment-to-agent", () => getCommentToAgent(db));
   ipcMain.handle("settings:set-comment-to-agent", (_, toAgent: boolean) =>
     setCommentToAgent(db, toAgent),

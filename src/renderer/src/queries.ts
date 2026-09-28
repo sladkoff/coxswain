@@ -16,6 +16,7 @@ type Reads = {
 const github = { staleTime: 60_000, refetchOnWindowFocus: true };
 const extra: Partial<Record<Reads, { staleTime?: number; refetchOnWindowFocus?: boolean }>> = {
   readAgentState: { staleTime: Infinity },
+  listSummaryJobs: { staleTime: Infinity }, // the core pushes them (below)
   readFileAt: { staleTime: Infinity }, // a file at a commit never changes
   openWorktree: github, // asks GitHub for the PR's head and fetches it
   listPullRequests: github,
@@ -111,3 +112,8 @@ window.coxswain.onAgentState((id, state) => {
     before && before.revision > state.revision ? before : state,
   );
 });
+
+// ADR 0029: the core sends the file summary jobs whenever one changes.
+window.coxswain.onSummaryJobs((jobs) =>
+  queryClient.setQueryData(core("listSummaryJobs").queryKey, jobs),
+);
