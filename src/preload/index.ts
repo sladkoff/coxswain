@@ -17,6 +17,7 @@ import type {
   FileText,
   FileTreeResult,
   GitProblem,
+  SyncState,
   WorktreeResult,
 } from "../core/git";
 import type {
@@ -32,7 +33,7 @@ import type { NewEntry, ReviewEntry } from "../core/review";
 import type { SetupCheck } from "../core/setup";
 import type { Workspace } from "../core/workspaces";
 import type { SessionState } from "../core/session-state";
-import type { SummaryJob, SummarySettings } from "../core/summaries";
+import type { SummaryCoverage, SummaryJob, SummarySettings } from "../core/summaries";
 
 // The Navigator's settings in its cog menu. layout: changed files as a tree or as a flat list.
 // The canvas bar's settings in its cog menu. showReviewed: reviewed file diffs stay in the Navigator and on the canvas.
@@ -47,7 +48,7 @@ export type RangePick = "all" | "pushed" | "local" | "commits";
 // What the core changed on its own, e.g. when an agent turn ends, so the UI refetches it (ADR 0017).
 export type Changed = {
   workspaceId: number;
-  what: "entries" | "worktree" | "transcript" | "sessions" | "view";
+  what: "entries" | "worktree" | "transcript" | "sessions" | "view" | "sync";
 };
 
 // The one interface between the UI and the core (ADR 0002).
@@ -209,6 +210,15 @@ const api = {
     ipcRenderer.invoke("views:list", workspaceId),
   // Removes a view with its explanations and findings.
   removeView: (viewId: number): Promise<void> => ipcRenderer.invoke("views:remove", viewId),
+  // ADR 0030: watches the workspace on screen for commits and uncommitted changes; null stops.
+  watchWorkspace: (workspaceId: number | null): Promise<void> =>
+    ipcRenderer.invoke("workspaces:watch", workspaceId),
+  // Behind and ahead of GitHub, uncommitted files, and when GitHub was last checked.
+  readSyncState: (workspaceId: number): Promise<SyncState> =>
+    ipcRenderer.invoke("git:sync", workspaceId),
+  // How many of the workspace's committed file diffs have a file summary.
+  summaryCoverage: (workspaceId: number): Promise<SummaryCoverage | null> =>
+    ipcRenderer.invoke("summaries:coverage", workspaceId),
   // ADR 0029: the file summary jobs Activity shows, newest first, and how they change.
   listSummaryJobs: (): Promise<SummaryJob[]> => ipcRenderer.invoke("summaries:jobs"),
   onSummaryJobs: (callback: (jobs: SummaryJob[]) => void) => {

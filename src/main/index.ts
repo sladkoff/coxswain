@@ -44,9 +44,11 @@ import {
   openWorktree,
   push,
   readFileAt,
+  readSyncState,
   readWorktreeFile,
   snapshot,
 } from "../core/git";
+import { onWorkspaceChange, watchWorkspace } from "../core/watch";
 import {
   listViews,
   onViewChange,
@@ -82,6 +84,7 @@ import {
   stopInterruptedJobs,
   stopSummaryJob,
   summariseAhead,
+  summaryCoverage,
   type SummarySettings,
 } from "../core/summaries";
 import { checkSetup } from "../core/setup";
@@ -289,10 +292,25 @@ app.whenReady().then(() => {
   ipcMain.handle("git:clone", (_, projectId: number) => cloneProject(db, projectId));
   ipcMain.handle("git:opened-before", (_, workspaceId: number) => openedBefore(db, workspaceId));
   // ADR 0029: a workspace opened or checked again is summarised ahead, in the background.
-  ipcMain.handle("git:open-worktree", async (_, workspaceId: number) => {
+  // ADR 0030: the sync state says when GitHub was last checked, so it changes with every check.
+  ipcMain.handle("git:open-worktree", async (e, workspaceId: number) => {
     const opened = await openWorktree(db, workspaceId);
     if (opened.status === "ok") void summariseAhead(db, workspaceId);
+    changed(e.sender, { workspaceId, what: "sync" });
     return opened;
+  });
+  ipcMain.handle("git:sync", (_, workspaceId: number) => readSyncState(db, workspaceId));
+  // ADR 0030: the workspace on screen is watched. Its HEAD moving is a change to the worktree (commits, the diff) and
+  // is summarised ahead; other changes to what's uncommitted only change its sync state.
+  ipcMain.handle("workspaces:watch", (_, workspaceId: number | null) =>
+    watchWorkspace(db, workspaceId),
+  );
+  onWorkspaceChange((workspaceId, change) => {
+    for (const w of BrowserWindow.getAllWindows()) {
+      if (change === "head") changed(w.webContents, { workspaceId, what: "worktree" });
+      changed(w.webContents, { workspaceId, what: "sync" });
+    }
+    if (change === "head") void summariseAhead(db, workspaceId);
   });
   ipcMain.handle("git:commits", (_, workspaceId: number, mergeBase: string) =>
     listCommits(db, workspaceId, mergeBase),
@@ -657,6 +675,9 @@ app.whenReady().then(() => {
   setSummaryRunner(({ agent, ...o }) => askOnce(agent, o));
   void stopInterruptedJobs(db);
   ipcMain.handle("summaries:jobs", () => listSummaryJobs(db));
+  ipcMain.handle("summaries:coverage", (_, workspaceId: number) =>
+    summaryCoverage(db, workspaceId),
+  );
   ipcMain.handle("summaries:stop", (_, id: number) => stopSummaryJob(id));
   ipcMain.handle("summaries:settings", () => getSummarySettings(db));
   ipcMain.handle("summaries:set-settings", (_, s: Partial<SummarySettings>) =>

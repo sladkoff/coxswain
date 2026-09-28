@@ -163,7 +163,27 @@ export async function openedBefore(db: Db, workspaceId: number): Promise<Worktre
 
 // Makes sure the workspace's worktree exists and is on its latest head on GitHub, then says what its diff is against.
 // Talks to GitHub and fetches, so it takes a second or more; show openedBefore meanwhile.
+// When each workspace's GitHub check last ended, and its problem if it failed: the sync state says how fresh it is.
+const checks = new Map<number, { at: string; problem: string | null }>();
+
 export async function openWorktree(db: Db, workspaceId: number): Promise<WorktreeResult> {
+  const opened = await openWorktreeNow(db, workspaceId).catch((e: Error): WorktreeResult => ({
+    status: "git-error",
+    message: e.message,
+  }));
+  checks.set(workspaceId, {
+    at: new Date().toISOString(),
+    problem:
+      opened.status === "ok"
+        ? null
+        : "message" in opened
+          ? opened.message
+          : `GitHub: ${opened.status}`,
+  });
+  return opened;
+}
+
+async function openWorktreeNow(db: Db, workspaceId: number): Promise<WorktreeResult> {
   const w = await getWorkspaceRepo(db, workspaceId);
   const { owner, name } = w;
   const cloned = clone(owner, name);
@@ -314,6 +334,67 @@ export async function listBranches(db: Db, projectId: number): Promise<BranchLis
     const defaultBranch = head.trim().replace(/^origin\//, "") || branches[0] || "main";
     return { status: "ok" as const, branches, defaultBranch };
   });
+}
+
+// ADR 0030: the worktree's HEAD and `git status`, which the watcher compares from one check to the next.
+export async function worktreeState(
+  db: Db,
+  workspaceId: number,
+): Promise<{ head: string; status: string }> {
+  const path = await openedWorktree(db, workspaceId);
+  const [head, status] = await Promise.all([
+    gitText(path, ["rev-parse", "HEAD"]),
+    gitText(path, ["status", "--porcelain", "-z"]),
+  ]);
+  return { head: head.trim(), status };
+}
+
+// How the worktree stands against GitHub's head as last fetched (ADR 0030). behind: commits there the worktree hasn't
+// (not fast-forwarded because of local changes); ahead: commits here not on GitHub (not pushed); dirty: files with
+// uncommitted changes. checkedAt: when GitHub was last asked, and checkProblem why that failed.
+export type SyncState =
+  | {
+      status: "ok";
+      behind: number;
+      ahead: number;
+      dirty: number;
+      checkedAt: string | null;
+      checkProblem: string | null;
+    }
+  | GitProblem;
+export async function readSyncState(db: Db, workspaceId: number): Promise<SyncState> {
+  const at = lastOpened.get(workspaceId);
+  const check = checks.get(workspaceId);
+  return withGit(async () => {
+    const path = await openedWorktree(db, workspaceId);
+    const count = async (range: string) =>
+      at ? Number((await gitText(path, ["rev-list", "--count", range])).trim()) : 0;
+    const [behind, ahead, status] = await Promise.all([
+      count(`HEAD..${at?.head}`),
+      count(`${at?.head}..HEAD`),
+      gitText(path, ["status", "--porcelain", "-z"]),
+    ]);
+    return {
+      status: "ok" as const,
+      behind,
+      ahead,
+      dirty: statusEntries(status),
+      checkedAt: check?.at ?? null,
+      checkProblem: check?.problem ?? null,
+    };
+  });
+}
+
+// The files `git status --porcelain -z` lists: a rename or copy has its old path as a field of its own after it.
+export function statusEntries(status: string): number {
+  const fields = status.split("\0");
+  let n = 0;
+  for (let i = 0; i < fields.length; i++) {
+    if (!fields[i]) continue;
+    n++;
+    if (/^[RC]/.test(fields[i])) i++;
+  }
+  return n;
 }
 
 // The worktree as a commit, uncommitted changes included (snapshot.ts).

@@ -579,6 +579,24 @@ async function workspaceLabel(db: Db, workspaceId: number): Promise<string> {
   return w.prNumber !== null ? `${w.name} #${w.prNumber}` : `${w.name} ${w.branch}`;
 }
 
+// ADR 0030: how many of the workspace's committed file diffs (merge base → HEAD, what's summarised ahead) have a
+// summary; null before its worktree is opened.
+export type SummaryCoverage = { files: number; summarised: number; head: string };
+export async function summaryCoverage(
+  db: Db,
+  workspaceId: number,
+): Promise<SummaryCoverage | null> {
+  const at = await openedBefore(db, workspaceId);
+  if (at?.status !== "ok") return null;
+  const head = await headCommit(db, workspaceId);
+  const listed = await listChangedFiles(db, workspaceId, at.mergeBase, head);
+  if (listed.status !== "ok") return null;
+  const paths = listed.files.map((f) => f.path);
+  const fingerprints = await diffFingerprints(db, workspaceId, at.mergeBase, paths, head);
+  const have = await stored(db, workspaceId, [...fingerprints.values()]);
+  return { files: paths.length, summarised: have.size, head };
+}
+
 // The keys of the fingerprints given that have a summary.
 async function stored(db: Db, workspaceId: number, fingerprints: string[]): Promise<Set<string>> {
   if (!fingerprints.length) return new Set();

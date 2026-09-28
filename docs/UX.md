@@ -10,12 +10,12 @@ right. The canvas is one explorer that both the agent and the human annotate; fo
 workspace's file diffs, with the Navigator (L2) or the commits pane on its left. The top bar follows the columns: over
 the left pane, its own bar (hide it, and _Changes_ · _Files_ · _Commits_ to switch it); over the canvas, what the canvas
 shows — _Diff_ with its range, a chip per view, a dashed _New View_ chip — then Back and Forward chevrons, a magnifier
-(Open Quickly), the display options (sliders) and Activity (a pulse icon; see below). A bar at its bottom sums up the
+(Open Quickly), the display options (sliders), the sync state and Activity (a pulse icon; see below). A bar at its bottom sums up the
 review.
 
 ```
 ┌────┬─────────────────────────┬──────────────────────────────────────────┐
-│    │ Fix auth · Codex [New▾] │▣ Changes|Files|Comm…│Diff·All▾ Guide[+]⚌∿│
+│    │ Fix auth · Codex [New▾] │▣ Changes|Files|Comm…│Diff·All▾ [+] ↑1●3 ∿│
 │ L1 ├─────────────────────────┼─────────────────────┼────────────────────┤
 │    │ L4 Agent pane           │ L2 Navigator        │ L3 Canvas          │
 │ P  │                         │ or Commits          │                    │
@@ -36,10 +36,20 @@ The last button in the canvas bar shows what coxswain does in the background: fo
 dot when one failed since the list was last opened. Clicking it opens the list under it, the latest 50 jobs of every workspace, newest first, kept across restarts. Each shows _Summarising_, _Summarised_, _Failed_ or _Stopped_, the workspace, _ahead_ or _for a view_, how long it took
 and when; a progress bar (full and red once failed); files that had a summary, were summarised and failed; the agent,
 the model it ran on, runs and range; the files being summarised now; the last error; and Stop while it runs. Its header
-names the summary agent and model, with _Settings…_. Esc or a click outside closes it.
+names the summary agent and model, with _Settings…_; under it, _This workspace_: how many of the workspace on screen's
+committed file diffs have a summary at its HEAD, with _Up to date_, _Summarising…_, _Not yet_ or _For views only_. Esc or a click outside closes it.
 
 Settings has _File summaries_: the agent (_Claude Code_ · _Codex_), the model (a native menu of what the agent offers,
 asked in the workspace on screen; greyed out without one) and _Summarise_: _Ahead_ or _Only for views_.
+
+## Sync state
+
+Before Activity, the canvas bar shows how the workspace on screen stands against GitHub
+([ADR 0030](adr/0030-workspace-watcher-and-sync-state.md)): `↓N` commits on GitHub the worktree hasn't, `↑N` commits
+not pushed, `●N` files with uncommitted changes, or ✓ when there's none of those. It's amber when the worktree is
+behind or GitHub couldn't be checked. Its tooltip spells each out and says when GitHub was last checked (every 2
+minutes while the workspace shows); clicking it shows the Commits pane. Commits made anywhere, in coxswain or a
+terminal, show within a few seconds.
 
 ## Before the main screen
 

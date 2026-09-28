@@ -885,6 +885,8 @@ export function App() {
             )}
             <div className="flex min-w-0 flex-1 flex-col">
               <CanvasBar
+                workspaceId={currentWorkspace.id}
+                onShowCommits={() => showPane("commits")}
                 paneOpen={paneOpen}
                 onShowPane={() => setPaneOpen(true)}
                 ready={!!pr.commits}

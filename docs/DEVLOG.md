@@ -3,6 +3,23 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-28 — Watching the workspace, and its sync state
+
+For G3 and G5 ([ADR 0030](adr/0030-workspace-watcher-and-sync-state.md), [UX](UX.md) Sync state).
+
+- **The workspace on screen is watched:** every 3 s the core reads its HEAD and `git status`. A commit, pull or reset,
+  in coxswain or a terminal, refreshes the diff and commits within seconds and is summarised ahead; other uncommitted
+  changes update the sync state only.
+- **GitHub is checked every 2 minutes** while a workspace shows (the worktree query's refetch interval), in the
+  background too; each check is timed and a failed one says why.
+- **Sync state in the canvas bar:** `↓` behind, `↑` not pushed, `●` uncommitted, or ✓, amber when behind or GitHub
+  couldn't be checked; the tooltip says when it was checked; a click shows the Commits pane.
+- **Activity's _This workspace_ line:** how many of its committed file diffs have a summary at HEAD.
+- Tests: `watch.test.ts` (status and head changes, ahead and dirty counts, renames in `git status -z`). `pnpm
+typecheck`, `pnpm test` (17), `pnpm lint`, `pnpm format` and `pnpm build` pass.
+- `ponytail:` one workspace watched at a time, by polling git; file system events as a hint if many workspaces or
+  big repos make it slow. Uncommitted edits outside an agent turn still don't refresh the diff.
+
 ## 2026-09-28 — File summaries and Activity
 
 Issue #36, for G3 ([ADR 0029](adr/0029-file-summaries-and-activity.md), [UX](UX.md) Activity).

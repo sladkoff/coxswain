@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import type { SummaryJob } from "../../core/summaries";
+import type { SummaryCoverage, SummaryJob } from "../../core/summaries";
 import { Button } from "./components/button";
 import { ActivityIcon, SpinnerIcon, StopIcon } from "./components/icons";
 import { ProgressBar } from "./components/layout";
@@ -12,10 +12,18 @@ import { core } from "./queries";
 // Activity (glossary, ADR 0029): what coxswain does in the background, for now file summary jobs. The button at the
 // canvas bar's right turns while one runs and gets a red dot when one failed since the list was last looked at; it
 // opens the list below it, newest first. Jobs of every workspace show: they run whichever one is on screen.
-export function Activity({ onSettings }: { onSettings: () => void }) {
+export function Activity({
+  workspaceId,
+  onSettings,
+}: {
+  workspaceId: number;
+  onSettings: () => void;
+}) {
   const jobs = useQuery(core("listSummaryJobs")).data ?? [];
   const settings = useQuery(core("getSummarySettings")).data;
   const [open, setOpen] = useState(false);
+  // ADR 0030: how far the workspace on screen is summarised, counted when the list opens.
+  const coverage = useQuery({ ...core("summaryCoverage", workspaceId), enabled: open });
   const [seen, setSeen] = useState(() => new Date().toISOString());
   const box = useRef<HTMLDivElement>(null);
   const running = jobs.some((j) => j.state === "running");
@@ -84,12 +92,19 @@ export function Activity({ onSettings }: { onSettings: () => void }) {
               Settings…
             </Button>
           </div>
+          <Coverage
+            workspace={coverage.data}
+            loading={coverage.isFetching}
+            ahead={settings?.ahead ?? true}
+            running={jobs.some((j) => j.workspaceId === workspaceId && j.state === "running")}
+          />
           <div className="min-h-0 overflow-y-auto">
             {jobs.length === 0 ? (
               <div className={cn("px-3 py-3", muted)}>
-                Nothing yet. Files are summarised when a workspace opens or moves on
-                {settings && !settings.ahead ? " (turned off in Settings)" : ""}, and when the agent
-                starts a view.
+                No jobs yet. Committed changes are summarised when a workspace opens, when it's
+                checked again and when its HEAD moves
+                {settings && !settings.ahead ? " (turned off in Settings)" : ""}; uncommitted ones
+                when the agent starts a view.
               </div>
             ) : (
               jobs.map((j) => <JobRow key={j.id} job={j} />)
@@ -159,6 +174,44 @@ function JobRow({ job: j }: { job: SummaryJob }) {
           {j.state === "done" ? `A run failed and was tried again: ${j.error}` : j.error}
         </ErrorText>
       )}
+    </div>
+  );
+}
+
+// The workspace on screen: how many of its committed file diffs have a summary.
+function Coverage(props: {
+  workspace: SummaryCoverage | null | undefined;
+  loading: boolean;
+  ahead: boolean;
+  running: boolean;
+}) {
+  const w = props.workspace;
+  if (w === undefined)
+    return (
+      <div className={cn("shrink-0 border-b px-3 py-2", divider, muted)}>
+        {props.loading ? "Counting this workspace's summaries…" : ""}
+      </div>
+    );
+  if (w === null || w.files === 0) return null;
+  const all = w.summarised >= w.files;
+  return (
+    <div className={cn("flex shrink-0 flex-col gap-1 border-b px-3 py-2", divider)}>
+      <div className="flex items-center gap-2">
+        <span className="font-medium">This workspace</span>
+        <span className={muted}>
+          {w.summarised}/{count(w.files, "file")} summarised at {w.head.slice(0, 7)}
+        </span>
+        <span className={cn("ml-auto", all ? "text-green-600 dark:text-green-400" : muted)}>
+          {all
+            ? "Up to date"
+            : props.running
+              ? "Summarising…"
+              : props.ahead
+                ? "Not yet"
+                : "For views only"}
+        </span>
+      </div>
+      <ProgressBar value={w.summarised} max={w.files} />
     </div>
   );
 }
