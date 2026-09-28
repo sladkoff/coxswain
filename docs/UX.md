@@ -40,18 +40,22 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   buttons and, at its right, a panel button that hides the sidebar entirely; the same button then shows at the agent
   pane header's left (after the window buttons) to bring it back, and the command palette has _Show or Hide the
   Sidebar_. At the top, the current project: its initial, name and owner. Clicking it opens a native menu of the user's projects, the current one
-  checked, to switch to one; _Add Project…_ at its bottom opens the list of the user's GitHub
-  repositories to add one. The rest of the screen belongs to the current project. A project's
+  checked, to switch to one; _Add Project…_ at its bottom opens the _Open a project_
+  dialog over the window: a search field, the user's projects (initial, name, owner, _Current_), then their GitHub
+  repositories, most recently pushed first (owner/name, a lock if private, the description, when pushed: _3 days ago_),
+  to add one. Esc, ✕ or a click outside closes it, as it does the New workspace dialog. The rest of the screen belongs to the current project. A project's
   repository must be git, local or cloned, and may be on GitHub.
 
   Below it, under _Workspaces_, one row per workspace of the project, in the order they were added, the current one
   filled: the PR's title (from GitHub; its number until it's loaded or when offline), then `#number · branch` in small
   type, and an icon for an open, draft, merged or closed PR, or a branch; _+ New Workspace_ at the end, and a + next to _Workspaces_ (in reach however long the list), start one. Right-clicking a workspace offers _Remove Workspace…_, which asks
   first: its comments, reviewed files and agent sessions go, its worktree stays on disk. A workspace is either a PR or a branch (ADR 0028), and has
-  one worktree; a branch workspace's row shows its branch name. _New Workspace_ opens the new workspace
-  screen: at its top, a branch name (the repository's branches on GitHub are offered as it's typed), _from_ and the
+  one worktree; a branch workspace's row shows its branch name. _New Workspace_ opens the _New workspace_
+  dialog over the window, the project under its title: _Start on a branch_ with a branch name (the repository's branches on GitHub are offered as it's typed), _from_ and the
   branch it starts from (the default one; a native menu picks another), and _Start_, which makes a new branch or works
-  on the one on GitHub; a name git won't take is refused under the field. Below, the repository's open PRs. Opening a
+  on the one on GitHub; a name git won't take is refused under the field. Below, _Or an open pull request_: a search field (title, number,
+  author, branch) and the repository's open PRs, each with a PR icon (grey for a draft), its title, `#number · author ·
+branch`, when it was updated, and _Has a workspace_ if it does. Opening a
   PR whose branch has a workspace makes that workspace the PR's, and so does opening a branch workspace once GitHub
   has a PR for its branch. While the project is being cloned, its initial pulses.
 

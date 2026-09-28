@@ -6,6 +6,22 @@ export const count = (n: number, word: string, plural = `${word}s`) =>
 export const shortDateTime = (iso: string) =>
   new Date(iso).toLocaleString([], { dateStyle: "short", timeStyle: "short" });
 
+// How long ago, in the largest whole unit: "3 days ago", "yesterday", "just now".
+const relative = new Intl.RelativeTimeFormat([], { numeric: "auto" });
+export function ago(iso: string) {
+  const s = (new Date(iso).getTime() - Date.now()) / 1000;
+  for (const [unit, size] of [
+    ["year", 31_536_000],
+    ["month", 2_592_000],
+    ["week", 604_800],
+    ["day", 86_400],
+    ["hour", 3600],
+    ["minute", 60],
+  ] as const)
+    if (Math.abs(s) >= size) return relative.format(Math.round(s / size), unit);
+  return "just now";
+}
+
 // A workspace by its PR, or its branch until it has one (ADR 0028).
 export const workspaceLabel = (w: Workspace) =>
   w.prNumber !== null ? `PR #${w.prNumber}` : `Branch ${w.branch}`;

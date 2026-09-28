@@ -35,6 +35,10 @@ UX, for G3 and G5 ([UX](UX.md) L2, L3).
   is one rounded box: _Ask Codex…_, the model and effort as small icon buttons with chevrons, and a round send button
   that becomes a stop button (with _Working_) while a turn runs. Checked in the built app idle and with text typed; the
   running state wasn't started in the check.
+- Open a project and New workspace are dialogs over the window instead of full-window screens (a shared `Dialog`:
+  title, subtitle, ✕; Esc or a click outside closes), each with a search field across it. Rows got initials, a lock
+  for private repositories, PR icons, `#number · author · branch`, relative dates (_3 days ago_) and _Current_ / _Has a
+  workspace_ badges. Checked both in the built app.
 - ponytail: the bar counts what Hand off takes with the same rule as the review prompt in `core/review.ts`, copied,
   since the renderer imports no core code. Move it to a shared pure module if a third place needs it.
 - Still open: a guide's table of contents stays its own column; making it the pane's first tab (_Sections_) would

@@ -689,17 +689,16 @@ export function App() {
   if (setup.data.problems.length)
     return <Setup check={setup.data} onRetry={() => void setup.refetch()} />;
   if (screen === "settings") return <Settings onClose={close} />;
-  if (screen === "projects")
-    return (
+  // Projects and New workspace are dialogs over the screen below them.
+  const dialog =
+    screen === "projects" ? (
       <Projects
         projects={projects ?? []}
         current={current}
         onSelect={selectProject}
         onClose={close}
       />
-    );
-  if (screen === "new-workspace" && current)
-    return (
+    ) : screen === "new-workspace" && current ? (
       <NewWorkspace
         project={current}
         openPrNumbers={workspaces.flatMap((w) => (w.prNumber !== null ? [w.prNumber] : []))}
@@ -707,20 +706,24 @@ export function App() {
         onBranch={newBranchWorkspace}
         onClose={close}
       />
-    );
+    ) : null;
   if (!projects) return null; // local and near-instant, so no loading screen
   if (!current)
     return (
-      <Onboarding
-        onSettings={() => setScreen("settings")}
-        onChooseProject={() => setScreen("projects")}
-      />
+      <>
+        <Onboarding
+          onSettings={() => setScreen("settings")}
+          onChooseProject={() => setScreen("projects")}
+        />
+        {dialog}
+      </>
     );
 
   // Empty shell of the main screen from docs/UX.md: L1 project and workspaces, the agent pane, the canvas.
   return (
     // Side panes keep their dragged width but shrink with the window before the Viewer goes below viewerMin.
     <div className="flex h-full select-none overflow-hidden text-sm">
+      {dialog}
       {sidebarOpen && (
         <WorkspaceRail
           project={current}

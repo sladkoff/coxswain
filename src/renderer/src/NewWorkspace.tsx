@@ -4,10 +4,11 @@ import type { PullRequest } from "../../core/github";
 import type { Project } from "../../core/projects";
 import { Button } from "./components/button";
 import { Input } from "./components/field";
-import { ChevronDownIcon } from "./components/icons";
-import { ListRow, ProblemCard, Screen } from "./components/layout";
+import { ChevronDownIcon, GitPullRequestIcon } from "./components/icons";
+import { Dialog, ListRow, ProblemCard, SearchField } from "./components/layout";
 import { cn, muted } from "./components/styles";
 import { ErrorText, ProblemMessage } from "./components/text";
+import { ago } from "./format";
 import { core } from "./queries";
 
 type Props = {
@@ -32,23 +33,22 @@ export function NewWorkspace({ project, openPrNumbers, onSelect, onBranch, onClo
   );
 
   return (
-    <Screen
-      title={`New workspace in ${project.owner}/${project.name}`}
-      onClose={onClose}
-      className="max-w-2xl"
-    >
+    <Dialog title="New workspace" subtitle={`${project.owner}/${project.name}`} onClose={onClose}>
       <NewBranch project={project} onBranch={onBranch} />
-
-      <Input
+      <div className={cn("px-4 pt-3 pb-1.5 text-xs font-medium", muted)}>
+        Or an open pull request
+      </div>
+      <SearchField
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        placeholder="Search open pull requests"
-        className="mb-3"
+        placeholder="Search by title, number, author or branch"
       />
-
-      {problem && <ProblemCard problem={problem} onRetry={() => result.refetch()} />}
-
-      <div className="-mx-2 min-h-0 flex-1 overflow-y-auto">
+      {problem && (
+        <div className="px-4 pt-3">
+          <ProblemCard problem={problem} onRetry={() => result.refetch()} />
+        </div>
+      )}
+      <div className="min-h-0 flex-1 overflow-y-auto p-2">
         {shown.map((p) => (
           <PullRequestRow
             key={p.number}
@@ -57,13 +57,13 @@ export function NewWorkspace({ project, openPrNumbers, onSelect, onBranch, onClo
             onClick={() => onSelect(p)}
           />
         ))}
-        {!problem && (
-          <div className={cn("py-3 text-center", muted)}>
-            {!pulls ? "Loading…" : pulls.length === 0 ? "No open pull requests" : null}
+        {!problem && (!pulls || !shown.length) && (
+          <div className={cn("py-3 text-center text-xs", muted)}>
+            {!pulls ? "Loading…" : pulls.length === 0 ? "No open pull requests" : "No match"}
           </div>
         )}
       </div>
-    </Screen>
+    </Dialog>
   );
 }
 
@@ -89,7 +89,8 @@ function NewBranch({ project, onBranch }: Pick<Props, "project" | "onBranch">) {
     }
   };
   return (
-    <form onSubmit={submit} className="mb-5">
+    <form onSubmit={submit} className="shrink-0 px-4 pb-3">
+      <div className={cn("pb-1.5 text-xs font-medium", muted)}>Start on a branch</div>
       <div className="flex items-center gap-2">
         <Input
           autoFocus
@@ -99,8 +100,8 @@ function NewBranch({ project, onBranch }: Pick<Props, "project" | "onBranch">) {
             setBranch(e.target.value);
             setError(null);
           }}
-          placeholder="New branch, or one on GitHub"
-          className="min-w-0 flex-1"
+          placeholder="new-branch-name, or one on GitHub"
+          className="min-w-0 flex-1 [&::-webkit-calendar-picker-indicator]:hidden!"
         />
         <datalist id="branches">
           {branches.map((b) => (
@@ -133,7 +134,7 @@ function NewBranch({ project, onBranch }: Pick<Props, "project" | "onBranch">) {
   );
 }
 
-// An open PR to start a workspace on; open: it already has one.
+// An open PR to start a workspace on; open: it already has one, which picking it opens.
 function PullRequestRow({
   pull: p,
   open,
@@ -144,19 +145,37 @@ function PullRequestRow({
   onClick: () => void;
 }) {
   return (
-    <ListRow onClick={onClick}>
-      <div className="flex items-center gap-2">
-        <span className={muted}>#{p.number}</span>
-        <span className="truncate font-medium">{p.title}</span>
-        {p.draft && <span className={cn("text-xs", muted)}>Draft</span>}
-        {open && <span className={cn("text-xs", muted)}>Open</span>}
-        <span className={cn("ml-auto shrink-0 text-xs", muted)}>
-          {new Date(p.updatedAt).toLocaleDateString()}
+    <ListRow className="flex items-start gap-2.5" onClick={onClick}>
+      <span
+        title={p.draft ? "Draft" : "Open"}
+        className={cn("mt-0.5 shrink-0", p.draft ? muted : "text-green-600 dark:text-green-500")}
+      >
+        <GitPullRequestIcon />
+      </span>
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="flex items-center gap-2">
+          <span className="truncate font-medium">{p.title}</span>
+          {open && (
+            <span
+              className={cn(
+                "shrink-0 rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] dark:bg-neutral-800",
+                muted,
+              )}
+            >
+              Has a workspace
+            </span>
+          )}
         </span>
-      </div>
-      <div className={cn("truncate", muted)}>
-        {p.author} · {p.headRef}
-      </div>
+        <span className={cn("truncate font-mono text-[11px]", muted)}>
+          #{p.number} · {p.author} · {p.headRef}
+        </span>
+      </span>
+      <span
+        title={new Date(p.updatedAt).toLocaleString()}
+        className={cn("shrink-0 text-xs", muted)}
+      >
+        {ago(p.updatedAt)}
+      </span>
     </ListRow>
   );
 }

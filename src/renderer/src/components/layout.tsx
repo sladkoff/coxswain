@@ -2,6 +2,7 @@ import { type ComponentProps, type ReactNode, useEffect, useRef } from "react";
 import type { GitProblem } from "../../../core/git";
 import type { GitHubProblem } from "../../../core/github";
 import { Button } from "./button";
+import { SearchIcon, XIcon } from "./icons";
 import { cn, divider, muted, noDrag, titleBar } from "./styles";
 import { ProblemMessage } from "./text";
 
@@ -36,6 +37,81 @@ function ScreenHeader({ title, onClose }: { title: string; onClose: () => void }
       <Button className={noDrag} onClick={onClose}>
         Done
       </Button>
+    </div>
+  );
+}
+
+// A dialog over the window (Projects, New workspace): a title and a line under it, ✕, then its content. Esc, ✕ or a
+// click outside closes it. The backdrop takes the window's drag regions, so a click on it over a title bar closes too.
+export function Dialog(props: {
+  title: string;
+  subtitle?: string;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  const { onClose } = props;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return (
+    <div
+      className={cn(
+        "fixed inset-0 z-50 flex items-start justify-center bg-black/30 px-6 pt-[10vh] dark:bg-black/50",
+        noDrag,
+      )}
+      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div
+        role="dialog"
+        aria-modal
+        aria-label={props.title}
+        className="flex max-h-[76vh] w-full max-w-xl flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white text-sm shadow-2xl select-none dark:border-neutral-700 dark:bg-neutral-900"
+      >
+        <div className="flex shrink-0 items-start gap-3 px-4 pt-3.5 pb-3">
+          <div className="flex min-w-0 flex-1 flex-col">
+            <span className="font-semibold">{props.title}</span>
+            {props.subtitle && (
+              <span className={cn("truncate text-xs", muted)}>{props.subtitle}</span>
+            )}
+          </div>
+          <Button
+            variant="ghost"
+            title="Close (Esc)"
+            aria-label="Close"
+            className="-mr-1 p-1 text-neutral-500"
+            onClick={onClose}
+          >
+            <XIcon />
+          </Button>
+        </div>
+        {props.children}
+      </div>
+    </div>
+  );
+}
+
+// A dialog's search field: a magnifier and a borderless input across the dialog, a line under it.
+export function SearchField(props: ComponentProps<"input">) {
+  return (
+    <label className={cn("flex shrink-0 items-center gap-2 border-y px-4 py-2", divider)}>
+      <span className={muted}>
+        <SearchIcon />
+      </span>
+      <input
+        {...props}
+        className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-neutral-500"
+      />
+    </label>
+  );
+}
+
+// A section's small heading in a dialog's list.
+export function ListHeading({ children }: { children: ReactNode }) {
+  return (
+    <div className={cn("px-2 pt-3 pb-1 text-[10.5px] font-semibold tracking-wide", muted)}>
+      {children}
     </div>
   );
 }
