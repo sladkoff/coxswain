@@ -102,6 +102,14 @@ function byName(f: ChangedFile): string | null {
     return `Renamed from ${f.previousPath}, contents unchanged.`;
   return null;
 }
+// The key a summary is stored under: its file diff's fingerprint, and the prompt's version, so a new prompt makes new
+// summaries rather than keeping those written to the old one. Bump it with every change to summaryPrompt.
+const promptVersion = 2;
+const summaryFingerprints = async (...args: Parameters<typeof diffFingerprints>) =>
+  new Map(
+    [...(await diffFingerprints(...args))].map(([path, f]) => [path, `${f}.v${promptVersion}`]),
+  );
+
 const isBinary = (diff: string) => /^Binary files .* differ$/m.test(diff);
 
 export function summaryPrompt(files: { file: ChangedFile; diff: string }[]): string {
@@ -112,7 +120,7 @@ export function summaryPrompt(files: { file: ChangedFile; diff: string }[]): str
       : `${lines.slice(0, limits.fileLines).join("\n")}\n… ${lines.length - limits.fileLines} more lines`;
   };
   return [
-    "Summarise each changed file below for a reviewer: one or two short sentences on what changed in it and, if the diff shows it, why. Name the functions, types or settings that changed. Don't review or judge. Name files by path, never by number.",
+    "Summarise each changed file below for a reviewer in one sentence of at most 25 words: what changed in it and, if the diff shows it, why. Name the main function, type or setting that changed. Don't review or judge. Name files by path, never by number.",
     'Answer with JSON only, one entry per file: {"files":[{"file":<its number>,"summary":"<text>"}]}',
     `Files (number, status, lines added and removed, path), each with its diff:\n\n${files
       .map(
@@ -141,7 +149,7 @@ export function parseAnswer(text: string, count: number): Map<number, string> {
     if (!Number.isInteger(n) || (n as number) < 1 || (n as number) > count || out.has(n as number))
       continue;
     if (typeof a.summary === "string" && a.summary.trim())
-      out.set(n as number, a.summary.trim().slice(0, 600));
+      out.set(n as number, a.summary.trim().slice(0, 300));
   }
   return out;
 }
@@ -333,7 +341,7 @@ export async function summarise(
     const listed = await listChangedFiles(db, workspaceId, base, head);
     if (listed.status !== "ok") throw new Error(listed.message);
     const files = listed.files;
-    const fingerprints = await diffFingerprints(
+    const fingerprints = await summaryFingerprints(
       db,
       workspaceId,
       base,
@@ -592,7 +600,7 @@ export async function summaryCoverage(
   const listed = await listChangedFiles(db, workspaceId, at.mergeBase, head);
   if (listed.status !== "ok") return null;
   const paths = listed.files.map((f) => f.path);
-  const fingerprints = await diffFingerprints(db, workspaceId, at.mergeBase, paths, head);
+  const fingerprints = await summaryFingerprints(db, workspaceId, at.mergeBase, paths, head);
   const have = await stored(db, workspaceId, [...fingerprints.values()]);
   return { files: paths.length, summarised: have.size, head };
 }
@@ -618,7 +626,7 @@ export async function fileSummaries(
   paths: string[],
   wait = 0,
 ): Promise<FileSummary[]> {
-  const fingerprints = await diffFingerprints(db, workspaceId, base, paths, head);
+  const fingerprints = await summaryFingerprints(db, workspaceId, base, paths, head);
   const keys = paths.map((p) => keyOf(workspaceId, p, fingerprints.get(p)!));
   const pending = keys.flatMap((k) => making.get(k) ?? []);
   if (wait > 0 && pending.length)

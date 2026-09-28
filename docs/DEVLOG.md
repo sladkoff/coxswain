@@ -3,6 +3,20 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-28 — Guides read fewer diffs
+
+For G3 ([ADR 0029](adr/0029-file-summaries-and-activity.md)), from a guide on #5311 that still took ~10 minutes.
+
+- Its Codex transcript: summaries were there and used to plan, but the instructions also said to read a diff before
+  writing about a file, and a guide writes about every file. 17 steps, 477 s in the model against 49 s in tools,
+  1.44 M input tokens for 8.7k written: each 25–40k-character diff read is re-read by every later step.
+- **The guide instructions now** write each file's sentence from its summary and read diffs only where a summary
+  doesn't do (none or unclear, the heart of the change, lines explained or judged), and write several sections per
+  step. `file_summaries` says it's for summaries still being written; `start_view` lists the rest.
+- **Summaries are shorter:** one sentence of at most 25 words (stored up to 300 characters). The key carries the
+  prompt's version, so the old, longer ones are written again once.
+- Not measured yet: the same guide with these changes.
+
 ## 2026-09-28 — Views of a commit, a turn or a scope
 
 For G3 ([ADR 0023](adr/0023-guides-made-by-the-agent-pane.md)).

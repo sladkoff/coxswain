@@ -17,11 +17,11 @@ seen: what runs, on which model, and why it failed.
 
 ## Decision
 
-1. **A file summary is a sentence or two on what changed in one file diff**, written by the summary agent (Claude
+1. **A file summary is one sentence (at most 25 words) on what changed in one file diff**, written by the summary agent (Claude
    Code or Codex, and a model, in Settings; Claude Code's smallest Haiku by default). It's stored in `file_summaries`
-   under the file diff's fingerprint ([ADR 0014](0014-reviewed-follows-file-diff-contents.md)), so it's never
-   updated: a file diff that changes has a new fingerprint and is summarised again, and the old one stays for the
-   contents it was about. Deleted files, lockfiles, pure renames and binary files get one written by coxswain, with
+   under the file diff's fingerprint ([ADR 0014](0014-reviewed-follows-file-diff-contents.md)) and the prompt's
+   version, so it's never updated: a file diff that changes, or a new prompt, gets a new key and is summarised again,
+   and the old one stays for the contents it was about. Deleted files, lockfiles, pure renames and binary files get one written by coxswain, with
    no model call.
 2. **Summary jobs do the work** (`src/core/summaries.ts`). A job takes the file diffs of one range that have no
    summary and aren't being made by another job, and summarises them in batches (diffs cut to 300 lines, at most 25
@@ -38,8 +38,11 @@ seen: what runs, on which model, and why it failed.
    settings change.
 4. **The agent never waits for summaries.** `start_view` lists each changed file with its summary, or says it's
    being written or missing, and the new `file_summaries` tool gets them for a view (some paths or all, optionally
-   waiting up to 120 s for those being written). The guide instructions say to plan from them and read a diff before
-   writing about a file: they're a small model's reading of one diff, hints, not facts.
+   waiting up to 120 s for those being written), meant only for those. The guide instructions say to plan the sections
+   and write each file's sentence from its summary, to read diffs only where a summary doesn't do (none or unclear,
+   the heart of the change, lines explained or judged), and to write several sections per step. On #5311 (291 files) a
+   guide that read every diff spent 477 s in the model and 49 s in tools: each diff read grows the context every later
+   step re-reads.
 5. **Activity shows the jobs**, at the canvas bar's right: a button that turns while one runs and gets a red dot when
    one failed, opening a list of the jobs, newest first: state, workspace, why, progress, files reused, summarised
    and failed, agent and the model it ran on, runs, range, the files being summarised now, the last error, and Stop.

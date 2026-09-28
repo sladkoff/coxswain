@@ -175,8 +175,10 @@ Each path can be embedded once, as either a file or a diff. Views can contain on
 Write a sentence or two before an embedded file or diff saying what to look at in it.`;
 
 const howToGuide = `How to make the guide:
-- Plan the sections from the file summaries above rather than reading every diff first; get those still being written
-  with file_summaries. Then read the diffs, and the code around them where it helps, before you write about a file.
+- Work from the file summaries above: plan the sections and write each file's sentence from its summary. Read a diff
+  only where the summary doesn't do: a file without one or with an unclear one, the few files at the heart of the
+  change, and lines you explain or (in a review) judge. Every diff read makes each later step slower, so don't read
+  them all.
 - Sort the changed files into sections, each about one theme (a feature, a refactor, tests, configuration, ...), in
   the order a reviewer should read them: the core change first, supporting changes after, files made by a tool last.
   Give each section a short heading, one to three sentences saying what the reviewer is looking at and what to check,
@@ -187,6 +189,7 @@ const howToGuide = `How to make the guide:
   them with add_explanation. Explain; don't judge. A few good ones beat many obvious ones.
 - Only if the user asked for a review: add findings with add_finding on lines where you see a bug, a risk, a missing
   case or a better way. Otherwise add none.
+- Write several sections per step where you can (several write_section calls at once), rather than one per step.
 - When you're done, say in a few lines what the changes do and how the guide is laid out. The guide shows in the app as
   you add to it; don't repeat it in the chat.`;
 
@@ -250,7 +253,7 @@ async function summaryLines(
   );
 }
 const aboutSummaries =
-  "File summaries are written ahead by a small model from each diff alone: use them to plan and to pick which diffs to read, not as facts to repeat. Those still being written come with file_summaries.";
+  "File summaries are written ahead by a small model from each diff alone: plan from them and pick which few diffs to read. Call file_summaries only for those still being written; the rest are above.";
 
 // The view a tool writes to: the one with the id given, or the workspace's latest.
 async function toolView(db: Db, workspaceId: number, id: number | undefined) {
@@ -520,7 +523,7 @@ export function viewTools(db: Db, workspaceId: number): McpTool[] {
     {
       name: "file_summaries",
       description:
-        "The file summaries of a view's changed files (the latest view unless view is given): a sentence or two on what changed in each, written ahead by a small model from its diff alone. Use them to plan a view and to pick which diffs to read. Summaries missing are started again; wait gives those being written up to that many seconds.",
+        "The file summaries of a view's changed files (the latest view unless view is given): a sentence on what changed in each, written ahead by a small model from its diff alone. start_view lists them already; call this for those still being written (with paths and wait), or for a view started in an earlier turn. Summaries missing are started again; wait gives those being written up to that many seconds.",
       inputSchema: {
         type: "object",
         properties: {
