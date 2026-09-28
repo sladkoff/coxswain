@@ -3,6 +3,50 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-28 — Top and bottom bars, and a sidebar with titles
+
+UX, for G3 and G5 ([UX](UX.md) L2, L3).
+
+- The left pane has its own bar, as wide as it: a panel button to hide it and _Changes N_ · _Files_ · _Commits_. That
+  replaces the canvas bar's _Files_ and _Commits_ buttons and the Navigator's _Diffs_/_Files_ toggle, which is now
+  _Changes_/_Files_. ⌘B hides and shows the pane as it was; while it's hidden, the panel button sits at the canvas
+  bar's left.
+- The canvas bar holds only what the canvas shows. The _Diff_ tab carries its range (_All ▾_, _PR ▾_, _Local ▾_, or the
+  commit or turn picked, with ✕), shown whether a view shows or not, so the view chips no longer move. Its native menu
+  picks a scope or _Commit or Agent Turn…_ (the commits pane).
+- One display options menu (sliders icon, was the cog): Unified/Split, Show Reviewed Files and _Files as Tree_/_As
+  List_. The Navigator's own cog and its "N of M reviewed" line are gone; the bottom bar counts reviewed files.
+- Checked in the built app, on a copy of the database: pane hidden with a guide showing, _Changes_, _Files_, a commit
+  picked from _Commits_ and cleared with ✕. The two native menus weren't opened in that check.
+- The bottom bar: the review at a glance on the left (a thread toggle with _● N waiting_, _8/29 reviewed_ with its
+  progress bar, the lines), and one _Hand off N_ button on the right. Its native menu has _Send to Agent_, _Copy as
+  Prompt_ and _Send to GitHub as a Review…_ (greyed out, not built). The thread list gets a header with _Open_ ·
+  _Resolved_ and groups threads by file, each with a status dot. Checked in the built app with a reply added to an
+  explanation (the count came up as 1); the native menu itself wasn't opened in the check.
+- The workspace sidebar (L1) is about 230 px wide: the project by name and owner, then a row per workspace with its
+  PR's title, `#number · branch`, and an open/draft/merged/closed or branch icon; the pill marking the current one is
+  gone (its row is filled). Titles and states come from GitHub in one GraphQL request for the workspaces' PR numbers
+  (`listPullRequestTitles`), nothing stored; a number that isn't a PR is skipped. Checked in the built app.
+- The sidebar hides entirely with a panel button in its bar; the agent pane's header then makes room for the window
+  buttons and shows the button to bring it back (also _Show or Hide the Sidebar_ in the command palette).
+  ponytail: open or hidden resets on restart, like the pane widths; store it once there's a settings table.
+- The agent pane: the header's session title sits at the left (it kept 32 px of padding from the old narrow sidebar),
+  bold with a chevron, the agent muted after it, and New Session is a pencil icon with its agent chevron. The composer
+  is one rounded box: _Ask Codex…_, the model and effort as small icon buttons with chevrons, and a round send button
+  that becomes a stop button (with _Working_) while a turn runs. Checked in the built app idle and with text typed; the
+  running state wasn't started in the check.
+- Open a project and New workspace are dialogs over the window instead of full-window screens (a shared `Dialog`:
+  title, subtitle, ✕; Esc or a click outside closes), each with a search field across it. Rows got initials, a lock
+  for private repositories, PR icons, `#number · author · branch`, relative dates (_3 days ago_) and _Current_ / _Has a
+  workspace_ badges. Checked both in the built app.
+- New workspace has two tabs, _Pull request_ and _Branch_. The branch tab drops the browser's datalist: its one field
+  filters the GitHub branches as a list (pick one to work on it) and offers _New branch `name`_ from a base picked in
+  the native menu.
+- ponytail: the bar counts what Hand off takes with the same rule as the review prompt in `core/review.ts`, copied,
+  since the renderer imports no core code. Move it to a shared pure module if a third place needs it.
+- Still open: a guide's table of contents stays its own column; making it the pane's first tab (_Sections_) would
+  save a column.
+
 ## 2026-09-28 — Views of existing code without a diff
 
 Issue #31, for G3 and G5 (ADRs 0014, 0023, 0026).

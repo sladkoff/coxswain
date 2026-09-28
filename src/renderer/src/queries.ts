@@ -17,6 +17,7 @@ const extra: Partial<Record<Reads, { staleTime?: number; refetchOnWindowFocus?: 
   readFileAt: { staleTime: Infinity }, // a file at a commit never changes
   openWorktree: github, // asks GitHub for the PR's head and fetches it
   listPullRequests: github,
+  listPullRequestTitles: github,
 };
 // Offline or signed out: a GitHub read keeps what it fetched before. Throwing leaves the query's data as it was.
 const keepsOk = new Set<Reads>(["openWorktree"]);

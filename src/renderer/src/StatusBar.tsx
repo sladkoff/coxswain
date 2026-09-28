@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { ReviewEntry } from "../../core/review";
-import { Button } from "./components/button";
+import { Button, SegmentedControl, ToggleButton } from "./components/button";
+import { ChevronDownIcon } from "./components/icons";
 import { ProgressBar } from "./components/layout";
 import { cn, divider, muted } from "./components/styles";
 import { ErrorText } from "./components/text";
@@ -16,103 +17,160 @@ type Props = {
   onViewThread: (threadId: number) => void;
 };
 
-// The canvas's bottom bar: the review at a glance. Threads, with how many are outdated or waiting on the agent, how
-// many of the file diffs on screen are reviewed, and their lines. The thread count opens every thread above the bar.
+// The canvas's bottom bar: the review at a glance on the left (threads, with how many wait on the agent, how many of
+// the file diffs on screen are reviewed, and their lines), and Hand off on the right. The thread count opens the
+// threads above the bar.
 export function StatusBar(props: Props) {
   const [open, setOpen] = useState(false);
-  // Sending every thread to the agent pane's session; the agent's reply shows there.
+  const [listed, setListed] = useState<"open" | "resolved">("open");
+  // Sending the open threads to the agent pane's session; the agent's reply shows there.
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const sendAll = async () => {
-    setSending(true);
-    setError(null);
-    const result = await window.coxswain.sendReview(props.workspaceId);
-    setSending(false);
-    if (result.status === "error") setError(result.message);
-  };
   const threads = props.entries.filter((e) => e.path && !e.parentId);
-  const outdated = threads.filter((e) => e.state === "outdated").length;
-  const resolved = threads.filter((e) => e.resolvedAt).length;
-  const which = [outdated && `${outdated} outdated`, resolved && `${resolved} resolved`].filter(
-    Boolean,
+  // What Hand off takes, as the review prompt does (core/review.ts): not resolved, and not the agent's own explanations
+  // or findings unless the user replied to them.
+  const replied = new Set(
+    props.entries.filter((e) => e.parentId && !byAgent(e)).map((e) => e.parentId),
   );
+  const handOff = threads.filter((e) => !e.resolvedAt && (!byAgent(e) || replied.has(e.id)));
+  const resolved = threads.filter((e) => e.resolvedAt);
   const answering = threads.filter((e) => props.turns[e.id]?.running).length;
   const reviewed = props.files.filter((f) => props.reviewed.includes(f.path)).length;
   const add = props.files.reduce((n, f) => n + (f.additions ?? 0), 0);
   const del = props.files.reduce((n, f) => n + (f.deletions ?? 0), 0);
-  const parts = [
-    count(threads.length, "thread") + (which.length ? ` (${which.join(", ")})` : ""),
-    answering ? `${answering} waiting on the agent` : "",
-  ].filter(Boolean);
+  const shown = listed === "open" ? threads.filter((e) => !e.resolvedAt) : resolved;
+  const byFile = Map.groupBy(shown, (t) => t.path!);
+  const handOffTo = async () => {
+    const to = await window.coxswain.showHandOffMenu();
+    setError(null);
+    if (to === "copy") {
+      setCopied(await window.coxswain.copyReviewPrompt(props.workspaceId));
+      setTimeout(() => setCopied(false), 1500);
+      return;
+    }
+    setSending(true);
+    const result = await window.coxswain.sendReview(props.workspaceId);
+    setSending(false);
+    if (result.status === "error") setError(result.message);
+  };
   return (
     <div className={cn("flex max-h-[50%] shrink-0 flex-col border-t text-xs", divider)}>
       {open && (
-        <div className={cn("flex min-h-0 flex-col overflow-y-auto border-b py-1", divider)}>
-          {threads.length === 0 && (
-            <div className={cn("px-2 py-1", muted)}>
-              No threads yet. Click a line's gutter to start one.
-            </div>
-          )}
-          {threads.map((t) => (
-            <ThreadRow
-              key={t.id}
-              root={t}
-              replies={props.entries.filter((e) => e.parentId === t.id)}
-              answering={!!props.turns[t.id]?.running}
-              onClick={() => props.onViewThread(t.id)}
+        <div className={cn("flex min-h-0 flex-col border-b", divider)}>
+          <div className={cn("flex shrink-0 items-center gap-2 border-b px-2 py-1", divider)}>
+            <span className="font-medium">Threads</span>
+            <SegmentedControl
+              value={listed}
+              onChange={setListed}
+              options={[
+                { value: "open", label: `Open ${threads.length - resolved.length}` },
+                { value: "resolved", label: `Resolved ${resolved.length}` },
+              ]}
             />
-          ))}
+          </div>
+          <div className="min-h-0 overflow-y-auto py-1">
+            {shown.length === 0 && (
+              <div className={cn("px-2 py-1", muted)}>
+                {threads.length === 0
+                  ? "No threads yet. Click a line's gutter to start one."
+                  : `No ${listed} threads.`}
+              </div>
+            )}
+            {[...byFile].map(([path, list]) => (
+              <div key={path} className="flex flex-col">
+                <div className="px-2 pt-1.5 pb-0.5 font-mono text-[11px] text-blue-600 dark:text-blue-400">
+                  {path}
+                </div>
+                {list.map((t) => (
+                  <ThreadRow
+                    key={t.id}
+                    root={t}
+                    replies={props.entries.filter((e) => e.parentId === t.id)}
+                    answering={!!props.turns[t.id]?.running}
+                    onClick={() => props.onViewThread(t.id)}
+                  />
+                ))}
+              </div>
+            ))}
+          </div>
         </div>
       )}
       <div className={cn("flex h-8 shrink-0 items-center gap-3 px-2", muted)}>
-        <Button
-          variant="ghost"
-          title={open ? "Hide the threads" : "Show all threads"}
-          className="flex min-w-0 items-center gap-1 px-1 py-0.5"
+        <ToggleButton
+          on={open}
+          aria-expanded={open}
+          title={open ? "Hide the threads" : "Show the threads"}
+          className={cn(
+            "flex shrink-0 items-center gap-1.5 px-1.5",
+            open && "text-neutral-900 dark:text-neutral-100",
+          )}
           onClick={() => setOpen((o) => !o)}
         >
-          <span className="truncate">{parts.join(" · ")}</span>
-        </Button>
-        <Button
-          variant="ghost"
-          title="Send every thread to the agent in one message"
-          className="px-1.5 py-0.5"
-          disabled={!threads.length || sending}
-          onClick={sendAll}
-        >
-          {sending ? "Agent working…" : "Send all to agent"}
-        </Button>
-        <Button
-          variant="ghost"
-          title="Copy every thread to the clipboard as that message, to paste elsewhere"
-          className="px-1.5 py-0.5"
-          disabled={!threads.length}
-          onClick={async () => {
-            setCopied(await window.coxswain.copyReviewPrompt(props.workspaceId));
-            setTimeout(() => setCopied(false), 1500);
-          }}
-        >
-          {copied ? "Copied" : "Copy as prompt"}
-        </Button>
-        {error && <ErrorText className="truncate">{error}</ErrorText>}
-        <div className="flex-1" />
+          <span className={cn("flex", !open && "rotate-180")}>
+            <ChevronDownIcon />
+          </span>
+          {count(threads.length, "thread")}
+          {answering > 0 && (
+            <span className="flex items-center gap-1">
+              · <span className="size-1.5 rounded-full bg-amber-500" /> {answering} waiting
+            </span>
+          )}
+        </ToggleButton>
+        <div className={cn("h-4 border-l", divider)} />
+        <div className="flex shrink-0 items-center gap-1.5 tabular-nums">
+          <ProgressBar value={reviewed} max={props.files.length} className="w-16" />
+          {reviewed}/{props.files.length} reviewed
+        </div>
         {props.files.some((f) => f.additions !== undefined) && (
-          <span className="tabular-nums">
-            <span className="text-green-600">+{add}</span>{" "}
-            <span className="text-red-600">−{del}</span>
+          <>
+            <div className={cn("h-4 border-l", divider)} />
+            <span className="shrink-0 tabular-nums">
+              <span className="text-green-600">+{add}</span>{" "}
+              <span className="text-red-600">−{del}</span>
+            </span>
+          </>
+        )}
+        <div className="flex-1" />
+        {error && <ErrorText className="truncate">{error}</ErrorText>}
+        {sending && (
+          <span className="flex shrink-0 items-center gap-1.5">
+            <span className="size-2.5 animate-spin rounded-full border-[1.5px] border-neutral-400 border-t-transparent" />
+            Agent working on {count(handOff.length, "thread")}
           </span>
         )}
-        <div className="flex items-center gap-1.5 tabular-nums">
-          <ProgressBar value={reviewed} max={props.files.length} className="w-16" />
-          {reviewed} of {count(props.files.length, "file")} reviewed
-        </div>
+        {copied && <span className="shrink-0">Copied</span>}
+        <Button
+          variant="primary"
+          title={
+            handOff.length
+              ? "Send the open threads to the agent, or copy them as a prompt"
+              : "Nothing to hand off: no open threads of yours (the agent's explanations count once you reply)"
+          }
+          className="flex shrink-0 items-center gap-1.5 py-0.5 pr-1.5"
+          disabled={!handOff.length || sending}
+          onClick={handOffTo}
+        >
+          Hand off
+          {handOff.length > 0 && (
+            <span className="rounded-full bg-white/20 px-1.5 text-[11px] leading-4 dark:bg-black/15">
+              {handOff.length}
+            </span>
+          )}
+          <ChevronDownIcon />
+        </Button>
       </div>
     </div>
   );
 }
 
-// One thread in the bar's list: where it is, its first comment, and how far it got. A click shows it on the canvas.
+// ponytail: the same rule as byAgent in core/review.ts, copied since the renderer imports no core code; share a pure
+// module if a third place needs it.
+const byAgent = (e: Pick<ReviewEntry, "kind">) =>
+  e.kind === "answer" || e.kind === "explanation" || e.kind === "finding";
+
+// One thread in the bar's list, under its file: its lines, its first comment, and how far it got. A click shows it on
+// the canvas.
 function ThreadRow(props: {
   root: ReviewEntry;
   replies: ReviewEntry[];
@@ -122,26 +180,31 @@ function ThreadRow(props: {
   const { root: t, replies } = props;
   const lines = t.startLine === t.endLine ? `${t.startLine}` : `${t.startLine}–${t.endLine}`;
   const answers = replies.filter((r) => r.kind === "answer").length;
-  const status = [
-    t.resolvedAt && "resolved",
-    t.state === "outdated" && "outdated",
-    props.answering
-      ? "agent answering…"
+  const others = replies.length - answers;
+  // The one state that matters most, as a dot and a word; replies after it.
+  const [dot, state] = props.answering
+    ? ["bg-amber-500", "agent answering"]
+    : t.state === "outdated"
+      ? ["bg-neutral-400", "outdated"]
       : answers
-        ? count(answers, "answer")
-        : t.kind === "question" && "sent to agent",
-    replies.length - answers > 0 && count(replies.length - answers, "reply", "replies"),
-  ].filter(Boolean);
+        ? ["bg-green-600", count(answers, "answer")]
+        : t.kind === "question"
+          ? ["bg-blue-500", "sent to agent"]
+          : [null, null];
   return (
     <button
       onClick={props.onClick}
-      className="flex items-baseline gap-2 px-2 py-1 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800"
+      className={cn(
+        "flex items-center gap-2.5 py-1 pr-2 pl-5 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800",
+        t.state === "outdated" && muted,
+      )}
     >
-      <span className={cn("shrink-0 font-mono", muted)}>
-        {t.path!.split("/").at(-1)}:{lines}
-      </span>
+      <span className={cn("w-14 shrink-0 font-mono text-[11px]", muted)}>{lines}</span>
       <span className="min-w-0 flex-1 truncate">{t.body}</span>
-      <span className={cn("shrink-0", muted)}>{status.join(" · ")}</span>
+      <span className={cn("flex shrink-0 items-center gap-1.5", muted)}>
+        {dot && <span className={cn("size-1.5 rounded-full", dot)} />}
+        {[state, others > 0 && count(others, "reply", "replies")].filter(Boolean).join(" · ")}
+      </span>
     </button>
   );
 }

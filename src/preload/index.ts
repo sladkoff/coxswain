@@ -19,7 +19,13 @@ import type {
   GitProblem,
   WorktreeResult,
 } from "../core/git";
-import type { CreatedPullRequest, CurrentUser, PullRequestList, RepoPage } from "../core/github";
+import type {
+  CreatedPullRequest,
+  CurrentUser,
+  PullRequestList,
+  PullRequestTitles,
+  RepoPage,
+} from "../core/github";
 import type { View, ViewRequest } from "../core/views";
 import type { Project } from "../core/projects";
 import type { NewEntry, ReviewEntry } from "../core/review";
@@ -27,9 +33,15 @@ import type { SetupCheck } from "../core/setup";
 import type { Workspace } from "../core/workspaces";
 
 // The Navigator's settings in its cog menu. layout: changed files as a tree or as a flat list.
-export type NavigatorSettings = { layout: "tree" | "list" };
 // The canvas bar's settings in its cog menu. showReviewed: reviewed file diffs stay in the Navigator and on the canvas.
-export type ViewSettings = { diffStyle: "unified" | "split"; showReviewed: boolean };
+// The canvas's display options (its sliders button): how file diffs show, and how the Navigator lists them.
+export type ViewSettings = {
+  diffStyle: "unified" | "split";
+  showReviewed: boolean;
+  layout: "tree" | "list";
+};
+// What the Diff tab shows (glossary: scope), or "commits" to pick a commit or an agent turn in the Commits pane.
+export type RangePick = "all" | "pushed" | "local" | "commits";
 // What the core changed on its own, e.g. when an agent turn ends, so the UI refetches it (ADR 0017).
 export type Changed = {
   workspaceId: number;
@@ -45,6 +57,12 @@ const api = {
     ipcRenderer.invoke("projects:open", fullName),
   listPullRequests: (owner: string, name: string): Promise<PullRequestList> =>
     ipcRenderer.invoke("github:list-pulls", owner, name),
+  // The rail's titles: title and state of the workspaces' PRs, open or not.
+  listPullRequestTitles: (
+    owner: string,
+    name: string,
+    numbers: number[],
+  ): Promise<PullRequestTitles> => ipcRenderer.invoke("github:pull-titles", owner, name, numbers),
   cloneProject: (projectId: number): Promise<CloneResult> =>
     ipcRenderer.invoke("git:clone", projectId),
   openedBefore: (workspaceId: number): Promise<WorktreeResult | null> =>
@@ -205,10 +223,13 @@ const api = {
     return () => void ipcRenderer.off("agents:entry", listener);
   },
   // Native menu (ADR 0004). Resolves with the new settings when an item is picked; stays pending if dismissed.
-  showNavigatorMenu: (settings: NavigatorSettings): Promise<NavigatorSettings> =>
-    ipcRenderer.invoke("menus:navigator", settings),
   showViewMenu: (settings: ViewSettings): Promise<ViewSettings> =>
     ipcRenderer.invoke("menus:view", settings),
+  // The bottom bar's Hand off menu: send the open threads to the agent, or copy them as a prompt. Pending if dismissed.
+  showHandOffMenu: (): Promise<"agent" | "copy"> => ipcRenderer.invoke("menus:hand-off"),
+  // The Diff tab's range menu: a scope, or "commits". `scope` is null while a commit or turn shows. Pending if dismissed.
+  showRangeMenu: (scope: "all" | "pushed" | "local" | null, hasPr: boolean): Promise<RangePick> =>
+    ipcRenderer.invoke("menus:range", scope, hasPr),
   // A thread's ⋯ menu; stays pending if dismissed.
   showThreadMenu: (can: { edit: boolean; send: boolean }): Promise<"edit" | "delete" | "send"> =>
     ipcRenderer.invoke("menus:thread", can),

@@ -1,7 +1,18 @@
+import { useQuery } from "@tanstack/react-query";
+import type { PullRequestTitle } from "../../core/github";
 import type { Project } from "../../core/projects";
 import type { Workspace } from "../../core/workspaces";
-import { cn, divider, titleBar } from "./components/styles";
+import { Button } from "./components/button";
+import {
+  ChevronDownIcon,
+  GitBranchIcon,
+  GitMergeIcon,
+  GitPullRequestIcon,
+  PanelLeftIcon,
+} from "./components/icons";
+import { cn, divider, muted, noDrag, selectable, titleBar } from "./components/styles";
 import { workspaceLabel } from "./format";
+import { core } from "./queries";
 
 type Props = {
   project: Project;
@@ -12,9 +23,11 @@ type Props = {
   onSelect: (workspace: Workspace) => void;
   onRemove: (workspace: Workspace) => void;
   onNew: () => void;
+  onHide: () => void;
 };
 
-// L1, the sidebar: the current project, then its workspaces, then + for a new one.
+// L1, the sidebar: the current project, then its workspaces by title, then New Workspace. The titles and whether each
+// PR is still open come from GitHub; until they do, or offline, a PR workspace shows its number.
 export function WorkspaceRail({
   project,
   cloning,
@@ -24,83 +37,147 @@ export function WorkspaceRail({
   onSelect,
   onRemove,
   onNew,
+  onHide,
 }: Props) {
+  const numbers = workspaces.flatMap((w) => (w.prNumber !== null ? [w.prNumber] : []));
+  const titles = useQuery({
+    ...core("listPullRequestTitles", project.owner, project.name, numbers),
+    enabled: numbers.length > 0,
+  }).data;
+  const pulls = new Map(titles?.status === "ok" ? titles.pulls.map((p) => [p.number, p]) : []);
   return (
-    <div className={cn("flex flex-col", divider)}>
-      {/* The bar drags the window; the macOS window buttons reach past it into L3's, so the border starts below it. */}
-      <div className={cn(titleBar, "border-b", divider)} />
-      <div className={cn("flex min-h-0 flex-1 border-r", divider)}>
-        <div className="flex w-12 flex-col items-center gap-2 py-2">
-          {/* The current project, like a Discord server icon. Opens a native menu to switch or add projects. */}
-          <button
-            title={`${project.owner}/${project.name}${cloning ? " (cloning…)" : ""}: switch or add project`}
-            onClick={onProjects}
+    <div className={cn("flex w-58 shrink-0 flex-col border-r", divider)}>
+      {/* The bar drags the window and holds the macOS window buttons. */}
+      <div className={cn(titleBar, "justify-end border-b px-2", divider)}>
+        <Button
+          variant="ghost"
+          title="Hide the sidebar"
+          aria-label="Hide the sidebar"
+          className={cn("p-1 text-neutral-500", noDrag)}
+          onClick={onHide}
+        >
+          <PanelLeftIcon />
+        </Button>
+      </div>
+      <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-1.5 text-xs">
+        {/* The current project. Opens a native menu to switch or add projects. */}
+        <button
+          title={`${project.owner}/${project.name}${cloning ? " (cloning…)" : ""}: switch or add project`}
+          onClick={onProjects}
+          className={cn(
+            "flex items-center gap-2 rounded-md px-1.5 py-1.5 text-left",
+            selectable(false),
+          )}
+        >
+          <span
             className={cn(
               cloning && "animate-pulse",
-              "flex size-7 items-center justify-center rounded-md bg-neutral-800 text-xs font-semibold text-white dark:bg-neutral-200 dark:text-neutral-900",
+              "flex size-6 shrink-0 items-center justify-center rounded-md bg-neutral-800 text-[11px] font-semibold text-white dark:bg-neutral-200 dark:text-neutral-900",
             )}
           >
             {project.name[0].toUpperCase()}
-          </button>
-          <div className="h-px w-5 bg-neutral-200 dark:bg-neutral-800" />
-          {workspaces.map((w) => (
-            <WorkspaceButton
-              key={w.id}
-              workspace={w}
-              selected={w.id === current?.id}
-              onClick={() => onSelect(w)}
-              onContextMenu={async () => {
-                if ((await window.coxswain.showWorkspaceMenu()) === "remove") onRemove(w);
-              }}
-            />
-          ))}
-          <button
+          </span>
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span className="truncate font-semibold">{project.name}</span>
+            <span className={cn("truncate text-[11px]", muted)}>{project.owner}</span>
+          </span>
+          <span className={muted}>
+            <ChevronDownIcon />
+          </span>
+        </button>
+        {/* New Workspace here too, so it's in reach however long the list gets. */}
+        <div
+          className={cn(
+            "flex items-center pt-2 pr-0.5 pl-2 text-[10.5px] font-semibold tracking-wide",
+            muted,
+          )}
+        >
+          <span className="flex-1">WORKSPACES</span>
+          <Button
+            variant="ghost"
             title="New workspace"
+            aria-label="New workspace"
+            className="flex size-5 items-center justify-center text-sm leading-none font-normal"
             onClick={onNew}
-            className="flex size-7 items-center justify-center rounded-md text-base text-neutral-500 hover:bg-neutral-200 dark:hover:bg-neutral-800"
           >
             +
-          </button>
+          </Button>
         </div>
+        {workspaces.map((w) => (
+          <WorkspaceRow
+            key={w.id}
+            workspace={w}
+            pull={w.prNumber !== null ? pulls.get(w.prNumber) : undefined}
+            selected={w.id === current?.id}
+            onClick={() => onSelect(w)}
+            onContextMenu={async () => {
+              if ((await window.coxswain.showWorkspaceMenu()) === "remove") onRemove(w);
+            }}
+          />
+        ))}
+        <button
+          onClick={onNew}
+          className={cn(
+            "mt-1 flex items-center gap-2 rounded-md px-2 py-1.5 text-left",
+            muted,
+            selectable(false),
+          )}
+        >
+          <span className="w-3.5 text-center text-sm leading-none">+</span>
+          New Workspace
+        </button>
       </div>
     </div>
   );
 }
 
-// A workspace by its PR number, or its branch's last part until it has one; the pill on the left marks the current one. Right-click offers to remove it.
-function WorkspaceButton({
+// A workspace: its PR's title (the branch until it has a PR), then its number and branch; an icon for an open, draft,
+// merged or closed PR, or a branch. Right-click offers to remove it.
+function WorkspaceRow({
   workspace: w,
+  pull,
   selected,
   onClick,
   onContextMenu,
 }: {
   workspace: Workspace;
+  pull: PullRequestTitle | undefined;
   selected: boolean;
   onClick: () => void;
   onContextMenu: () => void;
 }) {
+  const title = pull?.title ?? (w.prNumber !== null ? workspaceLabel(w) : w.branch!);
+  const meta = [w.prNumber !== null && `#${w.prNumber}`, w.branch].filter(Boolean).join(" · ");
+  const [icon, color, state] =
+    w.prNumber === null
+      ? [<GitBranchIcon />, muted, "Branch"]
+      : pull?.state === "merged"
+        ? [<GitMergeIcon />, "text-purple-600 dark:text-purple-400", "Merged"]
+        : pull?.state === "closed"
+          ? [<GitPullRequestIcon />, "text-red-600 dark:text-red-400", "Closed"]
+          : pull?.draft
+            ? [<GitPullRequestIcon />, muted, "Draft"]
+            : [<GitPullRequestIcon />, "text-green-600 dark:text-green-500", "Open"];
   return (
-    <div className="relative flex w-full justify-center">
-      {selected && (
-        <span className="absolute top-1 left-0 h-5 w-1 rounded-r bg-neutral-900 dark:bg-neutral-100" />
+    <button
+      title={[title, meta, state].join("\n")}
+      aria-current={selected ? "page" : undefined}
+      onClick={onClick}
+      onContextMenu={onContextMenu}
+      className={cn(
+        "flex items-start gap-2 rounded-md px-2 py-1.5 text-left",
+        selectable(selected),
       )}
-      <button
-        title={
-          w.prNumber !== null && w.branch ? `${workspaceLabel(w)} · ${w.branch}` : workspaceLabel(w)
-        }
-        onClick={onClick}
-        onContextMenu={onContextMenu}
-        className={cn(
-          "flex h-7 w-10 items-center justify-center rounded-md px-0.5 text-[10px] font-medium",
-          selected
-            ? "bg-neutral-300 text-neutral-900 dark:bg-neutral-600 dark:text-white"
-            : "bg-neutral-100 text-neutral-500 hover:bg-neutral-200 dark:bg-neutral-800/60 dark:hover:bg-neutral-800",
-        )}
-      >
-        <span className="truncate">
-          {w.prNumber !== null ? `#${w.prNumber}` : w.branch!.split("/").at(-1)}
+    >
+      <span className={cn("mt-px flex shrink-0", color)}>{icon}</span>
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className={cn("truncate", !selected && "text-neutral-700 dark:text-neutral-300")}>
+          {title}
         </span>
-      </button>
-    </div>
+        {meta !== title && (
+          <span className={cn("truncate font-mono text-[10.5px]", muted)}>{meta}</span>
+        )}
+      </span>
+    </button>
   );
 }

@@ -30,6 +30,15 @@ export type PullRequest = {
 
 export type PullRequestList = { status: "ok"; pulls: PullRequest[] } | GitHubProblem;
 
+// What the workspace rail shows of a workspace's PR: its title and whether it's still open.
+export type PullRequestTitle = {
+  number: number;
+  title: string;
+  state: "open" | "merged" | "closed";
+  draft: boolean;
+};
+export type PullRequestTitles = { status: "ok"; pulls: PullRequestTitle[] } | GitHubProblem;
+
 export type RepoPage = { status: "ok"; repos: Repo[]; hasMore: boolean } | GitHubProblem;
 
 // ADR 0006: the token comes from `gh` each time and is never stored.
@@ -119,6 +128,44 @@ export function listPullRequests(owner: string, name: string): Promise<PullReque
         draft: p.draft ?? false,
         updatedAt: p.updated_at,
       })),
+    };
+  });
+}
+
+// Title and state of some PRs of one repository, open or not, in one GraphQL request. A number GitHub doesn't know is
+// left out.
+export function listPullRequestTitles(
+  owner: string,
+  name: string,
+  numbers: number[],
+): Promise<PullRequestTitles> {
+  return withGitHub(async (octokit) => {
+    if (!numbers.length) return { status: "ok", pulls: [] };
+    const fields = numbers
+      .map((n) => `pr${n}: pullRequest(number: ${Math.trunc(n)}) { number title state isDraft }`)
+      .join("\n");
+    type Found = { number: number; title: string; state: string; isDraft: boolean } | null;
+    type Data = { repository: Record<string, Found> };
+    const query = `query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { ${fields} } }`;
+    // A number that isn't a PR fails only its own field: GraphQL answers the others next to the error.
+    const data = await octokit.graphql<Data>(query, { owner, name }).catch((e: { data?: Data }) => {
+      if (e.data?.repository) return e.data;
+      throw e;
+    });
+    return {
+      status: "ok",
+      pulls: Object.values(data.repository).flatMap((p) =>
+        p
+          ? [
+              {
+                number: p.number,
+                title: p.title,
+                state: p.state.toLowerCase() as PullRequestTitle["state"],
+                draft: p.isDraft,
+              },
+            ]
+          : [],
+      ),
     };
   });
 }

@@ -53,7 +53,7 @@ import {
   type ViewRequest,
   viewRequests,
 } from "../core/views";
-import { getCurrentUser, listPullRequests, listRepos } from "../core/github";
+import { getCurrentUser, listPullRequestTitles, listPullRequests, listRepos } from "../core/github";
 import { listProjects, openProject } from "../core/projects";
 import {
   addNote,
@@ -72,7 +72,7 @@ import {
 } from "../core/review";
 import { listReviewed, setReviewed } from "../core/reviewed";
 import { checkSetup } from "../core/setup";
-import type { Changed, NavigatorSettings, ViewSettings } from "../preload";
+import type { Changed, RangePick, ViewSettings } from "../preload";
 import {
   listWorkspaces,
   openBranchWorkspace,
@@ -259,6 +259,9 @@ app.whenReady().then(() => {
   ipcMain.handle("github:list-pulls", (_, owner: string, name: string) =>
     listPullRequests(owner, name),
   );
+  ipcMain.handle("github:pull-titles", (_, owner: string, name: string, numbers: number[]) =>
+    listPullRequestTitles(owner, name, numbers),
+  );
   ipcMain.handle("workspaces:list", (_, projectId: number) => listWorkspaces(db, projectId));
   ipcMain.handle("workspaces:open", (_, workspaceId: number) => openWorkspace(db, workspaceId));
   ipcMain.handle("workspaces:open-pr", (_, projectId: number, prNumber: number, headRef: string) =>
@@ -414,29 +417,8 @@ app.whenReady().then(() => {
     changed(e.sender, { workspaceId, what: "transcript" });
     return result;
   });
-  // Resolves only on a click: the menu's close callback can run before the click, so it can't tell a dismissal
-  // from a pick. A dismissed menu leaves the promise pending; nothing else waits on it.
-  ipcMain.handle(
-    "menus:navigator",
-    (e, s: NavigatorSettings) =>
-      new Promise<NavigatorSettings>((resolve) =>
-        Menu.buildFromTemplate([
-          {
-            label: "As Tree",
-            type: "radio",
-            checked: s.layout === "tree",
-            click: () => resolve({ ...s, layout: "tree" }),
-          },
-          {
-            label: "As List",
-            type: "radio",
-            checked: s.layout === "list",
-            click: () => resolve({ ...s, layout: "list" }),
-          },
-        ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
-      ),
-  );
-  // A thread's ⋯ menu. Resolves only on a click, like the menu above.
+  // A thread's ⋯ menu. Resolves only on a click: the menu's close callback can run before the click, so it can't tell
+  // a dismissal from a pick. A dismissed menu leaves the promise pending; nothing else waits on it.
   ipcMain.handle(
     "menus:thread",
     (e, can: { edit: boolean; send: boolean }) =>
@@ -473,6 +455,55 @@ app.whenReady().then(() => {
             checked: s.showReviewed,
             click: () => resolve({ ...s, showReviewed: !s.showReviewed }),
           },
+          { type: "separator" },
+          {
+            label: "Files as Tree",
+            type: "radio",
+            checked: s.layout === "tree",
+            click: () => resolve({ ...s, layout: "tree" }),
+          },
+          {
+            label: "Files as List",
+            type: "radio",
+            checked: s.layout === "list",
+            click: () => resolve({ ...s, layout: "list" }),
+          },
+        ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
+      ),
+  );
+  // The bottom bar's Hand off: where the open threads go. Send to GitHub isn't built yet, so it's shown greyed out.
+  ipcMain.handle(
+    "menus:hand-off",
+    (e) =>
+      new Promise<"agent" | "copy">((resolve) =>
+        Menu.buildFromTemplate([
+          { label: "Send to Agent", click: () => resolve("agent") },
+          { label: "Copy as Prompt", click: () => resolve("copy") },
+          { type: "separator" },
+          { label: "Send to GitHub as a Review…", enabled: false },
+        ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
+      ),
+  );
+  // The Diff tab's range: a scope (none checked while a commit or turn shows), or the Commits pane to pick one.
+  ipcMain.handle(
+    "menus:range",
+    (e, scope: "all" | "pushed" | "local" | null, hasPr: boolean) =>
+      new Promise<RangePick>((resolve) =>
+        Menu.buildFromTemplate([
+          ...(
+            [
+              ["all", "All Changes"],
+              ["pushed", hasPr ? "The PR's Changes" : "Pushed Changes"],
+              ["local", "Local Changes"],
+            ] as const
+          ).map(([value, label]) => ({
+            label,
+            type: "checkbox" as const,
+            checked: scope === value,
+            click: () => resolve(value),
+          })),
+          { type: "separator" },
+          { label: "Commit or Agent Turn…", click: () => resolve("commits") },
         ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
       ),
   );

@@ -8,13 +8,18 @@ export function Input({ className, ...props }: ComponentProps<"input">) {
   return <input {...props} className={cn(field, "px-3 py-1.5", className)} />;
 }
 
-// Enter submits, Shift+Enter adds a line, Esc cancels.
+// Enter submits, Shift+Enter adds a line, Esc cancels. `bare`: no border of its own, inside a box that has one.
 export function TextArea({
   onSubmit,
   onCancel,
+  bare,
   className,
   ...props
-}: Omit<ComponentProps<"textarea">, "onSubmit"> & { onSubmit: () => void; onCancel?: () => void }) {
+}: Omit<ComponentProps<"textarea">, "onSubmit"> & {
+  onSubmit: () => void;
+  onCancel?: () => void;
+  bare?: boolean;
+}) {
   return (
     <textarea
       {...props}
@@ -25,7 +30,7 @@ export function TextArea({
           onSubmit();
         }
       }}
-      className={cn(field, "resize-none p-1.5", className)}
+      className={cn(bare ? "bg-transparent outline-none" : field, "resize-none p-1.5", className)}
     />
   );
 }

@@ -3,10 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import type { ChangedFile } from "../../core/git";
 import type { Workspace } from "../../core/workspaces";
-import type { NavigatorSettings } from "../../preload";
 import type { ReviewEntry } from "../../core/review";
-import { Button } from "./components/button";
-import { CogIcon } from "./components/icons";
 import { cn, muted } from "./components/styles";
 import { ProblemMessage } from "./components/text";
 import { countItems, type ItemCount, itemsTitle } from "./format";
@@ -19,6 +16,7 @@ type Props = {
   workspace: Workspace;
   pr: PullRequestData;
   view: NavigatorView;
+  layout: "tree" | "list"; // the canvas's display options
   reviewed: string[];
   showReviewed: boolean;
   entries: ReviewEntry[]; // the workspace's, counted per file
@@ -33,6 +31,7 @@ export function Navigator({
   workspace,
   pr,
   view,
+  layout,
   reviewed,
   showReviewed,
   entries,
@@ -46,8 +45,6 @@ export function Navigator({
   }).data;
   const tree = files?.status === "ok" ? files.paths : null;
   const treeProblem = files && files.status !== "ok" ? files : null;
-  // ponytail: reset per workspace and on restart; store them with the other UI state once there's a settings table.
-  const [settings, setSettings] = useState<NavigatorSettings>({ layout: "tree" });
 
   const problem = pr.problem ?? treeProblem;
   if (problem)
@@ -65,27 +62,10 @@ export function Navigator({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {pr.notice && <div className={cn("px-2 py-1 text-xs", muted)}>{pr.notice}</div>}
-      {view === "diffs" && (
-        <div className={cn("flex items-center justify-between px-2 py-1 text-xs", muted)}>
-          <span>
-            {pr.changed.filter((f) => reviewed.includes(f.path)).length} of {pr.changed.length}{" "}
-            reviewed
-            {!showReviewed && reviewed.length > 0 && ", hidden"}
-          </span>
-          <Button
-            variant="ghost"
-            title="View options"
-            className="p-0.5"
-            onClick={async () => setSettings(await window.coxswain.showNavigatorMenu(settings))}
-          >
-            <CogIcon />
-          </Button>
-        </div>
-      )}
       {/* Remounts on a new list: the tree takes its paths only when created. A refetch with the same paths keeps
           the same array (structural sharing), so the tree keeps its state. */}
       <Tree
-        key={`${view}:${settings.layout}:${idOf(view === "diffs" ? pr.changed : paths)}:${local ? idOf(local) : 0}`}
+        key={`${view}:${layout}:${idOf(view === "diffs" ? pr.changed : paths)}:${local ? idOf(local) : 0}`}
         paths={paths}
         changed={pr.changed}
         local={local}
@@ -93,7 +73,7 @@ export function Navigator({
         items={countItems(entries)}
         hidden={view === "diffs" && !showReviewed ? reviewed : []}
         expanded={view === "diffs"}
-        flat={view === "diffs" && settings.layout === "list"}
+        flat={view === "diffs" && layout === "list"}
         selected={view === "files" ? selected : undefined}
         onOpen={onOpen}
       />

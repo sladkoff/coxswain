@@ -9,10 +9,10 @@ import type { View, ViewRequest } from "../../core/views";
 import type { Workspace } from "../../core/workspaces";
 import { Agents } from "./Agents";
 import { upsert } from "./ChatEntry";
-import { CanvasBar, viewTitles } from "./CanvasBar";
+import { CanvasBar, PaneBar, type PaneTab, viewTitles } from "./CanvasBar";
 import { type Action, CommandPalette } from "./CommandPalette";
 import { Commits } from "./Commits";
-import { Button, SegmentedControl } from "./components/button";
+import { Button } from "./components/button";
 import { Centered, Splitter, viewerMin } from "./components/layout";
 import { cn, divider, muted, titleBar } from "./components/styles";
 import { Navigator, type NavigatorView } from "./Navigator";
@@ -52,14 +52,23 @@ export function App() {
   // ponytail: pane widths reset on restart; persist them in SQLite once a settings table exists.
   const [leftWidth, setLeftWidth] = useState(416);
   const [agentsWidth, setAgentsWidth] = useState(416);
-  // The pane on the left of the canvas: the Navigator (files) or the commits. Starts hidden.
-  const [leftPane, setLeftPane] = useState<"files" | "commits" | null>(null);
-  const toggleLeftPane = (p: "files" | "commits") => setLeftPane((o) => (o === p ? null : p));
+  // L1, the workspace sidebar: shown until hidden with its button, back with the agent pane's. ponytail: resets on
+  // restart, like the pane widths.
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  // The pane on the left of the canvas: the Navigator or the commits, under its own bar. Starts hidden; hiding it
+  // keeps which one it was, for ⌘B.
+  const [paneOpen, setPaneOpen] = useState(false);
+  const [pane, setPane] = useState<"navigator" | "commits">("navigator");
+  const showPane = (p: "navigator" | "commits") => {
+    setPane(p);
+    setPaneOpen(true);
+  };
 
   // ponytail: resets on restart, like the Navigator's settings; store them once there's a settings table.
   const [viewSettings, setViewSettings] = useState<ViewSettings>({
     diffStyle: "unified",
     showReviewed: false,
+    layout: "tree",
   });
   const workspaces =
     useQuery({ ...core("listWorkspaces", current?.id ?? 0), enabled: !!current }).data ?? [];
@@ -424,6 +433,12 @@ export function App() {
     void show({ viewId: id, commit: undefined, file: undefined, at: undefined });
   const pickCommit = (picked: Commit | null) =>
     void show({ commit: picked ?? undefined, viewId: null, file: undefined, at: undefined });
+  // The pane's bar: Changes and Files are the Navigator's toggle (a history entry, ADR 0025), Commits the other pane.
+  const paneTab: PaneTab = pane === "commits" ? "commits" : view;
+  const pickPaneTab = (t: PaneTab) => {
+    setPane(t === "commits" ? "commits" : "navigator");
+    if (t !== "commits" && t !== view) void show({ view: t === "files" ? "files" : undefined });
+  };
   const pickScope = (picked: "all" | "pushed" | "local") =>
     void show({
       scope: picked === "all" ? undefined : picked,
@@ -462,7 +477,7 @@ export function App() {
   // Viewers don't all redraw.
   const openFile = useCallback(
     (path: string, line?: number) => {
-      setLeftPane("files");
+      showPane("navigator");
       // The same file again without a line (e.g. the tree selecting the one it revealed) is no new entry.
       const now = shown.current;
       if (!line && now.view === "files" && now.file === path) return;
@@ -548,16 +563,22 @@ export function App() {
     },
     {
       id: "toggle-navigator",
-      title: "Show or Hide Files",
+      title: "Show or Hide the Navigator",
       shortcut: "⌘B",
       enabled: !!currentWorkspace,
-      run: () => toggleLeftPane("files"),
+      run: () => setPaneOpen((o) => !o),
+    },
+    {
+      id: "toggle-sidebar",
+      title: "Show or Hide the Sidebar",
+      enabled: true,
+      run: () => setSidebarOpen((o) => !o),
     },
     {
       id: "toggle-commits",
       title: "Show or Hide Commits",
       enabled: ready,
-      run: () => toggleLeftPane("commits"),
+      run: () => (paneOpen && pane === "commits" ? setPaneOpen(false) : showPane("commits")),
     },
     {
       id: "show-diff",
@@ -668,54 +689,61 @@ export function App() {
   if (setup.data.problems.length)
     return <Setup check={setup.data} onRetry={() => void setup.refetch()} />;
   if (screen === "settings") return <Settings onClose={close} />;
-  if (screen === "projects")
-    return (
+  // Projects and New workspace are dialogs over the screen below them.
+  const dialog =
+    screen === "projects" ? (
       <Projects
         projects={projects ?? []}
         current={current}
         onSelect={selectProject}
         onClose={close}
       />
-    );
-  if (screen === "new-workspace" && current)
-    return (
+    ) : screen === "new-workspace" && current ? (
       <NewWorkspace
         project={current}
         openPrNumbers={workspaces.flatMap((w) => (w.prNumber !== null ? [w.prNumber] : []))}
+        openBranches={workspaces.flatMap((w) => (w.branch ? [w.branch] : []))}
         onSelect={newPullWorkspace}
         onBranch={newBranchWorkspace}
         onClose={close}
       />
-    );
+    ) : null;
   if (!projects) return null; // local and near-instant, so no loading screen
   if (!current)
     return (
-      <Onboarding
-        onSettings={() => setScreen("settings")}
-        onChooseProject={() => setScreen("projects")}
-      />
+      <>
+        <Onboarding
+          onSettings={() => setScreen("settings")}
+          onChooseProject={() => setScreen("projects")}
+        />
+        {dialog}
+      </>
     );
 
   // Empty shell of the main screen from docs/UX.md: L1 project and workspaces, the agent pane, the canvas.
   return (
     // Side panes keep their dragged width but shrink with the window before the Viewer goes below viewerMin.
     <div className="flex h-full select-none overflow-hidden text-sm">
-      <WorkspaceRail
-        project={current}
-        cloning={cloning}
-        workspaces={workspaces}
-        current={currentWorkspace}
-        onProjects={async () => {
-          const picked = await window.coxswain.showProjectsMenu(
-            projects.map((p) => `${p.owner}/${p.name}`),
-          );
-          if (picked === null) setScreen("projects");
-          else if (picked !== `${current.owner}/${current.name}`) await selectProject(picked);
-        }}
-        onSelect={(w) => void selectWorkspace(w.id)}
-        onRemove={removeWorkspace}
-        onNew={() => setScreen("new-workspace")}
-      />
+      {dialog}
+      {sidebarOpen && (
+        <WorkspaceRail
+          project={current}
+          cloning={cloning}
+          workspaces={workspaces}
+          current={currentWorkspace}
+          onProjects={async () => {
+            const picked = await window.coxswain.showProjectsMenu(
+              projects.map((p) => `${p.owner}/${p.name}`),
+            );
+            if (picked === null) setScreen("projects");
+            else if (picked !== `${current.owner}/${current.name}`) await selectProject(picked);
+          }}
+          onSelect={(w) => void selectWorkspace(w.id)}
+          onRemove={removeWorkspace}
+          onNew={() => setScreen("new-workspace")}
+          onHide={() => setSidebarOpen(false)}
+        />
+      )}
 
       {palette !== null && (
         <CommandPalette
@@ -738,6 +766,7 @@ export function App() {
               workspace={currentWorkspace}
               onViewThread={viewThread}
               composerText={composerText}
+              onShowSidebar={sidebarOpen ? undefined : () => setSidebarOpen(true)}
             />
           </div>
           <Splitter min={240} max={800} onResize={setAgentsWidth} />
@@ -746,45 +775,27 @@ export function App() {
 
       {/* The canvas: what the agent and the human look at together. For now, the workspace's file diffs. */}
       <div style={{ minWidth: viewerMin }} className="flex min-w-0 flex-1 flex-col">
-        {currentWorkspace ? (
-          <CanvasBar
-            files={diffPr.changed?.length}
-            leftPane={leftPane}
-            onToggleLeftPane={toggleLeftPane}
-            ready={!!pr.commits}
-            commit={commit}
-            view={canvasView}
-            views={views ?? []}
-            snapshot={pr.snapshot}
-            scope={scope}
-            hasPr={currentWorkspace.prNumber !== null}
-            onScope={pickScope}
-            onShowView={showView}
-            onRemoveView={removeView}
-            onNewView={newView}
-            onOpenQuickly={() => run("open-quickly")}
-            canBack={canBack}
-            canForward={canForward}
-            onBack={() => run("back")}
-            onForward={() => run("forward")}
-            onViewOptions={async () =>
-              setViewSettings(await window.coxswain.showViewMenu(viewSettings))
-            }
-          />
-        ) : (
-          <div className={cn(titleBar, "border-b", divider)} />
-        )}
         {!currentWorkspace ? (
-          <Centered>No workspace. Start one with +</Centered>
+          <>
+            <div className={cn(titleBar, "border-b", divider)} />
+            <Centered>No workspace. Start one with +</Centered>
+          </>
         ) : (
           <div className="flex min-h-0 flex-1">
-            {leftPane && (
+            {paneOpen && (
               <>
                 <div
                   style={{ width: leftWidth }}
                   className={cn("flex min-w-60 flex-col border-r", divider)}
                 >
-                  {leftPane === "commits" ? (
+                  <PaneBar
+                    tab={paneTab}
+                    files={diffPr.changed?.length}
+                    ready={!!pr.commits}
+                    onTab={pickPaneTab}
+                    onHide={() => setPaneOpen(false)}
+                  />
+                  {paneTab === "commits" ? (
                     pr.commits && (
                       <Commits
                         workspaceId={currentWorkspace.id}
@@ -799,152 +810,178 @@ export function App() {
                       />
                     )
                   ) : (
-                    <>
-                      <div className="flex shrink-0 justify-end px-2 pt-1.5">
-                        <SegmentedControl
-                          value={view}
-                          onChange={(v) => void show({ view: v === "files" ? "files" : undefined })}
-                          options={[
-                            { value: "diffs", label: "Diffs" },
-                            { value: "files", label: "Files" },
-                          ]}
-                        />
-                      </div>
-                      <Navigator
-                        key={currentWorkspace.id}
-                        workspace={currentWorkspace}
-                        pr={diffPr}
-                        view={view}
-                        reviewed={reviewed}
-                        showReviewed={viewSettings.showReviewed}
-                        entries={entries}
-                        local={range ? undefined : (pr.local ?? undefined)}
-                        selected={opened?.kind === "file" ? opened.path : undefined}
-                        onOpen={open}
-                      />
-                    </>
+                    <Navigator
+                      key={currentWorkspace.id}
+                      workspace={currentWorkspace}
+                      pr={diffPr}
+                      view={view}
+                      layout={viewSettings.layout}
+                      reviewed={reviewed}
+                      showReviewed={viewSettings.showReviewed}
+                      entries={entries}
+                      local={range ? undefined : (pr.local ?? undefined)}
+                      selected={opened?.kind === "file" ? opened.path : undefined}
+                      onOpen={open}
+                    />
                   )}
                 </div>
                 <Splitter min={240} max={720} onResize={setLeftWidth} />
               </>
             )}
-            {sections && !showFile && (
-              <ViewToc
-                sections={sections}
-                reviewed={reviewed}
-                reviewedFiles={reviewedFiles}
-                entries={entries}
-                current={currentSection}
-                onPick={pickSection}
+            <div className="flex min-w-0 flex-1 flex-col">
+              <CanvasBar
+                paneOpen={paneOpen}
+                onShowPane={() => setPaneOpen(true)}
+                ready={!!pr.commits}
+                commit={commit}
+                view={canvasView}
+                views={views ?? []}
+                snapshot={pr.snapshot}
+                scope={scope}
+                hasPr={currentWorkspace.prNumber !== null}
+                onRangeMenu={async () => {
+                  const picked = await window.coxswain.showRangeMenu(
+                    commit ? null : scope,
+                    currentWorkspace.prNumber !== null,
+                  );
+                  if (picked === "commits") showPane("commits");
+                  else pickScope(picked);
+                }}
+                onClearCommit={() => pickCommit(null)}
+                onShowView={showView}
+                onRemoveView={removeView}
+                onNewView={newView}
+                onOpenQuickly={() => run("open-quickly")}
+                canBack={canBack}
+                canForward={canForward}
+                onBack={() => run("back")}
+                onForward={() => run("forward")}
+                onViewOptions={async () =>
+                  setViewSettings(await window.coxswain.showViewMenu(viewSettings))
+                }
               />
-            )}
-            <div
-              style={{ minWidth: viewerMin }}
-              className="flex min-w-0 flex-1 flex-col"
-              ref={canvas}
-              onScrollCapture={onCanvasScroll}
-            >
-              {!pr.commits || !diffDiffs || !shownDiffs ? (
-                <Centered>Loading…</Centered>
-              ) : (
-                <>
-                  {showFile && (
-                    // One Viewer per file: a reused one would scroll to a line in the file it drew before.
-                    <Viewer
-                      key={opened.kind === "file" ? opened.path : undefined}
-                      opened={opened}
-                      reviewed={false}
-                      {...viewerProps(currentWorkspace, pr.commits.mergeBase)}
-                    />
-                  )}
-                  {/* Only the lines on screen are drawn. Hidden, not unmounted, under a whole file: it keeps its
+              <div className="flex min-h-0 flex-1">
+                {sections && !showFile && (
+                  <ViewToc
+                    sections={sections}
+                    reviewed={reviewed}
+                    reviewedFiles={reviewedFiles}
+                    entries={entries}
+                    current={currentSection}
+                    onPick={pickSection}
+                  />
+                )}
+                <div
+                  style={{ minWidth: viewerMin }}
+                  className="flex min-w-0 flex-1 flex-col"
+                  ref={canvas}
+                  onScrollCapture={onCanvasScroll}
+                >
+                  {!pr.commits || !diffDiffs || !shownDiffs ? (
+                    <Centered>Loading…</Centered>
+                  ) : (
+                    <>
+                      {showFile && (
+                        // One Viewer per file: a reused one would scroll to a line in the file it drew before.
+                        <Viewer
+                          key={opened.kind === "file" ? opened.path : undefined}
+                          opened={opened}
+                          reviewed={false}
+                          {...viewerProps(currentWorkspace, pr.commits.mergeBase)}
+                        />
+                      )}
+                      {/* Only the lines on screen are drawn. Hidden, not unmounted, under a whole file: it keeps its
                       scroll and read files for Back. ponytail: every file is still read from disk up front. */}
-                  <Virtualizer className={cn("min-h-0 flex-1 overflow-auto", showFile && "hidden")}>
-                    {canvasView &&
-                    !canvasView.sections.length &&
-                    (!canvasView.guide || !diffDiffs.length) ? (
-                      <div className={cn("p-4 text-xs", muted)}>Nothing in this view yet.</div>
-                    ) : (
-                      (!canvasView || canvasFiles.length > 0) &&
-                      canvasFiles.every((file) => !isShown(file)) && (
-                        <div className={cn("p-4 text-xs", muted)}>
-                          {canvasFiles.length ? (
-                            <>
-                              All {canvasFiles.length} files reviewed.{" "}
-                              <Button
-                                variant="link"
-                                onClick={() =>
-                                  setViewSettings((s) => ({ ...s, showReviewed: true }))
-                                }
-                              >
-                                Show them
-                              </Button>
-                            </>
-                          ) : (
-                            "No changes"
-                          )}
-                        </div>
-                      )
-                    )}
-                    {canvasView && pr.snapshot && canvasView.head !== pr.snapshot && (
-                      <StaleViewNotice />
-                    )}
-                    {(
-                      sections ?? [
-                        {
-                          title: undefined,
-                          generated: false,
-                          files: diffDiffs,
-                          shown: shownDiffs,
-                          parts: shownDiffs.map((d) => ({ kind: "code", d, generated: false })),
-                        },
-                      ]
-                    ).map(
-                      (x, i) =>
-                        sectionShown(x) && (
-                          <section
-                            key={i}
-                            id={`view-section-${i}`}
-                            className={x.generated ? "opacity-60" : ""}
-                          >
-                            {x.title !== undefined && (
-                              <ViewSectionHeader
-                                title={x.title}
-                                files={x.files.length}
-                                reviewed={x.files.filter(isReviewed).length}
-                                generated={x.generated}
-                              />
-                            )}
-                            {(x.parts as SectionPart[]).map((p, j) =>
-                              p.kind === "prose" ? (
-                                <ViewProse key={j}>{p.text}</ViewProse>
-                              ) : (
-                                isShown(p.d) && (
-                                  <div
-                                    key={openedPath(p.d)}
-                                    id={`diff:${openedPath(p.d)}`}
-                                    className={p.generated && !x.generated ? "opacity-60" : ""}
+                      <Virtualizer
+                        className={cn("min-h-0 flex-1 overflow-auto", showFile && "hidden")}
+                      >
+                        {canvasView &&
+                        !canvasView.sections.length &&
+                        (!canvasView.guide || !diffDiffs.length) ? (
+                          <div className={cn("p-4 text-xs", muted)}>Nothing in this view yet.</div>
+                        ) : (
+                          (!canvasView || canvasFiles.length > 0) &&
+                          canvasFiles.every((file) => !isShown(file)) && (
+                            <div className={cn("p-4 text-xs", muted)}>
+                              {canvasFiles.length ? (
+                                <>
+                                  All {canvasFiles.length} files reviewed.{" "}
+                                  <Button
+                                    variant="link"
+                                    onClick={() =>
+                                      setViewSettings((s) => ({ ...s, showReviewed: true }))
+                                    }
                                   >
-                                    <Viewer
-                                      stacked
-                                      opened={p.d}
-                                      reviewed={isReviewed(p.d)}
-                                      {...viewerProps(
-                                        currentWorkspace,
-                                        range?.base ?? pr.commits!.mergeBase,
-                                        range?.head,
-                                      )}
-                                    />
-                                  </div>
-                                )
-                              ),
-                            )}
-                          </section>
-                        ),
-                    )}
-                  </Virtualizer>
-                </>
-              )}
+                                    Show them
+                                  </Button>
+                                </>
+                              ) : (
+                                "No changes"
+                              )}
+                            </div>
+                          )
+                        )}
+                        {canvasView && pr.snapshot && canvasView.head !== pr.snapshot && (
+                          <StaleViewNotice />
+                        )}
+                        {(
+                          sections ?? [
+                            {
+                              title: undefined,
+                              generated: false,
+                              files: diffDiffs,
+                              shown: shownDiffs,
+                              parts: shownDiffs.map((d) => ({ kind: "code", d, generated: false })),
+                            },
+                          ]
+                        ).map(
+                          (x, i) =>
+                            sectionShown(x) && (
+                              <section
+                                key={i}
+                                id={`view-section-${i}`}
+                                className={x.generated ? "opacity-60" : ""}
+                              >
+                                {x.title !== undefined && (
+                                  <ViewSectionHeader
+                                    title={x.title}
+                                    files={x.files.length}
+                                    reviewed={x.files.filter(isReviewed).length}
+                                    generated={x.generated}
+                                  />
+                                )}
+                                {(x.parts as SectionPart[]).map((p, j) =>
+                                  p.kind === "prose" ? (
+                                    <ViewProse key={j}>{p.text}</ViewProse>
+                                  ) : (
+                                    isShown(p.d) && (
+                                      <div
+                                        key={openedPath(p.d)}
+                                        id={`diff:${openedPath(p.d)}`}
+                                        className={p.generated && !x.generated ? "opacity-60" : ""}
+                                      >
+                                        <Viewer
+                                          stacked
+                                          opened={p.d}
+                                          reviewed={isReviewed(p.d)}
+                                          {...viewerProps(
+                                            currentWorkspace,
+                                            range?.base ?? pr.commits!.mergeBase,
+                                            range?.head,
+                                          )}
+                                        />
+                                      </div>
+                                    )
+                                  ),
+                                )}
+                              </section>
+                            ),
+                        )}
+                      </Virtualizer>
+                    </>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         )}

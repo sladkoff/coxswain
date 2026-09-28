@@ -9,7 +9,7 @@ Accepted.
 ## Context
 
 View > Back and Forward (⌥⌘← ⌥⌘→, and the chevrons in the canvas bar) step through what the canvas showed: whole
-files, files picked in _Diffs_, the _Files_ toggle, commits, guides. What the canvas shows was React state spread over
+files, files picked in _Changes_, the _Changes_/_Files_ switch, commits, guides. What the canvas shows was React state spread over
 `App.tsx` (the view, the opened file, the commit, the guide), and a hand-made history inferred steps from changes to it.
 Each new thing the canvas can show had to be fitted in by hand, and nothing said which changes were steps.
 
@@ -19,8 +19,8 @@ drawn after they're read.
 ## Decision
 
 1. **What the canvas shows is the location's search**, in TanStack Router (`@tanstack/react-router`, pinned) with
-   memory history: `CanvasSearch` in `src/renderer/src/router.ts` (workspace, _Files_ toggle, whole file and line,
-   file picked in _Diffs_, commit, view). There's one route; the canvas has no pages. Every change is a
+   memory history: `CanvasSearch` in `src/renderer/src/router.ts` (workspace, _Changes_/_Files_ switch, whole file and line,
+   file picked in _Changes_, commit, view). There's one route; the canvas has no pages. Every change is a
    `navigate()`, so every change is an entry, and Back and Forward are `history.back()` and `history.forward()`.
 2. **One history for the window, across workspaces.** Opening a workspace is an entry; Back or Forward to another
    workspace's entry opens that workspace again. The workspace shown still comes from SQLite (the latest opened); the

@@ -7,23 +7,24 @@ Direction for the main screen and navigation. Expected to change as we build; te
 
 Agent-first. Opening a PR shows the project column (L1), the agent pane (L4) on the left and the canvas (L3) on the
 right. The canvas is one explorer that both the agent and the human annotate; for now it shows _Changes_, the
-workspace's file diffs, with the Navigator (L2) or the commits pane on its left. A bar at the canvas's top holds
-_Files_, _Commits_, _Diff_, a chip per view, a dashed _New View_ chip, then Back and Forward chevrons, a magnifier (Open Quickly) and the cog; a bar at its
-bottom sums up the review.
+workspace's file diffs, with the Navigator (L2) or the commits pane on its left. The top bar follows the columns: over
+the left pane, its own bar (hide it, and _Changes_ · _Files_ · _Commits_ to switch it); over the canvas, what the canvas
+shows — _Diff_ with its range, a chip per view, a dashed _New View_ chip — then Back and Forward chevrons, a magnifier
+(Open Quickly) and the display options (sliders). A bar at its bottom sums up the review.
 
 ```
 ┌────┬─────────────────────────┬──────────────────────────────────────────┐
-│    │ Fix auth · Codex [New▾] │ Files 3 Commits Diff All|PR|Local [+] ⚙  │
-│ L1 ├─────────────────────────┼─────────┬────────────────────────────────┤
-│    │ L4 Agent pane           │ L2      │ L3 Canvas                      │
-│ P  │                         │ Navi-   │                                │
-│ ── │ agent chat              │ gator   │  files, diffs and diagrams     │
-│▌#12│                         │ or      │  (the agent and the human      │
-│ #34│                         │ Commits │   annotate it)                 │
-│ +  │ [message box]           │         ├────────────────────────────────┤
-│    │                         │         │ 3 threads · 1 waiting  +33 −0  │
-│    │                         │         │ ▰▱ 1 of 2 reviewed  Send all   │
-└────┴─────────────────────────┴─────────┴────────────────────────────────┘
+│    │ Fix auth · Codex [New▾] │▣ Changes|Files|Comm…│Diff·All▾ Guide [+]⚌│
+│ L1 ├─────────────────────────┼─────────────────────┼────────────────────┤
+│    │ L4 Agent pane           │ L2 Navigator        │ L3 Canvas          │
+│ P  │                         │ or Commits          │                    │
+│ ── │ agent chat              │                     │ files, diffs and   │
+│▌#12│                         │                     │ diagrams (the agent│
+│ #34│                         │                     │ and the human      │
+│ +  │ [message box]           │                     │ annotate it)       │
+│    │                         ├─────────────────────┴────────────────────┤
+│    │                         │▾ 3 threads ●1 │ ▰▱ 1/2 │ +33 −0 Hand off▾│
+└────┴─────────────────────────┴──────────────────────────────────────────┘
           ⌘K from anywhere: switch to anything, do anything
 ```
 
@@ -35,63 +36,78 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
 
 ## Levels
 
-- **L1 — Current project and its workspaces.** At the top, an icon for the current project, like a
-  Discord server icon. Clicking it opens a native menu of the user's projects, the current one
-  checked, to switch to one; _Add Project…_ at its bottom opens the list of the user's GitHub
-  repositories to add one. The rest of the screen belongs to the current project. A project's
+- **L1 — Current project and its workspaces**, a sidebar about 230 px wide; its top bar holds the macOS window
+  buttons and, at its right, a panel button that hides the sidebar entirely; the same button then shows at the agent
+  pane header's left (after the window buttons) to bring it back, and the command palette has _Show or Hide the
+  Sidebar_. At the top, the current project: its initial, name and owner. Clicking it opens a native menu of the user's projects, the current one
+  checked, to switch to one; _Add Project…_ at its bottom opens the _Open a project_
+  dialog over the window: a search field, the user's projects (initial, name, owner, _Current_), then their GitHub
+  repositories, most recently pushed first (owner/name, a lock if private, the description, when pushed: _3 days ago_),
+  to add one. Esc, ✕ or a click outside closes it, as it does the New workspace dialog. The rest of the screen belongs to the current project. A project's
   repository must be git, local or cloned, and may be on GitHub.
 
-  Below it, one icon per workspace of the project, in the order they were added, with the current
-  one marked; `+` starts a new workspace. Right-clicking a workspace offers _Remove Workspace…_, which asks
+  Below it, under _Workspaces_, one row per workspace of the project, in the order they were added, the current one
+  filled: the PR's title (from GitHub; its number until it's loaded or when offline), then `#number · branch` in small
+  type, and an icon for an open, draft, merged or closed PR, or a branch; _+ New Workspace_ at the end, and a + next to _Workspaces_ (in reach however long the list), start one. Right-clicking a workspace offers _Remove Workspace…_, which asks
   first: its comments, reviewed files and agent sessions go, its worktree stays on disk. A workspace is either a PR or a branch (ADR 0028), and has
-  one worktree; a PR's icon shows its number, a branch's the last part of its name. `+` opens the new workspace
-  screen: at its top, a branch name (the repository's branches on GitHub are offered as it's typed), _from_ and the
-  branch it starts from (the default one; a native menu picks another), and _Start_, which makes a new branch or works
-  on the one on GitHub; a name git won't take is refused under the field. Below, the repository's open PRs. Opening a
+  one worktree; a branch workspace's row shows its branch name. _New Workspace_ opens the _New workspace_
+  dialog over the window, the project under its title, with two tabs. _Pull request_: a search field (title, number,
+  author, branch) and the repository's open PRs, each with a PR icon (grey for a draft), its title, `#number · author ·
+branch`, when it was updated, and _Has a workspace_ if it does. _Branch_: one field for the branch's name, which
+  filters the repository's branches on GitHub (the default one and those with a workspace marked); picking one works on
+  it as it is there. A name that isn't one of them gets a row _New branch `name`_ with _from_ and the branch it starts
+  from (the default one; a native menu picks another) and _Create_ (or Enter); a name git won't take is refused under
+  the field. Opening a
   PR whose branch has a workspace makes that workspace the PR's, and so does opening a branch workspace once GitHub
-  has a PR for its branch. While the project is being cloned, its icon pulses.
+  has a PR for its branch. While the project is being cloned, its initial pulses.
 
-- **L2 — Navigator**, on the left of the canvas. Hidden at first; _Files N_ in the canvas's bar (N the number of
-  changed files), _View > Toggle Navigator_ or ⌘B shows and hides it. Its border can be dragged. A toggle in its
-  header switches between _Diffs_, the changed files as a tree with their status and +/− lines, and _Files_, the
-  whole file tree of the workspace, with folders that contain changes marked. Both come from the worktree, so
-  _Diffs_ shows the PR's file diffs and local changes (e.g. an agent's) together, a file with local changes marked with
-  an amber ● after its +/− lines, and reloads after each turn. The
-  top says how many of the files are reviewed; reviewed files are hidden unless _Show Reviewed Files_ is on, and then
-  show a ✓. A cog button opens a native menu: _As Tree_ or _As List_ (a flat list, each file's folder dimmed next to
-  its +/− lines). A changed file with notes or questions shows how many after its +/− lines (`✎ 2`; hovering says how
-  many of each). Selecting a file in _Diffs_ scrolls the canvas to its file diff; selecting one in _Files_ shows the
-  whole file in the canvas, until the toggle goes back to _Diffs_.
+- **L2 — Navigator**, on the left of the canvas, under its own bar, as wide as it. Hidden at first; the panel button
+  at the canvas bar's left, _View > Toggle Navigator_ or ⌘B shows it, and the same button at its bar's left hides it
+  (it comes back as it was, on the Navigator or the commits pane). Its border can be dragged. A segmented control in its
+  bar switches between _Changes N_ (N the number of changed files), the changed files as a tree with their status and
+  +/− lines, _Files_, the whole file tree of the workspace, with folders that contain changes marked, and _Commits_
+  (below). Both lists come from the worktree, so _Changes_ shows the PR's file diffs and local changes (e.g. an
+  agent's) together, a file with local changes marked with an amber ● after its +/− lines, and reloads after each
+  turn. Reviewed files are hidden unless _Show Reviewed Files_ is on, and then show a ✓; the bottom bar counts them.
+  The display options list _Files as Tree_ or _Files as List_ (a flat list, each file's folder dimmed next to its +/−
+  lines). A changed file with notes or questions shows how many after its +/− lines (`✎ 2`; hovering says how many of
+  each). Selecting a file in _Changes_ scrolls the canvas to its file diff; selecting one in _Files_ shows the whole
+  file in the canvas, until the control goes back to _Changes_.
 
   _View > Command Palette…_ (⌘K) opens the command palette over the window, starting with `>`: typing after the `>`
   finds an action by name (fuzzy, best match first, its shortcut on the right), ↑/↓ pick, Enter runs it. Without the
-  `>` it finds files: _File > Open Quickly…_ (⌘⇧O), or the magnifier left of the canvas bar's cog, opens it that way.
+  `>` it finds files: _File > Open Quickly…_ (⌘⇧O), or the magnifier left of the canvas bar's display options, opens it that way.
   Typing filters the worktree's files by path (fuzzy: a match in the file name, then elsewhere, then its letters in
   order), and Enter opens the file in the canvas and shows the Navigator on _Files_, with the file selected and its
-  folders open. Esc or a click outside closes it. Actions it lists: Back and Forward, show or hide Files and Commits,
+  folders open. Esc or a click outside closes it. Actions it lists: Back and Forward, show or hide the Navigator and Commits,
   show the diff or a view, each New View, Unified or Split diffs, show or hide reviewed files, open a workspace, New
   Workspace, switch project, Add Project, Settings. Actions that can't run now (Back at the start) aren't listed.
 
   _View > Back_ (⌥⌘←) and _View > Forward_ (⌥⌘→), or the chevrons in the canvas bar, step through what the canvas
   showed (ADR 0025): each whole file opened (from _Files_, Open Quickly, Go to Definition or Find Usages), each file
-  picked in _Diffs_, each switch of the _Diffs_/_Files_ toggle, each commit or view picked, and each workspace opened;
+  picked in _Changes_, each switch between _Changes_ and _Files_, each commit or view picked, and each workspace opened;
   Back into another workspace's step opens that workspace again. Each step comes back scrolled where it was left, the
   file diffs by the one at the top. The keys work wherever the focus is, the Navigator included; the menu items and
   chevrons are greyed out at either end.
 
-  _Commits_ in the canvas's bar shows the commits pane in the Navigator's place (one or the other): _All Changes_,
+  _Commits_ in the pane's bar shows the commits pane in the Navigator's place (one or the other): _All Changes_,
   then, if any agent turn changed the worktree, _Agent turns_ (when, and the turn's first message) and _Commits_: the
   PR's commits (and local ones on top, marked _local_), newest first. Picking a commit shows its commit diff on the
-  canvas, and picking a turn its turn diff (glossary); the button then names the commit or _Turn: …_. At the top, how
+  canvas, and picking a turn its turn diff (glossary); the _Diff_ tab's range then names the commit or _Turn: …_, with ✕
+  back to all changes. At the top, how
   many commits aren't pushed, with _Push_ (confirmed; never forced) or, for a branch workspace without a PR, _Open Pull
   Request…_ (confirmed: pushes, opens a draft PR into its base branch and shows it in the browser). A push that fails
   says why there.
 
-  **Scope.** While the diff shows (no view, no commit), a segmented control next to _Diff_ picks the scope (glossary):
-  _All_, _PR_ (_Pushed_ for a branch without a PR) or _Local_. _PR_ is pinned like a commit; _Local_ is live.
+  **Range.** The _Diff_ tab carries what the diff shows, always, a view showing or not, so the chips after it never
+  move: the scope (glossary) _All_, _PR_ (_Pushed_ for a branch without a PR) or _Local_, or the commit or turn picked.
+  Clicking it opens a native menu: _All Changes_, _The PR's Changes_ (_Pushed Changes_), _Local Changes_, and _Commit
+  or Agent Turn…_, which shows the commits pane. Picking a scope shows the diff. _PR_ is pinned like a commit; _Local_
+  is live.
 
-- **L3 — Canvas.** All file diffs of the workspace one after another, to scroll through. The cog in its bar opens a
-  native menu: _Unified_ or _Split_ file diffs, and _Show Reviewed Files_; off, reviewed file diffs are hidden, and
+- **L3 — Canvas.** All file diffs of the workspace one after another, to scroll through. The display options (sliders)
+  in its bar open a native menu: _Unified_ or _Split_ file diffs, _Show Reviewed Files_, and the Navigator's _Files as
+  Tree_ or _Files as List_; off, reviewed file diffs are hidden, and
   when all are, the canvas says _All N files reviewed_ with _Show them_. A file diff's header has a _Reviewed_
   checkbox.
 
@@ -121,18 +137,23 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   is picked, or ends with _Stop_. Questions run one at a time, and not while the agent pane's own turn runs.
 
   The thread's header has a ✓ to resolve it: the thread folds to its header (_Resolved_ and its first comment), is
-  left out of _Send all to agent_, and the ✓, green now, reopens it. Right of it, a ⋯ button with a native menu:
+  left out of _Hand off_, and the ✓, green now, reopens it. Right of it, a ⋯ button with a native menu:
   _Edit_ (the first comment, in place, if it's yours), _Delete_ (the thread, after a confirmation), and _Send to Agent_, which makes the
   thread's latest note a question, with the notes before it since the last question; the answer comes in the thread.
 
-  **The bottom bar** sums up the review: how many threads (and how many are outdated, resolved or waiting on the
-  agent), the lines added and removed, and how many of the files are reviewed, with a progress bar. Clicking the
-  thread count opens every thread above the bar, one line each: file and lines, the first comment, and whether it's
-  outdated, answered (_N answers_), sent to the agent, or has replies. Clicking one scrolls the canvas to it. _Send
-  all to agent_ sends every thread in one message to the agent pane's session: where each points, the code, and its
-  comments and answers, asking the agent to make the changes and answer what's open. The chat shows it as a card
-  (_Review sent to Agent · N threads_); the bar says _Agent working…_ until the turn ends. _Copy as prompt_, next to it, puts
-  the same message on the clipboard instead.
+  **The bottom bar** has the review at a glance on the left and _Hand off_ on the right. On the left: the thread
+  toggle (a chevron, how many threads, and _● N waiting_ while the agent answers one), how many of the files are
+  reviewed with a progress bar (_8/29 reviewed_), and the lines added and removed. The toggle opens the threads above
+  the bar: a header with _Threads_ and _Open N_ · _Resolved N_, then the threads grouped under their file, one line
+  each: its lines, its first comment, and a dot with how far it got (_agent answering_, _outdated_, _N answers_, _sent
+  to agent_) and its replies. Clicking one scrolls the canvas to it.
+
+  _Hand off N_ (N the open threads it takes: not resolved, and the agent's explanations and findings only once the user
+  replied) opens a native menu: _Send to Agent_ sends them in one message to the agent pane's session: where each
+  points, the code, and its comments and answers, asking the agent to make the changes and answer what's open. The
+  chat shows it as a card (_Review sent to Agent · N threads_); the bar says _Agent working on N threads_ until the turn
+  ends. _Copy as Prompt_ puts the same message on the clipboard instead (the bar says _Copied_). _Send to GitHub as a
+  Review…_ is shown greyed out until it's built.
 
   **Views.** _Diff_ in the canvas's bar shows the diff without a view; it's on while no view shows. Next to it, a
   chip per view, oldest first, named by its title (_Guide_, _Data flow_; a repeated title gets a number, _Guide 2_; its
@@ -156,13 +177,17 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   commit), and its _Reviewed_ ticks stay; once the worktree has moved on (new commits or edits), an amber bar says so. Picking a commit hides the view, and the other way round.
 
 - **L4 — Agent pane**, left of the canvas, always shown; its border can be dragged. A chat with one of the
-  workspace's agent sessions, the latest unless another is picked in the header's session picker (the session's title, _Session N_ before
-  its first message; its native menu lists them all with their dates): its turns, with each tool the agent used as one line, comments and reviews sent from the canvas as cards,
-  and a message box at the bottom (Enter sends, Shift+Enter adds a line). _New session_ in the header, a split button, starts another
-  agent session on the agent picked last; its chevron's native menu picks another (_Claude Code_, _Codex_), which the
-  session keeps; the picker names each session's agent. Under the message box, the agent picks: the model and the
-  effort, each a button with a native menu of the agent's choices, kept per agent for all its sessions. A running turn can be stopped. When the agent wants a tool that auto mode would block, a permission
-  prompt takes the place of _Working…_: _Agent wants to:_, the command or file, and the agent's options as
+  workspace's agent sessions, the latest unless another is picked in the header. The header starts with the session's
+  title (_Session N_ before its first message) and a chevron, whose native menu lists them all with their dates, then
+  the session's agent, muted. At its right, a pencil button starts another agent session on the agent picked last; the
+  chevron next to it picks another (_Claude Code_, _Codex_), which the session keeps. The chat shows its turns, with
+  each tool the agent used as one line, and comments and reviews sent from the canvas as cards.
+
+  The composer is one box at the bottom: _Ask Codex…_ (Enter sends, Shift+Enter adds a line), and along its bottom
+  the agent picks (the model ✦ and the effort, each a button with a native menu of the agent's choices, kept per agent
+  for all its sessions) and a round send button, greyed out while the box is empty. While a turn runs, _Working_ and a
+  round stop button take its place. When the agent wants a tool that auto mode would block, a permission prompt
+  takes the place of _Working…_ in the chat: _Agent wants to:_, the command or file, and the agent's options as
   buttons (_Yes_, _Always_, _No_); the turn waits until one is picked.
 
 Whole-code views (#31) work even when the workspace has no changes. The agent can trace a process with prose,

@@ -3,8 +3,16 @@ import { useEffect, useRef, useState } from "react";
 import type { Agent, AgentSession, ChatEntry, Permission, Pick } from "../../core/agents";
 import type { Workspace } from "../../core/workspaces";
 import { Entry, TurnStatus, upsert } from "./ChatEntry";
-import { Button, ButtonGroup } from "./components/button";
-import { ChevronDownIcon } from "./components/icons";
+import { Button } from "./components/button";
+import {
+  ArrowUpIcon,
+  ChevronDownIcon,
+  GaugeIcon,
+  PanelLeftIcon,
+  SparklesIcon,
+  SquarePenIcon,
+  StopIcon,
+} from "./components/icons";
 import { TextArea } from "./components/field";
 import { cn, divider, muted, noDrag, titleBar } from "./components/styles";
 import { shortDateTime } from "./format";
@@ -22,9 +30,10 @@ type Props = {
   onViewThread: (threadId: number) => void;
   // Replaces the composer's draft when it changes (the Guide menu's prompts), for the user to edit and send.
   composerText?: { text: string };
+  onShowSidebar?: () => void; // given while the sidebar is hidden: the window buttons are then over this header
 };
 
-export function Agents({ workspace, onViewThread, composerText }: Props) {
+export function Agents({ workspace, onViewThread, composerText, onShowSidebar }: Props) {
   const sessions = useQuery(core("listAgentSessions", workspace.id)).data ?? [];
   // The agent session picked in the header; null is the latest, 'new' one not started yet.
   const [picked, setPicked] = useState<string | null>(null);
@@ -116,7 +125,25 @@ export function Agents({ workspace, onViewThread, composerText }: Props) {
 
   return (
     <>
-      <div className={cn(titleBar, "justify-end gap-1 border-b pr-2 pl-8", divider)}>
+      <div
+        className={cn(
+          titleBar,
+          "gap-1 border-b pr-1.5",
+          onShowSidebar ? "pl-20" : "pl-1.5",
+          divider,
+        )}
+      >
+        {onShowSidebar && (
+          <Button
+            variant="ghost"
+            title="Show the sidebar"
+            aria-label="Show the sidebar"
+            className={cn("shrink-0 p-1 text-neutral-500", noDrag)}
+            onClick={onShowSidebar}
+          >
+            <PanelLeftIcon />
+          </Button>
+        )}
         <SessionPicker
           sessions={sessions}
           current={session}
@@ -124,17 +151,21 @@ export function Agents({ workspace, onViewThread, composerText }: Props) {
           disabled={running}
           onPick={setPicked}
         />
-        <ButtonGroup className={cn("text-xs", noDrag)}>
+        <div className="flex-1" />
+        <div className={cn("flex shrink-0 items-center text-neutral-500", noDrag)}>
           <Button
-            className="py-0.5!"
+            variant="ghost"
+            className="p-1"
             disabled={running}
             title={`New ${agentNames[newSessionAgent]} session`}
+            aria-label="New session"
             onClick={() => newSession(newSessionAgent)}
           >
-            New session
+            <SquarePenIcon />
           </Button>
           <Button
-            className="px-1! py-0.5!"
+            variant="ghost"
+            className="px-0.5 py-1"
             disabled={running}
             title="New session on…"
             aria-label="New session on…"
@@ -149,7 +180,7 @@ export function Agents({ workspace, onViewThread, composerText }: Props) {
           >
             <ChevronDownIcon />
           </Button>
-        </ButtonGroup>
+        </div>
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2">
         {entries.length === 0 && !running && (
@@ -171,25 +202,51 @@ export function Agents({ workspace, onViewThread, composerText }: Props) {
         />
         <div ref={bottom} />
       </div>
-      <div className={cn("flex flex-col gap-1 border-t p-2", divider)}>
+      {/* The composer: one box, the model and effort and Send (Stop while a turn runs) along its bottom. */}
+      <div
+        className={cn(
+          "mx-2 mb-2 flex flex-col rounded-xl border bg-white focus-within:border-neutral-400 dark:bg-neutral-900 dark:focus-within:border-neutral-600",
+          "border-neutral-300 dark:border-neutral-700",
+        )}
+      >
         <TextArea
+          bare
           ref={composer}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onSubmit={send}
-          rows={3}
-          placeholder="Message the agent (Enter to send, Shift+Enter for a new line)"
-          className="text-sm"
+          rows={2}
+          placeholder={`Ask ${agentNames[agent]}…`}
+          className="px-3 pt-2.5 text-sm"
         />
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-0.5 px-1.5 pb-1.5">
           <AgentPickers workspaceId={workspace.id} agent={agent} />
-          {running && session && (
-            <Button
-              className="ml-auto text-xs"
-              onClick={() => window.coxswain.stopTurn(session.agentSessionId)}
+          <div className="flex-1" />
+          {running && session ? (
+            <>
+              <span className={cn("mr-1.5 flex items-center gap-1.5 text-xs", muted)}>
+                <span className="size-2.5 animate-spin rounded-full border-[1.5px] border-neutral-400 border-t-transparent" />
+                Working
+              </span>
+              <button
+                title="Stop the turn"
+                aria-label="Stop"
+                className="flex size-7 items-center justify-center rounded-full bg-neutral-900 text-white hover:bg-neutral-700 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300"
+                onClick={() => window.coxswain.stopTurn(session.agentSessionId)}
+              >
+                <StopIcon />
+              </button>
+            </>
+          ) : (
+            <button
+              title="Send (Enter; Shift+Enter for a new line)"
+              aria-label="Send"
+              disabled={!draft.trim() || running}
+              className="flex size-7 items-center justify-center rounded-full bg-neutral-900 text-white hover:bg-neutral-700 disabled:bg-neutral-200 disabled:text-neutral-400 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300 dark:disabled:bg-neutral-800 dark:disabled:text-neutral-500"
+              onClick={send}
             >
-              Stop
-            </Button>
+              <ArrowUpIcon />
+            </button>
           )}
         </div>
       </div>
@@ -207,7 +264,12 @@ function SessionPicker(props: {
   onPick: (id: string) => void;
 }) {
   const { sessions, current } = props;
-  if (!sessions.length) return null;
+  const agentName = (
+    <span className={cn("shrink-0 text-xs", muted)}>
+      {agentNames[current?.agent ?? props.agent]}
+    </span>
+  );
+  if (!sessions.length) return agentName;
   const i = sessions.findIndex((s) => s.agentSessionId === current?.agentSessionId);
   const name = (s: AgentSession, n: number) => s.title ?? `Session ${n + 1}`;
   const labels = sessions.map(
@@ -219,14 +281,20 @@ function SessionPicker(props: {
     if (n < sessions.length) props.onPick(sessions[n].agentSessionId);
   };
   return (
-    <Button
-      variant="ghost"
-      className={cn("mr-auto min-w-0 truncate text-xs", noDrag)}
-      disabled={props.disabled}
-      onClick={pick}
-    >
-      {i < 0 ? "New session" : name(sessions[i], i)} · {agentNames[current?.agent ?? props.agent]}
-    </Button>
+    <>
+      <Button
+        variant="ghost"
+        className={cn("flex min-w-0 items-center gap-1 px-1.5 py-1 text-xs font-semibold", noDrag)}
+        disabled={props.disabled}
+        onClick={pick}
+      >
+        <span className="truncate">{i < 0 ? "New session" : name(sessions[i], i)}</span>
+        <span className={cn("shrink-0", muted)}>
+          <ChevronDownIcon />
+        </span>
+      </Button>
+      {agentName}
+    </>
   );
 }
 
@@ -247,9 +315,17 @@ function AgentPickers({ workspaceId, agent }: { workspaceId: number; agent: Agen
   return (["model", "effort"] as const).map(
     (which) =>
       picks[which] && (
-        <Button key={which} variant="ghost" className="text-xs" onClick={() => pick(which)}>
+        <Button
+          key={which}
+          variant="ghost"
+          title={which === "model" ? "Model" : "Effort"}
+          className={cn("flex items-center gap-1 px-1.5 py-1 text-xs", muted)}
+          onClick={() => pick(which)}
+        >
+          {which === "model" ? <SparklesIcon /> : <GaugeIcon />}
           {picks[which].choices.find((c) => c.value === picks[which]!.current)?.name ??
             picks[which].current}
+          <ChevronDownIcon />
         </Button>
       ),
   );

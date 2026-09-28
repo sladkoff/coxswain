@@ -44,7 +44,7 @@ made. The user needs to see what is in flight: what's on GitHub, what's only her
   new work.
 - **Diffing turns by `git diff` before and after, stored as text.** Can't be shown with the file diff machinery
   (both sides are read as files at commits), and stores what git already can.
-- **A marker per file in _Diffs_ only** (UX open question 5). Tells which files have local changes but not what they
+- **A marker per file in _Changes_ only** (UX open question 5). Tells which files have local changes but not what they
   are; kept as the Navigator's ●, with the scope for the rest.
 - **Rename a branch workspace's worktree to `pr-<n>/` once it has a PR.** Uniform names, but its agent sessions would
   lose their folder.
