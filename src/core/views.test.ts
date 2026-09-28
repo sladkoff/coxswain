@@ -210,6 +210,13 @@ test("views without diffs pin files, validate embeds and keep file review separa
     call("start_view", { title: "Nope", guide: false, head: "abcdef1234" }),
     /isn't a commit/,
   );
+  await call("start_view", { title: "Named", guide: false, base: "HEAD~0", head: "HEAD" });
+  assert.equal((await listViews(db, 1))[0].head, commit, "names resolve to their commit");
+  for (const rev of ["--output=x", "HEAD..main", "a b"])
+    await assert.rejects(
+      call("start_view", { title: "Bad", guide: false, head: rev }),
+      /Not a commit/,
+    );
   await call("start_view", { title: "Guide", guide: true });
   const coverage = await call("write_section", {
     markdown: "## Changes\n```diff path=a.ts\n```\n```diff path=b.ts\n```",

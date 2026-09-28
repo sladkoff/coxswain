@@ -3,6 +3,17 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-28 — start_view first, and named commits
+
+For G3, from a guide on #5311 with Claude Code (Opus 5.5): 4 min 20 s, 209 s in the model (28.8k tokens written),
+30 s in tools (coxswain's calls 0.0–0.3 s; the rest Claude Code's Bash, 2–4 s a call).
+
+- It spent its first 43 s working out the range with git (the branch merges `main`), then sent `head: "HEAD"`, which
+  was refused. `start_view` now says to call it first, since it works out the range itself, and `base`/`head` take
+  HEAD, branches, tags and `~`/`^` as well as hashes. Names git could read as an option or a range are refused.
+- Tests: names resolve; `--output=x`, `HEAD..main` and names with spaces don't. `pnpm typecheck`, `pnpm test` (16),
+  `pnpm lint`, `pnpm format`, `pnpm build` pass.
+
 ## 2026-09-28 — No auto-review for coxswain's tools, and batched writes
 
 For G3 ([ADR 0023](adr/0023-guides-made-by-the-agent-pane.md)), from the third guide on #5311: 4 min 30 s, 94 s in

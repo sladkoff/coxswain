@@ -316,9 +316,11 @@ export async function listBranches(db: Db, projectId: number): Promise<BranchLis
   });
 }
 
-// A commit named by a (possibly short) hash, as its full hash; throws if the worktree has no such commit.
+// A commit named by a (possibly short) hash, HEAD, a branch or tag, or one of those with ~ or ^, as its full hash;
+// throws if the worktree has no such commit. Names that git could read as an option or a range are refused.
 export async function resolveCommit(db: Db, workspaceId: number, rev: string): Promise<string> {
-  if (!/^[0-9a-f]{4,40}$/.test(rev)) throw new GitError(`Not a commit hash: ${rev}`);
+  if (!/^[A-Za-z0-9_][A-Za-z0-9_./~^-]*$/.test(rev) || rev.includes(".."))
+    throw new GitError(`Not a commit: ${rev}`);
   const path = await openedWorktree(db, workspaceId);
   return (
     await gitText(path, ["rev-parse", "--verify", "--quiet", `${rev}^{commit}`]).catch(() => {

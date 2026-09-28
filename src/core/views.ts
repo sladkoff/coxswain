@@ -446,7 +446,7 @@ export function viewTools(db: Db, workspaceId: number): McpTool[] {
       name: "start_view",
       annotations: closedTool,
       description:
-        "Start a new view of code or changes in coxswain, the app the user reads them in: sections of markdown, with diagrams, source files and file diffs the user can comment on. No diff is required. A guide is a view that walks through every changed file in reading order; other views show one aspect (the data model, a data flow, whatever the user asked for). By default it covers all of the workspace's changes, from the merge base to the worktree; give base and head when the user asks about one commit, an agent turn or a part of the changes. Returns the range the view is pinned to, the changed files and how to write the view.",
+        "Start a new view of code or changes in coxswain, the app the user reads them in: sections of markdown, with diagrams, source files and file diffs the user can comment on. No diff is required. A guide is a view that walks through every changed file in reading order; other views show one aspect (the data model, a data flow, whatever the user asked for). Call it first, before looking at the changes: it works out the range itself, all of the workspace's changes from the merge base (the one GitHub uses for the PR, right after merges from the base branch too) to the worktree, and lists the changed files, so don't work one out with git. Give base and head only when the user asks about one commit, an agent turn or a part of the changes. Returns the range the view is pinned to, the changed files and how to write the view.",
       inputSchema: {
         type: "object",
         properties: {
@@ -461,12 +461,12 @@ export function viewTools(db: Db, workspaceId: number): McpTool[] {
           base: {
             type: "string",
             description:
-              "The commit the view's changes start from, e.g. a commit's parent; leave out for the merge base",
+              "The commit the view's changes start from (a hash, HEAD, a branch or tag, e.g. a commit's parent); leave out for the merge base",
           },
           head: {
             type: "string",
             description:
-              'The commit they end at, or "worktree" for the worktree as it is now, uncommitted changes included (the default)',
+              'The commit they end at (a hash, HEAD, a branch or tag), or "worktree" for the worktree as it is now, uncommitted changes included (the default)',
           },
         },
         required: ["title", "guide"],
