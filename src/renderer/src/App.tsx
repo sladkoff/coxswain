@@ -550,6 +550,8 @@ export function App() {
     openFile(path);
   };
   // Revealing a thread must happen before its file/section can mount. Preserve its Reviewed mark.
+  // Bumped by each thread picked: picking the one shown again leaves the location as it is, but should scroll again.
+  const [threadPicks, setThreadPicks] = useState(0);
   const viewThread = async (threadId: number) => {
     let root = allEntries?.find((e) => e.id === threadId);
     // A chat card can refer to a thread outside the currently filtered view.
@@ -569,8 +571,9 @@ export function App() {
       !showFile &&
       canvasFiles.some((f) => openedPath(f) === root.path)
     )
-      return show({ thread: threadId, at: root.path });
-    await show(threadLocation(root));
+      await show({ thread: threadId, at: root.path });
+    else await show(threadLocation(root));
+    setThreadPicks((n) => n + 1);
   };
   const canvasReady =
     viewId !== undefined &&
@@ -601,7 +604,7 @@ export function App() {
   useEffect(() => {
     if (!s.thread || !s.at || !canvasReady || !canvas.current) return;
     return scrollToThread(canvas.current, s.at, s.thread);
-  }, [location.state.__TSR_key, s.thread, s.at, canvasReady]);
+  }, [location.state.__TSR_key, s.thread, s.at, canvasReady, threadPicks]);
 
   // The action registry (ADR 0027): everything the command palette lists and the native menu runs, by id. Rebuilt each
   // render, so each action's enabled and run see the current state.
@@ -1188,28 +1191,49 @@ function WritingViewNotice() {
   );
 }
 
-// Scroll the file into the virtualizer's viewport first, then wait for its annotation to be drawn.
-// The observer handles async file reads without a fixed retry deadline and is cancelled on navigation.
+// Scrolls to a thread once it's drawn. The file diffs' Virtualizer draws only the lines near the viewport, so a thread
+// further away isn't there yet: go to its file, page down it until the thread is drawn, then keep it in place until it
+// holds (after a jump the Virtualizer applies a fix-up worked out for the old place, as in restoreScroll). Waits for the
+// file while it loads; stops when the user scrolls, and is cancelled on navigation. ponytail: a screen per step, about
+// a second per thousand lines of a long file; ask the library for the line's position if that's too slow.
 function scrollToThread(canvas: HTMLElement, path: string, threadId: number) {
-  let frame = 0;
-  let observer: MutationObserver;
-  const find = () => {
+  let timer: ReturnType<typeof setTimeout>;
+  let steps = 200;
+  let held = 0;
+  const events = ["wheel", "keydown", "pointerdown"] as const;
+  const stop = () => {
+    clearTimeout(timer);
+    events.forEach((e) => canvas.removeEventListener(e, stop));
+  };
+  const go = () => {
+    timer = setTimeout(go, 50);
+    const scroller = canvasScroller(canvas);
     const file = document.getElementById(`diff:${path}`);
-    if (!file || !canvas.contains(file)) return;
+    if (!scroller || !file || !canvas.contains(file)) return;
+    if (steps-- <= 0) return stop();
+    const view = scroller.getBoundingClientRect();
+    // The library keeps a thread's element while its lines aren't drawn, but without a box.
     const thread = document.getElementById(`thread:${threadId}`);
-    if (thread && canvas.contains(thread)) {
-      thread.scrollIntoView({ block: "center" });
-      observer.disconnect();
-    } else file.scrollIntoView({ block: "start" });
+    if (thread && canvas.contains(thread) && thread.getClientRects().length) {
+      // Centred, or its top a little below the canvas's when it's taller than the canvas.
+      const box = thread.getBoundingClientRect();
+      const by =
+        box.height > view.height - 80
+          ? box.top - view.top - 40
+          : box.top + box.height / 2 - (view.top + view.height / 2);
+      if (Math.abs(by) < 2) return void (++held >= 4 && stop());
+      held = 0;
+      scroller.scrollTop += by;
+      return;
+    }
+    // At its top (give or take a pixel, which scrollTop rounds away) or past it: page down.
+    const f = file.getBoundingClientRect();
+    scroller.scrollTop +=
+      f.top > view.top + 2 || f.bottom < view.top
+        ? f.top - view.top
+        : Math.min(view.height * 0.8, Math.max(0, f.bottom - view.bottom));
   };
-  observer = new MutationObserver(() => {
-    cancelAnimationFrame(frame);
-    frame = requestAnimationFrame(find);
-  });
-  observer.observe(canvas, { childList: true, subtree: true });
-  frame = requestAnimationFrame(find);
-  return () => {
-    observer.disconnect();
-    cancelAnimationFrame(frame);
-  };
+  events.forEach((e) => canvas.addEventListener(e, stop));
+  timer = setTimeout(go);
+  return stop;
 }

@@ -16,6 +16,14 @@ For G3: while the agent writes a view, it grows section by section and looked do
   session; key by session if two turns at once in a workspace become common. The line stays up while the agent
   works on in the same turn after its last section.
 
+**Going to a thread** (the Threads list, _View thread_): a thread already on the canvas, such as a note written in the
+view shown, is scrolled to in place instead of opening the range it was written in. The scroll now finds threads
+further away: the file diffs' Virtualizer draws only the lines near the viewport, and keeps a thread's element
+without a box until its lines are drawn, so `scrollToThread` goes to the file, pages down it until the thread has a
+box, and keeps it in place until it holds. Picking the same thread again scrolls again. Checked by clicking every
+thread in a guide and a diff from the top and bottom of the canvas, twice. `ponytail:` a screen per step, about a
+second per thousand lines of a long file.
+
 ## 2026-09-28 — Muted files instead of files left out
 
 For G3, from a guide asked to pass over "generated files and tests and files containing just convention fixes": the
