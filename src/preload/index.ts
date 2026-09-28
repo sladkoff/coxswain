@@ -17,7 +17,6 @@ import type {
   FileText,
   FileTreeResult,
   GitProblem,
-  SyncState,
   WorktreeResult,
 } from "../core/git";
 import type {
@@ -48,7 +47,7 @@ export type RangePick = "all" | "pushed" | "local" | "commits";
 // What the core changed on its own, e.g. when an agent turn ends, so the UI refetches it (ADR 0017).
 export type Changed = {
   workspaceId: number;
-  what: "entries" | "worktree" | "transcript" | "sessions" | "view" | "sync";
+  what: "entries" | "worktree" | "transcript" | "sessions" | "view";
 };
 
 // The one interface between the UI and the core (ADR 0002).
@@ -210,12 +209,9 @@ const api = {
     ipcRenderer.invoke("views:list", workspaceId),
   // Removes a view with its explanations and findings.
   removeView: (viewId: number): Promise<void> => ipcRenderer.invoke("views:remove", viewId),
-  // ADR 0030: watches the workspace on screen for commits and uncommitted changes; null stops.
+  // ADR 0030: watches the workspace on screen for its HEAD moving; null stops.
   watchWorkspace: (workspaceId: number | null): Promise<void> =>
     ipcRenderer.invoke("workspaces:watch", workspaceId),
-  // Behind and ahead of GitHub, uncommitted files, and when GitHub was last checked.
-  readSyncState: (workspaceId: number): Promise<SyncState> =>
-    ipcRenderer.invoke("git:sync", workspaceId),
   // How many of the workspace's committed file diffs have a file summary.
   summaryCoverage: (workspaceId: number): Promise<SummaryCoverage | null> =>
     ipcRenderer.invoke("summaries:coverage", workspaceId),

@@ -40,7 +40,7 @@ export function usePullRequest(workspace: Workspace | undefined): PullRequestDat
       void queryClient.invalidateQueries({ queryKey: ["listWorkspaces", workspace.projectId] });
   }, [prNumber, workspace?.prNumber]);
   const ready = !!workspace && !!commits;
-  // ADR 0030: the core watches the workspace on screen for commits and uncommitted changes.
+  // ADR 0030: the core watches the workspace on screen for its HEAD moving.
   useEffect(() => {
     if (!ready) return;
     void window.coxswain.watchWorkspace(id);

@@ -11,8 +11,8 @@ import { openDatabase } from "./db.ts";
 const temp = mkdtempSync(join(os.tmpdir(), "coxswain-watch-"));
 const home = mock.method(os, "homedir", () => temp);
 syncBuiltinESMExports();
-const { openWorktree, readSyncState, statusEntries } = await import("./git.ts");
-const { onWorkspaceChange, watchLimits, watchWorkspace } = await import("./watch.ts");
+const { openWorktree } = await import("./git.ts");
+const { onHeadMoved, watchLimits, watchWorkspace } = await import("./watch.ts");
 home.mock.restore();
 syncBuiltinESMExports();
 const originalPath = process.env.PATH;
@@ -39,13 +39,7 @@ const git = (cwd: string, ...args: string[]) =>
     },
   }).trim();
 
-test("status entries count a rename once", () => {
-  assert.equal(statusEntries(""), 0);
-  assert.equal(statusEntries(" M a.ts\0?? b.ts\0"), 2);
-  assert.equal(statusEntries("R  new.ts\0old.ts\0 M c.ts\0"), 2);
-});
-
-test("the watcher tells commits from uncommitted changes, and the sync state counts them", async (t) => {
+test("the watcher tells when HEAD moves, not when files change", async (t) => {
   const repo = join(temp, "coxswain/repos/test/repo");
   mkdirSync(repo, { recursive: true });
   git(repo, "init", "-q", "-b", "main");
@@ -72,14 +66,8 @@ test("the watcher tells commits from uncommitted changes, and the sync state cou
     .execute();
   assert.equal((await openWorktree(db, 1)).status, "ok");
   const worktree = join(temp, "coxswain/worktrees/test/repo/branch-feature");
-  const synced = await readSyncState(db, 1);
-  assert.equal(synced.status, "ok");
-  if (synced.status !== "ok") return;
-  assert.deepEqual([synced.behind, synced.ahead, synced.dirty], [0, 0, 0]);
-  assert.ok(synced.checkedAt, "GitHub's check is timed");
-
   const changes: string[] = [];
-  const off = onWorkspaceChange((id, change) => changes.push(`${id}:${change}`));
+  const off = onHeadMoved((id) => changes.push(`${id}`));
   t.after(() => (off(), watchWorkspace(db, null)));
   watchWorkspace(db, 1);
   const until = async (want: string) => {
@@ -89,13 +77,8 @@ test("the watcher tells commits from uncommitted changes, and the sync state cou
   };
   await new Promise((r) => setTimeout(r, 60)); // the first check only sets what's there
   writeFileSync(join(worktree, "a.ts"), "export const a = 2;\n");
-  await until("1:status");
+  await new Promise((r) => setTimeout(r, 100));
+  assert.deepEqual(changes, [], "an uncommitted edit isn't a move");
   git(worktree, "commit", "-qam", "local");
-  await until("1:head");
-  writeFileSync(join(worktree, "b.ts"), "new\n");
-  const s = await readSyncState(db, 1);
-  assert.equal(s.status, "ok");
-  if (s.status !== "ok") return;
-  assert.equal(s.ahead, 1, "the branch isn't pushed, so the commit is ahead");
-  assert.equal(s.dirty, 1);
+  await until("1");
 });

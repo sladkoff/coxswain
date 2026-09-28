@@ -78,11 +78,8 @@ const affects: Record<Changed["what"], Reads[]> = {
     "readWorktreeFile",
     "listReviewed",
     "listEntries",
-    "readSyncState",
     "summaryCoverage",
   ],
-  // ADR 0030: the uncommitted files changed, or GitHub was checked.
-  sync: ["readSyncState"],
   // A turn's session reports its agent's choices of model and effort afresh.
   transcript: ["listAgentSessions", "listAgentPicks"],
   // An agent named a session.

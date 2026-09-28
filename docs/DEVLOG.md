@@ -15,24 +15,23 @@ For G3 ([ADR 0023](adr/0023-guides-made-by-the-agent-pane.md)).
   instructions say to pass that on. The view's summaries follow, since `start_view` summarises its own range: a
   commit's few files, cached for next time.
 - Tests: `views.test.ts` (a commit view's range, an unknown commit), `canvas-state.test.ts` (a commit view isn't
-  stale). `pnpm typecheck`, `pnpm test` (17), `pnpm lint`, `pnpm format` and `pnpm build` pass.
+  stale). `pnpm typecheck`, `pnpm test` (16), `pnpm lint`, `pnpm format` and `pnpm build` pass.
 
-## 2026-09-28 — Watching the workspace, and its sync state
+## 2026-09-28 — Watching the workspace for commits
 
-For G3 and G5 ([ADR 0030](adr/0030-workspace-watcher-and-sync-state.md), [UX](UX.md) Sync state).
+For G3 and G5 ([ADR 0030](adr/0030-workspace-watcher.md)).
 
-- **The workspace on screen is watched:** every 3 s the core reads its HEAD and `git status`. A commit, pull or reset,
-  in coxswain or a terminal, refreshes the diff and commits within seconds and is summarised ahead; other uncommitted
-  changes update the sync state only.
+- **The workspace on screen is watched:** every 3 s the core reads its HEAD. A commit, pull or reset, in coxswain or
+  a terminal, refreshes the diff and commits within seconds and is summarised ahead.
 - **GitHub is checked every 2 minutes** while a workspace shows (the worktree query's refetch interval), in the
-  background too; each check is timed and a failed one says why.
-- **Sync state in the canvas bar:** `↓` behind, `↑` not pushed, `●` uncommitted, or ✓, amber when behind or GitHub
-  couldn't be checked; the tooltip says when it was checked; a click shows the Commits pane.
+  background too.
 - **Activity's _This workspace_ line:** how many of its committed file diffs have a summary at HEAD.
-- Tests: `watch.test.ts` (status and head changes, ahead and dirty counts, renames in `git status -z`). `pnpm
-typecheck`, `pnpm test` (17), `pnpm lint`, `pnpm format` and `pnpm build` pass.
-- `ponytail:` one workspace watched at a time, by polling git; file system events as a hint if many workspaces or
-  big repos make it slow. Uncommitted edits outside an agent turn still don't refresh the diff.
+- A sync state badge in the canvas bar (↓ behind, ↑ not pushed, ● uncommitted, or ✓) was built and taken out again:
+  it added little over the Commits pane.
+- Tests: `watch.test.ts` (a commit is a move, an edit isn't). `pnpm typecheck`, `pnpm test` (16), `pnpm lint`,
+  `pnpm format` and `pnpm build` pass.
+- `ponytail:` one workspace watched at a time, by polling git; file system events as a hint if many workspaces make
+  it slow. Uncommitted edits outside an agent turn still don't refresh the diff.
 
 ## 2026-09-28 — File summaries and Activity
 

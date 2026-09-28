@@ -44,11 +44,10 @@ import {
   openWorktree,
   push,
   readFileAt,
-  readSyncState,
   readWorktreeFile,
   snapshot,
 } from "../core/git";
-import { onWorkspaceChange, watchWorkspace } from "../core/watch";
+import { onHeadMoved, watchWorkspace } from "../core/watch";
 import {
   listViews,
   onViewChange,
@@ -293,25 +292,20 @@ app.whenReady().then(() => {
   ipcMain.handle("git:clone", (_, projectId: number) => cloneProject(db, projectId));
   ipcMain.handle("git:opened-before", (_, workspaceId: number) => openedBefore(db, workspaceId));
   // ADR 0029: a workspace opened or checked again is summarised ahead, in the background.
-  // ADR 0030: the sync state says when GitHub was last checked, so it changes with every check.
-  ipcMain.handle("git:open-worktree", async (e, workspaceId: number) => {
+  ipcMain.handle("git:open-worktree", async (_, workspaceId: number) => {
     const opened = await openWorktree(db, workspaceId);
     if (opened.status === "ok") void summariseAhead(db, workspaceId);
-    changed(e.sender, { workspaceId, what: "sync" });
     return opened;
   });
-  ipcMain.handle("git:sync", (_, workspaceId: number) => readSyncState(db, workspaceId));
   // ADR 0030: the workspace on screen is watched. Its HEAD moving is a change to the worktree (commits, the diff) and
-  // is summarised ahead; other changes to what's uncommitted only change its sync state.
+  // is summarised ahead.
   ipcMain.handle("workspaces:watch", (_, workspaceId: number | null) =>
     watchWorkspace(db, workspaceId),
   );
-  onWorkspaceChange((workspaceId, change) => {
-    for (const w of BrowserWindow.getAllWindows()) {
-      if (change === "head") changed(w.webContents, { workspaceId, what: "worktree" });
-      changed(w.webContents, { workspaceId, what: "sync" });
-    }
-    if (change === "head") void summariseAhead(db, workspaceId);
+  onHeadMoved((workspaceId) => {
+    for (const w of BrowserWindow.getAllWindows())
+      changed(w.webContents, { workspaceId, what: "worktree" });
+    void summariseAhead(db, workspaceId);
   });
   ipcMain.handle("git:commits", (_, workspaceId: number, mergeBase: string) =>
     listCommits(db, workspaceId, mergeBase),
