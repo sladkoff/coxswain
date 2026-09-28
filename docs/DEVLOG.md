@@ -3,6 +3,23 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-28 — Tool results Codex keeps whole, and faster section writes
+
+For G3 ([ADR 0029](adr/0029-file-summaries-and-activity.md)), from the second guide on #5311: 4 min 37 s, 10 steps,
+191 s in the model, 79 s in tools, 743k input tokens (the first: 17 steps and 477 s in the model before it was half
+done).
+
+- **Codex cuts tool results of more than ~10k tokens in the middle**: `start_view` (16.4k) lost 40% of the file list
+  and summaries, and four more results were cut. The file list now comes by folder (a long path once) and in parts of
+  at most 20,000 characters: `start_view` lists what fits, puts the instructions first, and says `file_summaries
+from: N` for the rest; `file_summaries` takes `from`. #5311 is three parts.
+- **`write_section` no longer lists the range's changed files each time** (15–31 s per batch of six sections on
+  #5311): a pinned range's changed files and files at its head are read once and kept.
+- A job whose last write fails (the database closed) logs it instead of an unhandled rejection.
+- Tests: paging lists every file once. `pnpm typecheck`, `pnpm test` (16), `pnpm lint`, `pnpm format`, `pnpm build`
+  pass.
+- `ponytail:` the changed-files cache keeps every range asked about while the app runs; an LRU if it grows.
+
 ## 2026-09-28 — Guides read fewer diffs
 
 For G3 ([ADR 0029](adr/0029-file-summaries-and-activity.md)), from a guide on #5311 that still took ~10 minutes.

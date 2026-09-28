@@ -376,10 +376,12 @@ export async function summarise(
     making.delete(key);
     resolve();
   };
-  void work(db, job, mine, stop, release, settings).finally(() => {
-    stops.delete(job.id);
-    for (const m of mine) release(m.key);
-  });
+  void work(db, job, mine, stop, release, settings)
+    .catch((e: Error) => console.error(`summaries ${job.id}:`, e.message))
+    .finally(() => {
+      stops.delete(job.id);
+      for (const m of mine) release(m.key);
+    });
   return job;
 }
 

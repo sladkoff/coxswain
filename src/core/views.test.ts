@@ -84,7 +84,7 @@ test("views without diffs pin files, validate embeds and keep file review separa
   const call = (name: string, args: object) =>
     tools.find((tool) => tool.name === name)!.call(args as never);
   const start = await call("start_view", { title: "Trace", guide: false });
-  assert.match(start, /None\. You can still explain existing code/);
+  assert.match(start, /none\. You can still explain existing code/);
   const [view] = await listViews(db, 1);
   assert.equal(view.base, view.head);
   const worktree = join(temp, "coxswain/worktrees/test/repo/branch-feature");

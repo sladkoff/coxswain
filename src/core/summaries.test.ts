@@ -153,10 +153,29 @@ test("summary jobs summarise what's missing, retry, and feed the view tools", as
   assert.match(started, /b\.ts: Changes b\.ts/);
   assert.match(started, /c\.ts: Deleted/);
   const got = await call("file_summaries", { paths: ["a.ts"], wait: 5 });
-  assert.match(got, /^a\.ts: Changes a\.ts$/m);
+  assert.match(got, /^ {2}M \+1 -1 a\.ts: Changes a\.ts$/m);
   assert.equal(runs.length, 1);
   assert.doesNotMatch(runs[0].prompt, /b\.ts/, "a file diff that didn't change keeps its summary");
   await assert.rejects(call("file_summaries", { paths: ["nope.ts"] }), /Not changed/);
+
+  // A long list comes in parts, each under the size Codex keeps whole.
+  const { viewLimits } = await import("./views.ts");
+  viewLimits.listChars = 70;
+  const first = await call("file_summaries", {});
+  assert.match(first, /Changed files 1–2 of 4/);
+  assert.match(first, /call file_summaries with from: 2/);
+  const listed = [...first.matchAll(/^ {2}\S+ \S+ \S+ (\S+):/gm)].map((m) => m[1]);
+  for (let from = 2, page = first; /from: (\d+)/.test(page);) {
+    from = Number(/from: (\d+)/.exec(page)![1]);
+    page = await call("file_summaries", { from });
+    listed.push(...[...page.matchAll(/^ {2}\S+ \S+ \S+ (\S+):/gm)].map((m) => m[1]));
+  }
+  assert.deepEqual(
+    listed,
+    ["a.ts", "b.ts", "c.ts", "pnpm-lock.yaml"],
+    "the parts list every file once",
+  );
+  viewLimits.listChars = 20_000;
 
   // Sections written at once all land.
   await Promise.all(

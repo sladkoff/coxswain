@@ -197,15 +197,32 @@ const howToOther = `This view shows only what you put in it: embed just the sour
 and explain the rest with prose, tables and diagrams. When you're done, say in a line or two what it shows; it shows in
 the app as you add to it, so don't repeat it in the chat.`;
 
-// The files of a view's range, to check the tools' paths against.
-async function changedFiles(
+// The files of a view's range, to check the tools' paths against, and those at its head. Both are of commits, which
+// never change, so each is read once: every write_section asks, and a big range takes seconds to list.
+// ponytail: kept for every range asked about while the app runs; an LRU if that grows.
+const changedOf = new Map<string, Promise<ChangedFile[]>>();
+const filesOf = new Map<string, Promise<string[]>>();
+function once<T>(cache: Map<string, Promise<T>>, key: string, read: () => Promise<T>) {
+  let p = cache.get(key);
+  if (!p) {
+    p = read();
+    cache.set(key, p);
+    p.catch(() => cache.delete(key));
+  }
+  return p;
+}
+function changedFiles(
   db: Db,
   v: Pick<View, "workspaceId" | "base" | "head">,
 ): Promise<ChangedFile[]> {
-  const listed = await listChangedFiles(db, v.workspaceId, v.base, v.head);
-  if (listed.status !== "ok") throw new Error(listed.message);
-  return listed.files;
+  return once(changedOf, `${v.workspaceId} ${v.base} ${v.head}`, async () => {
+    const listed = await listChangedFiles(db, v.workspaceId, v.base, v.head);
+    if (listed.status !== "ok") throw new Error(listed.message);
+    return listed.files;
+  });
 }
+const filesAt = (db: Db, workspaceId: number, head: string) =>
+  once(filesOf, `${workspaceId} ${head}`, () => listFilesAt(db, workspaceId, head));
 
 // write_section and remove_section change a view one at a time, each on the view as the one before left it: two
 // sessions or subagents writing at once would otherwise both start from the same sections, and the last write would win.
@@ -252,6 +269,39 @@ async function summaryLines(
     ]),
   );
 }
+// Tool results stay under listChars characters of file list, about 6k tokens: Codex cuts a result of more than about
+// 10k tokens in the middle, losing files without saying which. A longer list is paged: file_summaries with from.
+export const viewLimits = { listChars: 20_000 };
+const letter = { added: "A", modified: "M", deleted: "D", renamed: "R" } as const;
+
+// The files from index from on, with their summary lines, grouped under their folders (a long path is written once),
+// as many as fit. next: where the rest start, or null.
+function listFiles(
+  files: ChangedFile[],
+  lines: Map<string, string>,
+  from = 0,
+): { text: string; next: number | null } {
+  let text = "";
+  let folder: string | null = null;
+  let i = from;
+  for (; i < files.length; i++) {
+    const f = files[i];
+    const dir = f.path.slice(0, f.path.lastIndexOf("/") + 1);
+    const line = `  ${letter[f.status]} +${f.additions} -${f.deletions} ${f.path.slice(dir.length)}${f.previousPath ? ` (from ${f.previousPath})` : ""}: ${lines.get(f.path)}\n`;
+    const chunk = (dir !== folder ? `${dir || "./"}\n` : "") + line;
+    if (text && text.length + chunk.length > viewLimits.listChars) break;
+    text += chunk;
+    folder = dir;
+  }
+  return { text: text.trimEnd(), next: i < files.length ? i : null };
+}
+const listHeader = (files: ChangedFile[], from: number, next: number | null) =>
+  `Changed files ${from + 1}–${next ?? files.length} of ${files.length}, by folder (a file's path is its folder and its name; A added, M modified, D deleted, R renamed; lines added and removed; then its file summary):`;
+const listRest = (files: ChangedFile[], next: number | null) =>
+  next === null
+    ? ""
+    : `\n… ${files.length - next} more files: call file_summaries with from: ${next} for the next ones.`;
+
 const aboutSummaries =
   "File summaries are written ahead by a small model from each diff alone: plan from them and pick which few diffs to read. Call file_summaries only for those still being written; the rest are above.";
 
@@ -310,10 +360,7 @@ async function addOnLines(
 ): Promise<string> {
   const view = await toolView(db, workspaceId, a.view);
   const file = (await changedFiles(db, view)).find((f) => f.path === a.path);
-  if (
-    !file &&
-    (a.side === "old" || !(await listFilesAt(db, workspaceId, view.head)).includes(a.path))
-  )
+  if (!file && (a.side === "old" || !(await filesAt(db, workspaceId, view.head)).includes(a.path)))
     throw new Error(`${a.path} isn't a file on that side of the view`);
   const [start, end] = [a.start_line, a.end_line].sort((x, y) => x - y);
   const commit = a.side === "old" ? view.base : view.head;
@@ -414,18 +461,17 @@ export function viewTools(db: Db, workspaceId: number): McpTool[] {
         // ADR 0029: what has no summary yet starts being summarised now; what's ready is listed with each file.
         await summarise(db, workspaceId, base, head, "view");
         const summaries = await summaryLines(db, workspaceId, { base, head }, files);
-        const listed = files.map(
-          (f) =>
-            `${f.status} +${f.additions} -${f.deletions} ${f.previousPath ? `${f.previousPath} -> ` : ""}${f.path}: ${summaries.get(f.path)}`,
-        );
+        const listed = listFiles(files, summaries);
         return [
           `View ${id} started; the other tools write to it when given view: ${id}, or to the latest view without it. It's pinned to ${base}${base === at.mergeBase ? " (the merge base)" : ""} → ${head}${ofWorktree ? " (the worktree as it is now, uncommitted changes included, as a commit)" : ""}.`,
           `Read a diff with \`git diff ${base} ${head} -- <path>\`. Line numbers are the file's at the head (side "new") or, for removed lines, at the base (side "old").`,
           `Read a source file with \`git show ${head}:<path>\`; list available files with \`git ls-tree -r --name-only ${head}\`. Source-file line annotations use side "new".`,
-          `Changed files (status, lines added and removed, path: file summary):\n${listed.join("\n") || "None. You can still explain existing code with source files, prose and diagrams."}`,
           ...(files.length ? [aboutSummaries] : []),
           howToView,
           v.guide ? howToGuide : howToOther,
+          files.length
+            ? `${listHeader(files, 0, listed.next)}\n${listed.text}${listRest(files, listed.next)}`
+            : "Changed files: none. You can still explain existing code with source files, prose and diagrams.",
         ].join("\n\n");
       },
     },
@@ -456,7 +502,7 @@ export function viewTools(db: Db, workspaceId: number): McpTool[] {
           const others = embedded(view.sections.filter((_, i) => i !== at));
           const mine = embedded([parseSection(markdown)]);
           const files = mine.some((p) => p.kind === "file")
-            ? await listFilesAt(db, workspaceId, view.head)
+            ? await filesAt(db, workspaceId, view.head)
             : [];
           for (const [i, p] of mine.entries()) {
             if (!(p.kind === "diff" ? changed : files).includes(p.path))
@@ -523,7 +569,7 @@ export function viewTools(db: Db, workspaceId: number): McpTool[] {
     {
       name: "file_summaries",
       description:
-        "The file summaries of a view's changed files (the latest view unless view is given): a sentence on what changed in each, written ahead by a small model from its diff alone. start_view lists them already; call this for those still being written (with paths and wait), or for a view started in an earlier turn. Summaries missing are started again; wait gives those being written up to that many seconds.",
+        "The file summaries of a view's changed files (the latest view unless view is given): a sentence on what changed in each, written ahead by a small model from its diff alone. start_view lists them already, as many as fit; call this for the rest (from), for those still being written (paths and wait), or for a view started in an earlier turn. A long list comes in parts: the result says the from of the next. Summaries missing are started again; wait gives those being written up to that many seconds.",
       inputSchema: {
         type: "object",
         properties: {
@@ -536,10 +582,15 @@ export function viewTools(db: Db, workspaceId: number): McpTool[] {
             type: "integer",
             description: "Seconds to wait for summaries being written, up to 120",
           },
+          from: {
+            type: "integer",
+            description:
+              "The index of the first file to list, from a result that stopped early; 0 for the start",
+          },
           ...viewArg,
         },
       },
-      call: async (a: { paths?: string[]; wait?: number; view?: number }) => {
+      call: async (a: { paths?: string[]; wait?: number; from?: number; view?: number }) => {
         const view = await toolView(db, workspaceId, a.view);
         const changed = await changedFiles(db, view);
         const unknown = (a.paths ?? []).filter((p) => !changed.some((f) => f.path === p));
@@ -549,10 +600,10 @@ export function viewTools(db: Db, workspaceId: number): McpTool[] {
         if (!files.length) return "The view has no changed files.";
         await summarise(db, workspaceId, view.base, view.head, "view");
         const wait = Math.min(Math.max(a.wait ?? 0, 0), 120) * 1000;
+        const from = Math.min(Math.max(a.from ?? 0, 0), files.length - 1);
         const lines = await summaryLines(db, workspaceId, view, files, wait);
-        return [...files.map((f) => `${f.path}: ${lines.get(f.path)}`), "", aboutSummaries].join(
-          "\n",
-        );
+        const listed = listFiles(files, lines, from);
+        return `${listHeader(files, from, listed.next)}\n${listed.text}${listRest(files, listed.next)}`;
       },
     },
     {

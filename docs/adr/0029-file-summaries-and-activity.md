@@ -38,7 +38,9 @@ seen: what runs, on which model, and why it failed.
    settings change.
 4. **The agent never waits for summaries.** `start_view` lists each changed file with its summary, or says it's
    being written or missing, and the new `file_summaries` tool gets them for a view (some paths or all, optionally
-   waiting up to 120 s for those being written), meant only for those. The guide instructions say to plan the sections
+   waiting up to 120 s for those being written), meant only for those. Both list files by folder and stop at 20,000
+   characters of list (about 6k tokens), saying the `from` of the rest: Codex cuts a tool result of more than about
+   10k tokens in the middle, which lost 40% of #5311's list without saying which files. The guide instructions say to plan the sections
    and write each file's sentence from its summary, to read diffs only where a summary doesn't do (none or unclear,
    the heart of the change, lines explained or judged), and to write several sections per step. On #5311 (291 files) a
    guide that read every diff spent 477 s in the model and 49 s in tools: each diff read grows the context every later
