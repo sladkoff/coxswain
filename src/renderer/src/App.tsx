@@ -26,7 +26,7 @@ import { workspaceLabel } from "./format";
 import { Setup } from "./Setup";
 import { StatusBar } from "./StatusBar";
 import { usePullRequest } from "./usePullRequest";
-import { ViewProse, ViewSectionHeader } from "./ViewSection";
+import { viewDiff, ViewProse, ViewSectionHeader } from "./ViewSection";
 import { ViewToc } from "./ViewToc";
 import type { ViewSettings } from "../../preload";
 import { openedPath, type Opened, type Turn, Viewer } from "./Viewer";
@@ -1022,7 +1022,12 @@ export function App() {
                               <section
                                 key={i}
                                 id={`view-section-${i}`}
-                                className={x.muted ? "opacity-60" : ""}
+                                className={cn(
+                                  x.muted && "opacity-60",
+                                  // A view's sections: a line between them, room at the end.
+                                  x.title !== undefined && "border-t pb-4 first:border-t-0",
+                                  divider,
+                                )}
                               >
                                 {x.title !== undefined && (
                                   <ViewSectionHeader
@@ -1033,13 +1038,21 @@ export function App() {
                                 )}
                                 {(x.parts as SectionPart[]).map((p, j) =>
                                   p.kind === "prose" ? (
-                                    <ViewProse key={j}>{p.text}</ViewProse>
+                                    <ViewProse
+                                      key={j}
+                                      after={(x.parts as SectionPart[])[j - 1]?.kind === "code"}
+                                    >
+                                      {p.text}
+                                    </ViewProse>
                                   ) : (
                                     isShown(p.d) && (
                                       <div
                                         key={openedPath(p.d)}
                                         id={`diff:${openedPath(p.d)}`}
-                                        className={p.muted && !x.muted ? "opacity-60" : ""}
+                                        className={cn(
+                                          p.muted && !x.muted && "opacity-60",
+                                          x.title !== undefined && viewDiff,
+                                        )}
                                       >
                                         <Viewer
                                           stacked

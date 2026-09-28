@@ -201,6 +201,12 @@ UX, for G3 and G5 ([UX](UX.md) L2, L3).
 - New workspace has two tabs, _Pull request_ and _Branch_. The branch tab drops the browser's datalist: its one field
   filters the GitHub branches as a list (pick one to work on it) and offers _New branch `name`_ from a base picked in
   the native menu.
+- Views read more easily: each section starts below a line with a larger heading and `N files · N reviewed`; embedded
+  file diffs are cards (rounded, bordered, a little apart; `overflow: clip` so their sticky headers still stick); prose
+  sits close above the diff it leads into and apart from the one before it; text is capped at 72ch while diagrams and
+  tables take the column's width, a diagram on a light card. Diagram labels no longer inherit the prose's
+  break-anywhere, which could wrap a label inside its fixed box and cut it off (seen on an ER diagram; not re-checked
+  with one, the guide at hand had flowcharts). The plain diff keeps its flush list.
 - ponytail: the bar counts what Hand off takes with the same rule as the review prompt in `core/review.ts`, copied,
   since the renderer imports no core code. Move it to a shared pure module if a third place needs it.
 - Still open: a guide's table of contents stays its own column; making it the pane's first tab (_Sections_) would

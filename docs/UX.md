@@ -184,10 +184,12 @@ branch`, when it was updated, and _Has a workspace_ if it does. _Branch_: one fi
   tools (ADR 0023); asking for one in the agent pane's own words does the same. A view shows on the canvas as soon as
   the agent starts it, and fills in as it adds to it: its sections in order, each with its heading and how many file
   diffs it embeds, then its markdown (ADR 0026): prose, tables, mermaid diagrams, and embedded file diffs, which work
-  as in the diff (threads, _Reviewed_). A diagram that doesn't parse shows its code and the error. A guide goes
-  through every file: those no section embeds come after it under _Not in the guide_. Muted file diffs (tool-made, tests,
-  what the user said doesn't matter), and sections of only those, are low-lighted, with no label: the heading says
-  why. On the canvas's left, a table of contents: how many embedded file diffs are
+  as in the diff (threads, _Reviewed_). Laid out to skim: a line above each section; embedded file diffs as cards; prose
+  close above the diff it leads into and apart from the one before; text at most 72 characters wide, diagrams and
+  tables the column's width, a diagram on its own card. A diagram that doesn't parse shows its code and the error. A
+  guide goes through every file: those no section embeds come after it under _Not in the guide_. Muted file diffs
+  (tool-made, tests, what the user said doesn't matter), and sections of only those, are low-lighted, with no label:
+  the heading says why. On the canvas's left, a table of contents: how many embedded file diffs are
   reviewed in all with a bar, then every section with how many of its file diffs are reviewed (✓ when all are) and, if
   any, how many notes and questions are on them (`✎ 2`). The section being read is marked as you scroll; a click jumps
   to it, first showing reviewed file diffs if all of its are. Explanations (labelled _Explanation_) and, with review,
