@@ -31,8 +31,11 @@ apps.
    question is answered, a guide group is described, the worktree changes), the core sends one IPC event,
    `changed`, with the workspace and what changed, e.g. `{ workspaceId, what: 'entries' }`. The renderer maps it to
    `invalidateQueries`. This replaces the `version` counters and reload callbacks.
-4. **Streams stay events.** Chat entries and guide progress still arrive through their own IPC events
-   (`agents:entry`, `guides:progress`) and are shown as they arrive; `changed` follows when the turn or guide ends.
+4. **Streams stay events.** The core's versioned agent-session snapshots arrive through `agents:state`, coalesced
+   over 16 ms, and update the query cache for every session, even when its pane is absent. A delayed query response
+   cannot overwrite a newer revision. Inline question replies keep their own events; `changed` still follows when
+   a turn ends. Session state is read once on attachment if absent from the cache; it needs no transcript replay on
+   pane remount ([ADR 0018](0018-agents-over-acp.md)).
 5. **Freshness per source.** Core data from SQLite and git: stale at once, but only refetched on a `changed` event or
    when a pane mounts. GitHub: a `staleTime` of a minute, refetched when the window gains focus. This is the polling of
    [ADR 0006](0006-github-integration.md) decision 7, done in the UI; ETags stay a core concern.

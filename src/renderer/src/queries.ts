@@ -1,5 +1,6 @@
 import { QueryClient, queryOptions } from "@tanstack/react-query";
 import type { Changed, CoxswainApi } from "../../preload";
+import type { SessionState } from "../../core/session-state";
 
 // Every read from the core goes through TanStack Query (ADR 0017). Core data is stale at once but only refetched
 // when a pane mounts or the core says it changed; GitHub's is refetched after a minute, on window focus.
@@ -14,6 +15,7 @@ type Reads = {
 
 const github = { staleTime: 60_000, refetchOnWindowFocus: true };
 const extra: Partial<Record<Reads, { staleTime?: number; refetchOnWindowFocus?: boolean }>> = {
+  readAgentState: { staleTime: Infinity },
   readFileAt: { staleTime: Infinity }, // a file at a commit never changes
   openWorktree: github, // asks GitHub for the PR's head and fetches it
   listPullRequests: github,
@@ -42,6 +44,15 @@ export function core<K extends Reads>(name: K, ...args: Parameters<Api[K]>) {
         throw new Error((result as { message?: string }).message ?? "GitHub is unreachable");
       return result;
     },
+    // Also runs when the query commits its response, after any intervening IPC events.
+    structuralSharing:
+      name === "readAgentState"
+        ? (before, after) => {
+            const old = before as SessionState | undefined;
+            const next = after as SessionState;
+            return old && old.revision > next.revision ? old : next;
+          }
+        : true,
     ...extra[name],
   });
 }
@@ -61,18 +72,18 @@ const affects: Record<Changed["what"], Reads[]> = {
     "listEntries",
   ],
   // A turn's session reports its agent's choices of model and effort afresh.
-  transcript: ["listAgentSessions", "readTranscript", "listAgentPicks"],
+  transcript: ["listAgentSessions", "listAgentPicks"],
   // An agent named a session.
   sessions: ["listAgentSessions"],
   view: ["listViews"],
 };
 
 // Refetches what's on screen and marks the rest stale. Resolves once what's on screen is in.
-// readTranscript's key has no workspace, so every one is marked; only the one on screen refetches.
+// Live agent state arrives separately, including for sessions whose panes are absent.
 export const changed = ({ workspaceId, what }: Changed) =>
   queryClient.invalidateQueries({
     predicate: ({ queryKey: [name, id] }) =>
-      affects[what].includes(name as Reads) && (id === workspaceId || name === "readTranscript"),
+      affects[what].includes(name as Reads) && id === workspaceId,
   });
 
 window.coxswain.onChanged(changed);
@@ -93,3 +104,10 @@ export function markReviewed(
     .setReviewed(workspaceId, mergeBase, path, on, head, kind)
     .catch(() => queryClient.invalidateQueries({ queryKey }));
 }
+
+// Installed once for the window, independently of the mounted agent pane.
+window.coxswain.onAgentState((id, state) => {
+  queryClient.setQueryData(core("readAgentState", id).queryKey, (before) =>
+    before && before.revision > state.revision ? before : state,
+  );
+});

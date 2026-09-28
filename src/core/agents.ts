@@ -9,6 +9,7 @@ import * as acp from "@agentclientprotocol/sdk";
 import type { Db } from "./db";
 import { type Commit, worktreePath } from "./git";
 import { snapshotOf } from "./snapshot";
+import { SessionStates } from "./session-state";
 import { viewTools } from "./views";
 import { getWorkspaceRepo } from "./workspaces";
 
@@ -242,6 +243,7 @@ async function askPermission(
     }).then(resolve);
   });
   pending.delete(id);
+  sessionStates.permission(p.sessionId, null);
   return optionId
     ? { outcome: { outcome: "selected", optionId } }
     : { outcome: { outcome: "cancelled" } };
@@ -636,6 +638,7 @@ export async function startAgentSession(
     mcp: await paneTools(db, workspaceId),
     picks: await agentPicks(db, agent),
   });
+  await sessionStates.read(id, async () => []);
   return db
     .insertInto("agent_sessions")
     .values({
@@ -736,11 +739,11 @@ async function readyWorktree(db: Db, workspaceId: number): Promise<string> {
   return cwd;
 }
 
-// A session made before ADR 0018 loads by its stored ID too: it is Claude Code's. One never sent a message has no
-// history to load. Null while a turn runs in it: the pane keeps what streamed, and reads it again when the turn ends.
-export async function readTranscript(db: Db, agentSessionId: string): Promise<ChatEntry[] | null> {
-  if (running.has(agentSessionId)) return null;
-  try {
+// The core owns the live projection, independently of any pane or IPC invocation.
+const sessionStates = new SessionStates();
+export const onSessionState = sessionStates.subscribe.bind(sessionStates);
+export const readAgentState = (db: Db, agentSessionId: string) =>
+  sessionStates.read(agentSessionId, async () => {
     const { id: workspaceId, agent } = await sessionOf(db, agentSessionId);
     const entries = await history(
       agent,
@@ -749,12 +752,7 @@ export async function readTranscript(db: Db, agentSessionId: string): Promise<Ch
       await paneTools(db, workspaceId),
     );
     return entries.map(withComment);
-  } catch {
-    return [];
-  }
-}
-
-const running = new Set<string>();
+  });
 
 // Sends one message in an agent session and streams the reply as chat entries until the turn ends.
 export async function runTurn(
@@ -763,8 +761,25 @@ export async function runTurn(
   prompt: string,
   handlers: RunHandlers,
 ): Promise<TurnResult> {
-  if (running.has(agentSessionId)) return { status: "error", message: "A turn is already running" };
-  running.add(agentSessionId);
+  try {
+    await readAgentState(db, agentSessionId);
+  } catch (e) {
+    return { status: "error", message: (e as Error).message };
+  }
+  if (!sessionStates.start(agentSessionId))
+    return { status: "error", message: "A turn is already running" };
+  const streaming: RunHandlers = {
+    onEntry: (entry) => {
+      sessionStates.entry(agentSessionId, entry);
+      handlers.onEntry?.(entry);
+    },
+    onPermission: (permission) => {
+      sessionStates.permission(agentSessionId, permission);
+      return handlers.onPermission?.(permission) ?? Promise.resolve(null);
+    },
+  };
+  let result: TurnResult = { status: "ok" };
+  streaming.onEntry?.(withComment({ kind: "user", text: prompt }));
   try {
     const { id: workspaceId, agent } = await sessionOf(db, agentSessionId);
     const cwd = await readyWorktree(db, workspaceId);
@@ -774,7 +789,6 @@ export async function runTurn(
       .where("agent_session_id", "=", agentSessionId)
       .where("title", "is", null)
       .execute();
-    handlers.onEntry?.(withComment({ kind: "user", text: prompt }));
     // ADR 0028: the worktree before and after, for the turn's diff. A stopped or failed turn may have changed it too.
     const before = await snapshotOf(cwd).catch(() => null);
     try {
@@ -787,7 +801,7 @@ export async function runTurn(
           mcp: await paneTools(db, workspaceId),
           picks: await agentPicks(db, agent),
         },
-        handlers,
+        streaming,
       );
     } finally {
       const after = before && (await snapshotOf(cwd).catch(() => null));
@@ -803,12 +817,12 @@ export async function runTurn(
           })
           .execute();
     }
-    return { status: "ok" };
   } catch (e) {
-    return { status: "error", message: (e as Error).message };
+    result = { status: "error", message: (e as Error).message };
   } finally {
-    running.delete(agentSessionId);
+    sessionStates.finish(agentSessionId, result);
   }
+  return result;
 }
 
 // The workspace's agent turns that changed its worktree, newest first, each as a commit from its before to its after.

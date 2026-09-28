@@ -1,5 +1,5 @@
 import { type ReactNode, useEffect, useState, useSyncExternalStore } from "react";
-import Markdown from "react-markdown";
+import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { GitProblem } from "../../../core/git";
 import type { GitHubProblem } from "../../../core/github";
@@ -7,6 +7,22 @@ import { cn } from "./styles";
 
 const code =
   "rounded bg-neutral-100 px-1.5 py-0.5 font-mono text-xs select-text dark:bg-neutral-800";
+
+// These are component types, not callbacks: defining them inside Prose would remount every diagram
+// whenever its parent renders (opening the command palette, scrolling between sections, …).
+const components: Components = {
+  a: (p) => <a {...p} target="_blank" />,
+  pre: ({ node, ...p }) => {
+    const code = node?.children[0];
+    const mermaid =
+      code?.type === "element" &&
+      Array.isArray(code.properties.className) &&
+      code.properties.className.includes("language-mermaid");
+    const text = mermaid && code.children[0]?.type === "text" ? code.children[0].value : "";
+    return mermaid ? <Mermaid code={text} /> : <pre {...p} />;
+  },
+};
+const inlineComponents: Components = { ...components, p: (p) => <>{p.children}</> };
 
 // Markdown from GitHub or an agent, selectable. Links get target=_blank so the main process opens them in the browser.
 // A mermaid code block is drawn as its diagram (ADR 0026). inline: no paragraphs and no wrapper, for a title.
@@ -20,22 +36,7 @@ export function Prose({
   className?: string;
 }) {
   const md = (
-    <Markdown
-      remarkPlugins={[remarkGfm]}
-      components={{
-        a: (p) => <a {...p} target="_blank" />,
-        pre: ({ node, ...p }) => {
-          const code = node?.children[0];
-          const mermaid =
-            code?.type === "element" &&
-            Array.isArray(code.properties.className) &&
-            code.properties.className.includes("language-mermaid");
-          const text = mermaid && code.children[0]?.type === "text" ? code.children[0].value : "";
-          return mermaid ? <Mermaid code={text} /> : <pre {...p} />;
-        },
-        ...(inline && { p: (p) => <>{p.children}</> }),
-      }}
-    >
+    <Markdown remarkPlugins={[remarkGfm]} components={inline ? inlineComponents : components}>
       {children}
     </Markdown>
   );

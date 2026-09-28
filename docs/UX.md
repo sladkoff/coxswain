@@ -25,7 +25,7 @@ shows — _Diff_ with its range, a chip per view, a dashed _New View_ chip — t
 │    │                         ├─────────────────────┴────────────────────┤
 │    │                         │▾ 3 threads ●1 │ ▰▱ 1/2 │ +33 −0 Hand off▾│
 └────┴─────────────────────────┴──────────────────────────────────────────┘
-          ⌘K from anywhere: switch to anything, do anything
+          ⌘K overlays the canvas; existing diagrams stay in place
 ```
 
 ## Before the main screen
@@ -86,7 +86,9 @@ branch`, when it was updated, and _Has a workspace_ if it does. _Branch_: one fi
   _View > Back_ (⌥⌘←) and _View > Forward_ (⌥⌘→), or the chevrons in the canvas bar, step through what the canvas
   showed (ADR 0025): each whole file opened (from _Files_, Open Quickly, Go to Definition or Find Usages), each file
   picked in _Changes_, each switch between _Changes_ and _Files_, each commit or view picked, and each workspace opened;
-  Back into another workspace's step opens that workspace again. Each step comes back scrolled where it was left, the
+  Back into another workspace's step opens that workspace again. Picking a workspace in the sidebar restores its
+  last canvas selection and scroll, with one loading state for an uncached destination. Reviewed files do not briefly
+  appear before the review state loads. Each step comes back scrolled where it was left, the
   file diffs by the one at the top. The keys work wherever the focus is, the Navigator included; the menu items and
   chevrons are greyed out at either end.
 
@@ -223,3 +225,13 @@ A prose-only view has no reviewable files. An empty view says _Nothing in this v
 6. **The canvas:** what else it shows (the PR's description and history), and how the agent and the human switch
    between them. An annotation on lines is an entry (ADR 0023); the agent has tools to make views (ADR 0026), but not
    yet to navigate the app or read its context. Interactive views (Excalidraw and the like) are deferred.
+
+## Continuity when navigating
+
+- Opening and closing the command palette preserves the diagrams already drawn beneath it.
+- A workspace remembers its selected agent session and unsent draft for the window's lifetime. Running turns,
+  earlier messages, pending permissions and errors survive switching workspaces; the agent pane reattaches to the
+  core's session state. A turn can finish while its pane is hidden.
+- Picking a comment from the bottom bar or a chat card selects its view or recorded range and enables Show Reviewed
+  Files before scrolling to its thread. The Reviewed mark stays. An outdated thread opens above its file with the
+  original code, rather than leaving navigation at a hidden annotation.

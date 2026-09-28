@@ -1,10 +1,11 @@
-import { createMemoryHistory, createRootRoute, createRouter } from "@tanstack/react-router";
 import type { Commit } from "../../core/git";
+import { createMemoryHistory, createRootRoute, createRouter } from "@tanstack/react-router";
 import { App } from "./App";
 
 // What the canvas shows, as the location's search (ADR 0025). Each change is a history entry, so View > Back and
 // Forward step through them. Left out: the defaults (the live file diffs, the Navigator on Diffs, no view chosen).
 export type CanvasSearch = {
+  thread?: number; // a thread to reveal and scroll to, including in a reviewed file
   ws?: number; // the workspace; Back into another workspace's entry opens it again
   view?: "files"; // the Navigator's toggle on Files
   file?: string; // a whole file, shown in place of the file diffs while the toggle is on Files

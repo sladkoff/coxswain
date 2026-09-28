@@ -24,7 +24,8 @@ gracefully when it's wrong. It must still embed file diffs as the user reviews t
    GitHub-flavoured markdown, rendered by `react-markdown` and `remark-gfm`, as in chat and threads.
 2. **Fenced blocks are the extension points.** Their info string says what they are:
    - ` ```mermaid `: a diagram, drawn by [Mermaid](https://mermaid.js.org) (`mermaid`, loaded only when one shows),
-     `securityLevel: "strict"`, in the system theme and redrawn when it changes. `write_section` has the window draw
+     `securityLevel: "strict"`, in the system theme and redrawn when it changes. Markdown component types are
+     stable across parent renders so opening the command palette or scrolling does not remount diagrams. `write_section` has the window draw
      each diagram before saving the section (main asks the renderer over IPC, `setDiagramCheck`), and refuses it with
      mermaid's error if one doesn't draw, so the agent fixes it. One that still fails (e.g. saved while no window was
      open) shows its code and the error. Works wherever `Prose` renders, so also in chat and threads.

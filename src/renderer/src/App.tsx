@@ -19,7 +19,7 @@ import { Navigator, type NavigatorView } from "./Navigator";
 import { NewWorkspace } from "./NewWorkspace";
 import { Onboarding } from "./Onboarding";
 import { Projects } from "./Projects";
-import type { CanvasSearch } from "./router";
+import { defaultViewId, threadLocation, type CanvasSearch } from "./canvas-state";
 import { changed, core, markReviewed as mark, queryClient } from "./queries";
 import { Settings } from "./Settings";
 import { workspaceLabel } from "./format";
@@ -35,8 +35,14 @@ import { WorkspaceRail } from "./WorkspaceRail";
 // Stable empty lists: a new [] each render would redraw the memoised Viewers.
 const noEntries: ReviewEntry[] = [];
 const noPaths: string[] = [];
+const noViews: View[] = [];
 
 export function App() {
+  const router = useRouter();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const search = useSearch({ from: "__root__" });
+  const workspaceLocations = useRef(new Map<number, CanvasSearch>());
   const [screen, setScreen] = useState<"main" | "settings" | "projects" | "new-workspace">("main");
   const close = () => setScreen("main");
 
@@ -72,16 +78,20 @@ export function App() {
   });
   const workspaces =
     useQuery({ ...core("listWorkspaces", current?.id ?? 0), enabled: !!current }).data ?? [];
-  const currentWorkspace = workspaces.reduce<Workspace | undefined>(
+  const latestWorkspace = workspaces.reduce<Workspace | undefined>(
     (latest, w) => (!latest || w.lastOpenedAt > latest.lastOpenedAt ? w : latest),
     undefined,
   );
-  const opening = async (open: Promise<unknown>) => {
-    await open;
-    await queryClient.invalidateQueries({ queryKey: ["listWorkspaces", current?.id] });
+  const currentWorkspace = workspaces.find((w) => w.id === search.ws) ?? latestWorkspace;
+  const selectWorkspace = (id: number) => {
     close();
+    return navigate({ to: "/", search: workspaceLocations.current.get(id) ?? { ws: id } });
   };
-  const selectWorkspace = (id: number) => opening(window.coxswain.openWorkspace(id));
+  const opening = async (open: Promise<Workspace>) => {
+    const workspace = await open;
+    await queryClient.invalidateQueries({ queryKey: ["listWorkspaces", current?.id] });
+    await selectWorkspace(workspace.id);
+  };
   const newPullWorkspace = (p: PullRequest) =>
     current && opening(window.coxswain.openPullRequestWorkspace(current.id, p.number, p.headRef));
   // Rejects with the reason if git won't take the branch's name; the new workspace screen shows it.
@@ -109,14 +119,11 @@ export function App() {
     window.coxswain.cloneProject(current.id).finally(() => setCloning(false));
   }, [current?.id]);
 
-  // What the canvas shows is the location's search (ADR 0025): each change is a history entry, and View > Back and
-  // Forward (⌥⌘← ⌥⌘→) move through them. `s` is the current workspace's; an entry of another one, while Back or
-  // Forward opens that workspace again, shows nothing of it here.
-  const router = useRouter();
-  const navigate = useNavigate();
-  const location = useLocation();
-  const search = useSearch({ from: "__root__" });
-  const s: CanvasSearch = search.ws === currentWorkspace?.id ? search : {};
+  // The router chooses the workspace and canvas together; SQLite only supplies the startup default.
+  const s: CanvasSearch =
+    search.ws === currentWorkspace?.id
+      ? search
+      : (workspaceLocations.current.get(currentWorkspace?.id ?? 0) ?? {});
   const shown = useRef(s);
   shown.current = { ...s, ws: currentWorkspace?.id };
   // How the location last changed: a line is scrolled to only when the file is opened, not on Back or Forward.
@@ -129,25 +136,33 @@ export function App() {
   // A new entry with these changes to what the canvas shows. Stable, so the memoised Viewers don't redraw.
   const show = useCallback(
     (changes: CanvasSearch, replace = false) =>
-      navigate({ to: "/", search: { ...shown.current, ...changes }, replace }),
+      navigate({ to: "/", search: { ...shown.current, thread: undefined, ...changes }, replace }),
     [navigate],
   );
   const canBack = location.state.__TSR_index > 0;
   const canForward = location.state.__TSR_index < router.history.length - 1;
   useEffect(() => window.coxswain.setNavigation(canBack, canForward), [canBack, canForward]);
-  // Opening a workspace is an entry of its own; Back or Forward to another workspace's entry opens that one again.
+  // Initial project load (or removal of the selected workspace) uses its last opened workspace.
   useEffect(() => {
     if (currentWorkspace && search.ws !== currentWorkspace.id)
       void navigate({
         to: "/",
-        search: { ws: currentWorkspace.id },
-        replace: search.ws === undefined,
+        search: workspaceLocations.current.get(currentWorkspace.id) ?? { ws: currentWorkspace.id },
+        replace: true,
       });
-  }, [currentWorkspace?.id]);
+  }, [currentWorkspace?.id, search.ws]);
   useEffect(() => {
-    const w = moved && workspaces.find((w) => w.id === search.ws);
-    if (w && w.id !== currentWorkspace?.id) void selectWorkspace(w.id);
-  }, [location.state.__TSR_key]);
+    if (search.ws === currentWorkspace?.id && search.ws !== undefined)
+      workspaceLocations.current.set(search.ws, search);
+  }, [search, currentWorkspace?.id]);
+  useEffect(() => {
+    if (!currentWorkspace) return;
+    void window.coxswain
+      .openWorkspace(currentWorkspace.id)
+      .then(() =>
+        queryClient.invalidateQueries({ queryKey: ["listWorkspaces", currentWorkspace.projectId] }),
+      );
+  }, [currentWorkspace?.id]);
 
   const view: NavigatorView = s.view ?? "diffs";
   const pr = usePullRequest(currentWorkspace);
@@ -163,25 +178,26 @@ export function App() {
   }, [currentWorkspace?.id, pr.commits]);
   // The view shown on the canvas (ADR 0023, 0026), or none. The newest shows when it appears, and on opening a
   // workspace if it isn't stale. A view and a commit are both a pinned range, so picking one drops the other.
-  const views = useQuery({
+  const viewsQuery = useQuery({
     ...core("listViews", currentWorkspace?.id ?? 0),
     enabled: !!currentWorkspace,
-  }).data;
+  });
+  const views = viewsQuery.data ?? (viewsQuery.isError ? noViews : undefined);
   // On opening a workspace the newest shows in place (unless one was chosen); a new view shows as an entry of its own.
-  const viewId = s.viewId ?? null;
+  const viewId = defaultViewId(s, views, pr.snapshot, pr.snapshotReady);
   const newest = useRef<{ workspaceId: number; id: number } | null>(null);
   useEffect(() => {
-    if (!currentWorkspace || !views || !pr.commits || !pr.snapshot) return;
+    if (!currentWorkspace || !views || !pr.commits || !pr.snapshotReady) return;
     const latest = views[0];
     const now = shown.current;
     if (newest.current?.workspaceId !== currentWorkspace.id) {
-      if (now.viewId === undefined && !now.commit && !now.scope && latest?.head === pr.snapshot)
-        void show({ viewId: latest.id }, true);
+      if (now.viewId === undefined)
+        void show({ viewId: defaultViewId(now, views, pr.snapshot, pr.snapshotReady) }, true);
     } else if (latest && latest.id > newest.current.id)
       void show({ viewId: latest.id, commit: undefined });
     newest.current = { workspaceId: currentWorkspace.id, id: latest?.id ?? 0 };
-  }, [currentWorkspace?.id, views, pr.commits, pr.snapshot]);
-  const canvasView = (viewId !== null && views?.find((v) => v.id === viewId)) || null;
+  }, [currentWorkspace?.id, views, pr.commits, pr.snapshot, pr.snapshotReady]);
+  const canvasView = (viewId != null && views?.find((v) => v.id === viewId)) || null;
   // Without either, the diff: all of it, or only what's on GitHub or only the local changes on top (ADR 0028). The
   // local changes are the live worktree, like all of it; the rest are pinned ranges.
   const scope = s.scope ?? "all";
@@ -198,10 +214,11 @@ export function App() {
   // The workspace's entries, as the canvas shows them (ADR 0015: the live diff, or the range picked). An explanation or
   // finding shows only with its view.
   const base = range?.base ?? pr.commits?.mergeBase;
-  const allEntries = useQuery({
+  const entriesQuery = useQuery({
     ...core("listEntries", currentWorkspace?.id ?? 0, base ?? "", range?.head),
     enabled: !!currentWorkspace && !!base,
-  }).data;
+  });
+  const allEntries = entriesQuery.data;
   const entries = useMemo(
     () => allEntries?.filter((e) => !e.viewId || e.viewId === canvasView?.id) ?? noEntries,
     [allEntries, canvasView?.id],
@@ -211,16 +228,16 @@ export function App() {
   // longer reviewed (ADR 0014); or at a view's head, where they stay as they were.
   const mergeBase = pr.commits?.mergeBase;
   const reviewedBase = range?.base ?? mergeBase;
-  const reviewed =
-    useQuery({
-      ...core("listReviewed", currentWorkspace?.id ?? 0, reviewedBase ?? "", range?.head),
-      enabled: !!currentWorkspace && !!reviewedBase && !!pr.changed,
-    }).data ?? noPaths;
-  const reviewedFiles =
-    useQuery({
-      ...core("listReviewed", currentWorkspace?.id ?? 0, reviewedBase ?? "", range?.head, "file"),
-      enabled: !!currentWorkspace && !!canvasView && !!reviewedBase,
-    }).data ?? noPaths;
+  const reviewedQuery = useQuery({
+    ...core("listReviewed", currentWorkspace?.id ?? 0, reviewedBase ?? "", range?.head),
+    enabled: !!currentWorkspace && !!reviewedBase && !!pr.changed,
+  });
+  const reviewed = reviewedQuery.data ?? noPaths;
+  const reviewedFilesQuery = useQuery({
+    ...core("listReviewed", currentWorkspace?.id ?? 0, reviewedBase ?? "", range?.head, "file"),
+    enabled: !!currentWorkspace && !!canvasView && !!reviewedBase,
+  });
+  const reviewedFiles = reviewedFilesQuery.data ?? noPaths;
   const isReviewed = (opened: Opened) =>
     (opened.kind === "file" ? reviewedFiles : reviewed).includes(openedPath(opened));
   // A ticked file diff is hidden unless Show Reviewed Files is on: the next one takes its place on screen, rather than
@@ -238,7 +255,12 @@ export function App() {
       if (!on || showReviewed.current || i < 0 || !next || !scroller) return;
       const top = scroller.getBoundingClientRect().top;
       const at = Math.max(diffs[i].getBoundingClientRect().top, top);
-      restoreScroll(canvas.current!, { top: 0, anchor: next.id, offset: top - at });
+      reviewScroll.current?.();
+      reviewScroll.current = restoreScroll(canvas.current!, {
+        top: 0,
+        anchor: next.id,
+        offset: top - at,
+      });
     },
     [currentWorkspace?.id, reviewedBase, range?.head],
   );
@@ -314,16 +336,12 @@ export function App() {
   // Each entry keeps where the canvas was scrolled, restored on Back and Forward. For the file diffs also the one at
   // the top: those above it may have been read (and grown) since, so the offset alone would land elsewhere.
   const canvas = useRef<HTMLDivElement>(null);
+  const reviewScroll = useRef<(() => void) | undefined>(undefined);
+  useEffect(() => () => reviewScroll.current?.(), [location.state.__TSR_key]);
   const scrolls = useRef(new Map<string, Scroll>());
+  const workspaceScrolls = useRef(new Map<number, Scroll>());
+  const scrollWorkspace = useRef<number | undefined>(undefined);
   const entry = () => router.history.location.state.__TSR_key ?? "";
-  useEffect(() => {
-    const key = location.state.__TSR_key ?? "";
-    const saved = scrolls.current.get(key);
-    const scroller = canvas.current && canvasScroller(canvas.current);
-    if (!moved) {
-      if (!saved && scroller) scrolls.current.set(key, scrollOf(scroller));
-    } else if (saved && canvas.current) restoreScroll(canvas.current, saved);
-  }, [location.state.__TSR_key]);
   // Memoised: the Viewer rereads when its Opened changes.
   const diffs = useMemo(
     () => pr.changed?.map((file) => ({ kind: "diff" as const, file })),
@@ -404,7 +422,9 @@ export function App() {
   const onCanvasScroll = (e: UIEvent<HTMLDivElement>) => {
     const scroller = e.target as HTMLElement;
     if (scroller.parentElement !== e.currentTarget) return;
-    scrolls.current.set(entry(), scrollOf(scroller));
+    const position = scrollOf(scroller);
+    scrolls.current.set(entry(), position);
+    if (currentWorkspace) workspaceScrolls.current.set(currentWorkspace.id, position);
     if (!sections) return;
     const top = scroller.getBoundingClientRect().top + 40;
     const passed = sections.flatMap((_, i) => {
@@ -415,7 +435,7 @@ export function App() {
   };
   // A message for the agent pane's composer, from the new view menu; a new object each time, so the same one fills it
   // again. The user sends it from the agent pane; the view shows as soon as the agent starts it.
-  const [composerText, setComposerText] = useState<{ text: string }>();
+  const [composerText, setComposerText] = useState<{ text: string; workspaceId: number }>();
   // Its explanations and findings go with it; showing it, the canvas falls back to the diff.
   const removeView = async (v: View, label: string) => {
     const ok = await window.coxswain.confirm({
@@ -428,7 +448,11 @@ export function App() {
     await changed({ workspaceId: v.workspaceId, what: "view" });
     await changed({ workspaceId: v.workspaceId, what: "entries" });
   };
-  const newView = async () => setComposerText({ text: await window.coxswain.showNewViewMenu() });
+  const newView = async () =>
+    setComposerText({
+      text: await window.coxswain.showNewViewMenu(),
+      workspaceId: currentWorkspace!.id,
+    });
   const showView = (id: number | null) =>
     void show({ viewId: id, commit: undefined, file: undefined, at: undefined });
   const pickCommit = (picked: Commit | null) =>
@@ -500,26 +524,50 @@ export function App() {
     setPalette(null);
     openFile(path);
   };
-  // Shows a thread on the canvas: back to the live file diffs, scrolled to its file, then to the thread once the
-  // file diff has drawn it. ponytail: an outdated thread isn't between the lines, so this stops at its file.
+  // Revealing a thread must happen before its file/section can mount. Preserve its Reviewed mark.
   const viewThread = async (threadId: number) => {
-    const root = entries.find((e) => e.id === threadId);
-    if (!root?.path) return;
-    await show({
-      file: undefined,
-      at: undefined,
-      commit: undefined,
-      viewId: root.viewId ?? shown.current.viewId,
-    });
-    document.getElementById(`diff:${root.path}`)?.scrollIntoView();
-    let tries = 20;
-    const find = () => {
-      const el = document.getElementById(`thread:${threadId}`);
-      if (el) el.scrollIntoView({ block: "center" });
-      else if (tries--) setTimeout(find, 50);
-    };
-    find();
+    let root = allEntries?.find((e) => e.id === threadId);
+    // A chat card can refer to a thread outside the currently filtered view.
+    if (!root && currentWorkspace && pr.commits) {
+      const all = await queryClient.fetchQuery(
+        core("listEntries", currentWorkspace.id, pr.commits.mergeBase),
+      );
+      root = all.find((e) => e.id === threadId);
+    }
+    if (!root?.path || root.workspaceId !== shown.current.ws) return;
+    setViewSettings((settings) => ({ ...settings, showReviewed: true }));
+    await show(threadLocation(root));
   };
+  const canvasReady =
+    viewId !== undefined &&
+    (viewId === null || !!views) &&
+    !!pr.commits &&
+    !!diffDiffs &&
+    !!shownDiffs &&
+    (entriesQuery.data !== undefined || entriesQuery.isError) &&
+    (reviewedQuery.data !== undefined || reviewedQuery.isError) &&
+    (!canvasView || reviewedFilesQuery.data !== undefined || reviewedFilesQuery.isError);
+  // Restore only the destination's scroll. Retries from an old navigation must never move a new canvas.
+  useEffect(() => {
+    if (!canvasReady || !canvas.current || !currentWorkspace) return;
+    const switched = scrollWorkspace.current !== currentWorkspace.id;
+    scrollWorkspace.current = currentWorkspace.id;
+    const saved = moved
+      ? scrolls.current.get(location.state.__TSR_key ?? "")
+      : switched
+        ? workspaceScrolls.current.get(currentWorkspace.id)
+        : undefined;
+    if (s.thread) return; // thread navigation owns the scroll
+    if (saved) return restoreScroll(canvas.current, saved);
+    if (switched) {
+      const scroller = canvasScroller(canvas.current);
+      if (scroller) scroller.scrollTop = 0;
+    }
+  }, [location.state.__TSR_key, currentWorkspace?.id, canvasReady]);
+  useEffect(() => {
+    if (!s.thread || !s.at || !canvasReady || !canvas.current) return;
+    return scrollToThread(canvas.current, s.at, s.thread);
+  }, [location.state.__TSR_key, s.thread, s.at, canvasReady]);
 
   // The action registry (ADR 0027): everything the command palette lists and the native menu runs, by id. Rebuilt each
   // render, so each action's enabled and run see the current state.
@@ -530,7 +578,11 @@ export function App() {
     id: `new-view:${kind}`,
     title,
     enabled: ready,
-    run: async () => setComposerText({ text: await window.coxswain.newViewRequest(kind) }),
+    run: async () =>
+      setComposerText({
+        text: await window.coxswain.newViewRequest(kind),
+        workspaceId: currentWorkspace!.id,
+      }),
   });
   const actions: Action[] = [
     {
@@ -683,6 +735,7 @@ export function App() {
     onAnswerPermission: answerPermission,
     onOpenFile: openFile,
     diffStyle: viewSettings.diffStyle,
+    revealThread: s.thread,
   });
 
   if (!setup.data) return null; // local and quick, like the projects below
@@ -765,7 +818,9 @@ export function App() {
               key={currentWorkspace.id}
               workspace={currentWorkspace}
               onViewThread={viewThread}
-              composerText={composerText}
+              composerText={
+                composerText?.workspaceId === currentWorkspace.id ? composerText : undefined
+              }
               onShowSidebar={sidebarOpen ? undefined : () => setSidebarOpen(true)}
             />
           </div>
@@ -877,22 +932,23 @@ export function App() {
                   ref={canvas}
                   onScrollCapture={onCanvasScroll}
                 >
-                  {!pr.commits || !diffDiffs || !shownDiffs ? (
+                  {!canvasReady ? (
                     <Centered>Loading…</Centered>
                   ) : (
                     <>
                       {showFile && (
                         // One Viewer per file: a reused one would scroll to a line in the file it drew before.
                         <Viewer
-                          key={opened.kind === "file" ? opened.path : undefined}
+                          key={`${currentWorkspace.id}:${openedPath(opened)}`}
                           opened={opened}
                           reviewed={false}
-                          {...viewerProps(currentWorkspace, pr.commits.mergeBase)}
+                          {...viewerProps(currentWorkspace, pr.commits!.mergeBase)}
                         />
                       )}
                       {/* Only the lines on screen are drawn. Hidden, not unmounted, under a whole file: it keeps its
                       scroll and read files for Back. ponytail: every file is still read from disk up front. */}
                       <Virtualizer
+                        key={`${currentWorkspace.id}:${viewId ?? "diff"}:${range?.base ?? pr.commits?.mergeBase}:${range?.head ?? "live"}`}
                         className={cn("min-h-0 flex-1 overflow-auto", showFile && "hidden")}
                       >
                         {canvasView &&
@@ -1033,22 +1089,27 @@ function scrollOf(scroller: HTMLElement): Scroll {
 // file still loading, and leaves it as far as it got.
 function restoreScroll(canvas: HTMLElement, s: Scroll) {
   let tries = 40;
+  let timer: ReturnType<typeof setTimeout>;
+  const later = () => {
+    timer = setTimeout(go, 50);
+  };
   const go = () => {
     const scroller = canvasScroller(canvas);
     const el = s.anchor ? document.getElementById(s.anchor) : null;
     const ready = s.anchor
       ? el
       : scroller && scroller.scrollHeight - scroller.clientHeight >= s.top;
-    if (!ready && tries-- > 0) return void setTimeout(go, 50);
+    if (!ready && tries-- > 0) return void later();
     if (!scroller) return;
     const by = el
       ? el.getBoundingClientRect().top - scroller.getBoundingClientRect().top + s.offset
       : s.top - scroller.scrollTop;
     if (Math.abs(by) < 2) return;
     scroller.scrollTop += by;
-    if (tries-- > 0) setTimeout(go, 50);
+    if (tries-- > 0) later();
   };
-  setTimeout(go);
+  timer = setTimeout(go);
+  return () => clearTimeout(timer);
 }
 
 // Stale (ADR 0023, 0028): the worktree moved on since the view was made, by new commits or local changes. The view
@@ -1059,4 +1120,30 @@ function StaleViewNotice() {
       The code has changed since this view. It still shows the changes as they were.
     </div>
   );
+}
+
+// Scroll the file into the virtualizer's viewport first, then wait for its annotation to be drawn.
+// The observer handles async file reads without a fixed retry deadline and is cancelled on navigation.
+function scrollToThread(canvas: HTMLElement, path: string, threadId: number) {
+  let frame = 0;
+  let observer: MutationObserver;
+  const find = () => {
+    const file = document.getElementById(`diff:${path}`);
+    if (!file || !canvas.contains(file)) return;
+    const thread = document.getElementById(`thread:${threadId}`);
+    if (thread && canvas.contains(thread)) {
+      thread.scrollIntoView({ block: "center" });
+      observer.disconnect();
+    } else file.scrollIntoView({ block: "start" });
+  };
+  observer = new MutationObserver(() => {
+    cancelAnimationFrame(frame);
+    frame = requestAnimationFrame(find);
+  });
+  observer.observe(canvas, { childList: true, subtree: true });
+  frame = requestAnimationFrame(find);
+  return () => {
+    observer.disconnect();
+    cancelAnimationFrame(frame);
+  };
 }

@@ -31,6 +31,7 @@ import type { Project } from "../core/projects";
 import type { NewEntry, ReviewEntry } from "../core/review";
 import type { SetupCheck } from "../core/setup";
 import type { Workspace } from "../core/workspaces";
+import type { SessionState } from "../core/session-state";
 
 // The Navigator's settings in its cog menu. layout: changed files as a tree or as a flat list.
 // The canvas bar's settings in its cog menu. showReviewed: reviewed file diffs stay in the Navigator and on the canvas.
@@ -140,9 +141,13 @@ const api = {
     ipcRenderer.invoke("agents:picks", workspaceId, agent),
   setAgentPick: (agent: Agent, pick: Pick, value: string): Promise<void> =>
     ipcRenderer.invoke("agents:set-pick", agent, pick, value),
-  // Null while a turn runs in the session.
-  readTranscript: (agentSessionId: string): Promise<ChatEntry[] | null> =>
-    ipcRenderer.invoke("agents:transcript", agentSessionId),
+  readAgentState: (agentSessionId: string): Promise<SessionState> =>
+    ipcRenderer.invoke("agents:state", agentSessionId),
+  onAgentState: (callback: (id: string, state: SessionState) => void) => {
+    const listener = (_: unknown, id: string, state: SessionState) => callback(id, state);
+    ipcRenderer.on("agents:state", listener);
+    return () => void ipcRenderer.off("agents:state", listener);
+  },
   runTurn: (agentSessionId: string, message: string): Promise<TurnResult> =>
     ipcRenderer.invoke("agents:run-turn", agentSessionId, message),
   // The workspace's entries, each current or outdated in the view of base → head (ADR 0015).

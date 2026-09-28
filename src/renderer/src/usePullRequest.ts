@@ -13,6 +13,7 @@ export type PullRequestData = {
   local: ChangedFile[] | null;
   // The worktree as a commit now; a view pinned to another one is stale.
   snapshot: string | null;
+  snapshotReady: boolean; // settled, including an error: a failed snapshot must not block the live diff
   notice: string | null;
   problem: GitHubProblem | GitProblem | null;
 };
@@ -47,7 +48,8 @@ export function usePullRequest(workspace: Workspace | undefined): PullRequestDat
     ...core("listChangedFiles", id, commits?.head ?? ""),
     enabled: ready,
   }).data;
-  const snapshot = useQuery({ ...core("snapshot", id), enabled: ready }).data;
+  const snapshotQuery = useQuery({ ...core("snapshot", id), enabled: ready });
+  const snapshot = snapshotQuery.data;
   // Offline or signed out: keep showing the worktree, and say it may be out of date.
   const unchecked = opened.isError || (w && w.status !== "ok" && before?.status === "ok");
   return {
@@ -55,6 +57,7 @@ export function usePullRequest(workspace: Workspace | undefined): PullRequestDat
     commits,
     local: local?.status === "ok" ? local.files : null,
     snapshot: snapshot?.status === "ok" ? snapshot.sha : null,
+    snapshotReady: snapshotQuery.isSuccess || snapshotQuery.isError,
     notice: unchecked
       ? "Could not check GitHub for new commits"
       : w?.status === "ok"

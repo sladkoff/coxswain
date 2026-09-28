@@ -23,13 +23,19 @@ drawn after they're read.
    file picked in _Changes_, commit, view). There's one route; the canvas has no pages. Every change is a
    `navigate()`, so every change is an entry, and Back and Forward are `history.back()` and `history.forward()`.
 2. **One history for the window, across workspaces.** Opening a workspace is an entry; Back or Forward to another
-   workspace's entry opens that workspace again. The workspace shown still comes from SQLite (the latest opened); the
-   location follows it.
+   workspace's entry opens that workspace again. The location chooses the workspace and its canvas together. SQLite's latest-opened workspace is only the
+   startup/project default, and opening a location records that workspace in SQLite. Sidebar switches restore the
+   last location for that workspace; Back/Forward restore their exact entry. An unspecified default view is resolved
+   before the canvas is shown, along with the range's entries and Reviewed marks, so the live diff does not flash first.
 3. **Scroll is ours, per entry.** A map from the entry's key to where the canvas was scrolled: a whole file by offset,
    the file diffs by the one at the top and how far into it. Restored on Back and Forward, then again until it holds,
-   since Pierre's Virtualizer applies the fix-up it worked out for the old place after a jump.
+   since Pierre's Virtualizer applies the fix-up it worked out for the old place after a jump. Sidebar switches
+   also restore the workspace's last scroll. Pending restores are cancelled when navigation supersedes them.
 4. **The file diffs stay mounted** (hidden) while a whole file shows, so they keep their scroll and the files they read.
-5. **The main process takes ⌥⌘←/→** in `before-input-event`, before the page: the file tree takes them otherwise. The
+5. **A thread destination is a location too.** It selects the entry's view or recorded range and enables Show
+   Reviewed Files before scrolling. Its Viewer loads even if offscreen and opens outdated threads when needed.
+   Navigation waits for the mounted annotation, and cancels the wait when superseded.
+6. **The main process takes ⌥⌘←/→** in `before-input-event`, before the page: the file tree takes them otherwise. The
    renderer tells it whether Back and Forward can go, to grey the menu items out.
 
 ## Alternatives considered
