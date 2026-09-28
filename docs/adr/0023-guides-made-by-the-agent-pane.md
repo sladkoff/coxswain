@@ -29,7 +29,11 @@ the agent's own thoughts. Reviewing is opt-in.
      [ADR 0026](0026-views-in-markdown-with-mermaid.md); embedded diff paths are checked against the changed files and source paths against the snapshot,
      and a file is embedded once.
    - `remove_section`: removes a section from a view. It and `write_section` change a view one at a time
-     ([ADR 0029](0029-file-summaries-and-activity.md)).
+     ([ADR 0029](0029-file-summaries-and-activity.md)). `write_section` takes several sections at once, and
+     `add_explanation` and `add_finding` several of theirs: one call for many.
+   - Every tool says what it does in MCP's annotations: `list_views` and `file_summaries` only read; the rest write
+     only coxswain's views and entries (not destructive, not open-world), but `remove_section` is destructive. Codex's
+     auto-review looks at every call to a tool that doesn't say so, about 2.5 s each.
    - `file_summaries`: the file summaries of a view's changed files, which `start_view` lists too
      ([ADR 0029](0029-file-summaries-and-activity.md)); it can wait for those being written.
    - `list_views`: the workspace's views, with their ids, titles, ranges and section headings.

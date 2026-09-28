@@ -3,6 +3,22 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-28 — No auto-review for coxswain's tools, and batched writes
+
+For G3 ([ADR 0023](adr/0023-guides-made-by-the-agent-pane.md)), from the third guide on #5311: 4 min 30 s, 94 s in
+tools of which ~65 s were 28 coxswain calls at ~2.3 s each, while coxswain answers in ~0.07 s.
+
+- Codex's log (`~/.codex/logs_2.sqlite`) shows why: each MCP call went to its Guardian auto-review (`reason=Policy`),
+  a model turn of its own. Codex (`requires_mcp_tool_approval`, 0.155) reviews a call unless the tool is
+  `readOnlyHint`, or both `destructiveHint: false` and `openWorldHint: false`. coxswain's tools now say what they do:
+  `list_views` and `file_summaries` read only; `start_view`, `write_section`, `add_explanation` and `add_finding`
+  write only coxswain's views and entries; `remove_section` stays destructive, so it's still reviewed.
+- **Batches:** `write_section` takes `sections` (in order; one that doesn't fit stops, the ones before it are kept
+  and said), `add_explanation` takes `explanations` and `add_finding` `findings` (each one that doesn't fit is
+  reported, the rest added). The guide instructions ask for them.
+- Tests: batches, a bad item in each, the annotations. `pnpm typecheck`, `pnpm test` (16), `pnpm lint`, `pnpm
+format`, `pnpm build` pass. Not measured yet on #5311.
+
 ## 2026-09-28 — Tool results Codex keeps whole, and faster section writes
 
 For G3 ([ADR 0029](adr/0029-file-summaries-and-activity.md)), from the second guide on #5311: 4 min 37 s, 10 steps,

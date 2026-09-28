@@ -537,10 +537,13 @@ export async function stopAgents() {
 
 // An MCP tool coxswain serves. call returns the tool's text for the agent; throwing makes it an error the agent reads.
 // Arguments are checked against inputSchema before call.
+// annotations: MCP's hints. Codex has its auto-review look at every call to a tool that isn't read-only, or that may be
+// destructive or reach outside (open world), about 2.5 s each; coxswain's tools say what they do.
 export type McpTool = {
   name: string;
   description: string;
   inputSchema: object;
+  annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean; openWorldHint?: boolean };
   call: (args: never) => Promise<string>;
 };
 
@@ -595,10 +598,11 @@ function toolServer(): Promise<Server> {
       if (msg.method === "tools/list")
         return reply({
           result: {
-            tools: tools.map(({ name, description, inputSchema }) => ({
+            tools: tools.map(({ name, description, inputSchema, annotations }) => ({
               name,
               description,
               inputSchema,
+              ...(annotations && { annotations }),
             })),
           },
         });

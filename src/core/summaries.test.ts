@@ -185,6 +185,45 @@ test("summary jobs summarise what's missing, retry, and feed the view tools", as
   );
   assert.equal((await listViews(db, 1))[0].sections.length, 4);
 
+  // Several sections, explanations or findings in one call; one that doesn't fit stops or skips only itself.
+  await call("start_view", { title: "Batch", guide: true });
+  const batch = await call("write_section", {
+    sections: [
+      { markdown: "## One\n```diff path=a.ts\n```" },
+      { markdown: "## Two\n```diff path=b.ts\n```" },
+    ],
+  });
+  assert.match(batch, /Section 1 added\. Section 2 added\. 2 files in no section yet/);
+  await assert.rejects(
+    call("write_section", {
+      sections: [
+        { markdown: "## Three\n```diff path=c.ts\n```" },
+        { markdown: "## Again\n```diff path=a.ts\n```" },
+      ],
+    }),
+    /Section 2 of those given: a\.ts is already embedded[\s\S]*The 1 before it were saved/,
+  );
+  assert.equal((await listViews(db, 1))[0].sections.length, 3);
+  const explained = await call("add_explanation", {
+    explanations: [
+      { path: "a.ts", side: "new", start_line: 1, end_line: 1, body: "One" },
+      { path: "a.ts", side: "new", start_line: 99, end_line: 99, body: "Too far" },
+    ],
+  });
+  assert.match(explained, /^1\. Added the explanation[\s\S]*^2\. Not added: a\.ts has \d+ lines/m);
+  await assert.rejects(
+    call("add_finding", { path: "a.ts" }),
+    /side, start_line, end_line, body missing/,
+  );
+  // Codex reviews every call to a tool that isn't read-only or closed; these say they're safe to run.
+  const byName = new Map(tools.map((tool) => [tool.name, tool.annotations]));
+  assert.equal(byName.get("file_summaries")?.readOnlyHint, true);
+  assert.deepEqual(
+    [byName.get("write_section")?.destructiveHint, byName.get("write_section")?.openWorldHint],
+    [false, false],
+  );
+  assert.equal(byName.get("remove_section")?.destructiveHint, true);
+
   // A problem retrying can't fix stops the job at once.
   writeFileSync(join(worktree, "b.ts"), "export const b = 3;\n");
   git(worktree, "commit", "-qam", "again");

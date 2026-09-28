@@ -189,7 +189,8 @@ const howToGuide = `How to make the guide:
   them with add_explanation. Explain; don't judge. A few good ones beat many obvious ones.
 - Only if the user asked for a review: add findings with add_finding on lines where you see a bug, a risk, a missing
   case or a better way. Otherwise add none.
-- Write several sections per step where you can (several write_section calls at once), rather than one per step.
+- Write the sections in a few calls, not one each: give write_section several at once in sections, and
+  add_explanation several in explanations (add_finding: findings).
 - When you're done, say in a few lines what the changes do and how the guide is laid out. The guide shows in the app as
   you add to it; don't repeat it in the chat.`;
 
@@ -324,24 +325,33 @@ const viewArg = {
   },
 };
 
-const anchorSchema = {
+const anchorProperties = {
+  path: {
+    type: "string",
+    description: "A changed file, or any file at the view snapshot (side new)",
+  },
+  side: {
+    enum: ["new", "old"],
+    description: '"new": lines of the file at the head; "old": removed lines, at the base',
+  },
+  start_line: { type: "integer" },
+  end_line: { type: "integer" },
+  body: { type: "string", description: "Markdown" },
+};
+const anchorFields = ["path", "side", "start_line", "end_line", "body"] as const;
+// One explanation or finding in its fields, or several in a list (plural): one call for many.
+const anchorSchema = (plural: string) => ({
   type: "object",
   properties: {
-    path: {
-      type: "string",
-      description: "A changed file, or any file at the view snapshot (side new)",
+    ...anchorProperties,
+    [plural]: {
+      type: "array",
+      description: "Several, in place of the fields above",
+      items: { type: "object", properties: anchorProperties, required: [...anchorFields] },
     },
-    side: {
-      enum: ["new", "old"],
-      description: '"new": lines of the file at the head; "old": removed lines, at the base',
-    },
-    start_line: { type: "integer" },
-    end_line: { type: "integer" },
-    body: { type: "string", description: "Markdown" },
     ...viewArg,
   },
-  required: ["path", "side", "start_line", "end_line", "body"],
-};
+});
 type AnchorArgs = {
   path: string;
   side: "new" | "old";
@@ -350,6 +360,31 @@ type AnchorArgs = {
   body: string;
   view?: number;
 };
+
+// Each one given, or the one in a's fields; one that doesn't fit is reported and the rest still added.
+async function addAll(
+  db: Db,
+  workspaceId: number,
+  kind: "explanation" | "finding",
+  a: Partial<AnchorArgs>,
+  many: AnchorArgs[] | undefined,
+): Promise<string> {
+  if (!many) {
+    const missing = anchorFields.filter((f) => a[f] === undefined);
+    if (missing.length) throw new Error(`${missing.join(", ")} missing, or give a list`);
+    return addOnLines(db, workspaceId, kind, a as AnchorArgs);
+  }
+  const results = await Promise.all(
+    many.map((one, i) =>
+      addOnLines(db, workspaceId, kind, { ...one, view: one.view ?? a.view }).then(
+        (ok) => `${i + 1}. ${ok}`,
+        (e: Error) => `${i + 1}. Not added: ${e.message}`,
+      ),
+    ),
+  );
+  if (results.every((r) => /^\d+\. Not added/.test(r))) throw new Error(results.join("\n"));
+  return results.join("\n");
+}
 
 // An explanation or finding on lines of a view's range, with the code it's on (ADR 0015).
 async function addOnLines(
@@ -398,11 +433,18 @@ async function addOnLines(
   return `Added the ${kind} on ${a.path}:${start}${end > start ? `-${end}` : ""} in view ${view.id}.${shown}`;
 }
 
+// What each tool does to what (ADR 0029): they only read or write coxswain's own views and entries, never the
+// worktree or anything outside. Removing a section loses what it held, so it's the one that says so.
+const readTool = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
+const closedTool = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
+const destructiveTool = { readOnlyHint: false, destructiveHint: true, openWorldHint: false };
+
 // The agent pane's tools for a workspace (ADR 0023, 0026).
 export function viewTools(db: Db, workspaceId: number): McpTool[] {
   return [
     {
       name: "start_view",
+      annotations: closedTool,
       description:
         "Start a new view of code or changes in coxswain, the app the user reads them in: sections of markdown, with diagrams, source files and file diffs the user can comment on. No diff is required. A guide is a view that walks through every changed file in reading order; other views show one aspect (the data model, a data flow, whatever the user asked for). By default it covers all of the workspace's changes, from the merge base to the worktree; give base and head when the user asks about one commit, an agent turn or a part of the changes. Returns the range the view is pinned to, the changed files and how to write the view.",
       inputSchema: {
@@ -477,8 +519,9 @@ export function viewTools(db: Db, workspaceId: number): McpTool[] {
     },
     {
       name: "write_section",
+      annotations: closedTool,
       description:
-        "Add a section to a view (the latest unless view is given), after the ones so far, or with number replace section number N (1 is the first). Call start_view first.",
+        "Add a section to a view (the latest unless view is given), after the ones so far, or with number replace section number N (1 is the first). To write several, give sections instead: they're put in order in one call. Call start_view first.",
       inputSchema: {
         type: "object",
         properties: {
@@ -487,65 +530,109 @@ export function viewTools(db: Db, workspaceId: number): McpTool[] {
             description: 'Starts with a "## " heading; may hold mermaid, file and diff fences',
           },
           number: { type: "integer", description: "The section to replace; leave out to add one" },
+          sections: {
+            type: "array",
+            description: "Several sections, in order, in place of markdown and number",
+            items: {
+              type: "object",
+              properties: {
+                markdown: { type: "string" },
+                number: { type: "integer", description: "The section to replace" },
+              },
+              required: ["markdown"],
+            },
+          },
           ...viewArg,
         },
-        required: ["markdown"],
       },
-      call: (a: { markdown: string; number?: number; view?: number }) =>
+      call: (a: {
+        markdown?: string;
+        number?: number;
+        sections?: { markdown: string; number?: number }[];
+        view?: number;
+      }) =>
         changeView(db, workspaceId, a.view, async (view) => {
-          const markdown = a.markdown.trim();
-          if (!/^## \S/.test(markdown)) throw new Error('A section starts with a "## " heading');
-          const at = a.number === undefined ? view.markdown.length : a.number - 1;
-          if (at < 0 || at > view.markdown.length - (a.number === undefined ? 0 : 1))
-            throw new Error(`The view has ${view.markdown.length} sections`);
+          const items =
+            a.sections ??
+            (a.markdown !== undefined ? [{ markdown: a.markdown, number: a.number }] : []);
+          if (!items.length) throw new Error("Give markdown, or sections");
           const changed = (await changedFiles(db, view)).map((f) => f.path);
-          const others = embedded(view.sections.filter((_, i) => i !== at));
-          const mine = embedded([parseSection(markdown)]);
-          const files = mine.some((p) => p.kind === "file")
-            ? await filesAt(db, workspaceId, view.head)
-            : [];
-          for (const [i, p] of mine.entries()) {
-            if (!(p.kind === "diff" ? changed : files).includes(p.path))
+          let sections = view.markdown;
+          const done: string[] = [];
+          // One section on the sections so far: checked, then put in.
+          const put = async (item: { markdown: string; number?: number }) => {
+            const markdown = item.markdown.trim();
+            if (!/^## \S/.test(markdown)) throw new Error('A section starts with a "## " heading');
+            const at = item.number === undefined ? sections.length : item.number - 1;
+            if (at < 0 || at > sections.length - (item.number === undefined ? 0 : 1))
+              throw new Error(`The view has ${sections.length} sections`);
+            const others = embedded(sections.filter((_, i) => i !== at).map(parseSection));
+            const mine = embedded([parseSection(markdown)]);
+            const files = mine.some((p) => p.kind === "file")
+              ? await filesAt(db, workspaceId, view.head)
+              : [];
+            for (const [i, p] of mine.entries()) {
+              if (!(p.kind === "diff" ? changed : files).includes(p.path))
+                throw new Error(
+                  p.kind === "diff"
+                    ? `${p.path} isn't changed in the view's range`
+                    : `${p.path} isn't a file at the view's snapshot`,
+                );
+              if (
+                others.some((o) => o.path === p.path) ||
+                mine.slice(0, i).some((o) => o.path === p.path)
+              )
+                throw new Error(`${p.path} is already embedded in the view`);
+              if (view.guide && p.kind === "file" && changed.includes(p.path))
+                throw new Error(
+                  `${p.path} is changed; embed its diff in a guide, or use a non-guide view for source files`,
+                );
+            }
+            const errors = (await checkDiagrams(diagrams(markdown))).flatMap((e, i) =>
+              e ? [`Diagram ${i + 1} doesn't draw: ${e}`] : [],
+            );
+            if (errors.length)
+              throw new Error(`${errors.join("\n")}\nFix it and write the section again.`);
+            sections = sections.toSpliced(at, item.number === undefined ? 0 : 1, markdown);
+            done.push(`Section ${at + 1} ${item.number === undefined ? "added" : "replaced"}.`);
+          };
+          const save = async () => {
+            if (!done.length) return;
+            await db
+              .updateTable("views")
+              .set({ sections: JSON.stringify(sections) })
+              .where("id", "=", view.id)
+              .execute();
+            tell(workspaceId);
+          };
+          // In order; one that doesn't fit stops the rest, and those before it are kept.
+          for (const [k, item] of items.entries()) {
+            try {
+              await put(item);
+            } catch (e) {
+              await save();
               throw new Error(
-                p.kind === "diff"
-                  ? `${p.path} isn't changed in the view's range`
-                  : `${p.path} isn't a file at the view's snapshot`,
+                `${items.length > 1 ? `Section ${k + 1} of those given: ` : ""}${(e as Error).message}${done.length ? `\nThe ${done.length} before it were saved: ${done.join(" ")}` : ""}`,
               );
-            if (
-              others.some((o) => o.path === p.path) ||
-              mine.slice(0, i).some((o) => o.path === p.path)
-            )
-              throw new Error(`${p.path} is already embedded in the view`);
-            if (view.guide && p.kind === "file" && changed.includes(p.path))
-              throw new Error(
-                `${p.path} is changed; embed its diff in a guide, or use a non-guide view for source files`,
-              );
+            }
           }
-          const errors = (await checkDiagrams(diagrams(markdown))).flatMap((e, i) =>
-            e ? [`Diagram ${i + 1} doesn't draw: ${e}`] : [],
-          );
-          if (errors.length)
-            throw new Error(`${errors.join("\n")}\nFix it and write the section again.`);
-          const sections = view.markdown.toSpliced(at, a.number === undefined ? 0 : 1, markdown);
-          await db
-            .updateTable("views")
-            .set({ sections: JSON.stringify(sections) })
-            .where("id", "=", view.id)
-            .execute();
-          tell(workspaceId);
-          const done = `Section ${at + 1} of view ${view.id} ${a.number === undefined ? "added" : "replaced"}.`;
-          if (!view.guide) return done;
+          await save();
+          const saved = `View ${view.id}: ${done.join(" ")}`;
+          if (!view.guide) return saved;
           const all = new Set(
-            [...others, ...mine].filter((p) => p.kind === "diff").map((p) => p.path),
+            embedded(sections.map(parseSection))
+              .filter((p) => p.kind === "diff")
+              .map((p) => p.path),
           );
           const left = changed.filter((p) => !all.has(p));
           return left.length
-            ? `${done} ${left.length} files in no section yet: ${left.join(", ")}`
-            : `${done} Every changed file is in a section.`;
+            ? `${saved} ${left.length} files in no section yet: ${left.join(", ")}`
+            : `${saved} Every changed file is in a section.`;
         }),
     },
     {
       name: "remove_section",
+      annotations: destructiveTool,
       description:
         "Remove section number N (1 is the first) from a view, the latest unless view is given. The sections after it move up.",
       inputSchema: {
@@ -568,6 +655,7 @@ export function viewTools(db: Db, workspaceId: number): McpTool[] {
     },
     {
       name: "file_summaries",
+      annotations: readTool,
       description:
         "The file summaries of a view's changed files (the latest view unless view is given): a sentence on what changed in each, written ahead by a small model from its diff alone. start_view lists them already, as many as fit; call this for the rest (from), for those still being written (paths and wait), or for a view started in an earlier turn. A long list comes in parts: the result says the from of the next. Summaries missing are started again; wait gives those being written up to that many seconds.",
       inputSchema: {
@@ -608,6 +696,7 @@ export function viewTools(db: Db, workspaceId: number): McpTool[] {
     },
     {
       name: "list_views",
+      annotations: readTool,
       description:
         "List the workspace's views, newest first: id, title, range and section headings. Use an id to write to a view other than the latest.",
       inputSchema: { type: "object", properties: {} },
@@ -626,17 +715,21 @@ export function viewTools(db: Db, workspaceId: number): McpTool[] {
     },
     {
       name: "add_explanation",
+      annotations: closedTool,
       description:
-        "Explain lines of a file or file diff in the view: what they do and why, to help the user read them. Call start_view first.",
-      inputSchema: anchorSchema,
-      call: (a: AnchorArgs) => addOnLines(db, workspaceId, "explanation", a),
+        "Explain lines of a file or file diff in the view: what they do and why, to help the user read them. Give several in explanations to add them in one call. Call start_view first.",
+      inputSchema: anchorSchema("explanations"),
+      call: (a: Partial<AnchorArgs> & { explanations?: AnchorArgs[] }) =>
+        addAll(db, workspaceId, "explanation", a, a.explanations),
     },
     {
       name: "add_finding",
+      annotations: closedTool,
       description:
-        "Add a review finding on lines of a file or file diff in the view: a bug, risk, missing case or better way. Only when the user asked for a review. Call start_view first.",
-      inputSchema: anchorSchema,
-      call: (a: AnchorArgs) => addOnLines(db, workspaceId, "finding", a),
+        "Add a review finding on lines of a file or file diff in the view: a bug, risk, missing case or better way. Only when the user asked for a review. Give several in findings to add them in one call. Call start_view first.",
+      inputSchema: anchorSchema("findings"),
+      call: (a: Partial<AnchorArgs> & { findings?: AnchorArgs[] }) =>
+        addAll(db, workspaceId, "finding", a, a.findings),
     },
   ];
 }
