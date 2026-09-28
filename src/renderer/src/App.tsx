@@ -5,7 +5,7 @@ import { type UIEvent, useCallback, useEffect, useMemo, useRef, useState } from 
 import type { Commit } from "../../core/git";
 import type { PullRequest } from "../../core/github";
 import type { NewEntry, ReviewEntry } from "../../core/review";
-import type { View, ViewRange, ViewRequest } from "../../core/views";
+import type { AttachedPrompt, Prompt, View, ViewRange } from "../../core/views";
 import type { Workspace } from "../../core/workspaces";
 import { Agents } from "./Agents";
 import { upsert } from "./ChatEntry";
@@ -44,7 +44,9 @@ export function App() {
   const location = useLocation();
   const search = useSearch({ from: "__root__" });
   const workspaceLocations = useRef(new Map<number, CanvasSearch>());
-  const [screen, setScreen] = useState<"main" | "settings" | "projects" | "new-workspace">("main");
+  const [screen, setScreen] = useState<
+    "main" | "settings" | "new-prompt" | "projects" | "new-workspace"
+  >("main");
   const close = () => setScreen("main");
 
   const setup = useQuery(core("checkSetup"));
@@ -458,9 +460,13 @@ export function App() {
     });
     setCurrentSection(passed.at(-1) ?? sections.findIndex(sectionShown));
   };
-  // A message for the agent pane's composer, from the new view menu; a new object each time, so the same one fills it
+  // A prompt for the agent pane's composer, from the new view menu; a new object each time, so the same one attaches
   // again. The user sends it from the agent pane; the view shows as soon as the agent starts it.
-  const [composerText, setComposerText] = useState<{ text: string; workspaceId: number }>();
+  const [composerPrompt, setComposerPrompt] = useState<{
+    prompt: AttachedPrompt;
+    workspaceId: number;
+  }>();
+  const prompts = useQuery(core("listPrompts")).data ?? [];
   // Its explanations and findings go with it; showing it, the canvas falls back to the diff.
   const removeView = async (v: View, label: string) => {
     const ok = await window.coxswain.confirm({
@@ -473,11 +479,11 @@ export function App() {
     await changed({ workspaceId: v.workspaceId, what: "view" });
     await changed({ workspaceId: v.workspaceId, what: "entries" });
   };
-  const newView = async () =>
-    setComposerText({
-      text: await window.coxswain.showNewViewMenu(viewRange),
-      workspaceId: currentWorkspace!.id,
-    });
+  const newView = async () => {
+    const picked = await window.coxswain.showNewViewMenu(viewRange);
+    if (picked === "new-prompt") setScreen("new-prompt");
+    else setComposerPrompt({ prompt: picked, workspaceId: currentWorkspace!.id });
+  };
   const showView = (id: number | null) =>
     void show({ viewId: id, commit: undefined, file: undefined, at: undefined });
   const pickCommit = (picked: Commit | null) =>
@@ -611,13 +617,13 @@ export function App() {
   const onMain = screen === "main" && !!current && palette === null;
   const ready = !!currentWorkspace && !!pr.commits;
   const titles = viewTitles(views ?? []);
-  const newViewAction = (kind: ViewRequest, title: string): Action => ({
-    id: `new-view:${kind}`,
+  const newViewAction = (p: Prompt | null, id: string, title: string): Action => ({
+    id: `new-view:${id}`,
     title,
     enabled: ready,
     run: async () =>
-      setComposerText({
-        text: await window.coxswain.newViewRequest(kind, viewRange),
+      setComposerPrompt({
+        prompt: await window.coxswain.attachPrompt(p, viewRange),
         workspaceId: currentWorkspace!.id,
       }),
   });
@@ -710,11 +716,10 @@ export function App() {
       enabled: ready && currentWorkspace.prNumber === null,
       run: () => void openPullRequest(currentWorkspace!),
     },
-    newViewAction("guide", "New View (guide)"),
-    newViewAction("review", "New View (review)"),
-    newViewAction("data model", "New View (data model)"),
-    newViewAction("data flow", "New View (data flow)"),
-    newViewAction("custom", "New View…"),
+    ...prompts.map((p) =>
+      newViewAction(p, p.id === null ? p.title : String(p.id), `New View (${p.title})`),
+    ),
+    newViewAction(null, "custom", "New View…"),
     {
       id: "diff-unified",
       title: "Unified Diffs",
@@ -778,7 +783,14 @@ export function App() {
   if (!setup.data) return null; // local and quick, like the projects below
   if (setup.data.problems.length)
     return <Setup check={setup.data} onRetry={() => void setup.refetch()} />;
-  if (screen === "settings") return <Settings onClose={close} workspaceId={currentWorkspace?.id} />;
+  if (screen === "settings" || screen === "new-prompt")
+    return (
+      <Settings
+        onClose={close}
+        workspaceId={currentWorkspace?.id}
+        newPrompt={screen === "new-prompt"}
+      />
+    );
   // Projects and New workspace are dialogs over the screen below them.
   const dialog =
     screen === "projects" ? (
@@ -855,8 +867,8 @@ export function App() {
               key={currentWorkspace.id}
               workspace={currentWorkspace}
               onViewThread={viewThread}
-              composerText={
-                composerText?.workspaceId === currentWorkspace.id ? composerText : undefined
+              composerPrompt={
+                composerPrompt?.workspaceId === currentWorkspace.id ? composerPrompt : undefined
               }
               onShowSidebar={sidebarOpen ? undefined : () => setSidebarOpen(true)}
             />

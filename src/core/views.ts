@@ -155,29 +155,81 @@ export function turnEnded(workspaceId: number) {
   if (any) tell(workspaceId);
 }
 
-// The messages the New View menu puts in the agent pane's composer. How to make a view is in start_view's result, so
-// one asked for in the agent's own words is made the same way.
-export const viewRequests = {
-  guide: "Make a guide to this workspace's changes with coxswain's tools.",
-  review:
-    "Make a guide to this workspace's changes with coxswain's tools, and review them: add findings where you see bugs, risks or better ways.",
-  "data model":
-    "Make a view with coxswain's tools of the data model this workspace contains: the types, tables or schemas, how they relate, and what changed, as a diagram with the key source files and any relevant diffs.",
-  "data flow":
-    "Make a view with coxswain's tools of how data flows through the code this workspace contains, from where it enters to where it's stored or shown, as a diagram with the key source files and any relevant diffs.",
-  custom: "Make a view with coxswain's tools of ",
+// A prompt for New View: a built-in one (id null), or one the user saved. How to make a view is in start_view's
+// result, so a view asked for in the agent's own words is made the same way; whether it's a guide is the agent's call,
+// from the prompt's words.
+export type Prompt = { id: number | null; title: string; body: string };
+export const builtInPrompts: Prompt[] = [
+  {
+    id: null,
+    title: "Guide",
+    body: "Make a guide to this workspace's changes with coxswain's tools: what the change sets out to do, then its files in the order that makes it easiest to follow, from the core of the change outwards, with tests and tool-made files last.",
+  },
+  {
+    id: null,
+    title: "Review",
+    body: "Make a guide to this workspace's changes with coxswain's tools, and review them as you go: add a finding on each line with a bug, a risk (security, data loss, concurrency, a broken edge case) or a clearly better way, saying why and what to do instead. Leave style nits out.",
+  },
+  {
+    id: null,
+    title: "Questions for the author",
+    body: "Make a guide to this workspace's changes with coxswain's tools for a reader who must understand a large change, likely written by an agent, well enough to question its author. Open with what the change sets out to do and how it's built. In each section, add explanations on the decisions the change doesn't explain, the assumptions it makes, and what's missing or surprising. End with a section of the questions to ask the author, each saying which files or lines it's about.",
+  },
+  {
+    id: null,
+    title: "Data model",
+    body: "Make a view with coxswain's tools of the data model this workspace contains: the types, tables or schemas, how they relate, and what the changes add, remove or change in them, as a diagram with the key source files and the relevant diffs.",
+  },
+  {
+    id: null,
+    title: "Data flow",
+    body: "Make a view with coxswain's tools of how data flows through the code this workspace contains, from where it enters to where it's stored or shown, and where the changes alter that path, as a diagram with the key source files and the relevant diffs.",
+  },
+];
+// New View…: a view of whatever the user types along with it.
+export const customPrompt: Prompt = {
+  id: null,
+  title: "View",
+  body: "Make a view with coxswain's tools of what the user asks for in their message.",
 };
-export type ViewRequest = keyof typeof viewRequests;
+
+export async function listPrompts(db: Db): Promise<Prompt[]> {
+  const saved = await db
+    .selectFrom("prompts")
+    .select(["id", "title", "body"])
+    .orderBy("id")
+    .execute();
+  return [...builtInPrompts, ...saved];
+}
+export async function savePrompt(db: Db, title: string, body: string) {
+  title = title.trim();
+  body = body.trim();
+  if (!title || !body) throw new Error("A prompt needs a title and a text.");
+  await db
+    .insertInto("prompts")
+    .values({ title, body, created_at: new Date().toISOString() })
+    .execute();
+}
+export async function deletePrompt(db: Db, id: number) {
+  await db.deleteFrom("prompts").where("id", "=", id).execute();
+}
 
 // What the canvas shows when a view is asked for, if not all of the workspace's changes: a commit, an agent turn, or a
 // scope (ADR 0028). head null: the worktree as it is when the view starts.
 export type ViewRange = { what: string; base: string; head: string | null };
 
-// The message for the agent pane's composer: the request, after the range it's for, which start_view is told to take.
-export const viewRequest = (kind: ViewRequest, range: ViewRange | null) =>
+// A request for a view: the text, after the range it's for, which start_view is told to take.
+export const viewRequest = (text: string, range: ViewRange | null) =>
   range
-    ? `For ${range.what} only (start_view with base "${range.base}" and head "${range.head ?? "worktree"}"): ${viewRequests[kind]}`
-    : viewRequests[kind];
+    ? `For ${range.what} only (start_view with base "${range.base}" and head "${range.head ?? "worktree"}"): ${text}`
+    : text;
+
+// A prompt attached to the agent pane's composer: what the chat calls it, and the request the agent gets.
+export type AttachedPrompt = { title: string; prompt: string };
+export const attachPrompt = (p: Prompt, range: ViewRange | null): AttachedPrompt => ({
+  title: range ? `${p.title} · ${range.what}` : p.title,
+  prompt: viewRequest(p.body, range),
+});
 
 const howToView = `How to write the view: add its sections in reading order with write_section. Each section is markdown
 (GitHub-flavoured: tables, lists, code) and starts with a "## " heading, which lists it in the view's table of contents.

@@ -1,15 +1,19 @@
 import { useSyncExternalStore } from "react";
-import type { Agent } from "../../core/agents";
+import type { Agent, ChatEntry } from "../../core/agents";
+import type { AttachedPrompt } from "../../core/views";
 
 // Presentation state lives for the window, not for one mounting of Agents. In particular a session
 // may finish starting after its workspace has been hidden. Live turns themselves belong to the core.
 type Pane = {
-  composerText?: { text: string };
+  // The last prompt the New View menu attached, so the same one isn't attached twice; attached: the one on the
+  // composer, sent with the draft.
+  composerPrompt?: { prompt: AttachedPrompt };
+  attached: AttachedPrompt | null;
   picked: string | null;
   newAgent: Agent | null;
   draft: string;
   sending: boolean;
-  pendingMessage: string | null;
+  pendingMessage: ChatEntry | null;
   beforeRevision: number;
   error: string | null;
 };
@@ -17,6 +21,7 @@ const empty: Pane = {
   picked: null,
   newAgent: null,
   draft: "",
+  attached: null,
   sending: false,
   pendingMessage: null,
   beforeRevision: -1,

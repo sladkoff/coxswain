@@ -26,6 +26,19 @@ export function Entry({
         Review sent to Agent · {count(entry.review.threads, "thread")}
       </SentCard>
     );
+  if (entry.view)
+    return (
+      <SentCard className="flex flex-col">
+        <div className={cn("px-2.5 pt-2 text-xs", entry.view.note ? "" : "pb-2", muted)}>
+          View · <span className="font-medium">{entry.view.title}</span> sent to Agent
+        </div>
+        {entry.view.note && (
+          <div className="line-clamp-6 px-2.5 py-1.5 whitespace-pre-wrap select-text [overflow-wrap:anywhere]">
+            {entry.view.note}
+          </div>
+        )}
+      </SentCard>
+    );
   if (entry.kind === "tool")
     // shrink-0: truncate's overflow lets a flex item shrink to nothing once the chat overflows, leaving only the gaps.
     return <div className={cn("shrink-0 truncate font-mono text-xs", muted)}>⏺ {entry.text}</div>;

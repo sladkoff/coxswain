@@ -150,6 +150,13 @@ export const migrations = [
   // A view pinned to the worktree (1) goes stale when the worktree moves on; one of a commit, a turn or what's on
   // GitHub (0) doesn't.
   `alter table views add column worktree integer not null default 1`,
+  // The user's own prompts for New View, for every project; the built-in ones are in the code (src/core/views.ts).
+  `create table prompts (
+    id integer primary key,
+    title text not null,
+    body text not null,
+    created_at text not null
+  )`,
 ];
 
 // ADR 0016: the tables as the migrations above leave them. Change this with every migration that changes a table.
@@ -222,6 +229,7 @@ type Tables = {
     created_at: string;
   };
   settings: { key: string; value: string };
+  prompts: { id: Generated<number>; title: string; body: string; created_at: string };
   entries: {
     id: Generated<number>;
     workspace_id: number;

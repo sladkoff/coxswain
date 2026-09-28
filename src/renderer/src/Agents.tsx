@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Agent, AgentSession, Pick } from "../../core/agents";
+import type { AttachedPrompt } from "../../core/views";
 import type { Workspace } from "../../core/workspaces";
 import { Entry, TurnStatus } from "./ChatEntry";
 import { Button } from "./components/button";
@@ -12,6 +13,7 @@ import {
   SparklesIcon,
   SquarePenIcon,
   StopIcon,
+  XIcon,
 } from "./components/icons";
 import { TextArea } from "./components/field";
 import { cn, divider, muted, noDrag, titleBar } from "./components/styles";
@@ -29,15 +31,15 @@ const agentNames: Record<Agent, string> = { claude: "Claude Code", codex: "Codex
 type Props = {
   workspace: Workspace;
   onViewThread: (threadId: number) => void;
-  // Replaces the composer's draft when it changes (the Guide menu's prompts), for the user to edit and send.
-  composerText?: { text: string };
+  // Attached to the composer when it changes (the New View menu's prompts), for the user to send with a note.
+  composerPrompt?: { prompt: AttachedPrompt };
   onShowSidebar?: () => void; // given while the sidebar is hidden: the window buttons are then over this header
 };
 
-export function Agents({ workspace, onViewThread, composerText, onShowSidebar }: Props) {
+export function Agents({ workspace, onViewThread, composerPrompt, onShowSidebar }: Props) {
   const pane = useAgentPane(workspace.id);
   const patch = (change: Parameters<typeof setAgentPane>[1]) => setAgentPane(workspace.id, change);
-  const { picked, newAgent, draft } = pane;
+  const { picked, newAgent, draft, attached } = pane;
   const sessionsQuery = useQuery(core("listAgentSessions", workspace.id));
   const sessions = sessionsQuery.data ?? [];
   const session = picked ? sessions.find((s) => s.agentSessionId === picked) : sessions.at(-1);
@@ -59,10 +61,10 @@ export function Agents({ workspace, onViewThread, composerText, onShowSidebar }:
   const agent = session?.agent ?? newAgent ?? lastAgent;
   const composer = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
-    if (!composerText || composerText === pane.composerText) return;
-    patch({ draft: composerText.text, composerText });
+    if (!composerPrompt || composerPrompt === pane.composerPrompt) return;
+    patch({ attached: composerPrompt.prompt, composerPrompt });
     composer.current?.focus();
-  }, [composerText]);
+  }, [composerPrompt]);
 
   const bottom = useRef<HTMLDivElement>(null);
   // Braces matter: Chromium's scrollIntoView returns a promise, which React would take for a cleanup function.
@@ -72,12 +74,15 @@ export function Agents({ workspace, onViewThread, composerText, onShowSidebar }:
 
   const send = async () => {
     const message = draft.trim();
-    if (!message || running || loading) return;
+    if ((!message && !attached) || running || loading) return;
     patch({
       sending: true,
-      pendingMessage: message,
+      pendingMessage: attached
+        ? { kind: "user", text: "", view: { title: attached.title, note: message } }
+        : { kind: "user", text: message },
       beforeRevision: live?.revision ?? 0,
       draft: "",
+      attached: null,
       error: null,
     });
     try {
@@ -89,7 +94,11 @@ export function Agents({ workspace, onViewThread, composerText, onShowSidebar }:
           : [...before, current],
       );
       patch({ picked: current.agentSessionId });
-      const result = await window.coxswain.runTurn(current.agentSessionId, message);
+      const result = await window.coxswain.runTurn(
+        current.agentSessionId,
+        message,
+        attached ?? undefined,
+      );
       if (result.status === "error") patch({ error: result.message });
     } catch (e) {
       patch({ error: (e as Error).message });
@@ -170,7 +179,7 @@ export function Agents({ workspace, onViewThread, composerText, onShowSidebar }:
         {entries.map((e, i) => (
           <Entry key={i} entry={e} onViewThread={onViewThread} />
         ))}
-        {pendingMessage && <Entry entry={{ kind: "user", text: pendingMessage }} />}
+        {pendingMessage && <Entry entry={pendingMessage} />}
         <TurnStatus
           running={running}
           permission={permission}
@@ -188,6 +197,7 @@ export function Agents({ workspace, onViewThread, composerText, onShowSidebar }:
           "border-neutral-300 dark:border-neutral-700",
         )}
       >
+        {attached && <AttachedCard prompt={attached} onRemove={() => patch({ attached: null })} />}
         <TextArea
           bare
           ref={composer}
@@ -195,7 +205,7 @@ export function Agents({ workspace, onViewThread, composerText, onShowSidebar }:
           onChange={(e) => patch({ draft: e.target.value })}
           onSubmit={send}
           rows={2}
-          placeholder={`Ask ${agentNames[agent]}…`}
+          placeholder={attached ? "What to focus on (optional)…" : `Ask ${agentNames[agent]}…`}
           className="px-3 pt-2.5 text-sm"
         />
         {/* However narrow the pane: the picks shrink and truncate, Working keeps only its spinner, Send and Stop stay. */}
@@ -225,7 +235,7 @@ export function Agents({ workspace, onViewThread, composerText, onShowSidebar }:
             <button
               title="Send (Enter; Shift+Enter for a new line)"
               aria-label="Send"
-              disabled={!draft.trim() || running || loading}
+              disabled={(!draft.trim() && !attached) || running || loading}
               className="flex size-7 shrink-0 items-center justify-center rounded-full bg-neutral-900 text-white hover:bg-neutral-700 disabled:bg-neutral-200 disabled:text-neutral-400 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300 dark:disabled:bg-neutral-800 dark:disabled:text-neutral-500"
               onClick={send}
             >
@@ -317,5 +327,42 @@ function AgentPickers({ workspaceId, agent }: { workspaceId: number; agent: Agen
           <ChevronDownIcon />
         </Button>
       ),
+  );
+}
+
+// A New View prompt on the composer, like a comment sent to the agent: its title, then the prompt it sends (a few
+// lines; a click shows it all). × takes it off.
+function AttachedCard(props: { prompt: AttachedPrompt; onRemove: () => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className={cn("mx-2 mt-2 flex flex-col rounded-lg border text-xs", divider)}>
+      <div className="flex items-center gap-1 pt-1 pr-1 pl-2">
+        <span className={cn("min-w-0 flex-1 truncate", muted)}>
+          View ·{" "}
+          <span className="font-medium text-neutral-900 dark:text-neutral-100">
+            {props.prompt.title}
+          </span>
+        </span>
+        <Button
+          variant="ghost"
+          className="shrink-0 p-0.5 text-neutral-500"
+          title="Remove the prompt"
+          aria-label="Remove the prompt"
+          onClick={props.onRemove}
+        >
+          <XIcon />
+        </Button>
+      </div>
+      <button
+        title={open ? "Show less" : "Show all of the prompt"}
+        onClick={() => setOpen(!open)}
+        className={cn(
+          "px-2 pt-0.5 pb-1.5 text-left whitespace-pre-wrap [overflow-wrap:anywhere]",
+          open ? "max-h-48 overflow-y-auto" : "line-clamp-3",
+        )}
+      >
+        {props.prompt.prompt}
+      </button>
+    </div>
   );
 }

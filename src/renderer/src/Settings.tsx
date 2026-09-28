@@ -3,14 +3,24 @@ import { useEffect, useState } from "react";
 import type { CurrentUser } from "../../core/github";
 import type { SummarySettings } from "../../core/summaries";
 import { Button, SegmentedControl } from "./components/button";
+import { TextArea, Input } from "./components/field";
 import { ChevronDownIcon } from "./components/icons";
 import { Card, Screen } from "./components/layout";
 import { cn, muted } from "./components/styles";
 import { ErrorText, ProblemMessage } from "./components/text";
 import { core, queryClient } from "./queries";
 
-// workspaceId: the one on screen, whose worktree an agent is asked in for its models.
-export function Settings({ onClose, workspaceId }: { onClose: () => void; workspaceId?: number }) {
+// workspaceId: the one on screen, whose worktree an agent is asked in for its models. newPrompt: opened from New View's
+// New Prompt…, so the new prompt's title has the focus.
+export function Settings({
+  onClose,
+  workspaceId,
+  newPrompt,
+}: {
+  onClose: () => void;
+  workspaceId?: number;
+  newPrompt?: boolean;
+}) {
   const [user, setUser] = useState<CurrentUser | null>(null);
   const check = () => {
     setUser(null);
@@ -43,6 +53,8 @@ export function Settings({ onClose, workspaceId }: { onClose: () => void; worksp
       </Card>
       <h2 className="mt-6 mb-3 font-medium">File summaries</h2>
       <Summaries workspaceId={workspaceId} />
+      <h2 className="mt-6 mb-3 font-medium">View prompts</h2>
+      <Prompts newPrompt={newPrompt} />
       <h2 className="mt-6 mb-3 font-medium">About</h2>
       <Card className="select-text">
         coxswain {__VERSION__} <span className={muted}>· {__COMMIT__}</span>
@@ -134,6 +146,73 @@ function Summaries({ workspaceId }: { workspaceId?: number }) {
         never get one.
       </p>
       {picks.isError && <ErrorText>Couldn't ask the agent for its models.</ErrorText>}
+      {error && <ErrorText>{error}</ErrorText>}
+    </Card>
+  );
+}
+
+// The user's own prompts for New View, listed in its menu after the built-in ones. Delete and add again to change one.
+// ponytail: no editing in place; add it if deleting and re-adding gets old.
+function Prompts({ newPrompt }: { newPrompt?: boolean }) {
+  const saved = (useQuery(core("listPrompts")).data ?? []).filter((p) => p.id !== null);
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const refresh = () => queryClient.invalidateQueries({ queryKey: core("listPrompts").queryKey });
+  const add = async () => {
+    setError(null);
+    try {
+      await window.coxswain.savePrompt(title, body);
+      setTitle("");
+      setBody("");
+    } catch (e) {
+      setError((e as Error).message);
+    }
+    await refresh();
+  };
+  const remove = async (id: number, name: string) => {
+    const ok = await window.coxswain.confirm({
+      message: `Delete the prompt “${name}”?`,
+      detail: "Views made with it stay.",
+      action: "Delete",
+    });
+    if (!ok) return;
+    await window.coxswain.deletePrompt(id);
+    await refresh();
+  };
+  return (
+    <Card className="flex flex-col gap-3">
+      <p className={muted}>
+        New View's menu lists these after the built-in ones. The agent gets the prompt, with what
+        you type along with it, and makes a view with coxswain's tools.
+      </p>
+      {saved.map((p) => (
+        <div key={p.id} className="flex items-start gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="font-medium">{p.title}</div>
+            <div className={cn("line-clamp-3 text-xs whitespace-pre-wrap", muted)}>{p.body}</div>
+          </div>
+          <Button className="shrink-0" onClick={() => remove(p.id!, p.title)}>
+            Delete
+          </Button>
+        </div>
+      ))}
+      <Input
+        autoFocus={newPrompt}
+        placeholder="Title, e.g. Security"
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+      />
+      <TextArea
+        rows={4}
+        placeholder="Make a guide to this workspace's changes with coxswain's tools that focuses on…"
+        value={body}
+        onChange={(e) => setBody(e.target.value)}
+        onSubmit={add}
+      />
+      <Button className="self-end" disabled={!title.trim() || !body.trim()} onClick={add}>
+        Add Prompt
+      </Button>
       {error && <ErrorText>{error}</ErrorText>}
     </Card>
   );
