@@ -3,6 +3,31 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-28 — Workspace and session continuity
+
+Issue #29, for G3 and G5 (ADRs 0017, 0018, 0025, 0026).
+
+- Markdown renderers have stable component identities. Opening ⌘K and unrelated canvas renders no longer remount
+  Mermaid diagrams, replace them with a loading placeholder or collapse their height.
+- The router selects workspace and canvas together. Sidebar switches remember the last location and scroll;
+  Back/Forward use their own entries. The default view, its range, entries and Reviewed state resolve before the
+  canvas appears. Scroll retries and thread waits are cancelled when navigation supersedes them.
+- Agent state lives in the core: history, streamed entries, running status, pending permission and errors. First
+  history reads are deduplicated before a turn starts, and active reads do not replay ACP. Versioned snapshots feed
+  the query cache even while panes are absent; stale IPC responses cannot replace newer streamed state. Selected
+  session, drafts and pending session creation survive pane unmounts in window-lifetime presentation state.
+- Bottom-bar and chat-card navigation reveals reviewed files and their sections, selects the entry's view/range,
+  waits for the thread to mount and opens outdated threads. Reviewed marks are preserved.
+- Regression tests cover replay races, detached sessions, permissions, completion, stale IPC reads and canvas
+  selection. `scripts/test-flickering.cjs` checks the built renderer in an isolated Electron window with fixture
+  data: diagram identity under ⌘K, warm/cold workspace switching, Back/Forward, live sessions, permissions and
+  hidden/outdated comments, restored scroll, drafts and session creation while hidden. No real agent or GitHub
+  account is used by that UI test. `pnpm typecheck`, `pnpm test` (13 tests), `pnpm lint`, `pnpm format` and
+  `pnpm build` pass; the Electron checks pass too.
+- ponytail: session projections remain in memory until app exit; idle eviction can bound memory if needed.
+- ponytail: coalesced session notifications carry full snapshots; versioned entry deltas can reduce IPC copying
+  if long transcripts make it expensive.
+
 ## 2026-09-28 — Top and bottom bars, and a sidebar with titles
 
 UX, for G3 and G5 ([UX](UX.md) L2, L3).

@@ -52,6 +52,7 @@ type Props = {
   diffStyle: "unified" | "split";
   // One of several file diffs one after another: the parent scrolls, not the Viewer.
   stacked?: boolean;
+  revealThread?: number; // navigation also opens outdated threads and forces this file to load
 };
 
 // The side of a file diff that isn't read: an added file's old side, a deleted one's new side, a whole file's old side.
@@ -84,9 +85,11 @@ export const Viewer = memo(function Viewer(props: Props) {
     setSelection(null);
   };
   const path = openedPath(opened);
+  const revealed = entries.find((e) => e.id === props.revealThread && e.path === path);
   // A stacked file diff reads its file only once it scrolls near the screen: a big PR has thousands, and reading
   // them all at once queues every other call behind thousands of git processes.
-  const [near, setNear] = useState(!props.stacked);
+  const [wasNear, setNear] = useState(!props.stacked);
+  const near = wasNear || !!revealed;
   const placeholder = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = placeholder.current;
@@ -339,7 +342,7 @@ export const Viewer = memo(function Viewer(props: Props) {
       onContextMenu={(e) => void tokenMenu(e.nativeEvent)}
       className={props.stacked ? "select-text" : "min-h-0 flex-1 overflow-auto select-text"}
     >
-      {showOutdated && (
+      {(showOutdated || revealed?.state === "outdated") && (
         <OutdatedThreads entries={outdated} renderThread={(entry) => render({ entry })} />
       )}
       {opened.kind === "file" ? (

@@ -40,7 +40,11 @@ Claude Code (`@agentclientprotocol/claude-agent-acp`, built on the Claude Agent 
 6. **The agent picks the session ID.** `session/new` returns it; the core stores it in
    `agent_sessions.agent_session_id`. For Claude Code it is Claude Code's session ID.
 7. **History comes from `session/load`**, which replays the session as updates. The core doesn't read
-   `~/.claude/projects/` itself.
+   `~/.claude/projects/` itself. The core keeps an in-memory session projection: history plus live entries,
+   running status, pending permission and error. Concurrent first reads share one replay, and a turn waits for that
+   replay before it starts. Reads during a turn return this projection without another ACP replay. It survives pane
+   unmounts; the agent still owns durable history. Versioned snapshots reach the renderer independently of the pane,
+   so returning to a workspace or reloading a window can reattach to the active session.
 8. **Permission requests reach the user.** `session/request_permission` becomes a prompt with the options the agent
    offers, in the agent pane, or in the thread whose comment started the turn.
 9. **Chat entries are made from ACP updates**, not from Claude Code's message shapes. `ChatEntry` is the UI's type.

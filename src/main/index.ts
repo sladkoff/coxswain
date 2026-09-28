@@ -21,7 +21,8 @@ import {
   newSessionAgent,
   onSessionTitle,
   type Pick,
-  readTranscript,
+  readAgentState,
+  onSessionState,
   runTurn,
   startAgentSession,
   setAgentPick,
@@ -317,9 +318,21 @@ app.whenReady().then(() => {
   ipcMain.handle("agents:set-pick", (_, agent: Agent, pick: Pick, value: string) =>
     setAgentPick(db, agent, pick, value),
   );
-  ipcMain.handle("agents:transcript", (_, agentSessionId: string) =>
-    readTranscript(db, agentSessionId),
-  );
+  ipcMain.handle("agents:state", (_, agentSessionId: string) => readAgentState(db, agentSessionId));
+  // Coalesce token bursts; all windows can reattach to the same core-owned session state.
+  // ponytail: each notification carries the full transcript; use versioned entry deltas if long
+  // sessions make IPC copying expensive.
+  const pendingStates = new Map<string, Awaited<ReturnType<typeof readAgentState>>>();
+  let stateTimer: ReturnType<typeof setTimeout> | undefined;
+  onSessionState((id, state) => {
+    pendingStates.set(id, state);
+    stateTimer ??= setTimeout(() => {
+      stateTimer = undefined;
+      for (const window of BrowserWindow.getAllWindows())
+        for (const [id, state] of pendingStates) window.webContents.send("agents:state", id, state);
+      pendingStates.clear();
+    }, 16);
+  });
   ipcMain.handle("review:list", (_, workspaceId: number, base: string, head?: string) =>
     listEntries(db, workspaceId, base, head),
   );

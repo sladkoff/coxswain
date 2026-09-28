@@ -1,8 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
-import type { Agent, AgentSession, ChatEntry, Permission, Pick } from "../../core/agents";
+import { useEffect, useRef } from "react";
+import type { Agent, AgentSession, Pick } from "../../core/agents";
 import type { Workspace } from "../../core/workspaces";
-import { Entry, TurnStatus, upsert } from "./ChatEntry";
+import { Entry, TurnStatus } from "./ChatEntry";
 import { Button } from "./components/button";
 import {
   ArrowUpIcon,
@@ -17,6 +17,7 @@ import { TextArea } from "./components/field";
 import { cn, divider, muted, noDrag, titleBar } from "./components/styles";
 import { shortDateTime } from "./format";
 import { core, queryClient } from "./queries";
+import { setAgentPane, useAgentPane } from "./agent-pane";
 
 const agentNames: Record<Agent, string> = { claude: "Claude Code", codex: "Codex" };
 
@@ -34,54 +35,34 @@ type Props = {
 };
 
 export function Agents({ workspace, onViewThread, composerText, onShowSidebar }: Props) {
-  const sessions = useQuery(core("listAgentSessions", workspace.id)).data ?? [];
-  // The agent session picked in the header; null is the latest, 'new' one not started yet.
-  const [picked, setPicked] = useState<string | null>(null);
-  const last = picked ? sessions.find((s) => s.agentSessionId === picked) : sessions.at(-1);
-  const transcript = useQuery({
-    ...core("readTranscript", last?.agentSessionId ?? ""),
-    enabled: !!last,
-  }).data;
-  const [session, setSession] = useState<AgentSession | null>(last ?? null);
-  // The agent a new session gets: picked in New session's menu, else the one picked last.
+  const pane = useAgentPane(workspace.id);
+  const patch = (change: Parameters<typeof setAgentPane>[1]) => setAgentPane(workspace.id, change);
+  const { picked, newAgent, draft } = pane;
+  const sessionsQuery = useQuery(core("listAgentSessions", workspace.id));
+  const sessions = sessionsQuery.data ?? [];
+  const session = picked ? sessions.find((s) => s.agentSessionId === picked) : sessions.at(-1);
+  const state = useQuery({
+    ...core("readAgentState", session?.agentSessionId ?? ""),
+    enabled: !!session,
+  });
+  const live = state.data;
+  const running = pane.sending || !!live?.running;
+  const permission = live?.permission ?? null;
+  const error = pane.error ?? live?.error ?? state.error?.message ?? null;
+  const entries = live?.entries ?? [];
+  const pendingMessage =
+    pane.pendingMessage && (!live || live.revision <= pane.beforeRevision)
+      ? pane.pendingMessage
+      : null;
+  const loading = !sessionsQuery.data || (!!session && !live);
   const lastAgent = useQuery(core("newSessionAgent")).data ?? "claude";
-  const [newAgent, setNewAgent] = useState<Agent | null>(null);
   const agent = session?.agent ?? newAgent ?? lastAgent;
-  const [entries, setEntries] = useState<ChatEntry[]>(transcript ?? []);
-  const [running, setRunning] = useState(false);
-  const [permission, setPermission] = useState<Permission | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [draft, setDraft] = useState("");
-  const sessionRef = useRef(session);
-  sessionRef.current = session;
   const composer = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
-    if (!composerText) return;
-    setDraft(composerText.text);
+    if (!composerText || composerText === pane.composerText) return;
+    patch({ draft: composerText.text, composerText });
     composer.current?.focus();
   }, [composerText]);
-
-  // The shown agent session's transcript, once loaded or picked and again when a turn ends (the core says it changed), in
-  // place of the entries streamed during the turn. Not while the turn runs: it would drop the message just sent. The
-  // core has none for a session whose turn another pane started (Send all), but its entries stream here.
-  useEffect(() => {
-    if (!last || running) return;
-    setSession(last);
-    if (transcript) setEntries(transcript);
-  }, [transcript, picked]);
-
-  useEffect(() => {
-    const offEntry = window.coxswain.onChatEntry((id, entry) => {
-      if (id === sessionRef.current?.agentSessionId) setEntries((e) => upsert(e, entry));
-    });
-    const offPermission = window.coxswain.onPermission((id, p) => {
-      if (id === sessionRef.current?.agentSessionId) setPermission(p);
-    });
-    return () => {
-      offEntry();
-      offPermission();
-    };
-  }, []);
 
   const bottom = useRef<HTMLDivElement>(null);
   // Braces matter: Chromium's scrollIntoView returns a promise, which React would take for a cleanup function.
@@ -91,37 +72,34 @@ export function Agents({ workspace, onViewThread, composerText, onShowSidebar }:
 
   const send = async () => {
     const message = draft.trim();
-    if (!message || running) return;
-    // Shown at once; the core doesn't echo it for the pane's own messages. A new session's adapter can take seconds.
-    setEntries((e) => [...e, { kind: "user", text: message }]);
-    setDraft("");
-    setError(null);
-    setRunning(true);
-    let current = session;
+    if (!message || running || loading) return;
+    patch({
+      sending: true,
+      pendingMessage: message,
+      beforeRevision: live?.revision ?? 0,
+      draft: "",
+      error: null,
+    });
     try {
-      current ??= await window.coxswain.startAgentSession(workspace.id, agent);
+      const current = session ?? (await window.coxswain.startAgentSession(workspace.id, agent));
+      // Do this even if the pane has unmounted while session creation was pending.
+      queryClient.setQueryData(core("listAgentSessions", workspace.id).queryKey, (before = []) =>
+        before.some((s) => s.agentSessionId === current.agentSessionId)
+          ? before
+          : [...before, current],
+      );
+      patch({ picked: current.agentSessionId });
+      const result = await window.coxswain.runTurn(current.agentSessionId, message);
+      if (result.status === "error") patch({ error: result.message });
     } catch (e) {
-      setRunning(false);
-      return setError((e as Error).message);
+      patch({ error: (e as Error).message });
+    } finally {
+      patch({ sending: false, pendingMessage: null });
     }
-    sessionRef.current = current;
-    setPicked(current.agentSessionId);
-    setSession(current);
-    const result = await window.coxswain.runTurn(current.agentSessionId, message);
-    setRunning(false);
-    setPermission(null);
-    if (result.status === "error") setError(result.message);
   };
 
-  // New session: on the agent picked last, or on one picked from its menu.
   const newSessionAgent = newAgent ?? lastAgent;
-  const newSession = (on: Agent) => {
-    setNewAgent(on);
-    setPicked("new");
-    setSession(null);
-    setEntries([]);
-    setError(null);
-  };
+  const newSession = (on: Agent) => patch({ newAgent: on, picked: "new", error: null });
 
   return (
     <>
@@ -146,10 +124,10 @@ export function Agents({ workspace, onViewThread, composerText, onShowSidebar }:
         )}
         <SessionPicker
           sessions={sessions}
-          current={session}
+          current={session ?? null}
           agent={agent}
           disabled={running}
-          onPick={setPicked}
+          onPick={(picked) => patch({ picked, error: null })}
         />
         <div className="flex-1" />
         <div className={cn("flex shrink-0 items-center text-neutral-500", noDrag)}>
@@ -183,7 +161,8 @@ export function Agents({ workspace, onViewThread, composerText, onShowSidebar }:
         </div>
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2">
-        {entries.length === 0 && !running && (
+        {loading && !running && <div className={cn("m-auto text-xs", muted)}>Loading session…</div>}
+        {entries.length === 0 && !running && !loading && (
           <div className={cn("m-auto text-xs", muted)}>
             Ask {agentNames[agent]} something to start an agent session
           </div>
@@ -191,13 +170,13 @@ export function Agents({ workspace, onViewThread, composerText, onShowSidebar }:
         {entries.map((e, i) => (
           <Entry key={i} entry={e} onViewThread={onViewThread} />
         ))}
+        {pendingMessage && <Entry entry={{ kind: "user", text: pendingMessage }} />}
         <TurnStatus
           running={running}
           permission={permission}
           error={error}
           onAnswer={(optionId) => {
             window.coxswain.answerPermission(permission!.id, optionId);
-            setPermission(null);
           }}
         />
         <div ref={bottom} />
@@ -213,7 +192,7 @@ export function Agents({ workspace, onViewThread, composerText, onShowSidebar }:
           bare
           ref={composer}
           value={draft}
-          onChange={(e) => setDraft(e.target.value)}
+          onChange={(e) => patch({ draft: e.target.value })}
           onSubmit={send}
           rows={2}
           placeholder={`Ask ${agentNames[agent]}…`}
@@ -241,7 +220,7 @@ export function Agents({ workspace, onViewThread, composerText, onShowSidebar }:
             <button
               title="Send (Enter; Shift+Enter for a new line)"
               aria-label="Send"
-              disabled={!draft.trim() || running}
+              disabled={!draft.trim() || running || loading}
               className="flex size-7 items-center justify-center rounded-full bg-neutral-900 text-white hover:bg-neutral-700 disabled:bg-neutral-200 disabled:text-neutral-400 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300 dark:disabled:bg-neutral-800 dark:disabled:text-neutral-500"
               onClick={send}
             >
