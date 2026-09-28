@@ -33,8 +33,7 @@ review.
 
 The last button in the canvas bar shows what coxswain does in the background: for now summary jobs (glossary,
 [ADR 0029](adr/0029-file-summaries-and-activity.md)). It's a pulse icon, a turning ring while a job runs, with a red
-dot when one failed since the list was last opened. Clicking it opens the list under it, newest first, jobs of every
-workspace: _Summarising_, _Summarised_, _Failed_ or _Stopped_, the workspace, _ahead_ or _for a view_, how long it took
+dot when one failed since the list was last opened. Clicking it opens the list under it, the latest 50 jobs of every workspace, newest first, kept across restarts. Each shows _Summarising_, _Summarised_, _Failed_ or _Stopped_, the workspace, _ahead_ or _for a view_, how long it took
 and when; a progress bar (full and red once failed); files that had a summary, were summarised and failed; the agent,
 the model it ran on, runs and range; the files being summarised now; the last error; and Stop while it runs. Its header
 names the summary agent and model, with _Settings…_. Esc or a click outside closes it.

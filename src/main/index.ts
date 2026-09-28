@@ -79,6 +79,7 @@ import {
   onSummaryJobs,
   setSummaryRunner,
   setSummarySettings,
+  stopInterruptedJobs,
   stopSummaryJob,
   summariseAhead,
   type SummarySettings,
@@ -654,7 +655,8 @@ app.whenReady().then(() => {
   );
   // ADR 0029: file summaries run on the summary agent, one-shot; Activity shows their jobs as they change.
   setSummaryRunner(({ agent, ...o }) => askOnce(agent, o));
-  ipcMain.handle("summaries:jobs", () => listSummaryJobs());
+  void stopInterruptedJobs(db);
+  ipcMain.handle("summaries:jobs", () => listSummaryJobs(db));
   ipcMain.handle("summaries:stop", (_, id: number) => stopSummaryJob(id));
   ipcMain.handle("summaries:settings", () => getSummarySettings(db));
   ipcMain.handle("summaries:set-settings", (_, s: Partial<SummarySettings>) =>

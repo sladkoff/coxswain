@@ -21,17 +21,18 @@ Issue #36, for G3 ([ADR 0029](adr/0029-file-summaries-and-activity.md), [UX](UX.
   `file_summaries` tool fetches them and can wait, and the guide instructions say to plan from them and read a diff
   before writing about a file.
 - **Activity** at the canvas bar's right: turns while a job runs, a red dot after a failure, and a list of jobs with
-  progress (red when failed), reuse, model, runs, range, files in flight, the last error and Stop. The main process
-  logs each finished job.
+  progress (red when failed), reuse, model, runs, range, files in flight, the last error and Stop. Jobs are stored in
+  `summary_jobs` (migration 6), so they show after a restart; one running when the app quit is marked stopped at the
+  next start. The main process logs each finished job.
 - **Paid off:** `write_section` and `remove_section` no longer lose sections written at once; they change a view one
   at a time.
 - Tests: `summaries.test.ts` runs jobs against a real repository with a fake summary agent (retries, files left out,
-  reuse, the view tools, sections written at once, a fatal failure). `pnpm typecheck`, `pnpm test` (15 tests),
+  reuse, the view tools, sections written at once, a fatal failure, stored and interrupted jobs). `pnpm typecheck`, `pnpm test` (15 tests),
   `pnpm lint`, `pnpm format` and `pnpm build` pass. Seen in the running dev app on #5311: Activity showed the jobs and
   their errors, which caught `haiku` not matching Claude Code's `claude-haiku-4-5`; the family match that fixes it
   hasn't been seen running yet.
 - `ponytail:` batch sizes and parallelism are fixed, from #5311; lockfiles are recognised by name only; summaries of
-  file diffs no range has any more are never pruned; jobs are kept in memory only.
+  file diffs no range has any more are never pruned; the last 500 jobs are kept.
 - Not measured yet: how much faster a guide to #5311 gets. Worth timing once summaries have run ahead.
 
 ## 2026-09-28 — Workspace and session continuity

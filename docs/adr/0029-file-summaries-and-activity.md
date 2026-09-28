@@ -43,7 +43,9 @@ seen: what runs, on which model, and why it failed.
 5. **Activity shows the jobs**, at the canvas bar's right: a button that turns while one runs and gets a red dot when
    one failed, opening a list of the jobs, newest first: state, workspace, why, progress, files reused, summarised
    and failed, agent and the model it ran on, runs, range, the files being summarised now, the last error, and Stop.
-   Jobs live in memory, the last 20 finished ones kept; each finished job is logged by the main process too.
+   Jobs are stored in `summary_jobs` (their progress at most every 100 ms), so Activity shows them after a restart:
+   the latest 50, of the 500 kept. One still running when coxswain quit is marked stopped at the next start. Each
+   finished job is logged by the main process too.
 6. **`write_section` and `remove_section` change a view one at a time**, each on the view as the one before left it,
    so sections written at once by two sessions or subagents all land.
 
@@ -56,8 +58,9 @@ seen: what runs, on which model, and why it failed.
   the subagents do).
 - **Summarise uncommitted changes as they happen.** They change on every save, so most of those calls would be about
   contents nobody makes a view of.
-- **Store the jobs.** What's missing can always be worked out again from the file diffs and the table (ADR 0005); a
-  restart just starts the next job when a workspace opens.
+- **Keep the jobs in memory only.** What's missing can always be worked out again from the file diffs and the
+  table, but after a restart a workspace summarised earlier showed no activity at all, which read as if nothing had
+  run. The history is coxswain's own, so storing it fits ADR 0005.
 - **Make `start_view` wait for summaries.** Simpler for the agent, but a big first view would sit for a minute or more
   with nothing to show; the agent can wait with `file_summaries` when it wants to.
 
@@ -67,5 +70,6 @@ seen: what runs, on which model, and why it failed.
   off.
 - The first view of a big change is as slow as before if nothing was summarised ahead; later ones and views after a
   small push reuse almost everything.
-- Summaries of file diffs no range has any more stay until their workspace is removed.
+- Summaries of file diffs no range has any more stay until their workspace is removed; jobs beyond the 500 kept are
+  dropped.
 - Codex sessions keep the pane's instructions in one-shot runs, since Codex's config is per adapter process.

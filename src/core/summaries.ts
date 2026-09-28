@@ -83,8 +83,9 @@ export const limits = {
   attempts: 3,
   retryMs: 2000,
 };
-// How many finished jobs Activity keeps showing.
-const keepFinished = 20;
+// How many jobs Activity shows, and how many are kept.
+const listed = 50;
+const kept = 500;
 
 const instructions =
   "You summarise code changes for a reviewer. Everything you need is in the message: don't use tools. Answer with the JSON asked for and nothing else.";
@@ -166,9 +167,9 @@ const sleep = (ms: number, signal: AbortSignal) =>
     signal.addEventListener("abort", () => (clearTimeout(timer), resolve()), { once: true });
   });
 
-// Jobs, newest first, with a way to stop each running one. Kept in memory: what's missing can always be worked out
-// again from the file diffs and the table (ADR 0005).
-const jobs: SummaryJob[] = [];
+// The running jobs, with a way to stop each; every job is also a row of summary_jobs, so Activity shows them after a
+// restart too.
+const live = new Map<number, SummaryJob>();
 // The agent and model of the last job that failed in a way trying again can't fix: summarising ahead waits until the
 // settings change, rather than failing again each time a workspace is checked. Views still try, and show the error.
 let failedWith: string | null = null;
@@ -177,7 +178,6 @@ let failedWith: string | null = null;
 let workedWith: string | null = null;
 const settingsKey = (s: Pick<SummarySettings, "agent" | "model">) => `${s.agent}\0${s.model}`;
 const stops = new Map<number, AbortController>();
-let nextJob = 1;
 // The file diffs being summarised by some job, by key, resolving once done or given up on.
 const making = new Map<string, Promise<void>>();
 const keyOf = (workspaceId: number, path: string, fingerprint: string) =>
@@ -188,11 +188,88 @@ export function onSummaryJobs(listener: (jobs: SummaryJob[]) => void) {
   listeners.add(listener);
   return () => void listeners.delete(listener);
 }
-export const listSummaryJobs = (): SummaryJob[] => jobs.map((j) => ({ ...j, now: [...j.now] }));
-const tell = () => {
-  const list = listSummaryJobs();
-  listeners.forEach((l) => l(list));
+
+// The latest jobs, newest first: the running ones as they are now, the rest as stored.
+export async function listSummaryJobs(db: Db): Promise<SummaryJob[]> {
+  const rows = await db
+    .selectFrom("summary_jobs")
+    .selectAll()
+    .orderBy("id", "desc")
+    .limit(listed)
+    .execute();
+  return rows.map((r) => {
+    const running = live.get(r.id);
+    if (running) return { ...running, now: [...running.now] };
+    return {
+      id: r.id,
+      workspaceId: r.workspace_id,
+      workspace: r.workspace,
+      why: r.why,
+      base: r.base,
+      head: r.head,
+      agent: r.agent,
+      model: r.model,
+      ranOn: r.ran_on,
+      files: r.files,
+      reused: r.reused,
+      done: r.done,
+      failed: r.failed,
+      calls: r.calls,
+      now: [],
+      state: r.state,
+      error: r.error,
+      startedAt: r.started_at,
+      finishedAt: r.finished_at,
+    };
+  });
+}
+
+// A job as its row: what it did so far, or all of it once finished.
+const saveJob = (db: Db, j: SummaryJob) =>
+  db
+    .updateTable("summary_jobs")
+    .set({
+      ran_on: j.ranOn,
+      files: j.files,
+      reused: j.reused,
+      done: j.done,
+      failed: j.failed,
+      calls: j.calls,
+      state: j.state,
+      error: j.error,
+      finished_at: j.finishedAt,
+      updated_at: new Date().toISOString(),
+    })
+    .where("id", "=", j.id)
+    .execute();
+
+// Stores the running jobs' progress and tells the listeners, at most every 100 ms.
+let telling: ReturnType<typeof setTimeout> | undefined;
+const tell = (db: Db) => {
+  telling ??= setTimeout(async () => {
+    telling = undefined;
+    try {
+      await Promise.all([...live.values()].map((j) => saveJob(db, j)));
+      const list = await listSummaryJobs(db);
+      listeners.forEach((l) => l(list));
+    } catch (e) {
+      console.error("summaries:", (e as Error).message);
+    }
+  }, 100);
 };
+
+// Jobs that were running when coxswain last quit ended then; called once at startup.
+export async function stopInterruptedJobs(db: Db) {
+  await db
+    .updateTable("summary_jobs")
+    .set((eb) => ({
+      state: "stopped",
+      error: "coxswain quit while it ran",
+      finished_at: eb.ref("updated_at"),
+    }))
+    .where("state", "=", "running")
+    .execute();
+}
 
 export function stopSummaryJob(id: number) {
   stops.get(id)?.abort();
@@ -224,14 +301,14 @@ export async function summarise(
   head: string,
   why: SummaryJob["why"],
 ): Promise<SummaryJob | null> {
-  const same = jobs.find(
+  const same = [...live.values()].find(
     (j) =>
       j.workspaceId === workspaceId && j.base === base && j.head === head && j.state === "running",
   );
   if (same) return same;
   const settings = await getSummarySettings(db);
   const job: SummaryJob = {
-    id: 0, // numbered once it's added
+    id: 0, // its row's, once added
     workspaceId,
     workspace: await workspaceLabel(db, workspaceId),
     why,
@@ -272,14 +349,13 @@ export async function summarise(
     job.files = files.length;
     job.reused = files.length - mine.length;
   } catch (e) {
-    return finish(add(job), "failed", (e as Error).message);
+    return finish(db, await add(db, job), "failed", (e as Error).message);
   }
   if (!mine.length) return null;
   if (why === "ahead")
-    for (const j of jobs)
-      if (j.workspaceId === workspaceId && j.why === "ahead" && j.state === "running")
-        stopSummaryJob(j.id);
-  add(job);
+    for (const j of live.values())
+      if (j.workspaceId === workspaceId && j.why === "ahead") stopSummaryJob(j.id);
+  await add(db, job);
   const stop = new AbortController();
   stops.set(job.id, stop);
   const done = new Map<string, () => void>();
@@ -330,7 +406,7 @@ async function work(
   const giveUp = (files: typeof mine) => {
     job.failed += files.length;
     files.forEach((m) => release(m.key));
-    tell();
+    tell(db);
   };
   try {
     const cwd = await openedWorktree(db, job.workspaceId);
@@ -340,7 +416,7 @@ async function work(
       if (s) await save(m, s, "coxswain");
       else byModel.push(m);
     }
-    tell();
+    tell(db);
     // In path order, so a run tends to get one folder.
     const batches: (typeof mine)[] = [];
     const lines = (m: (typeof mine)[number]) =>
@@ -367,7 +443,7 @@ async function work(
           return;
         }
         if (n >= limits.attempts) return giveUp(files);
-        tell();
+        tell(db);
         await sleep(limits.retryMs * 4 ** (n - 1), stop.signal);
         return attempt(files, n + 1);
       }
@@ -376,13 +452,13 @@ async function work(
         if (s)
           await save(m, s, s.startsWith("Binary file") ? "coxswain" : (job.ranOn ?? job.model));
       }
-      tell();
+      tell(db);
       const left = files.filter((m) => !answers.has(m.file.path));
       if (!left.length) return;
       if (n >= limits.attempts) {
         job.error = `No summary came back for ${left.map((m) => m.file.path).join(", ")}`;
         giveUp(left);
-        return tell();
+        return tell(db);
       }
       await Promise.all(left.map((m) => attempt([m], n + 1)));
     };
@@ -406,7 +482,7 @@ async function work(
       if (!asked.length) return answers;
       job.calls++;
       job.now.push(...asked.map((a) => a.file.path));
-      tell();
+      tell(db);
       try {
         const out = await runner({
           agent: settings.agent,
@@ -435,21 +511,54 @@ async function work(
   const left = mine.length - job.done - job.failed;
   if (fatal) {
     if (agentFailed) failedWith = settingsKey(settings);
-    finish(job, "failed", fatal);
-  } else if (stop.signal.aborted || left > 0) finish(job, "stopped", job.error);
-  else finish(job, job.failed && !job.done ? "failed" : "done", job.error);
+    await finish(db, job, "failed", fatal);
+  } else if (stop.signal.aborted || left > 0) await finish(db, job, "stopped", job.error);
+  else await finish(db, job, job.failed && !job.done ? "failed" : "done", job.error);
 }
 
-function add(job: SummaryJob): SummaryJob {
-  job.id = nextJob++;
-  jobs.unshift(job);
-  const finished = jobs.filter((j) => j.state !== "running");
-  for (const old of finished.slice(keepFinished)) jobs.splice(jobs.indexOf(old), 1);
-  tell();
+// Stores a new job, and drops the oldest beyond those kept.
+async function add(db: Db, job: SummaryJob): Promise<SummaryJob> {
+  const now = new Date().toISOString();
+  const { id } = await db
+    .insertInto("summary_jobs")
+    .values({
+      workspace_id: job.workspaceId,
+      workspace: job.workspace,
+      why: job.why,
+      base: job.base,
+      head: job.head,
+      agent: job.agent,
+      model: job.model,
+      ran_on: null,
+      files: job.files,
+      reused: job.reused,
+      done: 0,
+      failed: 0,
+      calls: 0,
+      state: "running",
+      error: null,
+      started_at: job.startedAt,
+      finished_at: null,
+      updated_at: now,
+    })
+    .returning("id")
+    .executeTakeFirstOrThrow();
+  job.id = id;
+  live.set(id, job);
+  await db
+    .deleteFrom("summary_jobs")
+    .where("id", "<=", id - kept)
+    .execute();
+  tell(db);
   return job;
 }
 
-function finish(job: SummaryJob, state: SummaryJob["state"], error: string | null): SummaryJob {
+async function finish(
+  db: Db,
+  job: SummaryJob,
+  state: SummaryJob["state"],
+  error: string | null,
+): Promise<SummaryJob> {
   job.state = state;
   job.error = error;
   job.now = [];
@@ -458,7 +567,9 @@ function finish(job: SummaryJob, state: SummaryJob["state"], error: string | nul
   console.log(
     `summaries ${job.id} (${job.workspace}, ${job.why}): ${state}, ${job.files} files, ${job.reused} reused, ${job.done} summarised, ${job.failed} failed, ${job.calls} runs on ${job.agent} ${job.ranOn ?? (job.model || "default")} in ${s.toFixed(1)} s${error ? `; ${error}` : ""}`,
   );
-  tell();
+  await saveJob(db, job);
+  live.delete(job.id);
+  tell(db);
   return job;
 }
 

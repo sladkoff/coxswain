@@ -6,6 +6,7 @@ import os from "node:os";
 import { join } from "node:path";
 import { after, mock, test } from "node:test";
 import { openDatabase } from "./db.ts";
+import type { Db } from "./db.ts";
 import type { SummaryJob, SummaryRun } from "./summaries.ts";
 
 // A disposable coxswain directory, as in views.test.ts; the summary agent is a fake.
@@ -42,7 +43,7 @@ const git = (cwd: string, ...args: string[]) =>
   }).trim();
 
 // Resolves with the job once it's no longer running.
-const finished = (job: SummaryJob | null) =>
+const finished = (db: Db, job: SummaryJob | null) =>
   new Promise<SummaryJob>((resolve) => {
     assert.ok(job, "a job started");
     const check = (jobs: SummaryJob[]) => {
@@ -52,7 +53,7 @@ const finished = (job: SummaryJob | null) =>
       resolve(j);
     };
     const off = summaries.onSummaryJobs(check);
-    check(summaries.listSummaryJobs());
+    void summaries.listSummaryJobs(db).then(check);
   });
 
 // Answers every file of a run, as the prompt numbers them.
@@ -109,7 +110,7 @@ test("summary jobs summarise what's missing, retry, and feed the view tools", as
     if (runs.length === 1) throw new Error("overloaded");
     return answerAll(r, runs.length === 2 ? "b.ts" : "");
   });
-  const job = await finished(await summaries.summariseAhead(db, 1));
+  const job = await finished(db, await summaries.summariseAhead(db, 1));
   assert.equal(job.state, "done");
   assert.equal(job.files, 4);
   assert.equal(job.done, 4);
@@ -173,7 +174,7 @@ test("summary jobs summarise what's missing, retry, and feed the view tools", as
     runs.push(r);
     throw Object.assign(new Error('claude has no model "nope"'), { fatal: true });
   });
-  const failed = await finished(await summaries.summariseAhead(db, 1));
+  const failed = await finished(db, await summaries.summariseAhead(db, 1));
   assert.equal(failed.state, "failed");
   assert.match(failed.error ?? "", /no model/);
   assert.equal(runs.length, 1);
@@ -186,6 +187,23 @@ test("summary jobs summarise what's missing, retry, and feed the view tools", as
     (await summaries.fileSummaries(db, 1, failed.base, failed.head, ["b.ts"]))[0].state,
     "missing",
   );
+
+  // Jobs are stored: finished ones as they ended, and one running when coxswain quit is stopped at the next start.
+  const stored = await summaries.listSummaryJobs(db);
+  assert.deepEqual(
+    stored.map((j) => [j.id, j.state]),
+    [
+      [failed.id, "failed"],
+      [job.id + 1, "done"],
+      [job.id, "done"],
+    ],
+  );
+  assert.equal(stored.at(-1)!.calls, 3);
+  await db.updateTable("summary_jobs").set({ state: "running" }).where("id", "=", job.id).execute();
+  await summaries.stopInterruptedJobs(db);
+  const interrupted = (await summaries.listSummaryJobs(db)).find((j) => j.id === job.id)!;
+  assert.equal(interrupted.state, "stopped");
+  assert.match(interrupted.error ?? "", /quit/);
 });
 
 test("replies are read leniently and checked", () => {
