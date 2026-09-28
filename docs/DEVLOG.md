@@ -39,6 +39,9 @@ UX, for G3 and G5 ([UX](UX.md) L2, L3).
   title, subtitle, ✕; Esc or a click outside closes), each with a search field across it. Rows got initials, a lock
   for private repositories, PR icons, `#number · author · branch`, relative dates (_3 days ago_) and _Current_ / _Has a
   workspace_ badges. Checked both in the built app.
+- New workspace has two tabs, _Pull request_ and _Branch_. The branch tab drops the browser's datalist: its one field
+  filters the GitHub branches as a list (pick one to work on it) and offers _New branch `name`_ from a base picked in
+  the native menu.
 - ponytail: the bar counts what Hand off takes with the same rule as the review prompt in `core/review.ts`, copied,
   since the renderer imports no core code. Move it to a shared pure module if a third place needs it.
 - Still open: a guide's table of contents stays its own column; making it the pane's first tab (_Sections_) would

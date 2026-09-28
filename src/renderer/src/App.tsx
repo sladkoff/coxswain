@@ -702,6 +702,7 @@ export function App() {
       <NewWorkspace
         project={current}
         openPrNumbers={workspaces.flatMap((w) => (w.prNumber !== null ? [w.prNumber] : []))}
+        openBranches={workspaces.flatMap((w) => (w.branch ? [w.branch] : []))}
         onSelect={newPullWorkspace}
         onBranch={newBranchWorkspace}
         onClose={close}
