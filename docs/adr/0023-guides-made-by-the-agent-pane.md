@@ -45,9 +45,10 @@ the agent's own thoughts. Reviewing is opt-in.
      A short text appended to Claude Code's system prompt (`paneContext`) tells the agent it runs in coxswain, what the
      comment and review headers mean, and what the tools are for; how to use each stays in its description and result.
 2. **Any message can make a view.** "Make me a guide" or "show me the data model" works, since the tools are always
-   there. _New View_ in the canvas's bar also offers a guide, a review, a data model, a data flow or a message of
-   the user's own, each a short message put in the agent pane's composer for the user to edit and send. While the
-   diff shows a commit, a turn or the _PR_/_Pushed_ or _Local_ scope, the message starts with that range ("For commit
+   there. _New View_ in the canvas's bar also offers view prompts ([ADR 0031](0031-view-prompts.md)): built-in ones
+   (a guide, a review, questions for the author, a data model, a data flow), the user's own, and _New View…_. The one
+   picked is attached to the agent pane's composer, sent with what the user types as the message's focus. While the
+   diff shows a commit, a turn or the _PR_/_Pushed_ or _Local_ scope, the prompt starts with that range ("For commit
    1c8d547 (…) only (start_view with base … and head …): …") and the menu names it; the pane's instructions say to
    pass it on. How to guide
    lives in `start_view`'s result, not in a setting.

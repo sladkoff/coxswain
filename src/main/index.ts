@@ -25,6 +25,7 @@ import {
   readAgentState,
   onSessionState,
   runTurn,
+  formatView,
   startAgentSession,
   setAgentPick,
   stopAgents,
@@ -53,9 +54,14 @@ import {
   onViewChange,
   removeView,
   setDiagramCheck,
+  type AttachedPrompt,
+  attachPrompt,
+  customPrompt,
+  deletePrompt,
+  listPrompts,
+  type Prompt,
+  savePrompt,
   type ViewRange,
-  type ViewRequest,
-  viewRequest,
 } from "../core/views";
 import { getCurrentUser, listPullRequestTitles, listPullRequests, listRepos } from "../core/github";
 import { listProjects, openProject } from "../core/projects";
@@ -449,20 +455,26 @@ app.whenReady().then(() => {
       kind?: "diff" | "file",
     ) => setReviewed(db, workspaceId, mergeBase, path, reviewed, head, kind),
   );
-  ipcMain.handle("agents:run-turn", async (e, agentSessionId: string, prompt: string) => {
-    const workspaceId = await agentSessionWorkspace(db, agentSessionId);
-    const send = (channel: string, ...args: unknown[]) =>
-      !e.sender.isDestroyed() && e.sender.send(channel, ...args);
-    const result = await runTurn(db, agentSessionId, prompt, {
-      // The pane shows its own message as it sends it.
-      onEntry: (entry) => entry.kind !== "user" && send("agents:entry", agentSessionId, entry),
-      onPermission: (p) => permission(e.sender, () => send("agents:permission", agentSessionId, p)),
-    });
-    changed(e.sender, { workspaceId, what: "worktree" });
-    changed(e.sender, { workspaceId, what: "transcript" });
-    void summariseAhead(db, workspaceId); // the agent may have committed
-    return result;
-  });
+  // view: a New View prompt attached to the message, which then says what to focus on (the chat shows it as a card).
+  ipcMain.handle(
+    "agents:run-turn",
+    async (e, agentSessionId: string, message: string, view?: AttachedPrompt) => {
+      const prompt = view ? formatView(view.title, message, view.prompt) : message;
+      const workspaceId = await agentSessionWorkspace(db, agentSessionId);
+      const send = (channel: string, ...args: unknown[]) =>
+        !e.sender.isDestroyed() && e.sender.send(channel, ...args);
+      const result = await runTurn(db, agentSessionId, prompt, {
+        // The pane shows its own message as it sends it.
+        onEntry: (entry) => entry.kind !== "user" && send("agents:entry", agentSessionId, entry),
+        onPermission: (p) =>
+          permission(e.sender, () => send("agents:permission", agentSessionId, p)),
+      });
+      changed(e.sender, { workspaceId, what: "worktree" });
+      changed(e.sender, { workspaceId, what: "transcript" });
+      void summariseAhead(db, workspaceId); // the agent may have committed
+      return result;
+    },
+  );
   // A thread's ⋯ menu. Resolves only on a click: the menu's close callback can run before the click, so it can't tell
   // a dismissal from a pick. A dismissed menu leaves the promise pending; nothing else waits on it.
   ipcMain.handle(
@@ -650,31 +662,34 @@ app.whenReady().then(() => {
         }),
       ),
   );
-  ipcMain.handle("views:request", (_, kind: ViewRequest, range: ViewRange | null) =>
-    viewRequest(kind, range),
+  ipcMain.handle("prompts:list", () => listPrompts(db));
+  ipcMain.handle("prompts:save", (_, title: string, body: string) => savePrompt(db, title, body));
+  ipcMain.handle("prompts:delete", (_, id: number) => deletePrompt(db, id));
+  ipcMain.handle("prompts:attach", (_, p: Prompt | null, range: ViewRange | null) =>
+    attachPrompt(p ?? customPrompt, range),
   );
-  // The canvas's New View menu: a prompt for a view, for the agent pane's composer. Resolves only on a click, like the menus above.
-  ipcMain.handle(
-    "menus:new-view",
-    (e, range: ViewRange | null) =>
-      new Promise<string>((resolve) => {
-        const item = (label: string, kind: ViewRequest) => ({
-          label,
-          click: () => resolve(viewRequest(kind, range)),
-        });
-        Menu.buildFromTemplate([
-          ...(range
-            ? [{ label: `Of ${range.what}`, enabled: false }, { type: "separator" as const }]
-            : []),
-          item("New View (guide)", "guide"),
-          item("New View (review)", "review"),
-          { type: "separator" },
-          item("New View (data model)", "data model"),
-          item("New View (data flow)", "data flow"),
-          item("New View…", "custom"),
-        ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined });
-      }),
-  );
+  // The canvas's New View menu: the built-in prompts, the user's own, New View… and New Prompt…. Resolves with the
+  // prompt to attach to the agent pane's composer, or "new-prompt"; only on a click, like the menus above.
+  ipcMain.handle("menus:new-view", async (e, range: ViewRange | null) => {
+    const prompts = await listPrompts(db);
+    return new Promise<AttachedPrompt | "new-prompt">((resolve) => {
+      const item = (p: Prompt, label = p.title) => ({
+        label,
+        click: () => resolve(attachPrompt(p, range)),
+      });
+      const saved = prompts.filter((p) => p.id !== null);
+      Menu.buildFromTemplate([
+        ...(range
+          ? [{ label: `Of ${range.what}`, enabled: false }, { type: "separator" as const }]
+          : []),
+        ...prompts.filter((p) => p.id === null).map((p) => item(p)),
+        ...(saved.length ? [{ type: "separator" as const }, ...saved.map((p) => item(p))] : []),
+        { type: "separator" },
+        item(customPrompt, "New View…"),
+        { label: "New Prompt…", click: () => resolve("new-prompt") },
+      ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined });
+    });
+  });
   // ADR 0029: file summaries run on the summary agent, one-shot; Activity shows their jobs as they change.
   setSummaryRunner(({ agent, ...o }) => askOnce(agent, o));
   void stopInterruptedJobs(db);

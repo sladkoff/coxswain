@@ -3,6 +3,20 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-28 — View prompts
+
+For G3 ([issue 2](https://github.com/sladkoff/coxswain/issues/2)): understanding a huge agent-written PR well enough
+to ask its author the right questions.
+
+- **View prompts** (glossary, ADR 0031): _New View_ lists built-in prompts, sharper than before, plus a new
+  _Questions for the author_, then the user's own, kept in a new `prompts` table and added or deleted in Settings
+  (_View prompts_). _New Prompt…_ in the menu opens Settings at a new prompt; ⌘K lists every prompt as a New View action.
+- A picked prompt is attached to the composer as a card instead of filling it with prose; what the user types goes
+  with it as the focus. The message is `[View · title]`, the note, `---`, the prompt; the chat shows it as a card and
+  the pane's instructions tell the agent how to read it.
+- Tech debt: `ponytail:` saved prompts can't be edited in place, only deleted and added again. `agents.ts` can't be
+  loaded by `node --test` (extensionless imports), so the `[View · …]` parsing has no test.
+
 ## 2026-09-28 — Views being written
 
 For G3: while the agent writes a view, it grows section by section and looked done at every step.

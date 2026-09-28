@@ -25,7 +25,8 @@ export type AgentSession = {
 
 // One line of the chat: something the user said, text the agent wrote, or a tool the agent used. comment: the user's
 // message was a comment sent from a thread, which the chat shows as a card.
-// review: the message was every thread of the review at once, with how many. id: a streamed entry's; a later entry with
+// review: the message was every thread of the review at once, with how many. view: a prompt from New View, with
+// what the user typed along with it. id: a streamed entry's; a later entry with
 // the same id is the same one grown, and replaces it.
 export type ChatEntry = {
   id?: number;
@@ -33,7 +34,9 @@ export type ChatEntry = {
   text: string;
   comment?: SentComment;
   review?: { threads: number };
+  view?: SentView;
 };
+export type SentView = { title: string; note: string };
 export type SentComment = { threadId: number; where: string; body: string };
 
 // A comment sent to the agent session, as its prompt: a header line the chat knows it by, the comment, then what the
@@ -47,10 +50,21 @@ const reviewHeader = /^\[Review · (\d+) threads?\]\n/;
 export const formatReview = (threads: number, body: string) =>
   `[Review · ${threads} thread${threads === 1 ? "" : "s"}]\n${body}`;
 
+// A prompt attached from New View, likewise: the header with its title, what the user typed, then the prompt itself.
+const viewHeader = /^\[View · (.+)\]\n/;
+export const formatView = (title: string, note: string, prompt: string) =>
+  `[View · ${title}]\n${note}\n\n---\n${prompt}`;
+
 function withComment(entry: ChatEntry): ChatEntry {
   if (entry.kind !== "user") return entry;
   const r = reviewHeader.exec(entry.text);
   if (r) return { ...entry, review: { threads: Number(r[1]) } };
+  const v = viewHeader.exec(entry.text);
+  if (v)
+    return {
+      ...entry,
+      view: { title: v[1], note: entry.text.slice(v[0].length).split("\n\n---\n")[0].trim() },
+    };
   const m = commentHeader.exec(entry.text);
   if (!m) return entry;
   const body = entry.text.slice(m[0].length).split("\n\n---\n")[0];
@@ -161,11 +175,12 @@ const agents: Record<
 // coxswain tools are for; the tools' own descriptions and results say how to use them.
 const paneContext = `You are running inside coxswain, a desktop app for exploring code, reviewing changes and building features. The user sees
 the diff beside this chat. Messages starting with [Comment on …] or [Review · …] are review comments they sent you from
-the diff: make the change asked for, or answer the question. The mcp__coxswain tools put views on the canvas beside the
+the diff: make the change asked for, or answer the question. A message starting with [View · …] asks for a view: the
+prompt after the --- line says what to make, and what they typed above it says what to focus on. The mcp__coxswain tools put views on the canvas beside the
 diff (start_view, write_section, remove_section, list_views, file_summaries): a guide through the changes, or a view of one aspect (the data model, a data flow, or
 anything the user asks to see), in markdown with diagrams, embedded source files and file diffs, even without changes; explanations of lines
 (add_explanation); and, when they ask for a review, findings on lines (add_finding). Use them, and your review skills,
-when the user asks for a guide, a review, or to trace, explain or visualise code, with or without changes. A message
+when the user asks for a guide, a review, or to trace, explain or visualise code, with or without changes. A request
 that starts "For … only (start_view with base … and head …)" is about that part of the changes: pass those to start_view.`;
 
 // PATH as the app got it, like `gh` (a packaged app takes the login shell's, src/main/index.ts).
@@ -690,10 +705,13 @@ export function onSessionTitle(db: Db, listener: (workspaceId: number) => void) 
   return () => void titleListeners.delete(l);
 }
 
-// A session's title until its agent names it: its first message's first line, without a comment's or review's header.
+// A session's title until its agent names it: its first message's first line, without a comment's or review's header;
+// for a New View prompt, the note's first line or else the prompt's title.
 // Codex names a session only when the user does, so its sessions keep this one.
-export const firstMessageTitle = (prompt: string) =>
-  (
+export const firstMessageTitle = (prompt: string): string => {
+  const view = withComment({ kind: "user", text: prompt }).view;
+  if (view) return firstMessageTitle(view.note) || view.title.slice(0, 80);
+  return (
     prompt
       .replace(commentHeader, "")
       .replace(reviewHeader, "")
@@ -702,6 +720,7 @@ export const firstMessageTitle = (prompt: string) =>
   )
     .trim()
     .slice(0, 80);
+};
 
 // The workspace's agent sessions in the agent pane, oldest first; the last one is the current one, which questions go
 // to too (ADR 0021).

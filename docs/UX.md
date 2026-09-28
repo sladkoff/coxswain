@@ -176,11 +176,13 @@ branch`, when it was updated, and _Has a workspace_ if it does. _Branch_: one fi
   tooltip says when it was made, its head, and _(stale)_ once the PR moved on), to switch between them. Right-clicking a
   chip offers _Remove View…_, which asks first and deletes the view with its explanations and findings; if it was
   showing, the canvas goes back to the diff. The dashed
-  _New View_ chip (a layers-plus icon) makes new views: its menu has _New View (guide)_, _New View (review)_ (a guide
-  with findings), _New View (data model)_, _New View (data flow)_ and _New View…_ (a message to finish). While the diff shows a commit, an agent
+  _New View_ chip (a layers-plus icon) makes new views: its menu lists the view prompts (ADR 0031), the built-in
+  ones (_Guide_, _Review_ (a guide with findings), _Questions for the author_, _Data model_, _Data flow_), then the
+  user's own, then _New View…_ (a view of whatever the user types) and _New Prompt…_ (Settings, at a new prompt's title;
+  saved prompts are deleted there too). While the diff shows a commit, an agent
   turn or the _PR_/_Pushed_ or _Local_ scope, the menu's first line names it (_Of commit 1c8d547 (…)_, greyed out) and
-  the view is of that range only, like the command palette's New View actions. Each puts a
-  message in the agent pane's composer, to edit and send; the agent pane's session makes the view with coxswain's
+  the view is of that range only, like the command palette's New View actions. Each attaches the prompt to the agent
+  pane's composer as a card, which the user sends with an optional note on what to focus on; the agent pane's session makes the view with coxswain's
   tools (ADR 0023); asking for one in the agent pane's own words does the same. A view shows on the canvas as soon as
   the agent starts it, and fills in as it adds to it. While it's being written, a line above it, outside its scroll,
   says so with a spinner (_The agent is still writing this view. Read on; more may come._), its chip turns a spinner,
@@ -209,7 +211,9 @@ branch`, when it was updated, and _Has a workspace_ if it does. _Branch_: one fi
   The composer is one box at the bottom: _Ask Codex…_ (Enter sends, Shift+Enter adds a line), and along its bottom
   the agent picks (the model ✦ and the effort, each a button with a native menu of the agent's choices, kept per agent
   for all its sessions) and a round send button, greyed out while the box is empty. While a turn runs, _Working_ and a
-  round stop button take its place. When the agent wants a tool that auto mode would block, a permission prompt
+  round stop button take its place. A view prompt from _New View_ sits on top of the box as a card (_View_ and its
+  title, then the first lines of the prompt, all of it on a click; × takes it off); the box then asks _What to focus on (optional)…_ and Send works
+  with it empty. Sent, the chat shows it as a card with the note. When the agent wants a tool that auto mode would block, a permission prompt
   takes the place of _Working…_ in the chat: _Agent wants to:_, the command or file, and the agent's options as
   buttons (_Yes_, _Always_, _No_); the turn waits until one is picked.
 

@@ -26,7 +26,7 @@ import type {
   PullRequestTitles,
   RepoPage,
 } from "../core/github";
-import type { View, ViewRange, ViewRequest } from "../core/views";
+import type { AttachedPrompt, Prompt, View, ViewRange } from "../core/views";
 import type { Project } from "../core/projects";
 import type { NewEntry, ReviewEntry } from "../core/review";
 import type { SetupCheck } from "../core/setup";
@@ -149,8 +149,9 @@ const api = {
     ipcRenderer.on("agents:state", listener);
     return () => void ipcRenderer.off("agents:state", listener);
   },
-  runTurn: (agentSessionId: string, message: string): Promise<TurnResult> =>
-    ipcRenderer.invoke("agents:run-turn", agentSessionId, message),
+  // view: a New View prompt attached to the message.
+  runTurn: (agentSessionId: string, message: string, view?: AttachedPrompt): Promise<TurnResult> =>
+    ipcRenderer.invoke("agents:run-turn", agentSessionId, message, view),
   // The workspace's entries, each current or outdated in the view of base → head (ADR 0015).
   listEntries: (workspaceId: number, base: string, head?: string): Promise<ReviewEntry[]> =>
     ipcRenderer.invoke("review:list", workspaceId, base, head),
@@ -276,13 +277,18 @@ const api = {
   // L1's project menu: the project to switch to, or null for Add Project. Pending if dismissed.
   showProjectsMenu: (fullNames: string[]): Promise<string | null> =>
     ipcRenderer.invoke("menus:projects", fullNames),
-  // The canvas's new view menu: the message for the agent pane's composer that asks for it. Pending if dismissed.
-  // range: what the canvas shows, when it isn't all of the workspace's changes.
-  showNewViewMenu: (range: ViewRange | null): Promise<string> =>
+  // The canvas's new view menu: the prompt to attach to the agent pane's composer, or "new-prompt" for New Prompt… (Settings).
+  // Pending if dismissed. range: what the canvas shows, when it isn't all of the workspace's changes.
+  showNewViewMenu: (range: ViewRange | null): Promise<AttachedPrompt | "new-prompt"> =>
     ipcRenderer.invoke("menus:new-view", range),
-  // The same message for one kind of view, for the command palette's New View actions.
-  newViewRequest: (kind: ViewRequest, range: ViewRange | null): Promise<string> =>
-    ipcRenderer.invoke("views:request", kind, range),
+  // The New View prompts: the built-in ones (id null), then the user's own.
+  listPrompts: (): Promise<Prompt[]> => ipcRenderer.invoke("prompts:list"),
+  savePrompt: (title: string, body: string): Promise<void> =>
+    ipcRenderer.invoke("prompts:save", title, body),
+  deletePrompt: (id: number): Promise<void> => ipcRenderer.invoke("prompts:delete", id),
+  // A prompt as the composer attaches it, for the command palette's New View actions; null for New View….
+  attachPrompt: (p: Prompt | null, range: ViewRange | null): Promise<AttachedPrompt> =>
+    ipcRenderer.invoke("prompts:attach", p, range),
   onChanged: (callback: (change: Changed) => void) => {
     const listener = (_: unknown, change: Changed) => callback(change);
     ipcRenderer.on("changed", listener);
