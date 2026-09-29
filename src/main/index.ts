@@ -17,6 +17,7 @@ import icon from "../../resources/icon.png?asset";
 import {
   type Agent,
   agentSessionWorkspace,
+  agentAttachmentCapabilities,
   agentsBusy,
   answerPermission,
   askOnce,
@@ -38,6 +39,12 @@ import {
   stopTurn,
 } from "../core/agents";
 import { openDatabase } from "../core/db";
+import {
+  prepareAttachments,
+  attachmentImage,
+  type Attachment,
+  type AttachmentInput,
+} from "../core/attachments";
 import {
   cloneProject,
   findDefinitions,
@@ -402,6 +409,22 @@ app.whenReady().then(() => {
   ipcMain.handle("git:usages", (_, workspaceId: number, token: string) =>
     findUsages(db, workspaceId, token),
   );
+  ipcMain.handle("agents:attachment-capabilities", (_, agent: Agent) =>
+    agentAttachmentCapabilities(agent),
+  );
+  ipcMain.handle("attachments:image", (_, bundleId: string, attachmentId: string) =>
+    attachmentImage(db, bundleId, attachmentId),
+  );
+  ipcMain.handle("attachments:prepare", (_, inputs: AttachmentInput[]) =>
+    prepareAttachments(inputs),
+  );
+  ipcMain.handle("attachments:pick", async () => {
+    const result = await dialog.showOpenDialog({
+      title: "Attach files",
+      properties: ["openFile", "multiSelections"],
+    });
+    return result.canceled ? [] : prepareAttachments(result.filePaths.map((path) => ({ path })));
+  });
   ipcMain.handle("agents:list", (_, workspaceId: number) => listAgentSessions(db, workspaceId));
   ipcMain.handle("agents:turns", (_, workspaceId: number) => listTurns(db, workspaceId));
   ipcMain.handle("agents:start", (_, workspaceId: number, agent?: Agent) =>
@@ -518,17 +541,29 @@ app.whenReady().then(() => {
   // view: a New View prompt attached to the message, which then says what to focus on (the chat shows it as a card).
   ipcMain.handle(
     "agents:run-turn",
-    async (e, agentSessionId: string, message: string, view?: AttachedPrompt) => {
+    async (
+      e,
+      agentSessionId: string,
+      message: string,
+      view?: AttachedPrompt,
+      attachments: Attachment[] = [],
+    ) => {
       const prompt = view ? formatView(view.title, message, view.prompt) : message;
       const workspaceId = await agentSessionWorkspace(db, agentSessionId);
       const send = (channel: string, ...args: unknown[]) =>
         !e.sender.isDestroyed() && e.sender.send(channel, ...args);
-      const result = await runTurn(db, agentSessionId, prompt, {
-        // The pane shows its own message as it sends it.
-        onEntry: (entry) => entry.kind !== "user" && send("agents:entry", agentSessionId, entry),
-        onPermission: (p) =>
-          permission(e.sender, () => send("agents:permission", agentSessionId, p)),
-      });
+      const result = await runTurn(
+        db,
+        agentSessionId,
+        prompt,
+        {
+          // The pane shows its own message as it sends it.
+          onEntry: (entry) => entry.kind !== "user" && send("agents:entry", agentSessionId, entry),
+          onPermission: (p) =>
+            permission(e.sender, () => send("agents:permission", agentSessionId, p)),
+        },
+        attachments,
+      );
       changed(e.sender, { workspaceId, what: "worktree" });
       changed(e.sender, { workspaceId, what: "transcript" });
       void summariseAhead(db, workspaceId); // the agent may have committed

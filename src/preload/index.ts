@@ -1,4 +1,6 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
+import type { Attachment, AttachmentInput } from "../core/attachments";
+import type { PromptCapabilities } from "@agentclientprotocol/sdk";
 import type {
   Agent,
   AgentPicks,
@@ -149,9 +151,34 @@ const api = {
     ipcRenderer.on("agents:state", listener);
     return () => void ipcRenderer.off("agents:state", listener);
   },
+  attachmentImage: (bundleId: string, attachmentId: string): Promise<string | null> =>
+    ipcRenderer.invoke("attachments:image", bundleId, attachmentId),
+  pickAttachments: (): Promise<Attachment[]> => ipcRenderer.invoke("attachments:pick"),
+  prepareAttachments: async (files: File[]): Promise<Attachment[]> => {
+    if (files.length > 10) throw new Error("Attach up to 10 files per message.");
+    if (files.reduce((sum, file) => sum + file.size, 0) > 20 * 1024 * 1024)
+      throw new Error("Attachments must total 20 MB or less.");
+    const inputs: AttachmentInput[] = [];
+    for (const file of files) {
+      if (file.size > 20 * 1024 * 1024)
+        throw new Error(`${file.name}: files must be 20 MB or less.`);
+      const path = webUtils.getPathForFile(file);
+      inputs.push(
+        path ? { path } : { name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) },
+      );
+    }
+    return ipcRenderer.invoke("attachments:prepare", inputs);
+  },
+  agentAttachmentCapabilities: (agent: Agent): Promise<PromptCapabilities> =>
+    ipcRenderer.invoke("agents:attachment-capabilities", agent),
   // view: a New View prompt attached to the message.
-  runTurn: (agentSessionId: string, message: string, view?: AttachedPrompt): Promise<TurnResult> =>
-    ipcRenderer.invoke("agents:run-turn", agentSessionId, message, view),
+  runTurn: (
+    agentSessionId: string,
+    message: string,
+    view?: AttachedPrompt,
+    attachments?: Attachment[],
+  ): Promise<TurnResult> =>
+    ipcRenderer.invoke("agents:run-turn", agentSessionId, message, view, attachments),
   // The workspace's entries, each current or outdated in the view of base → head (ADR 0015).
   listEntries: (workspaceId: number, base: string, head?: string): Promise<ReviewEntry[]> =>
     ipcRenderer.invoke("review:list", workspaceId, base, head),

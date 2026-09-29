@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { ChatEntry, Permission, SentComment } from "../../core/agents";
+import { Attachments } from "./Attachments";
 import { Button } from "./components/button";
 import { cn, divider, muted } from "./components/styles";
 import { ErrorText, Prose } from "./components/text";
@@ -29,6 +30,7 @@ export function Entry({
   if (entry.view)
     return (
       <SentCard className="flex flex-col">
+        <Attachments attachments={entry.attachments ?? []} />
         <div className={cn("px-2.5 pt-2 text-xs", entry.view.note ? "" : "pb-2", muted)}>
           View · <span className="font-medium">{entry.view.title}</span> sent to Agent
         </div>
@@ -46,6 +48,7 @@ export function Entry({
   if (entry.kind === "user")
     return (
       <div className="my-3 self-end rounded-md bg-neutral-100 px-2 py-1 whitespace-pre-wrap select-text [overflow-wrap:anywhere] dark:bg-neutral-800">
+        <Attachments attachments={entry.attachments ?? []} />
         {entry.text}
       </div>
     );

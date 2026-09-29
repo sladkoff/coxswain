@@ -3,6 +3,26 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-29 — Agent attachments
+
+For G3 and G5 ([issue 20](https://github.com/sladkoff/coxswain/issues/20)).
+
+- The composer has a paperclip button with a native file picker, file drop, and image/file paste. Removable previews
+  sit above the text; attachment-only messages and attachments alongside view prompts work. Drafts survive navigation
+  and failed sends. Limits: ten files, 20 MB total, images up to 5 MB each.
+- ACP prompts carry images, embedded UTF-8 text up to 1 MB (plain text fallback for agents without embedded context),
+  and local file references for other files. The core retains ACP capabilities and rejects unsupported images.
+- Original attachment previews live in SQLite, linked by a header in the agent-owned transcript (ADR 0032).
+  Streamed chat entries carry references; image previews load once through IPC.
+  Replay restores them without showing base64 links or duplicating embedded file contents. Removing a workspace
+  cascades through its sessions and attachment records. The chat projection is extracted for replay tests.
+- Validation: unit tests cover ACP content, limits, database reopen/cascade and replay. An isolated Electron run with
+  a test ACP agent checked paste, drop, picker imports, removal, attachment-only sending, failed-send restoration,
+  and preview restoration after a full restart. Typecheck, lint, format, tests and build pass.
+- Limits: local file references require the original file to remain available and readable by the agent. Unsent
+  attachments live for the window only. Failed prompts may leave an unreferenced attachment record until their
+  session is removed; a future session cleanup can collect these (`ponytail:` in the save path).
+
 ## 2026-09-29 — General improvements
 
 - Removing a workspace closes its open agent sessions (`closeWorkspaceSessions`, `session/close`), so their agent

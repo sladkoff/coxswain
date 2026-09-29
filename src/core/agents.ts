@@ -7,8 +7,19 @@ import { delimiter, join } from "node:path";
 import { Readable, Writable } from "node:stream";
 import * as acp from "@agentclientprotocol/sdk";
 import type { Db } from "./db";
+import {
+  type Attachment,
+  type AttachmentPreview,
+  attachmentPreviews,
+  attachmentContent,
+  attachmentMessage,
+  parseAttachmentMessage,
+  saveAttachments,
+  sessionAttachments,
+} from "./attachments";
 import { type Commit, worktreePath } from "./git";
 import { snapshotOf } from "./snapshot";
+import { chat } from "./agent-chat";
 import { SessionStates } from "./session-state";
 import { turnEnded, viewTools } from "./views";
 import { getWorkspaceRepo } from "./workspaces";
@@ -32,6 +43,7 @@ export type ChatEntry = {
   id?: number;
   kind: "user" | "text" | "tool";
   text: string;
+  attachments?: AttachmentPreview[];
   comment?: SentComment;
   review?: { threads: number };
   view?: SentView;
@@ -98,6 +110,7 @@ export type Permission = {
 type RunOptions = {
   cwd: string;
   prompt: string;
+  attachments?: Attachment[];
   session?: string;
   mcp?: acp.McpServer[];
   picks?: Picks;
@@ -185,7 +198,8 @@ const agents: Record<
 // Appended to Claude Code's system prompt in the agent pane (ADR 0023), so the agent knows where it is and what its
 // coxswain tools are for; the tools' own descriptions and results say how to use them.
 const paneContext = `You are running inside coxswain, a desktop app for exploring code, reviewing changes and building features. The user sees
-the diff beside this chat. Messages starting with [Comment on …] or [Review · …] are review comments they sent you from
+the diff beside this chat. An optional leading [Attachments · …] line is display metadata; the message below it and
+the attached content are the user's input. Messages starting with [Comment on …] or [Review · …] are review comments they sent you from
 the diff: make the change asked for, or answer the question. A message starting with [View · …] asks for a view: the
 prompt after the --- line says what to make, and what they typed above it says what to focus on. The mcp__coxswain tools put views on the canvas beside the
 diff (start_view, write_section, remove_section, list_views, file_summaries): a guide through the changes, or a view of one aspect (the data model, a data flow, or
@@ -207,7 +221,12 @@ function onPath(command: string, name: string): string {
 
 // An adapter process and the sessions open in it. Started when first needed, kept while the app runs; one that
 // exits is started again by the next run, which resumes its session there.
-type Adapter = { child: ChildProcess; agent: acp.ClientContext; open: Set<string> };
+type Adapter = {
+  child: ChildProcess;
+  agent: acp.ClientContext;
+  open: Set<string>;
+  capabilities: acp.PromptCapabilities;
+};
 const adapters = new Map<Agent, Promise<Adapter>>();
 // Each running session's handlers, for the updates and permission requests the adapter sends.
 const listening = new Map<string, Listener>();
@@ -257,7 +276,7 @@ function adapter(name: Agent): Promise<Adapter> {
     };
     child.on("exit", gone);
     child.on("error", gone);
-    await conn.agent.request(acp.methods.agent.initialize, {
+    const initialized = await conn.agent.request(acp.methods.agent.initialize, {
       protocolVersion: acp.PROTOCOL_VERSION,
       // The adapters tell a client that says so about commands left running in the background and about subagents,
       // each a session of its own (draft ACP, under JetBrains' AIR name).
@@ -269,7 +288,12 @@ function adapter(name: Agent): Promise<Adapter> {
         },
       },
     });
-    return { child, agent: conn.agent, open };
+    return {
+      child,
+      agent: conn.agent,
+      open,
+      capabilities: initialized.agentCapabilities?.promptCapabilities ?? {},
+    };
   })();
   a.catch(() => adapters.delete(name));
   adapters.set(name, a);
@@ -408,58 +432,6 @@ export function answerPermission(id: string, optionId: string | null) {
   pending.get(id)?.resolve(optionId);
 }
 
-// Turns a session's updates into chat entries, streamed: each update sends the entry it grows again, under the same id,
-// so text shows as it's written and a tool's title fills in (its first update carries only the tool's kind).
-let nextEntry = 0;
-function chat(onEntry: (e: ChatEntry) => void) {
-  let last: (ChatEntry & { name?: string | null }) | null = null;
-  const tools = new Map<string, ChatEntry & { name?: string | null }>();
-  let messageId: string | null | undefined;
-  const emit = (e: typeof last) => {
-    last = e;
-    if (e?.text.trim())
-      onEntry({ id: e.id, kind: e.kind, text: e.kind === "tool" ? e.text : e.text.trim() });
-  };
-  return (u: acp.SessionUpdate) => {
-    // A subagent's updates carry the Agent call's id; L4 shows only the main thread, as before.
-    if (
-      (u as { _meta?: { claudeCode?: { parentToolUseId?: string } } })._meta?.claudeCode
-        ?.parentToolUseId
-    )
-      return;
-    if (u.sessionUpdate === "agent_message_chunk" || u.sessionUpdate === "user_message_chunk") {
-      if (u.content.type !== "text") return;
-      const kind = u.sessionUpdate === "agent_message_chunk" ? "text" : "user";
-      // A new messageId is a new message, such as the agent's reply after a subagent it waited on finished.
-      const same = last?.kind === kind && (!u.messageId || !messageId || u.messageId === messageId);
-      messageId = u.messageId ?? messageId;
-      emit({
-        id: same ? last!.id : nextEntry++,
-        kind,
-        text: (same ? last!.text : "") + u.content.text,
-      });
-    } else if (u.sessionUpdate === "tool_call") {
-      const tool = { id: nextEntry++, kind: "tool" as const, text: toolTitle(u), name: u.name };
-      tools.set(u.toolCallId, tool);
-      emit(tool);
-    } else if (u.sessionUpdate === "tool_call_update" && u.title) {
-      // Tools the agent calls in parallel start one after another, and their titles come in later, in any order.
-      const tool = tools.get(u.toolCallId);
-      if (!tool) return;
-      tool.text = toolTitle({ title: u.title, name: u.name ?? tool.name });
-      const after = last;
-      emit(tool);
-      last = after;
-    }
-  };
-}
-
-// e.g. "Read src/a.ts", "Bash git status". ponytail: tool results aren't shown; add them collapsed under the call.
-function toolTitle(u: { title: string; name?: string | null }): string {
-  const title = u.title.split("\n")[0].slice(0, 120);
-  return u.name && !title.startsWith(u.name) ? `${u.name} ${title}` : title;
-}
-
 // Each open session's config options as the adapter last sent them, and each agent's latest: the choices the composer
 // offers.
 const configs = new Map<string, acp.SessionConfigOption[]>();
@@ -559,12 +531,18 @@ export async function newSession(
 // Runs one turn: sends the prompt and streams the reply as chat entries until the turn ends.
 export async function run(name: Agent, o: RunOptions, handlers: RunHandlers = {}): Promise<void> {
   const { a, sessionId } = await openSession(name, o);
-  const update = chat(handlers.onEntry ?? (() => {}));
+  const update = chat((entry) => {
+    // The core already published the user message with its previews before prompting.
+    if (!o.attachments?.length || entry.kind !== "user") handlers.onEntry?.(entry);
+  });
   listening.set(sessionId, { update, handlers });
   try {
     const { stopReason } = await a.agent.request(acp.methods.agent.session.prompt, {
       sessionId,
-      prompt: [{ type: "text", text: o.prompt }],
+      prompt: [
+        { type: "text", text: o.prompt },
+        ...attachmentContent(o.attachments ?? [], a.capabilities),
+      ],
     });
     if (stopReason === "cancelled") throw new Error("Stopped");
     if (stopReason === "refusal") throw new Error(`${name} refused`);
@@ -1008,6 +986,10 @@ async function readyWorktree(db: Db, workspaceId: number): Promise<string> {
   return cwd;
 }
 
+export async function agentAttachmentCapabilities(name: Agent) {
+  return (await adapter(name)).capabilities;
+}
+
 // The core owns the live projection, independently of any pane or IPC invocation.
 const sessionStates = new SessionStates();
 export const onSessionState = sessionStates.subscribe.bind(sessionStates);
@@ -1020,7 +1002,19 @@ export const readAgentState = (db: Db, agentSessionId: string) =>
       await readyWorktree(db, workspaceId),
       await paneTools(db, workspaceId),
     );
-    return entries.map(withComment);
+    const attachments = await sessionAttachments(db, agentSessionId);
+    return entries.map((entry) => {
+      const message = entry.kind === "user" ? parseAttachmentMessage(entry.text) : null;
+      return withComment(
+        message
+          ? {
+              ...entry,
+              text: message.text,
+              attachments: attachmentPreviews(attachments.get(message.id) ?? [], message.id),
+            }
+          : entry,
+      );
+    });
   });
 
 // Sends one message in an agent session and streams the reply as chat entries until the turn ends.
@@ -1029,6 +1023,7 @@ export async function runTurn(
   agentSessionId: string,
   prompt: string,
   handlers: RunHandlers,
+  attachments: Attachment[] = [],
 ): Promise<TurnResult> {
   try {
     await readAgentState(db, agentSessionId);
@@ -1048,13 +1043,24 @@ export async function runTurn(
     },
   };
   let result: TurnResult = { status: "ok" };
-  streaming.onEntry?.(withComment({ kind: "user", text: prompt }));
   try {
     const { id: workspaceId, agent } = await sessionOf(db, agentSessionId);
     const cwd = await readyWorktree(db, workspaceId);
+    attachmentContent(attachments, (await adapter(agent)).capabilities);
+    const attachmentId = attachments.length
+      ? await saveAttachments(db, agentSessionId, attachments)
+      : null;
+    streaming.onEntry?.(
+      withComment({
+        kind: "user",
+        text: prompt,
+        ...(attachmentId && { attachments: attachmentPreviews(attachments, attachmentId) }),
+      }),
+    );
+    const sentPrompt = attachmentId ? attachmentMessage(attachmentId, prompt) : prompt;
     await db
       .updateTable("agent_sessions")
-      .set({ title: firstMessageTitle(prompt) || null })
+      .set({ title: firstMessageTitle(prompt) || attachments[0]?.name || null })
       .where("agent_session_id", "=", agentSessionId)
       .where("title", "is", null)
       .execute();
@@ -1065,7 +1071,8 @@ export async function runTurn(
         agent,
         {
           cwd,
-          prompt,
+          prompt: sentPrompt,
+          attachments,
           session: agentSessionId,
           mcp: await paneTools(db, workspaceId),
           picks: await agentPicks(db, agent),
