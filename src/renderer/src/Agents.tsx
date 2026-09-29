@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { Agent, AgentSession, Pick } from "../../core/agents";
 import type { Attachment } from "../../core/attachments";
 import { Attachments, draftAttachmentPreviews } from "./Attachments";
-import type { BackgroundTask } from "../../core/session-state";
+import type { BackgroundTask, QueuedMessage } from "../../core/session-state";
 import type { AttachedPrompt } from "../../core/views";
 import type { Workspace } from "../../core/workspaces";
 import { Entry, TurnStatus } from "./ChatEntry";
@@ -56,12 +56,14 @@ export function Agents({ workspace, onViewThread, composerPrompt, onShowSidebar 
     enabled: !!session,
   });
   const live = state.data;
-  const running = pane.sending || !!live?.running;
+  // Sending and its pending message belong to one session, so another can be shown meanwhile.
+  const sendingHere = pane.sending === (session?.agentSessionId ?? "new");
+  const running = sendingHere || !!live?.running;
   const permission = live?.permission ?? null;
   const error = pane.error ?? live?.error ?? state.error?.message ?? null;
   const entries = live?.entries ?? [];
   const pendingMessage =
-    pane.pendingMessage && (!live || live.revision <= pane.beforeRevision)
+    sendingHere && pane.pendingMessage && (!live || live.revision <= pane.beforeRevision)
       ? pane.pendingMessage
       : null;
   const loading = !sessionsQuery.data || (!!session && !live);
@@ -74,7 +76,7 @@ export function Agents({ workspace, onViewThread, composerPrompt, onShowSidebar 
       ? "This agent does not support image attachments. Remove the images or choose another agent."
       : null;
   const addAttachments = async (read: () => Promise<Attachment[]>) => {
-    if (attaching || running) return;
+    if (attaching) return;
     patch({ attaching: true, error: null });
     try {
       const added = await read();
@@ -115,16 +117,17 @@ export function Agents({ workspace, onViewThread, composerPrompt, onShowSidebar 
 
   const send = async () => {
     const message = draft.trim();
+    // While a turn runs the message queues behind it (#24); only a session still starting holds sends back.
     if (
       (!message && !attached && !attachments.length) ||
-      running ||
+      (sendingHere && !session) ||
       loading ||
       attaching ||
       attachmentError
     )
       return;
     patch({
-      sending: true,
+      sending: session?.agentSessionId ?? "new",
       pendingMessage: attached
         ? {
             kind: "user",
@@ -149,6 +152,7 @@ export function Agents({ workspace, onViewThread, composerPrompt, onShowSidebar 
           ...before.attachments.filter((a) => !attachments.some((sent) => sent.id === a.id)),
         ],
       }));
+    let target = session?.agentSessionId ?? "new";
     try {
       const current = session ?? (await window.coxswain.startAgentSession(workspace.id, agent));
       // Do this even if the pane has unmounted while session creation was pending.
@@ -157,7 +161,8 @@ export function Agents({ workspace, onViewThread, composerPrompt, onShowSidebar 
           ? before
           : [...before, current],
       );
-      patch({ picked: current.agentSessionId });
+      target = current.agentSessionId;
+      patch({ picked: target, sending: target });
       const result = await window.coxswain.runTurn(
         current.agentSessionId,
         message,
@@ -168,7 +173,9 @@ export function Agents({ workspace, onViewThread, composerPrompt, onShowSidebar 
     } catch (e) {
       restore((e as Error).message);
     } finally {
-      patch({ sending: false, pendingMessage: null });
+      setAgentPane(workspace.id, (before) =>
+        before.sending === target ? { sending: null, pendingMessage: null } : {},
+      );
     }
   };
 
@@ -200,7 +207,6 @@ export function Agents({ workspace, onViewThread, composerPrompt, onShowSidebar 
           sessions={sessions}
           current={session ?? null}
           agent={agent}
-          disabled={running}
           onPick={(picked) => patch({ picked, error: null })}
         />
         <div className="flex-1" />
@@ -208,7 +214,6 @@ export function Agents({ workspace, onViewThread, composerPrompt, onShowSidebar 
           <Button
             variant="ghost"
             className="p-1"
-            disabled={running}
             title={`New ${agentNames[newSessionAgent]} session`}
             aria-label="New session"
             onClick={() => newSession(newSessionAgent)}
@@ -218,7 +223,6 @@ export function Agents({ workspace, onViewThread, composerPrompt, onShowSidebar 
           <Button
             variant="ghost"
             className="px-0.5 py-1"
-            disabled={running}
             title="New session on…"
             aria-label="New session on…"
             onClick={async () => {
@@ -267,8 +271,8 @@ export function Agents({ workspace, onViewThread, composerPrompt, onShowSidebar 
         onDragOver={(e) => {
           if (!e.dataTransfer.types.includes("Files")) return;
           e.preventDefault();
-          e.dataTransfer.dropEffect = running || attaching ? "none" : "copy";
-          setDragging(!running && !attaching);
+          e.dataTransfer.dropEffect = attaching ? "none" : "copy";
+          setDragging(!attaching);
         }}
         onDragLeave={(e) => {
           if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false);
@@ -294,16 +298,16 @@ export function Agents({ workspace, onViewThread, composerPrompt, onShowSidebar 
         {session && !!live?.tasks.length && (
           <BackgroundTasks agentSessionId={session.agentSessionId} tasks={live.tasks} />
         )}
+        {session && !!live?.queued.length && (
+          <Queued agentSessionId={session.agentSessionId} queued={live.queued} />
+        )}
         {attached && <AttachedCard prompt={attached} onRemove={() => patch({ attached: null })} />}
         <Attachments
           attachments={draftAttachmentPreviews(attachments)}
-          onRemove={
-            running
-              ? undefined
-              : (id) =>
-                  setAgentPane(workspace.id, (before) => ({
-                    attachments: before.attachments.filter((a) => a.id !== id),
-                  }))
+          onRemove={(id) =>
+            setAgentPane(workspace.id, (before) => ({
+              attachments: before.attachments.filter((a) => a.id !== id),
+            }))
           }
         />
         {attaching && <div className={cn("px-3 py-1 text-xs", muted)}>Adding attachments…</div>}
@@ -324,7 +328,7 @@ export function Agents({ workspace, onViewThread, composerPrompt, onShowSidebar 
             className={cn("shrink-0 p-1.5", muted)}
             title="Attach files"
             aria-label="Attach files"
-            disabled={running || attaching}
+            disabled={attaching}
             onClick={() => void addAttachments(() => window.coxswain.pickAttachments())}
           >
             <PaperclipIcon />
@@ -332,7 +336,7 @@ export function Agents({ workspace, onViewThread, composerPrompt, onShowSidebar 
           <div className="flex min-w-0 flex-1 items-center gap-0.5">
             <AgentPickers workspaceId={workspace.id} agent={agent} />
           </div>
-          {running && session ? (
+          {running && session && (
             <>
               <span
                 title="Working"
@@ -350,18 +354,23 @@ export function Agents({ workspace, onViewThread, composerPrompt, onShowSidebar 
                 <StopIcon />
               </button>
             </>
-          ) : (
+          )}
+          {(!running || !session || !!draft.trim() || !!attached || !!attachments.length) && (
             <button
-              title="Send (Enter; Shift+Enter for a new line)"
-              aria-label="Send"
+              title={
+                running
+                  ? "Queue after this turn (Enter)"
+                  : "Send (Enter; Shift+Enter for a new line)"
+              }
+              aria-label={running ? "Queue" : "Send"}
               disabled={
                 (!draft.trim() && !attached && !attachments.length) ||
-                running ||
+                (sendingHere && !session) ||
                 loading ||
                 attaching ||
                 !!attachmentError
               }
-              className="flex size-7 shrink-0 items-center justify-center rounded-full bg-neutral-900 text-white hover:bg-neutral-700 disabled:bg-neutral-200 disabled:text-neutral-400 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300 dark:disabled:bg-neutral-800 dark:disabled:text-neutral-500"
+              className="ml-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-neutral-900 text-white hover:bg-neutral-700 disabled:bg-neutral-200 disabled:text-neutral-400 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300 dark:disabled:bg-neutral-800 dark:disabled:text-neutral-500"
               onClick={send}
             >
               <ArrowUpIcon />
@@ -379,7 +388,6 @@ function SessionPicker(props: {
   sessions: AgentSession[];
   current: AgentSession | null;
   agent: Agent;
-  disabled: boolean;
   onPick: (id: string) => void;
 }) {
   const { sessions, current } = props;
@@ -404,7 +412,6 @@ function SessionPicker(props: {
       <Button
         variant="ghost"
         className={cn("flex min-w-0 items-center gap-1 px-1.5 py-1 text-xs font-semibold", noDrag)}
-        disabled={props.disabled}
         onClick={pick}
       >
         <span className="truncate">{i < 0 ? "New session" : name(sessions[i], i)}</span>
@@ -519,6 +526,49 @@ function BackgroundTasks(props: { agentSessionId: string; tasks: BackgroundTask[
           )}
         </div>
       ))}
+    </div>
+  );
+}
+
+// Messages sent while the turn runs, waiting for it to end, on top of the composer: each with Send now, which puts it
+// into the running turn, and × to take it off.
+function Queued(props: { agentSessionId: string; queued: QueuedMessage[] }) {
+  return (
+    <div className={cn("flex flex-col border-b px-2 py-1 text-xs", divider)}>
+      {props.queued.map(({ id, entry: e }) => {
+        const text = e.comment
+          ? `Comment on ${e.comment.where}: ${e.comment.body}`
+          : e.review
+            ? `Review · ${e.review.threads} thread${e.review.threads === 1 ? "" : "s"}`
+            : e.view
+              ? `View · ${e.view.title}${e.view.note ? `: ${e.view.note}` : ""}`
+              : e.text || (e.attachments ?? []).map((a) => a.name).join(", ");
+        return (
+          <div key={id} className="flex min-w-0 items-center gap-1.5">
+            <span className={cn("shrink-0", muted)}>Queued</span>
+            <span className="min-w-0 flex-1 truncate" title={text}>
+              {text}
+            </span>
+            <Button
+              variant="ghost"
+              className="shrink-0 px-1 py-0.5"
+              title="Send into the running turn now"
+              onClick={() => window.coxswain.steerQueued(props.agentSessionId, id)}
+            >
+              Send now
+            </Button>
+            <Button
+              variant="ghost"
+              className="shrink-0 p-0.5 text-neutral-500"
+              title="Don't send this message"
+              aria-label="Remove from the queue"
+              onClick={() => window.coxswain.unqueue(props.agentSessionId, id)}
+            >
+              <XIcon />
+            </Button>
+          </div>
+        );
+      })}
     </div>
   );
 }

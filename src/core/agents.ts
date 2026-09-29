@@ -660,6 +660,7 @@ export async function closeWorkspaceSessions(db: Db, workspaceId: number): Promi
     .execute();
   await Promise.all(
     rows.map(async ({ sessionId, agent }) => {
+      sessionStates.dequeue(sessionId, undefined, null);
       const a = await adapters.get(agent as Agent)?.catch(() => null);
       if (!a?.open.delete(sessionId)) return;
       configs.delete(sessionId);
@@ -1017,7 +1018,9 @@ export const readAgentState = (db: Db, agentSessionId: string) =>
     });
   });
 
-// Sends one message in an agent session and streams the reply as chat entries until the turn ends.
+// Sends one message in an agent session and streams the reply as chat entries until the turn ends. While another turn
+// runs the message waits in the session's queue (#24), until that turn ends, it is taken off (a result of ok), or it is
+// sent into the running turn (steerQueued), which then answers it.
 export async function runTurn(
   db: Db,
   agentSessionId: string,
@@ -1025,38 +1028,22 @@ export async function runTurn(
   handlers: RunHandlers,
   attachments: Attachment[] = [],
 ): Promise<TurnResult> {
-  try {
-    await readAgentState(db, agentSessionId);
-  } catch (e) {
-    return { status: "error", message: (e as Error).message };
-  }
-  if (!sessionStates.start(agentSessionId))
-    return { status: "error", message: "A turn is already running" };
-  const streaming: RunHandlers = {
-    onEntry: (entry) => {
-      sessionStates.entry(agentSessionId, entry);
-      handlers.onEntry?.(entry);
-    },
-    onPermission: (permission) => {
-      sessionStates.permission(agentSessionId, permission);
-      return handlers.onPermission?.(permission) ?? Promise.resolve(null);
-    },
-  };
+  let started = false;
   let result: TurnResult = { status: "ok" };
   try {
+    await readAgentState(db, agentSessionId);
     const { id: workspaceId, agent } = await sessionOf(db, agentSessionId);
     const cwd = await readyWorktree(db, workspaceId);
-    attachmentContent(attachments, (await adapter(agent)).capabilities);
+    const a = await adapter(agent);
+    attachmentContent(attachments, a.capabilities);
     const attachmentId = attachments.length
       ? await saveAttachments(db, agentSessionId, attachments)
       : null;
-    streaming.onEntry?.(
-      withComment({
-        kind: "user",
-        text: prompt,
-        ...(attachmentId && { attachments: attachmentPreviews(attachments, attachmentId) }),
-      }),
-    );
+    const entry = withComment({
+      kind: "user",
+      text: prompt,
+      ...(attachmentId && { attachments: attachmentPreviews(attachments, attachmentId) }),
+    });
     const sentPrompt = attachmentId ? attachmentMessage(attachmentId, prompt) : prompt;
     await db
       .updateTable("agent_sessions")
@@ -1064,6 +1051,38 @@ export async function runTurn(
       .where("agent_session_id", "=", agentSessionId)
       .where("title", "is", null)
       .execute();
+    let go = await sessionStates.queue(agentSessionId, entry);
+    while (go === "steer") {
+      const { outcome } = (await a.agent.request("_session/steering", {
+        sessionId: agentSessionId,
+        prompt: [
+          { type: "text", text: sentPrompt },
+          ...attachmentContent(attachments, a.capabilities),
+        ],
+        // Claude Code hands the message back if the turn ended meanwhile; Codex starts a turn of its own, whose
+        // updates reach the chat like any turn the agent starts.
+        _meta: { steering: { idleBehavior: "promptRequired" } },
+      })) as { outcome: "injected" | "startedNewTurn" | "promptRequired" | "failed" };
+      if (outcome === "failed") throw new Error("The agent could not take the message");
+      if (outcome !== "promptRequired") {
+        sessionStates.entry(agentSessionId, entry);
+        return result;
+      }
+      go = await sessionStates.queue(agentSessionId, entry, true);
+    }
+    if (!go) return result;
+    started = true;
+    const streaming: RunHandlers = {
+      onEntry: (entry) => {
+        sessionStates.entry(agentSessionId, entry);
+        handlers.onEntry?.(entry);
+      },
+      onPermission: (permission) => {
+        sessionStates.permission(agentSessionId, permission);
+        return handlers.onPermission?.(permission) ?? Promise.resolve(null);
+      },
+    };
+    streaming.onEntry?.(entry);
     // ADR 0028: the worktree before and after, for the turn's diff. A stopped or failed turn may have changed it too.
     const before = await snapshotOf(cwd).catch(() => null);
     try {
@@ -1097,9 +1116,19 @@ export async function runTurn(
   } catch (e) {
     result = { status: "error", message: (e as Error).message };
   } finally {
-    sessionStates.finish(agentSessionId, result);
+    if (started) sessionStates.finish(agentSessionId, result);
   }
   return result;
+}
+
+// A queued message's *Send now*: it goes into the running turn, which the agent carries on with it.
+export function steerQueued(agentSessionId: string, queuedId: number) {
+  sessionStates.dequeue(agentSessionId, queuedId, "steer");
+}
+
+// A queued message's ×: it isn't sent.
+export function unqueue(agentSessionId: string, queuedId: number) {
+  sessionStates.dequeue(agentSessionId, queuedId, null);
 }
 
 // The workspace's agent turns that changed its worktree, newest first, each as a commit from its before to its after.

@@ -238,13 +238,17 @@ branch`, when it was updated, and _Has a workspace_ if it does. _Branch_: one fi
   The composer is one box at the bottom: _Ask Codex…_ (Enter sends, Shift+Enter adds a line), and along its bottom
   an attachment button (paperclip) on the left, the agent picks (the model ✦ and the effort, each a button with a native menu of the agent's choices, kept per agent
   for all its sessions) and a round send button, greyed out while the box and attachments are empty. While a turn runs, _Working_ and a
-  round stop button take its place. Commands the agent left running in the background sit on top of the box, one line
+  round stop button take its place, and the send button comes back beside them once something is typed or attached:
+  sending then queues the message. Queued messages sit on top of the box, one line each (_Queued_, the message,
+  _Send now_ and ×), and run as the next turns, in order, when the running one ends (also after Stop). _Send now_
+  steers: the message goes into the running turn, which carries on with it. Comments and reviews sent from the canvas
+  while a turn runs queue the same way. Commands the agent left running in the background sit on top of the box, one line
   each with a spinner, what it does and × to stop it, until they end, and so do its subagents (_Agent_ and the
   subagent's task, without ×: the turn's stop button stops them); the agent's reply when one ends shows in the chat
   like a turn. A view prompt from _New View_ sits on top of the box as a card (_View_ and its
   title, then the first lines of the prompt, all of it on a click; × takes it off); the box then asks _What to focus on (optional)…_ and Send works
   with it empty. Sent, the chat shows it as a card with the note.
-  Files can be picked with the native file dialog, dropped onto the composer, or pasted (including screenshots).
+  Files can be picked with the native file dialog, dropped onto the composer, or pasted (including screenshots), also while a turn runs.
   Attachments sit above the text as removable previews: thumbnails for images, names for files. Up to ten files,
   20 MB total, with images up to 5 MB each. Small UTF-8 text files are included directly; other files reference their
   original local path (shown in the tooltip as _Local file reference_), which must remain available to the agent.
