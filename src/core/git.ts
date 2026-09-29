@@ -1,14 +1,6 @@
 import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import {
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  statSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import type { Db } from "./db";
@@ -666,72 +658,51 @@ export function readFileAt(
   });
 }
 
-// A line of a worktree file, e.g. where a name clicked in the canvas is defined or used.
-export type CodeLine = { path: string; line: number; text: string };
-export type CodeLineList = { status: "ok"; lines: CodeLine[] } | GitProblem;
-
-// What reads as a definition of a name, in most languages: a keyword before it, a Go method, or a class method.
-const definitionOf = (name: string) => {
-  const n = name.replaceAll("$", "\\$");
-  return new RegExp(
-    [
-      String.raw`\b(?:function\*?|class|interface|type|enum|struct|trait|def|fn|func|namespace|module|protocol|object|record|const|let|var|val)\s+${n}\b`,
-      String.raw`\bfunc\s+\([^)]*\)\s+${n}\b`,
-      String.raw`^\s*(?:(?:public|private|protected|static|async|readonly|override|get|set)\s+)*${n}\s*(?:<[^>]*>)?\(.*\)\s*(?::[^=]*)?\{\s*$`,
-    ].join("|"),
-  );
-};
-const importLine = /^\s*(?:import|from)\b|\bfrom\s+["']/;
-const importPath = /^["'`]?(\.{1,2}\/[^"'`]*)["'`]?$/;
-const extensions = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".d.ts", ".json", ".css"];
-
-// Go to Definition for a token clicked in `from` (a worktree path): a relative import path opens its file; a name is
-// looked up with `git grep` in the worktree. Only the worktree: the clone is blobless, so grepping a commit fetches
-// every blob. ponytail: matches by name and a regex per language, so every definition of the name is found, not
-// the one in scope; a language server in the core (ADR 0003) if that gets noisy.
-export function findDefinitions(
+// ADR 0034: a revision's files on disk for a language server. The worktree itself (commit null), or a commit that is
+// its current snapshot; any other commit gets a detached, read-only checkout made from the clone, kept until
+// pruneCheckouts. Made once, however many ask at a time.
+export type Checkout = { path: string; worktree: string };
+const checkouts = new Map<string, Promise<unknown>>();
+const checkoutsPath = (owner: string, name: string) => join(root, "checkouts", owner, name);
+export async function checkoutAt(
   db: Db,
   workspaceId: number,
-  from: string,
-  token: string,
-): Promise<CodeLineList> {
-  return withGit(async () => {
-    const path = await openedWorktree(db, workspaceId);
-    const spec = token.match(importPath)?.[1];
-    if (spec) {
-      const base = join(dirname(from), spec);
-      const found = [base, base.replace(/\.js$/, ".ts"), ...extensions.map((x) => base + x)]
-        .concat(extensions.map((x) => join(base, "index" + x)))
-        .find((p) => !relative(path, resolve(path, p)).startsWith("..") && isFile(join(path, p)));
-      return { status: "ok" as const, lines: found ? [{ path: found, line: 1, text: "" }] : [] };
-    }
-    const definition = definitionOf(token);
-    const lines = (await grepWord(path, token)).filter(
-      (l) => definition.test(l.text) && !importLine.test(l.text),
+  commit: string | null,
+): Promise<Checkout> {
+  const w = await getWorkspaceRepo(db, workspaceId);
+  const worktree = await openedWorktree(db, workspaceId);
+  if (commit === null || commit === (await snapshotOf(worktree)))
+    return { path: worktree, worktree };
+  if (!isCommit(commit)) throw new GitError(`Not a commit: ${commit}`);
+  const path = join(checkoutsPath(w.owner, w.name), commit);
+  if (!checkouts.has(path)) {
+    const made = existsSync(join(path, ".git"))
+      ? Promise.resolve()
+      : git(repoPath(w.owner, w.name), ["worktree", "add", "--detach", "--force", path, commit]);
+    checkouts.set(
+      path,
+      made.catch((e) => {
+        checkouts.delete(path);
+        throw e;
+      }),
     );
-    return { status: "ok" as const, lines };
-  });
+  }
+  await checkouts.get(path);
+  return { path, worktree };
 }
 
-// Find Usages: every line of the worktree with the name as a whole word, its definitions and imports included.
-export function findUsages(db: Db, workspaceId: number, token: string): Promise<CodeLineList> {
-  return withGit(async () => ({
-    status: "ok" as const,
-    lines: await grepWord(await openedWorktree(db, workspaceId), token),
-  }));
+// Removes the workspace's repository's commit checkouts but those kept, e.g. the ones a language server still reads.
+export async function pruneCheckouts(db: Db, workspaceId: number, keep: string[]): Promise<void> {
+  const w = await getWorkspaceRepo(db, workspaceId);
+  const dir = checkoutsPath(w.owner, w.name);
+  if (!existsSync(dir)) return;
+  const gone = readdirSync(dir)
+    .map((sha) => join(dir, sha))
+    .filter((p) => !keep.includes(p));
+  for (const p of gone) {
+    checkouts.delete(p);
+    // Removed by hand, then pruned: also a checkout git no longer lists, e.g. one left half-made.
+    rmSync(p, { recursive: true, force: true });
+  }
+  if (gone.length) await git(repoPath(w.owner, w.name), ["worktree", "prune"]);
 }
-
-// The worktree's lines with a name as a whole word; none for a token that isn't a name.
-async function grepWord(path: string, token: string): Promise<CodeLine[]> {
-  if (!/^[A-Za-z_$][\w$]*$/.test(token)) return [];
-  const args = ["grep", "-n", "-z", "-I", "-w", "--untracked", "-F", "-e", token];
-  // Exit code 1 is no match.
-  const out = await gitText(path, args).catch(() => "");
-  return out
-    .split("\n")
-    .map((l) => l.split("\0"))
-    .filter(([, , text]) => text)
-    .map(([p, line, text]) => ({ path: p, line: Number(line), text: text.trim() }));
-}
-
-const isFile = (p: string) => existsSync(p) && statSync(p).isFile();

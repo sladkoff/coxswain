@@ -358,8 +358,8 @@ export function App() {
   // rereads when its Opened changes.
   const line = moved ? undefined : s.line;
   const opened = useMemo<Opened | null>(
-    () => (s.file ? { kind: "file", path: s.file, line } : null),
-    [s.file, line],
+    () => (s.file ? { kind: "file", path: s.file, line, commit: s.fileAt } : null),
+    [s.file, line, s.fileAt],
   );
   // Each entry keeps where the canvas was scrolled, restored on Back and Forward. For the file diffs also the one at
   // the top: those above it may have been read (and grown) since, so the offset alone would land elsewhere.
@@ -487,9 +487,15 @@ export function App() {
     else setComposerPrompt({ prompt: picked, workspaceId: currentWorkspace!.id });
   };
   const showView = (id: number | null) =>
-    void show({ viewId: id, commit: undefined, file: undefined, at: undefined });
+    void show({ viewId: id, commit: undefined, file: undefined, fileAt: undefined, at: undefined });
   const pickCommit = (picked: Commit | null) =>
-    void show({ commit: picked ?? undefined, viewId: null, file: undefined, at: undefined });
+    void show({
+      commit: picked ?? undefined,
+      viewId: null,
+      file: undefined,
+      fileAt: undefined,
+      at: undefined,
+    });
   // The pane's bar: Changes and Files are the Navigator's toggle (a history entry, ADR 0025), Commits the other pane.
   const paneTab: PaneTab = pane === "commits" ? "commits" : view;
   const pickPaneTab = (t: PaneTab) => {
@@ -533,12 +539,12 @@ export function App() {
   // revealed there. Files, Open Quickly, Go to Definition and Find Usages all go through it. Stable, so the memoised
   // Viewers don't all redraw.
   const openFile = useCallback(
-    (path: string, line?: number) => {
+    (path: string, line?: number, commit?: string) => {
       showPane("navigator");
       // The same file again without a line (e.g. the tree selecting the one it revealed) is no new entry.
       const now = shown.current;
       if (!line && now.view === "files" && now.file === path) return;
-      void show({ view: "files", file: path, line, at: undefined });
+      void show({ view: "files", file: path, line, fileAt: commit, at: undefined });
     },
     [show],
   );
@@ -1025,10 +1031,10 @@ export function App() {
                       {showFile && (
                         // One Viewer per file: a reused one would scroll to a line in the file it drew before.
                         <Viewer
-                          key={`${currentWorkspace.id}:${openedPath(opened)}`}
+                          key={`${currentWorkspace.id}:${openedPath(opened)}:${s.fileAt ?? "live"}`}
                           opened={opened}
                           reviewed={false}
-                          {...viewerProps(currentWorkspace, pr.commits!.mergeBase)}
+                          {...viewerProps(currentWorkspace, pr.commits!.mergeBase, s.fileAt)}
                         />
                       )}
                       {canvasView?.writing && !showFile && <WritingViewNotice />}
