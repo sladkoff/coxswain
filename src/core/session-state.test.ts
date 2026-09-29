@@ -97,17 +97,17 @@ test("parallel tools' titles fill in where they are; background tasks show until
   assert.deepEqual((await states.read("a", async () => [])).tasks, [], "the agent went away");
 });
 
-test("a subagent's name fills in, and the turn's end takes subagents off but not commands", async () => {
+test("subagents are listed with commands until they end, also past the turn", async () => {
   const states = new SessionStates();
   await states.read("a", async () => []);
   states.start("a");
   states.task("a", { id: "c", name: "pnpm dev" });
-  states.task("a", { id: "s", name: "Task", subagent: true });
   states.task("a", { id: "s", name: "Sleep then write file", subagent: true });
+  states.finish("a", { status: "ok" });
   assert.deepEqual(
     (await states.read("a", async () => [])).tasks.map((t) => t.name),
     ["pnpm dev", "Sleep then write file"],
   );
-  states.finish("a", { status: "ok" });
+  states.taskEnded("a", "s");
   assert.deepEqual((await states.read("a", async () => [])).tasks, [{ id: "c", name: "pnpm dev" }]);
 });

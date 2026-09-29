@@ -55,17 +55,19 @@ Claude Code (`@agentclientprotocol/claude-agent-acp`, built on the Claude Agent 
     offers (`category` `model` and `thought_level`), so no model list lives in coxswain. The user's picks are stored per
     agent in `settings` and set on each session as its turn starts, model first, since the effort levels depend on it.
 
-12. **Background tasks and turns the agent starts itself.** The client advertises the adapter's `asyncTasks`
-    capability (`clientCapabilities._meta.jetbrains.air`), so `claude-agent-acp` sends `async_task_*` updates for
-    commands left running in the background; they are kept in the session projection and stopped with
-    `_session/async_task/stop`. The SDK checks every `session/update` against its schema and drops these, so they
-    are taken off the incoming stream before it sees them. Updates that reach no run (Claude Code answering a background task that ended) go straight to the
-    projection. Subagent sessions (`nativeSubagentSessions`, draft ACP) aren't advertised: with them the adapter
-    replaces the Agent call with a child session, and its history replay leaves the subagent out, so a reopened
-    session would lose it. A subagent stays the one tool line of its Agent call (`_meta.claudeCode.subagent`), and runs
-    until that call ends, or, when it runs in the background, until the turn ends, which the adapter holds open for it.
-    `codex-acp` says when a subagent starts and ends as tool calls of their own (`_meta.codex.subagent`), and sends
-    `async_task_*` for commands in a background terminal under the same capability.
+12. **Background tasks, subagents and turns the agent starts itself, the same for every agent.** The client
+    advertises two draft ACP extensions (`clientCapabilities._meta.jetbrains.air`, JetBrains' AIR name), which both
+    adapters implement: `asyncTasks`, for commands left running in the background (`async_task_*` updates, stopped with
+    `_session/async_task/stop`), and `nativeSubagentSessions`, where each subagent is a session of its own
+    (`subagent_spawned`, `subagent_state_update`). The SDK checks every `session/update` against its schema and drops
+    these, so they are handled on the incoming stream before it sees them: tasks and subagents go to the session
+    projection, and a subagent's start and end are put in the stream's place as a tool call and its update, so the chat
+    shows its line live and in a replayed history. A subagent's own session stays out of the chat; its permission
+    requests are asked in the session the user chats with. No adapter offers to stop one subagent; the turn's Stop does.
+    Updates that reach no run (Claude Code answering a background task that ended) go straight to the projection.
+    `claude-agent-acp` 0.81.2 is patched (`patches/`) so its replay announces a subagent where its Agent call is; it
+    announced one only at the subagent's own messages, which its history doesn't hold. Drop the patch once upstream
+    fixes it.
 
 ## Alternatives considered
 

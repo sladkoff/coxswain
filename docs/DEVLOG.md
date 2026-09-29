@@ -12,21 +12,22 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
   `sleep 60` or a dev server, is listed on top of the composer until it ends, with × to stop it.
 - The agent's reply when a background task ends now shows: that turn, which the agent starts on its own, reached no
   run and was dropped, so a "ping me in a minute" never came back.
-- Running subagents are listed with the background tasks (_Agent_ and the subagent's task), from their Agent call
-  until it ends, or for one in the background until the turn ends. `ponytail:` that's a few seconds late, while the
-  agent answers; the adapter's subagent sessions would say when, but they take the Agent call out of the replayed
-  history (ADR 0018).
-- Codex's subagents are listed too, by their name (`sleep_ping`), from _Start subagent_ to _Complete subagent_. Its
-  background tasks use the same updates as Claude Code's, for commands in a background terminal; Codex mostly runs
-  commands in the foreground, so a "ping me in 10 seconds" shows no bar there.
+- Running subagents are listed with the background tasks (_Agent_ and its name), from start to end, for Claude Code
+  and Codex alike: both adapters implement ACP's draft subagent sessions, now advertised (ADR 0018). A subagent's start
+  becomes its `Agent …` line in the chat, live and in a reopened session; Codex's _Start subagent_ / _Complete
+  subagent_ lines are gone. Its permission requests reach the pane's prompt. `claude-agent-acp` is patched so its
+  replay keeps the subagent (`patches/`; drop it once upstream fixes it). No × for a subagent: no adapter offers it.
+- Codex's background tasks use the same updates as Claude Code's, for commands in a background terminal; Codex mostly
+  runs commands in the foreground, so a "ping me in 10 seconds" shows no bar there.
 - The agent's messages in one turn are separate entries again, split on ACP's `messageId`: its reply before a
   subagent finished and the one after ran together without a space.
 - The message Claude Code sends itself when a background task ends (`<task-notification>…`), which a session's
   history replays as the user's, shows as one line with its summary instead of the raw XML.
 - Tools called in parallel get their titles: a title that arrived after the next tool had started was dropped, so the
   line stayed the tool's kind (_Terminal_).
-- Tech debt: `ponytail:` the `async_task_*` updates are taken off the incoming stream before the ACP SDK sees them,
-  since it checks each `session/update` against its schema and drops them; hand them to the SDK once it has them. A turn the agent starts on its own shows no _Working_ and has no Stop.
+- Tech debt: `ponytail:` the `async_task_*` and `subagent_*` updates are handled on the incoming stream before the ACP
+  SDK sees them, since it checks each `session/update` against its schema and drops them; hand them to the SDK once it
+  has them. A patched adapter (`patches/`), to drop on its next release that fixes the replay. A turn the agent starts on its own shows no _Working_ and has no Stop.
 
 ## 2026-09-28 — View prompts
 

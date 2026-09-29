@@ -77,14 +77,10 @@ export class SessionStates {
     this.update(id, { permission });
   }
 
-  // Added, or renamed when it's there: a subagent's name comes in after it starts. Skipped for a session not read yet:
-  // none of its turns ran in this app, so none of its tasks is known.
+  // Skipped for a session not read yet: none of its turns ran in this app, so none of its tasks is known.
   task(id: string, task: BackgroundTask) {
     const tasks = this.states.get(id)?.tasks;
-    if (!tasks) return;
-    const at = tasks.findIndex((t) => t.id === task.id);
-    if (at < 0) this.update(id, { tasks: [...tasks, task] });
-    else if (tasks[at].name !== task.name) this.update(id, { tasks: tasks.with(at, task) });
+    if (tasks && !tasks.some((t) => t.id === task.id)) this.update(id, { tasks: [...tasks, task] });
   }
 
   // The task ended, or with no taskId all of them: the agent's process went away.
@@ -94,13 +90,9 @@ export class SessionStates {
     if (tasks && left!.length < tasks.length) this.update(id, { tasks: left });
   }
 
-  // The adapter ends a turn once the subagents it started are done, also those run in the background.
-  // ponytail: a background subagent shows until the turn ends, a few seconds after it did while the agent answers; the
-  // adapter's subagent sessions (draft ACP) say when, once their replay keeps the Agent call in the chat.
   finish(id: string, result: TurnResult) {
     this.update(id, {
       running: false,
-      tasks: this.states.get(id)!.tasks.filter((t) => !t.subagent),
       permission: null,
       error: result.status === "error" ? result.message : null,
     });

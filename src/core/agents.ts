@@ -232,7 +232,7 @@ function adapter(name: Agent): Promise<Adapter> {
       .onRequest(acp.methods.client.session.requestPermission, (ctx) => askPermission(ctx.params))
       .onNotification(acp.methods.client.session.update, (ctx) => {
         const { sessionId, update: u } = ctx.params;
-        subagent(sessionId, u);
+        if (parents.has(sessionId)) return; // a subagent's own work: the chat shows the main thread
         // Claude Code names a session a moment after its first turn ends, when no run listens any more.
         if (u.sessionUpdate === "session_info_update" && u.title)
           titleListeners.forEach((l) => l(sessionId, u.title!));
@@ -243,7 +243,7 @@ function adapter(name: Agent): Promise<Adapter> {
         } else idleUpdate(sessionId, u);
       })
       .connect(
-        withoutBackgroundTasks(
+        withExtensions(
           acp.ndJsonStream(
             Writable.toWeb(child.stdin!),
             Readable.toWeb(child.stdout!) as ReadableStream<Uint8Array>,
@@ -259,10 +259,14 @@ function adapter(name: Agent): Promise<Adapter> {
     child.on("error", gone);
     await conn.agent.request(acp.methods.agent.initialize, {
       protocolVersion: acp.PROTOCOL_VERSION,
-      // The adapter tells a client that says so about commands left running in the background (Claude Code's
-      // extension, under JetBrains' AIR name).
+      // The adapters tell a client that says so about commands left running in the background and about subagents,
+      // each a session of its own (draft ACP, under JetBrains' AIR name).
       clientCapabilities: {
-        _meta: { jetbrains: { air: { version: 1, capabilities: ["asyncTasks"] } } },
+        _meta: {
+          jetbrains: {
+            air: { version: 1, capabilities: ["asyncTasks", "nativeSubagentSessions"] },
+          },
+        },
       },
     });
     return { child, agent: conn.agent, open };
@@ -284,25 +288,62 @@ function idleUpdate(sessionId: string, u: acp.SessionUpdate) {
   update(u);
 }
 
-// ponytail: the adapter's async_task_* updates (a draft ACP extension) are taken off the stream before the SDK sees
-// them, since it checks every session/update against its schema and throws them away; hand them to the SDK once it
-// has them.
-function withoutBackgroundTasks(stream: acp.Stream): acp.Stream {
+// ponytail: the adapters' async_task_* and subagent_* updates (draft ACP) are handled before the SDK sees them, since it
+// checks every session/update against its schema and throws them away; hand them to the SDK once it has them.
+function withExtensions(stream: acp.Stream): acp.Stream {
   const readable = stream.readable.pipeThrough(
     new TransformStream<acp.AnyMessage, acp.AnyMessage>({
       transform(m, out) {
-        const p = "method" in m && m.method === acp.methods.client.session.update && m.params;
-        const handled =
-          p &&
-          backgroundTask(
-            (p as { sessionId: string }).sessionId,
-            (p as { update: AsyncTaskUpdate }).update,
-          );
-        if (!handled) out.enqueue(m);
+        if (!("method" in m) || m.method !== acp.methods.client.session.update)
+          return out.enqueue(m);
+        const { sessionId, update } = m.params as { sessionId: string; update: ExtensionUpdate };
+        if (backgroundTask(sessionId, update)) return;
+        const line = subagent(sessionId, update);
+        out.enqueue(line ? { ...m, params: { sessionId, update: line } } : m);
       },
     }),
   );
   return { ...stream, readable };
+}
+type ExtensionUpdate = AsyncTaskUpdate | SubagentUpdate;
+
+// A subagent is a session of its own, started from one of the session's (its parent's). Its start and end become a
+// tool line in its parent's chat, where the stream has them, so a replayed history shows it too; while it runs it's
+// listed with the background tasks of the session the user chats with.
+type SubagentUpdate =
+  | { sessionUpdate: "subagent_spawned"; subagentSessionId: string; name: string }
+  | {
+      sessionUpdate: "subagent_state_update";
+      subagentSessionId: string;
+      state: "completed" | "failed" | "cancelled" | "disconnected";
+    };
+const parents = new Map<string, string>();
+const topOf = (sessionId: string): string => {
+  const parent = parents.get(sessionId);
+  return parent ? topOf(parent) : sessionId;
+};
+function subagent(sessionId: string, u: ExtensionUpdate): acp.SessionUpdate | null {
+  if (u.sessionUpdate !== "subagent_spawned" && u.sessionUpdate !== "subagent_state_update")
+    return null;
+  const id = u.subagentSessionId;
+  if (u.sessionUpdate === "subagent_spawned") {
+    parents.set(id, sessionId);
+    sessionStates.task(topOf(sessionId), { id, name: u.name, subagent: true });
+    return {
+      sessionUpdate: "tool_call",
+      toolCallId: id,
+      title: u.name,
+      name: "Agent",
+      kind: "other",
+      status: "in_progress",
+    };
+  }
+  sessionStates.taskEnded(topOf(sessionId), id);
+  return {
+    sessionUpdate: "tool_call_update",
+    toolCallId: id,
+    status: u.state === "completed" ? "completed" : "failed",
+  };
 }
 
 // The adapter's updates on commands left running in the background; true when u is one.
@@ -314,7 +355,7 @@ type AsyncTaskUpdate =
       asyncTaskId: string;
       state: "running" | "paused" | "completed" | "failed" | "stopped";
     };
-function backgroundTask(sessionId: string, u: AsyncTaskUpdate): boolean {
+function backgroundTask(sessionId: string, u: ExtensionUpdate): boolean {
   if (u.sessionUpdate === "async_task_spawned")
     sessionStates.task(sessionId, { id: u.asyncTaskId, name: u.name });
   else if (u.sessionUpdate === "async_task_state_update") {
@@ -322,41 +363,6 @@ function backgroundTask(sessionId: string, u: AsyncTaskUpdate): boolean {
       sessionStates.taskEnded(sessionId, u.asyncTaskId);
   } else if (u.sessionUpdate !== "async_task_progress") return false;
   return true;
-}
-
-// Claude Code's subagent runs from its Agent call until that call ends, or, run in the background (the call ends at
-// once), until the turn does. Its own updates carry the call's id and aren't in the chat. Codex's says when it starts
-// and ends, each as a tool call of its own (Start subagent …, Complete subagent …), by its thread.
-const inBackground = new Set<string>();
-type SubagentMeta = {
-  claudeCode?: { subagent?: boolean; toolResponse?: { isAsync?: boolean } };
-  codex?: { subagent?: { threadId: string; path: string; activity: string } };
-};
-function subagent(sessionId: string, u: acp.SessionUpdate) {
-  if (u.sessionUpdate !== "tool_call" && u.sessionUpdate !== "tool_call_update") return;
-  const codex = (u._meta as SubagentMeta | undefined)?.codex?.subagent;
-  if (u.sessionUpdate === "tool_call" && codex) {
-    if (codex.activity === "started")
-      sessionStates.task(sessionId, {
-        id: codex.threadId,
-        name: codex.path.split("/").filter(Boolean).at(-1) ?? "subagent",
-        subagent: true,
-      });
-    else if (codex.activity === "completed" || codex.activity === "interrupted")
-      sessionStates.taskEnded(sessionId, codex.threadId);
-    return;
-  }
-  const meta = (u._meta as SubagentMeta | undefined)?.claudeCode;
-  const id = u.toolCallId;
-  if (u.sessionUpdate === "tool_call") {
-    if (meta?.subagent) sessionStates.task(sessionId, { id, name: u.title, subagent: true });
-    return;
-  }
-  if (meta?.subagent && u.title)
-    sessionStates.task(sessionId, { id, name: u.title, subagent: true });
-  if (meta?.toolResponse?.isAsync) inBackground.add(id);
-  if ((u.status === "completed" || u.status === "failed") && !inBackground.delete(id))
-    sessionStates.taskEnded(sessionId, id);
 }
 
 // Stops a command the agent left running in the background; the agent is told it was stopped.
@@ -368,10 +374,12 @@ export async function stopBackgroundTask(db: Db, agentSessionId: string, taskId:
   });
 }
 
+// A subagent's requests are asked in the session the user chats with.
 async function askPermission(
   p: acp.RequestPermissionRequest,
 ): Promise<acp.RequestPermissionResponse> {
-  const ask = listening.get(p.sessionId)?.handlers.onPermission;
+  const sessionId = topOf(p.sessionId);
+  const ask = listening.get(sessionId)?.handlers.onPermission;
   const reject =
     p.options.find((o) => o.kind === "reject_once") ??
     p.options.find((o) => o.kind.startsWith("reject"));
@@ -381,7 +389,7 @@ async function askPermission(
       : { outcome: { outcome: "cancelled" } };
   const id = randomUUID();
   const optionId = await new Promise<string | null>((resolve) => {
-    pending.set(id, { sessionId: p.sessionId, resolve });
+    pending.set(id, { sessionId, resolve });
     ask({
       id,
       title: p.toolCall.title ?? "Use a tool",
@@ -389,7 +397,7 @@ async function askPermission(
     }).then(resolve);
   });
   pending.delete(id);
-  sessionStates.permission(p.sessionId, null);
+  sessionStates.permission(sessionId, null);
   return optionId
     ? { outcome: { outcome: "selected", optionId } }
     : { outcome: { outcome: "cancelled" } };
