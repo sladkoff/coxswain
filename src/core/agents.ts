@@ -55,8 +55,19 @@ const viewHeader = /^\[View · (.+)\]\n/;
 export const formatView = (title: string, note: string, prompt: string) =>
   `[View · ${title}]\n${note}\n\n---\n${prompt}`;
 
+// Claude Code tells the agent that a background task ended as a message of its own, kept in the session's history; the
+// chat shows its summary as one line, like a tool.
+const taskNotification = /^\s*<task-notification>/;
+const taskSummary = /<summary>([\s\S]*?)<\/summary>/;
+
 function withComment(entry: ChatEntry): ChatEntry {
   if (entry.kind !== "user") return entry;
+  if (taskNotification.test(entry.text))
+    return {
+      ...entry,
+      kind: "tool",
+      text: taskSummary.exec(entry.text)?.[1].trim() || "A background task ended",
+    };
   const r = reviewHeader.exec(entry.text);
   if (r) return { ...entry, review: { threads: Number(r[1]) } };
   const v = viewHeader.exec(entry.text);
