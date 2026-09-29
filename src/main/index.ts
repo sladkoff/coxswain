@@ -8,12 +8,16 @@ import {
   shell,
   type WebContents,
 } from "electron";
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import icon from "../../resources/icon.png?asset";
 import {
   type Agent,
   agentSessionWorkspace,
+  agentsBusy,
   answerPermission,
   askOnce,
   listAgentPicks,
@@ -195,6 +199,49 @@ setDiagramCheck((codes) => {
   });
 });
 
+// Run from a build (`pnpm start`), not packaged or `pnpm dev`: Rebuild and Reload is there, to work on coxswain in
+// coxswain. The agents run in the main process, so a new UI reloads the window without touching them; a new main
+// process or preload needs a relaunch, which stops their turns and so asks first while one runs. Sessions resume.
+const devBuild = !app.isPackaged && !process.env.ELECTRON_RENDERER_URL;
+const builtMain = () =>
+  createHash("sha1")
+    .update(readFileSync(join(__dirname, "index.js")))
+    .update(readFileSync(join(__dirname, "../preload/index.js")))
+    .digest("hex");
+// What this process runs, so a relaunch cancelled once is still due on the next rebuild.
+const running = devBuild ? builtMain() : "";
+async function rebuildAndReload() {
+  const item = menu.getMenuItemById("rebuild")!;
+  const wins = BrowserWindow.getAllWindows();
+  item.enabled = false;
+  wins.forEach((w) => w.setProgressBar(2));
+  try {
+    await promisify(execFile)("pnpm", ["build"], { cwd: app.getAppPath() });
+  } catch (e) {
+    const { stdout, stderr } = e as { stdout?: string; stderr?: string };
+    dialog.showErrorBox("The build failed", (stderr || stdout || String(e)).slice(-4000));
+    return;
+  } finally {
+    item.enabled = true;
+    wins.forEach((w) => !w.isDestroyed() && w.setProgressBar(-1));
+  }
+  if (builtMain() === running) return wins.forEach((w) => w.webContents.reloadIgnoringCache());
+  if (agentsBusy()) {
+    const { response } = await dialog.showMessageBox({
+      type: "warning",
+      message: "Relaunch while an agent is working?",
+      detail:
+        "The main process or preload changed, so coxswain has to relaunch. That stops the turn in progress.",
+      buttons: ["Relaunch", "Cancel"],
+      defaultId: 1,
+      cancelId: 1,
+    });
+    if (response !== 0) return;
+  }
+  app.relaunch();
+  app.quit();
+}
+
 const menu = Menu.buildFromTemplate([
   {
     label: app.name,
@@ -254,6 +301,14 @@ const menu = Menu.buildFromTemplate([
       },
       { type: "separator" },
       { role: "reload" },
+      {
+        id: "rebuild",
+        label: "Rebuild and Reload",
+        accelerator: "Shift+CmdOrCtrl+R",
+        visible: devBuild,
+        enabled: devBuild,
+        click: rebuildAndReload,
+      },
       { role: "toggleDevTools" },
       { type: "separator" },
       { role: "resetZoom" },

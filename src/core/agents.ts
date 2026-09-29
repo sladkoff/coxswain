@@ -690,6 +690,11 @@ export async function closeWorkspaceSessions(db: Db, workspaceId: number): Promi
   );
 }
 
+// Whether an agent is at work on a turn or a file summary, which stopping the adapters would end.
+// ponytail: the agent's own turns and background tasks between turns don't count; track them if a relaunch cuts one
+// short.
+export const agentsBusy = () => listening.size > 0;
+
 export async function stopAgents() {
   for (const a of adapters.values())
     a.then(

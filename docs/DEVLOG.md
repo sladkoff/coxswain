@@ -25,6 +25,11 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
   history replays as the user's, shows as one line with its summary instead of the raw XML.
 - Tools called in parallel get their titles: a title that arrived after the next tool had started was dropped, so the
   line stayed the tool's kind (_Terminal_).
+- **Rebuild and Reload** (View menu, ⇧⌘R), under `pnpm start` only, to work on coxswain in coxswain: it runs
+  `pnpm build` and, when only the UI changed, reloads the window while the agents keep working in the main process. A
+  new main process or preload relaunches the app, and asks first while a turn or file summary runs, since the
+  relaunch stops it; sessions resume after. A failed build leaves the running app as it was and shows the error.
+  `ponytail:` the agent's own turns and background tasks between turns don't count as working.
 - Tech debt: `ponytail:` the `async_task_*` and `subagent_*` updates are handled on the incoming stream before the ACP
   SDK sees them, since it checks each `session/update` against its schema and drops them; hand them to the SDK once it
   has them. A patched adapter (`patches/`), to drop on its next release that fixes the replay. A turn the agent starts on its own shows no _Working_ and has no Stop.
@@ -1451,7 +1456,8 @@ code are found with `grep -rn "ponytail:" src`.
 **UI**
 
 - shadcn/ui isn't set up (ADR 0004); `src/renderer/src/components/` holds our own controls until it is.
-- Keyboard shortcuts cover Settings, Open Quickly, the command palette (⌘K), Toggle Navigator, Back and Forward;
+- Keyboard shortcuts cover Settings, Open Quickly, the command palette (⌘K), Toggle Navigator, Back, Forward and
+  Rebuild and Reload (⇧⌘R, `pnpm start` only);
   the rest are reached through ⌘K.
 - ADR 0004's system accent colour, reduced motion and high contrast aren't wired up.
 - The native menu is laid out for macOS only.
