@@ -58,8 +58,8 @@ Claude Code (`@agentclientprotocol/claude-agent-acp`, built on the Claude Agent 
 12. **Background tasks and turns the agent starts itself.** The client advertises the adapter's `asyncTasks`
     capability (`clientCapabilities._meta.jetbrains.air`), so `claude-agent-acp` sends `async_task_*` updates for
     commands left running in the background; they are kept in the session projection and stopped with
-    `_session/async_task/stop`. Since the SDK's schema doesn't know these updates yet, session updates are taken
-    unchecked. Updates that reach no run (Claude Code answering a background task that ended) go straight to the
+    `_session/async_task/stop`. The SDK checks every `session/update` against its schema and drops these, so they
+    are taken off the incoming stream before it sees them. Updates that reach no run (Claude Code answering a background task that ended) go straight to the
     projection. Subagent sessions (`nativeSubagentSessions`, draft ACP) aren't advertised: a subagent is still the
     one tool line of its Agent call.
 

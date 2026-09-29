@@ -15,8 +15,8 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
   run and was dropped, so a "ping me in a minute" never came back.
 - Tools called in parallel get their titles: a title that arrived after the next tool had started was dropped, so the
   line stayed the tool's kind (_Terminal_).
-- Tech debt: `ponytail:` session updates aren't checked against the ACP SDK's schema, which rejects the `async_task_*`
-  updates; parse again once the SDK has them. A turn the agent starts on its own shows no _Working_ and has no Stop.
+- Tech debt: `ponytail:` the `async_task_*` updates are taken off the incoming stream before the ACP SDK sees them,
+  since it checks each `session/update` against its schema and drops them; hand them to the SDK once it has them. A turn the agent starts on its own shows no _Working_ and has no Stop.
 
 ## 2026-09-28 — View prompts
 

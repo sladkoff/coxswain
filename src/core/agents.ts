@@ -219,29 +219,23 @@ function adapter(name: Agent): Promise<Adapter> {
     const conn = acp
       .client({ name: "coxswain" })
       .onRequest(acp.methods.client.session.requestPermission, (ctx) => askPermission(ctx.params))
-      // ponytail: session updates aren't checked against the SDK's schema, which rejects the adapter's async_task_*
-      // updates (a draft ACP extension); parse with the SDK again once it has them.
-      .onNotification(
-        acp.methods.client.session.update,
-        (p) => p as acp.SessionNotification,
-        (ctx) => {
-          const { sessionId } = ctx.params;
-          const u = ctx.params.update;
-          if (backgroundTask(sessionId, u as unknown as AsyncTaskUpdate)) return;
-          // Claude Code names a session a moment after its first turn ends, when no run listens any more.
-          if (u.sessionUpdate === "session_info_update" && u.title)
-            titleListeners.forEach((l) => l(sessionId, u.title!));
-          const run = listening.get(sessionId);
-          if (run) {
-            idle.delete(sessionId);
-            run.update(u);
-          } else idleUpdate(sessionId, u);
-        },
-      )
+      .onNotification(acp.methods.client.session.update, (ctx) => {
+        const { sessionId, update: u } = ctx.params;
+        // Claude Code names a session a moment after its first turn ends, when no run listens any more.
+        if (u.sessionUpdate === "session_info_update" && u.title)
+          titleListeners.forEach((l) => l(sessionId, u.title!));
+        const run = listening.get(sessionId);
+        if (run) {
+          idle.delete(sessionId);
+          run.update(u);
+        } else idleUpdate(sessionId, u);
+      })
       .connect(
-        acp.ndJsonStream(
-          Writable.toWeb(child.stdin!),
-          Readable.toWeb(child.stdout!) as ReadableStream<Uint8Array>,
+        withoutBackgroundTasks(
+          acp.ndJsonStream(
+            Writable.toWeb(child.stdin!),
+            Readable.toWeb(child.stdout!) as ReadableStream<Uint8Array>,
+          ),
         ),
       );
     const gone = () => {
@@ -276,6 +270,27 @@ function idleUpdate(sessionId: string, u: acp.SessionUpdate) {
     idle.set(sessionId, update);
   }
   update(u);
+}
+
+// ponytail: the adapter's async_task_* updates (a draft ACP extension) are taken off the stream before the SDK sees
+// them, since it checks every session/update against its schema and throws them away; hand them to the SDK once it
+// has them.
+function withoutBackgroundTasks(stream: acp.Stream): acp.Stream {
+  const readable = stream.readable.pipeThrough(
+    new TransformStream<acp.AnyMessage, acp.AnyMessage>({
+      transform(m, out) {
+        const p = "method" in m && m.method === acp.methods.client.session.update && m.params;
+        const handled =
+          p &&
+          backgroundTask(
+            (p as { sessionId: string }).sessionId,
+            (p as { update: AsyncTaskUpdate }).update,
+          );
+        if (!handled) out.enqueue(m);
+      },
+    }),
+  );
+  return { ...stream, readable };
 }
 
 // The adapter's updates on commands left running in the background; true when u is one.

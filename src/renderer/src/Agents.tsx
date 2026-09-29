@@ -382,7 +382,7 @@ function BackgroundTasks(props: { agentSessionId: string; tasks: BackgroundTask[
           <span className={cn("shrink-0", muted)}>
             <SpinnerIcon />
           </span>
-          <span className="min-w-0 flex-1 truncate font-mono" title={t.name}>
+          <span className="min-w-0 flex-1 truncate" title={t.name}>
             {t.name}
           </span>
           <Button
