@@ -28,6 +28,7 @@ import {
   formatView,
   startAgentSession,
   setAgentPick,
+  closeWorkspaceSessions,
   stopAgents,
   stopTurn,
 } from "../core/agents";
@@ -294,7 +295,10 @@ app.whenReady().then(() => {
     (_, projectId: number, branch: string, baseBranch: string) =>
       openBranchWorkspace(db, projectId, branch, baseBranch),
   );
-  ipcMain.handle("workspaces:remove", (_, workspaceId: number) => removeWorkspace(db, workspaceId));
+  ipcMain.handle("workspaces:remove", async (_, workspaceId: number) => {
+    await closeWorkspaceSessions(db, workspaceId);
+    await removeWorkspace(db, workspaceId);
+  });
   ipcMain.handle("git:clone", (_, projectId: number) => cloneProject(db, projectId));
   ipcMain.handle("git:opened-before", (_, workspaceId: number) => openedBefore(db, workspaceId));
   // ADR 0029: a workspace opened or checked again is summarised ahead, in the background.

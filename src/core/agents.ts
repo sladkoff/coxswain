@@ -538,6 +538,24 @@ async function history(
   }
 }
 
+// Closes a workspace's open agent sessions, ending their agent processes and any turn running; for a workspace being
+// removed. Sessions of workspaces still in the sidebar stay open, and keep running when the user looks elsewhere.
+export async function closeWorkspaceSessions(db: Db, workspaceId: number): Promise<void> {
+  const rows = await db
+    .selectFrom("agent_sessions")
+    .select(["agent_session_id as sessionId", "agent"])
+    .where("workspace_id", "=", workspaceId)
+    .execute();
+  await Promise.all(
+    rows.map(async ({ sessionId, agent }) => {
+      const a = await adapters.get(agent as Agent)?.catch(() => null);
+      if (!a?.open.delete(sessionId)) return;
+      configs.delete(sessionId);
+      await a.agent.request(acp.methods.agent.session.close, { sessionId }).catch(() => {});
+    }),
+  );
+}
+
 export async function stopAgents() {
   for (const a of adapters.values())
     a.then(

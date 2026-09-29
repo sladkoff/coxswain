@@ -3,6 +3,12 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-29 — General improvements
+
+- Removing a workspace closes its open agent sessions (`closeWorkspaceSessions`, `session/close`), so their agent
+  processes end instead of running on until the app quits against an MCP URL whose workspace is gone. Sessions of
+  workspaces still in the sidebar stay open when the user looks elsewhere, so a turn keeps running.
+
 ## 2026-09-28 — View prompts
 
 For G3 ([issue 2](https://github.com/sladkoff/coxswain/issues/2)): understanding a huge agent-written PR well enough
