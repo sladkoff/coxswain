@@ -8,6 +8,12 @@ listed at the end.
 
 ## Terms
 
+**Find**: literal text search in the last-used pane, opened with ⌘F. On the canvas it searches the files and
+file diffs currently shown, across the selected range or view, including off-screen files. A whole-file canvas
+searches that file. In the agent pane it searches the selected session's chat. Next and Previous move between
+matches without adding steps to History. This is separate from Open Quickly (file names) and Find Usages (code names
+throughout the worktree).
+
 **Attachment**: an image or file added to the agent pane's composer by picking, dropping or pasting it.
 It travels with the message, with a removable preview before sending and a preview in the chat afterwards.
 Images and small text files are sent as content; other files are references to their original local paths.

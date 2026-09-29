@@ -17,7 +17,8 @@ review.
 ┌────┬─────────────────────────┬──────────────────────────────────────────┐
 │    │ Fix auth · Codex [New▾] │▣ Changes|Files|Comm…│Diff·All▾ Guide[+]⚌∿│
 │ L1 ├─────────────────────────┼─────────────────────┼────────────────────┤
-│    │ L4 Agent pane           │ L2 Navigator        │ L3 Canvas          │
+│    │ [Find…] 1/4 ↑ ↓ ×       │ L2 Navigator        │ [Find…] 3/12 ↑ ↓ × │
+│    │ L4 Agent pane           │                     │ L3 Canvas          │
 │ P  │                         │ or Commits          │                    │
 │ ── │ agent chat              │                     │ files, diffs and   │
 │▌#12│                         │                     │ diagrams (the agent│
@@ -28,6 +29,30 @@ review.
 └────┴─────────────────────────┴──────────────────────────────────────────┘
           ⌘K overlays the canvas; existing diagrams stay in place
 ```
+
+## Find
+
+⌘F (Edit > Find… or the command palette) opens a Find bar under the last-used pane's header. Only one bar is
+open at a time; canvas and chat remember separate queries for the window's lifetime. Enter / ⇧Enter or
+⌘G / ⇧⌘G move forward and backward, wrapping at the ends. Escape or × closes Find and restores focus. Literal,
+case-insensitive matching is the default, with an Aa toggle for Match Case. Matches are highlighted, the active
+match more strongly, with its position and the total count beside the field.
+
+- **Canvas:** searches all the files/file diffs in the selected range or view, in reading order, including
+  files below the viewport. The bar says _Find in canvas_ and names the current match's file; with one file it
+  names that file. File diffs include added and removed lines and shown context; split context counts once.
+  Collapsed unchanged regions are excluded until expanded. Reviewed files hidden by the display setting are
+  excluded. A whole file opened from Files or Open Quickly searches its full contents. View prose and diagrams
+  are outside this initial code-search scope.
+- **Agent pane:** searches the selected session's messages, code blocks, tool titles and comment/view cards.
+  It excludes the unsent composer. A match in clipped card/tool text reveals the text; closing Find restores
+  clipping. Streaming refreshes matches without scrolling the chat away from the selected result.
+
+The bar shows _Searching…_ while off-screen file contents load, and reports unreadable files instead of implying
+that a partial search is complete. Binary files have no searchable code. Next/Previous reveals the matching file
+and line without changing the selected range, marking files Reviewed, or adding Back/Forward history entries.
+Switching workspace, view, range or selected agent session clears that search's results. Scrolling and clicking
+another file do not change the search scope.
 
 ## Activity
 

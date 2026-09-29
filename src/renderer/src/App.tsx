@@ -8,6 +8,8 @@ import type { NewEntry, ReviewEntry } from "../../core/review";
 import type { AttachedPrompt, Prompt, View, ViewRange } from "../../core/views";
 import type { Workspace } from "../../core/workspaces";
 import { Agents } from "./Agents";
+import { FindBar } from "./FindBar";
+import { activateFindPane, closeFind, nextFind, openFind } from "./find";
 import { upsert } from "./ChatEntry";
 import { CanvasBar, PaneBar, type PaneTab, viewTitles } from "./CanvasBar";
 import { type Action, CommandPalette } from "./CommandPalette";
@@ -627,7 +629,31 @@ export function App() {
         workspaceId: currentWorkspace!.id,
       }),
   });
+  useEffect(() => {
+    closeFind(false);
+  }, [currentWorkspace?.id, viewId, showFile, range?.base, range?.head, screen]);
   const actions: Action[] = [
+    {
+      id: "find",
+      title: "Find…",
+      shortcut: "⌘F",
+      enabled: screen === "main" && !!currentWorkspace,
+      run: openFind,
+    },
+    {
+      id: "find-next",
+      title: "Find Next",
+      shortcut: "⌘G",
+      enabled: screen === "main" && !!currentWorkspace,
+      run: () => nextFind(),
+    },
+    {
+      id: "find-previous",
+      title: "Find Previous",
+      shortcut: "⇧⌘G",
+      enabled: screen === "main" && !!currentWorkspace,
+      run: () => nextFind(true),
+    },
     {
       id: "command-palette",
       title: "Command Palette",
@@ -860,6 +886,8 @@ export function App() {
         <>
           {/* The agent pane, always shown for a workspace. */}
           <div
+            onPointerDownCapture={() => activateFindPane("chat")}
+            onFocusCapture={() => activateFindPane("chat")}
             style={{ width: agentsWidth }}
             className={cn("flex min-w-60 flex-col border-r", divider)}
           >
@@ -878,7 +906,12 @@ export function App() {
       )}
 
       {/* The canvas: what the agent and the human look at together. For now, the workspace's file diffs. */}
-      <div style={{ minWidth: viewerMin }} className="flex min-w-0 flex-1 flex-col">
+      <div
+        style={{ minWidth: viewerMin }}
+        className="flex min-w-0 flex-1 flex-col"
+        onPointerDownCapture={() => activateFindPane("canvas")}
+        onFocusCapture={() => activateFindPane("canvas")}
+      >
         {!currentWorkspace ? (
           <>
             <div className={cn(titleBar, "border-b", divider)} />
@@ -966,6 +999,7 @@ export function App() {
                   setViewSettings(await window.coxswain.showViewMenu(viewSettings))
                 }
               />
+              <FindBar pane="canvas" />
               <div className="flex min-h-0 flex-1">
                 {sections && !showFile && (
                   <ViewToc

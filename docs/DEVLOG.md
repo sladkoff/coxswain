@@ -3,6 +3,25 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-29 — Find in the canvas and agent pane
+
+For G3 and G5 ([issue 15](https://github.com/sladkoff/coxswain/issues/15), ADR 0033).
+
+- ⌘F, ⌘G and ⇧⌘G run through the native Edit menu and action registry. The shared Find bar has a literal query,
+  Match Case, result count, Previous/Next and Escape to close. Each pane remembers its query in memory.
+- Canvas Find searches across the current range/view's file diffs and source embeds, including off-screen files;
+  a whole-file canvas searches that file. Hidden reviewed files and collapsed unchanged regions are excluded.
+  Cached reads use the existing core bridge with at most four viewers preparing at once. Navigating mounts the
+  target viewer and uses Pierre's line positions to reveal an off-screen result. Shared split context counts once.
+- Conversation Find searches the selected session's rendered messages and cards, reveals clipped matches and
+  suspends auto-scroll during search. CSS Highlight ranges preserve user selections and React/Pierre nodes.
+- Scope limits: no search across view prose/diagrams or other sessions; binary files are skipped. Unreadable files
+  produce an explicit partial-search message. No persisted search state or new dependencies.
+- Validation: initial scoped implementation passed typecheck and lint; matcher tests passed after fixing the
+  deleted-file boundary. The first Electron harness attempts were blocked by stale fixture APIs. The scope was
+  then broadened to all canvas diffs. Further automated/UI checks were stopped at the user's request; the user is
+  testing the final implementation locally.
+
 ## 2026-09-29 — Agent attachments
 
 For G3 and G5 ([issue 20](https://github.com/sladkoff/coxswain/issues/20)).
