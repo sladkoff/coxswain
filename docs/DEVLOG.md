@@ -9,14 +9,16 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
   processes end instead of running on until the app quits against an MCP URL whose workspace is gone. Sessions of
   workspaces still in the sidebar stay open when the user looks elsewhere, so a turn keeps running.
 - **Background tasks** (glossary, ADR 0018): a command the agent leaves running in the background, such as
-  `sleep 60` or a dev server, is listed on top of the composer until it ends, with × to stop it. Claude Code only;
-  Codex's adapter sends no such updates.
+  `sleep 60` or a dev server, is listed on top of the composer until it ends, with × to stop it.
 - The agent's reply when a background task ends now shows: that turn, which the agent starts on its own, reached no
   run and was dropped, so a "ping me in a minute" never came back.
 - Running subagents are listed with the background tasks (_Agent_ and the subagent's task), from their Agent call
   until it ends, or for one in the background until the turn ends. `ponytail:` that's a few seconds late, while the
   agent answers; the adapter's subagent sessions would say when, but they take the Agent call out of the replayed
   history (ADR 0018).
+- Codex's subagents are listed too, by their name (`sleep_ping`), from _Start subagent_ to _Complete subagent_. Its
+  background tasks use the same updates as Claude Code's, for commands in a background terminal; Codex mostly runs
+  commands in the foreground, so a "ping me in 10 seconds" shows no bar there.
 - The agent's messages in one turn are separate entries again, split on ACP's `messageId`: its reply before a
   subagent finished and the one after ran together without a space.
 - The message Claude Code sends itself when a background task ends (`<task-notification>…`), which a session's

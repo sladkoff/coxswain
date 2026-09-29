@@ -324,14 +324,29 @@ function backgroundTask(sessionId: string, u: AsyncTaskUpdate): boolean {
   return true;
 }
 
-// A subagent runs from its Agent call until that call ends, or, run in the background (the call ends at once), until
-// the turn does. Its own updates carry the call's id and aren't in the chat.
+// Claude Code's subagent runs from its Agent call until that call ends, or, run in the background (the call ends at
+// once), until the turn does. Its own updates carry the call's id and aren't in the chat. Codex's says when it starts
+// and ends, each as a tool call of its own (Start subagent …, Complete subagent …), by its thread.
 const inBackground = new Set<string>();
+type SubagentMeta = {
+  claudeCode?: { subagent?: boolean; toolResponse?: { isAsync?: boolean } };
+  codex?: { subagent?: { threadId: string; path: string; activity: string } };
+};
 function subagent(sessionId: string, u: acp.SessionUpdate) {
   if (u.sessionUpdate !== "tool_call" && u.sessionUpdate !== "tool_call_update") return;
-  const meta = (
-    u._meta as { claudeCode?: { subagent?: boolean; toolResponse?: { isAsync?: boolean } } }
-  )?.claudeCode;
+  const codex = (u._meta as SubagentMeta | undefined)?.codex?.subagent;
+  if (u.sessionUpdate === "tool_call" && codex) {
+    if (codex.activity === "started")
+      sessionStates.task(sessionId, {
+        id: codex.threadId,
+        name: codex.path.split("/").filter(Boolean).at(-1) ?? "subagent",
+        subagent: true,
+      });
+    else if (codex.activity === "completed" || codex.activity === "interrupted")
+      sessionStates.taskEnded(sessionId, codex.threadId);
+    return;
+  }
+  const meta = (u._meta as SubagentMeta | undefined)?.claudeCode;
   const id = u.toolCallId;
   if (u.sessionUpdate === "tool_call") {
     if (meta?.subagent) sessionStates.task(sessionId, { id, name: u.title, subagent: true });

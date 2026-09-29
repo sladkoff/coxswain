@@ -64,6 +64,8 @@ Claude Code (`@agentclientprotocol/claude-agent-acp`, built on the Claude Agent 
     replaces the Agent call with a child session, and its history replay leaves the subagent out, so a reopened
     session would lose it. A subagent stays the one tool line of its Agent call (`_meta.claudeCode.subagent`), and runs
     until that call ends, or, when it runs in the background, until the turn ends, which the adapter holds open for it.
+    `codex-acp` says when a subagent starts and ends as tool calls of their own (`_meta.codex.subagent`), and sends
+    `async_task_*` for commands in a background terminal under the same capability.
 
 ## Alternatives considered
 
