@@ -8,6 +8,15 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 - Removing a workspace closes its open agent sessions (`closeWorkspaceSessions`, `session/close`), so their agent
   processes end instead of running on until the app quits against an MCP URL whose workspace is gone. Sessions of
   workspaces still in the sidebar stay open when the user looks elsewhere, so a turn keeps running.
+- **Background tasks** (glossary, ADR 0018): a command the agent leaves running in the background, such as
+  `sleep 60` or a dev server, is listed on top of the composer until it ends, with × to stop it. Claude Code only;
+  Codex's adapter sends no such updates.
+- The agent's reply when a background task ends now shows: that turn, which the agent starts on its own, reached no
+  run and was dropped, so a "ping me in a minute" never came back.
+- Tools called in parallel get their titles: a title that arrived after the next tool had started was dropped, so the
+  line stayed the tool's kind (_Terminal_).
+- Tech debt: `ponytail:` session updates aren't checked against the ACP SDK's schema, which rejects the `async_task_*`
+  updates; parse again once the SDK has them. A turn the agent starts on its own shows no _Working_ and has no Stop.
 
 ## 2026-09-28 — View prompts
 

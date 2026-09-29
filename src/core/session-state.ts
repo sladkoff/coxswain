@@ -8,7 +8,11 @@ export type SessionState = {
   running: boolean;
   permission: Permission | null;
   error: string | null;
+  tasks: BackgroundTask[];
 };
+
+// A command the agent left running in the background, such as `sleep 60` or a dev server, from its start until it ends.
+export type BackgroundTask = { id: string; name: string };
 
 // ponytail: projections stay until app exit; evict idle sessions if long sessions need a memory bound.
 export class SessionStates {
@@ -30,7 +34,14 @@ export class SessionStates {
     if (pending) return pending;
     const load = history()
       .then((entries) => {
-        const state = { revision: 0, entries, running: false, permission: null, error: null };
+        const state: SessionState = {
+          revision: 0,
+          entries,
+          running: false,
+          permission: null,
+          error: null,
+          tasks: [],
+        };
         this.states.set(id, state);
         return state;
       })
@@ -52,19 +63,30 @@ export class SessionStates {
     return true;
   }
 
+  // An entry again under its id replaces it where it is: text grows, and a tool's title fills in, also one a few
+  // entries back when tools run in parallel. Skipped for a session not read yet.
   entry(id: string, entry: ChatEntry) {
-    const entries = this.states.get(id)!.entries;
-    const last = entries.at(-1);
-    this.update(id, {
-      entries:
-        entry.id !== undefined && last?.id === entry.id
-          ? [...entries.slice(0, -1), entry]
-          : [...entries, entry],
-    });
+    const entries = this.states.get(id)?.entries;
+    if (!entries) return;
+    const at = entry.id === undefined ? -1 : entries.findLastIndex((e) => e.id === entry.id);
+    this.update(id, { entries: at < 0 ? [...entries, entry] : entries.with(at, entry) });
   }
 
   permission(id: string, permission: Permission | null) {
     this.update(id, { permission });
+  }
+
+  // Skipped for a session not read yet: none of its turns ran in this app, so none of its tasks is known.
+  task(id: string, task: BackgroundTask) {
+    const tasks = this.states.get(id)?.tasks;
+    if (tasks && !tasks.some((t) => t.id === task.id)) this.update(id, { tasks: [...tasks, task] });
+  }
+
+  // The task ended, or with no taskId all of them: the agent's process went away.
+  taskEnded(id: string, taskId?: string) {
+    const tasks = this.states.get(id)?.tasks;
+    const left = tasks?.filter((t) => taskId !== undefined && t.id !== taskId);
+    if (tasks && left!.length < tasks.length) this.update(id, { tasks: left });
   }
 
   finish(id: string, result: TurnResult) {

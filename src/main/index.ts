@@ -30,6 +30,7 @@ import {
   setAgentPick,
   closeWorkspaceSessions,
   stopAgents,
+  stopBackgroundTask,
   stopTurn,
 } from "../core/agents";
 import { openDatabase } from "../core/db";
@@ -726,6 +727,9 @@ app.whenReady().then(() => {
       changed(w.webContents, { workspaceId, what: "sessions" });
   });
   ipcMain.handle("agents:stop-turn", (_, agentSessionId: string) => stopTurn(db, agentSessionId));
+  ipcMain.handle("agents:stop-task", (_, agentSessionId: string, taskId: string) =>
+    stopBackgroundTask(db, agentSessionId, taskId),
+  );
   ipcMain.handle("agents:answer-permission", (_, id: string, optionId: string | null) =>
     answerPermission(id, optionId),
   );

@@ -215,16 +215,29 @@ function adapter(name: Agent): Promise<Adapter> {
   a = (async () => {
     const { command, args, env } = agents[name].start();
     const child = spawn(command, args, { env, stdio: ["pipe", "pipe", "inherit"] });
+    const open = new Set<string>();
     const conn = acp
       .client({ name: "coxswain" })
       .onRequest(acp.methods.client.session.requestPermission, (ctx) => askPermission(ctx.params))
-      .onNotification(acp.methods.client.session.update, (ctx) => {
-        const u = ctx.params.update;
-        // Claude Code names a session a moment after its first turn ends, when no run listens any more.
-        if (u.sessionUpdate === "session_info_update" && u.title)
-          titleListeners.forEach((l) => l(ctx.params.sessionId, u.title!));
-        listening.get(ctx.params.sessionId)?.update(u);
-      })
+      // ponytail: session updates aren't checked against the SDK's schema, which rejects the adapter's async_task_*
+      // updates (a draft ACP extension); parse with the SDK again once it has them.
+      .onNotification(
+        acp.methods.client.session.update,
+        (p) => p as acp.SessionNotification,
+        (ctx) => {
+          const { sessionId } = ctx.params;
+          const u = ctx.params.update;
+          if (backgroundTask(sessionId, u as unknown as AsyncTaskUpdate)) return;
+          // Claude Code names a session a moment after its first turn ends, when no run listens any more.
+          if (u.sessionUpdate === "session_info_update" && u.title)
+            titleListeners.forEach((l) => l(sessionId, u.title!));
+          const run = listening.get(sessionId);
+          if (run) {
+            idle.delete(sessionId);
+            run.update(u);
+          } else idleUpdate(sessionId, u);
+        },
+      )
       .connect(
         acp.ndJsonStream(
           Writable.toWeb(child.stdin!),
@@ -233,19 +246,64 @@ function adapter(name: Agent): Promise<Adapter> {
       );
     const gone = () => {
       if (adapters.get(name) === a) adapters.delete(name);
+      for (const id of open) sessionStates.taskEnded(id);
       conn.close(new Error(`The ${name} adapter stopped`));
     };
     child.on("exit", gone);
     child.on("error", gone);
     await conn.agent.request(acp.methods.agent.initialize, {
       protocolVersion: acp.PROTOCOL_VERSION,
-      clientCapabilities: {},
+      // The adapter tells a client that says so about commands left running in the background (Claude Code's
+      // extension, under JetBrains' AIR name).
+      clientCapabilities: {
+        _meta: { jetbrains: { air: { version: 1, capabilities: ["asyncTasks"] } } },
+      },
     });
-    return { child, agent: conn.agent, open: new Set<string>() };
+    return { child, agent: conn.agent, open };
   })();
   a.catch(() => adapters.delete(name));
   adapters.set(name, a);
   return a;
+}
+
+// A turn the agent starts on its own, between the user's: Claude Code answers a background task that ended. Its
+// updates reach no run, so they go straight to the session's projection, while the pane shows it.
+const idle = new Map<string, (u: acp.SessionUpdate) => void>();
+function idleUpdate(sessionId: string, u: acp.SessionUpdate) {
+  let update = idle.get(sessionId);
+  if (!update) {
+    update = chat((e) => sessionStates.entry(sessionId, withComment(e)));
+    idle.set(sessionId, update);
+  }
+  update(u);
+}
+
+// The adapter's updates on commands left running in the background; true when u is one.
+type AsyncTaskUpdate =
+  | { sessionUpdate: "async_task_spawned"; asyncTaskId: string; name: string }
+  | { sessionUpdate: "async_task_progress"; asyncTaskId: string }
+  | {
+      sessionUpdate: "async_task_state_update";
+      asyncTaskId: string;
+      state: "running" | "paused" | "completed" | "failed" | "stopped";
+    };
+function backgroundTask(sessionId: string, u: AsyncTaskUpdate): boolean {
+  if (u.sessionUpdate === "async_task_spawned")
+    sessionStates.task(sessionId, { id: u.asyncTaskId, name: u.name });
+  else if (u.sessionUpdate === "async_task_state_update") {
+    if (u.state !== "running" && u.state !== "paused")
+      sessionStates.taskEnded(sessionId, u.asyncTaskId);
+  } else if (u.sessionUpdate !== "async_task_progress") return false;
+  return true;
+}
+
+// Stops a command the agent left running in the background; the agent is told it was stopped.
+export async function stopBackgroundTask(db: Db, agentSessionId: string, taskId: string) {
+  const a = await adapter((await sessionOf(db, agentSessionId)).agent);
+  await a.agent.request("_session/async_task/stop", {
+    sessionId: agentSessionId,
+    asyncTaskId: taskId,
+  });
 }
 
 async function askPermission(
@@ -284,7 +342,8 @@ export function answerPermission(id: string, optionId: string | null) {
 // so text shows as it's written and a tool's title fills in (its first update carries only the tool's kind).
 let nextEntry = 0;
 function chat(onEntry: (e: ChatEntry) => void) {
-  let last: (ChatEntry & { toolCallId?: string; name?: string | null }) | null = null;
+  let last: (ChatEntry & { name?: string | null }) | null = null;
+  const tools = new Map<string, ChatEntry & { name?: string | null }>();
   const emit = (e: typeof last) => {
     last = e;
     if (e?.text.trim())
@@ -303,19 +362,17 @@ function chat(onEntry: (e: ChatEntry) => void) {
       const text = last?.kind === kind ? last.text : "";
       emit({ id: last?.kind === kind ? last.id : nextEntry++, kind, text: text + u.content.text });
     } else if (u.sessionUpdate === "tool_call") {
-      emit({
-        id: nextEntry++,
-        kind: "tool",
-        text: toolTitle(u),
-        toolCallId: u.toolCallId,
-        name: u.name,
-      });
-    } else if (
-      u.sessionUpdate === "tool_call_update" &&
-      u.title &&
-      last?.toolCallId === u.toolCallId
-    ) {
-      emit({ ...last, text: toolTitle({ title: u.title, name: u.name ?? last.name }) });
+      const tool = { id: nextEntry++, kind: "tool" as const, text: toolTitle(u), name: u.name };
+      tools.set(u.toolCallId, tool);
+      emit(tool);
+    } else if (u.sessionUpdate === "tool_call_update" && u.title) {
+      // Tools the agent calls in parallel start one after another, and their titles come in later, in any order.
+      const tool = tools.get(u.toolCallId);
+      if (!tool) return;
+      tool.text = toolTitle({ title: u.title, name: u.name ?? tool.name });
+      const after = last;
+      emit(tool);
+      last = after;
     }
   };
 }

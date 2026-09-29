@@ -67,3 +67,32 @@ test("independent sessions finish while no pane listens, and failed history load
   assert.equal((await states.read("a", async () => [])).running, false);
   assert.equal((await states.read("b", async () => [])).running, true);
 });
+
+test("parallel tools' titles fill in where they are; background tasks show until they end", async () => {
+  const states = new SessionStates();
+  states.task("a", { id: "t0", name: "unread" });
+  states.entry("a", { kind: "text", text: "unread" });
+  await states.read("a", async () => []);
+  assert.equal(
+    (await states.read("a", async () => [])).entries.length,
+    0,
+    "a session not read is skipped",
+  );
+  states.entry("a", { id: 1, kind: "tool", text: "Terminal" });
+  states.entry("a", { id: 2, kind: "tool", text: "Terminal" });
+  states.entry("a", { id: 1, kind: "tool", text: "Bash sleep 60" });
+  states.entry("a", { kind: "text", text: "Started" });
+  let s = await states.read("a", async () => []);
+  assert.deepEqual(
+    s.entries.map((e) => e.text),
+    ["Bash sleep 60", "Terminal", "Started"],
+  );
+  states.task("a", { id: "t1", name: "sleep 60" });
+  states.task("a", { id: "t1", name: "sleep 60" });
+  states.task("a", { id: "t2", name: "pnpm dev" });
+  states.taskEnded("a", "t1");
+  s = await states.read("a", async () => []);
+  assert.deepEqual(s.tasks, [{ id: "t2", name: "pnpm dev" }]);
+  states.taskEnded("a");
+  assert.deepEqual((await states.read("a", async () => [])).tasks, [], "the agent went away");
+});
