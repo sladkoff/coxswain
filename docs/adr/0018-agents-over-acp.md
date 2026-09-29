@@ -71,6 +71,15 @@ Claude Code (`@agentclientprotocol/claude-agent-acp`, built on the Claude Agent 
     announced one only at the subagent's own messages, which its history doesn't hold. Drop the patch once upstream
     fixes it.
 
+13. **One turn at a time per session; the queue is coxswain's.** ACP runs one `session/prompt` at a time. A message
+    sent while a turn runs waits in the session projection's queue, where the pane shows it and can take it off, and
+    runs when the turn ends, before any other turn can start. `claude-agent-acp` would queue a second `session/prompt`
+    itself, but out of sight, and a message handed over can't be taken back. _Send now_ uses `_session/steering`, an
+    extension both adapters advertise (`InitializeResponse._meta.steering.supported`): the message goes into the
+    running turn instead of cancelling it. With `idleBehavior: "promptRequired"` Claude Code hands it back if the turn
+    had just ended, and it runs next; Codex ignores that and starts a turn of its own, which the chat shows like any
+    turn the agent starts.
+
 ## Alternatives considered
 
 - **The Claude Agent SDK directly**, with its `canUseTool`. Everything we need for Claude, in-process and typed, but

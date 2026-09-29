@@ -15,7 +15,8 @@ type Pane = {
   draft: string;
   attachments: Attachment[];
   attaching: boolean;
-  sending: boolean;
+  // The session a message is being sent to, until the core shows it; "new" while its session starts.
+  sending: string | null;
   pendingMessage: ChatEntry | null;
   beforeRevision: number;
   error: string | null;
@@ -27,7 +28,7 @@ const empty: Pane = {
   attachments: [],
   attaching: false,
   attached: null,
-  sending: false,
+  sending: null,
   pendingMessage: null,
   beforeRevision: -1,
   error: null,

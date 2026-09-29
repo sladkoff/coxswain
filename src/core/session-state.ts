@@ -9,7 +9,15 @@ export type SessionState = {
   permission: Permission | null;
   error: string | null;
   tasks: BackgroundTask[];
+  queued: QueuedMessage[];
 };
+
+// A message sent while a turn runs, waiting for it to end (#24). id: its place in the queue, to take it off or send it
+// into the running turn.
+export type QueuedMessage = { id: number; entry: ChatEntry };
+// What a queued message does when it leaves the queue: runs as the session's next turn, goes into the running one, or
+// nothing (taken off).
+export type Dequeued = "turn" | "steer" | null;
 
 // A command the agent left running in the background, such as `sleep 60` or a dev server, from its start until it ends;
 // or a subagent, which can't be stopped on its own.
@@ -20,6 +28,8 @@ export class SessionStates {
   private states = new Map<string, SessionState>();
   private loading = new Map<string, Promise<SessionState>>();
   private listeners = new Set<(id: string, state: SessionState) => void>();
+  private waiting = new Map<number, (go: Dequeued) => void>();
+  private nextQueued = 0;
 
   subscribe(listener: (id: string, state: SessionState) => void) {
     this.listeners.add(listener);
@@ -42,6 +52,7 @@ export class SessionStates {
           permission: null,
           error: null,
           tasks: [],
+          queued: [],
         };
         this.states.set(id, state);
         return state;
@@ -62,6 +73,30 @@ export class SessionStates {
     if (this.states.get(id)!.running) return false;
     this.update(id, { running: true, permission: null, error: null });
     return true;
+  }
+
+  // Starts a turn, or queues entry behind the running one (front: before the other queued messages). Resolves when the
+  // message leaves the queue; with "turn" the session is running it, as after start.
+  queue(id: string, entry: ChatEntry, front = false): Promise<Dequeued> {
+    if (this.start(id)) return Promise.resolve("turn");
+    const message = { id: this.nextQueued++, entry };
+    const queued = this.states.get(id)!.queued;
+    this.update(id, { queued: front ? [message, ...queued] : [...queued, message] });
+    return new Promise((resolve) => this.waiting.set(message.id, resolve));
+  }
+
+  // Takes a queued message off, or with no queuedId all of them, to go into the running turn (steer) or nowhere.
+  dequeue(id: string, queuedId: number | undefined, go: "steer" | null) {
+    const queued = this.states.get(id)?.queued ?? [];
+    const leaving = queued.filter((m) => queuedId === undefined || m.id === queuedId);
+    if (!leaving.length) return;
+    this.update(id, { queued: queued.filter((m) => !leaving.includes(m)) });
+    for (const m of leaving) this.resolve(m.id, go);
+  }
+
+  private resolve(queuedId: number, go: Dequeued) {
+    this.waiting.get(queuedId)?.(go);
+    this.waiting.delete(queuedId);
   }
 
   // An entry again under its id replaces it where it is: text grows, and a tool's title fills in, also one a few
@@ -90,11 +125,16 @@ export class SessionStates {
     if (tasks && left!.length < tasks.length) this.update(id, { tasks: left });
   }
 
+  // The next queued message, if any, runs straight on, so no other turn starts in between.
+  // ponytail: the queue carries on after Stop and after an error; hand it back to the composer if that surprises.
   finish(id: string, result: TurnResult) {
+    const [next, ...queued] = this.states.get(id)!.queued;
     this.update(id, {
-      running: false,
+      running: !!next,
+      queued,
       permission: null,
-      error: result.status === "error" ? result.message : null,
+      error: !next && result.status === "error" ? result.message : null,
     });
+    if (next) this.resolve(next.id, "turn");
   }
 }

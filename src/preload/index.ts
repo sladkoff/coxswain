@@ -259,6 +259,11 @@ const api = {
     ipcRenderer.invoke("settings:set-comment-to-agent", toAgent),
   stopTurn: (agentSessionId: string): Promise<void> =>
     ipcRenderer.invoke("agents:stop-turn", agentSessionId),
+  // A message queued behind the running turn: sent into it now, or taken off the queue.
+  steerQueued: (agentSessionId: string, queuedId: number): Promise<void> =>
+    ipcRenderer.invoke("agents:steer", agentSessionId, queuedId),
+  unqueue: (agentSessionId: string, queuedId: number): Promise<void> =>
+    ipcRenderer.invoke("agents:unqueue", agentSessionId, queuedId),
   // Stops a command the agent left running in the background.
   stopBackgroundTask: (agentSessionId: string, taskId: string): Promise<void> =>
     ipcRenderer.invoke("agents:stop-task", agentSessionId, taskId),

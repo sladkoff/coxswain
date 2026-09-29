@@ -111,3 +111,36 @@ test("subagents are listed with commands until they end, also past the turn", as
   states.taskEnded("a", "s");
   assert.deepEqual((await states.read("a", async () => [])).tasks, [{ id: "c", name: "pnpm dev" }]);
 });
+
+test("messages sent during a turn queue behind it, run in order, and can be taken off or sent into it", async () => {
+  const states = new SessionStates();
+  await states.read("a", async () => []);
+  assert.equal(await states.queue("a", { kind: "user", text: "first" }), "turn");
+  const second = states.queue("a", { kind: "user", text: "second" });
+  const third = states.queue("a", { kind: "user", text: "third" });
+  const fourth = states.queue("a", { kind: "user", text: "fourth" });
+  const queued = (await states.read("a", async () => [])).queued;
+  assert.deepEqual(
+    queued.map((m) => m.entry.text),
+    ["second", "third", "fourth"],
+  );
+  states.dequeue("a", queued[1].id, null);
+  assert.equal(await third, null);
+  states.dequeue("a", queued[2].id, "steer");
+  assert.equal(await fourth, "steer");
+  states.finish("a", { status: "error", message: "Stopped" });
+  assert.equal(await second, "turn");
+  const next = await states.read("a", async () => []);
+  assert.equal(next.running, true, "no other turn starts in between");
+  assert.deepEqual(next.queued, []);
+  assert.equal(next.error, null);
+  const front = states.queue("a", { kind: "user", text: "back" });
+  const steered = states.queue("a", { kind: "user", text: "handed back" }, true);
+  assert.deepEqual(
+    (await states.read("a", async () => [])).queued.map((m) => m.entry.text),
+    ["handed back", "back"],
+  );
+  states.dequeue("a", undefined, null);
+  assert.equal(await front, null);
+  assert.equal(await steered, null);
+});

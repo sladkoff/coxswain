@@ -37,6 +37,8 @@ import {
   stopAgents,
   stopBackgroundTask,
   stopTurn,
+  steerQueued,
+  unqueue,
 } from "../core/agents";
 import { openDatabase } from "../core/db";
 import {
@@ -837,6 +839,12 @@ app.whenReady().then(() => {
       changed(w.webContents, { workspaceId, what: "sessions" });
   });
   ipcMain.handle("agents:stop-turn", (_, agentSessionId: string) => stopTurn(db, agentSessionId));
+  ipcMain.handle("agents:steer", (_, agentSessionId: string, queuedId: number) =>
+    steerQueued(agentSessionId, queuedId),
+  );
+  ipcMain.handle("agents:unqueue", (_, agentSessionId: string, queuedId: number) =>
+    unqueue(agentSessionId, queuedId),
+  );
   ipcMain.handle("agents:stop-task", (_, agentSessionId: string, taskId: string) =>
     stopBackgroundTask(db, agentSessionId, taskId),
   );

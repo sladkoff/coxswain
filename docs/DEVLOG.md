@@ -3,6 +3,29 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-29 — Queueing and steering in the agent pane
+
+For G5 ([issue 24](https://github.com/sladkoff/coxswain/issues/24), ADR 0018 point 13).
+
+### What works
+
+- **Send while a turn runs.** The composer stays usable: typing, pasting and dropping files, the paperclip. Sending
+  queues the message in the core's session projection (`SessionStates.queue`), shown on top of the composer; each
+  runs as the next turn when the running one ends, with no gap for another turn to take. × takes one off.
+- **Send now steers** through the adapters' `_session/steering`: the message joins the running turn instead of
+  stopping it. Claude Code hands it back if the turn had just ended, and it goes first in the queue.
+- Comments and reviews from the canvas queue too, instead of failing with "A turn is already running".
+- The session picker and New session work while a turn runs; sending and the pending message belong to the session
+  they went to, so another can be shown or started meanwhile.
+- Attachments are checked and saved when a message is sent, so a bad one fails at once, not when its turn comes.
+
+### Tech debt
+
+- The queue carries on after Stop and after an error (`ponytail:` in `session-state.ts`); hand it back to the
+  composer if that surprises.
+- The queue lives in memory: quitting drops it, like a draft.
+- A steered message is added to the chat where it was sent, not where the agent took it in.
+
 ## 2026-09-29 — Language servers for Go to Definition and Find Usages
 
 For G3 ([issue 16](https://github.com/sladkoff/coxswain/issues/16), ADR 0034).
