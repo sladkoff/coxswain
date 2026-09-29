@@ -55,8 +55,19 @@ const viewHeader = /^\[View · (.+)\]\n/;
 export const formatView = (title: string, note: string, prompt: string) =>
   `[View · ${title}]\n${note}\n\n---\n${prompt}`;
 
+// Claude Code tells the agent that a background task ended as a message of its own, kept in the session's history; the
+// chat shows its summary as one line, like a tool.
+const taskNotification = /^\s*<task-notification>/;
+const taskSummary = /<summary>([\s\S]*?)<\/summary>/;
+
 function withComment(entry: ChatEntry): ChatEntry {
   if (entry.kind !== "user") return entry;
+  if (taskNotification.test(entry.text))
+    return {
+      ...entry,
+      kind: "tool",
+      text: taskSummary.exec(entry.text)?.[1].trim() || "A background task ended",
+    };
   const r = reviewHeader.exec(entry.text);
   if (r) return { ...entry, review: { threads: Number(r[1]) } };
   const v = viewHeader.exec(entry.text);
@@ -215,43 +226,160 @@ function adapter(name: Agent): Promise<Adapter> {
   a = (async () => {
     const { command, args, env } = agents[name].start();
     const child = spawn(command, args, { env, stdio: ["pipe", "pipe", "inherit"] });
+    const open = new Set<string>();
     const conn = acp
       .client({ name: "coxswain" })
       .onRequest(acp.methods.client.session.requestPermission, (ctx) => askPermission(ctx.params))
       .onNotification(acp.methods.client.session.update, (ctx) => {
-        const u = ctx.params.update;
+        const { sessionId, update: u } = ctx.params;
+        if (parents.has(sessionId)) return; // a subagent's own work: the chat shows the main thread
         // Claude Code names a session a moment after its first turn ends, when no run listens any more.
         if (u.sessionUpdate === "session_info_update" && u.title)
-          titleListeners.forEach((l) => l(ctx.params.sessionId, u.title!));
-        listening.get(ctx.params.sessionId)?.update(u);
+          titleListeners.forEach((l) => l(sessionId, u.title!));
+        const run = listening.get(sessionId);
+        if (run) {
+          idle.delete(sessionId);
+          run.update(u);
+        } else idleUpdate(sessionId, u);
       })
       .connect(
-        acp.ndJsonStream(
-          Writable.toWeb(child.stdin!),
-          Readable.toWeb(child.stdout!) as ReadableStream<Uint8Array>,
+        withExtensions(
+          acp.ndJsonStream(
+            Writable.toWeb(child.stdin!),
+            Readable.toWeb(child.stdout!) as ReadableStream<Uint8Array>,
+          ),
         ),
       );
     const gone = () => {
       if (adapters.get(name) === a) adapters.delete(name);
+      for (const id of open) sessionStates.taskEnded(id);
       conn.close(new Error(`The ${name} adapter stopped`));
     };
     child.on("exit", gone);
     child.on("error", gone);
     await conn.agent.request(acp.methods.agent.initialize, {
       protocolVersion: acp.PROTOCOL_VERSION,
-      clientCapabilities: {},
+      // The adapters tell a client that says so about commands left running in the background and about subagents,
+      // each a session of its own (draft ACP, under JetBrains' AIR name).
+      clientCapabilities: {
+        _meta: {
+          jetbrains: {
+            air: { version: 1, capabilities: ["asyncTasks", "nativeSubagentSessions"] },
+          },
+        },
+      },
     });
-    return { child, agent: conn.agent, open: new Set<string>() };
+    return { child, agent: conn.agent, open };
   })();
   a.catch(() => adapters.delete(name));
   adapters.set(name, a);
   return a;
 }
 
+// A turn the agent starts on its own, between the user's: Claude Code answers a background task that ended. Its
+// updates reach no run, so they go straight to the session's projection, while the pane shows it.
+const idle = new Map<string, (u: acp.SessionUpdate) => void>();
+function idleUpdate(sessionId: string, u: acp.SessionUpdate) {
+  let update = idle.get(sessionId);
+  if (!update) {
+    update = chat((e) => sessionStates.entry(sessionId, withComment(e)));
+    idle.set(sessionId, update);
+  }
+  update(u);
+}
+
+// ponytail: the adapters' async_task_* and subagent_* updates (draft ACP) are handled before the SDK sees them, since it
+// checks every session/update against its schema and throws them away; hand them to the SDK once it has them.
+function withExtensions(stream: acp.Stream): acp.Stream {
+  const readable = stream.readable.pipeThrough(
+    new TransformStream<acp.AnyMessage, acp.AnyMessage>({
+      transform(m, out) {
+        if (!("method" in m) || m.method !== acp.methods.client.session.update)
+          return out.enqueue(m);
+        const { sessionId, update } = m.params as { sessionId: string; update: ExtensionUpdate };
+        if (backgroundTask(sessionId, update)) return;
+        const line = subagent(sessionId, update);
+        out.enqueue(line ? { ...m, params: { sessionId, update: line } } : m);
+      },
+    }),
+  );
+  return { ...stream, readable };
+}
+type ExtensionUpdate = AsyncTaskUpdate | SubagentUpdate;
+
+// A subagent is a session of its own, started from one of the session's (its parent's). Its start and end become a
+// tool line in its parent's chat, where the stream has them, so a replayed history shows it too; while it runs it's
+// listed with the background tasks of the session the user chats with.
+type SubagentUpdate =
+  | { sessionUpdate: "subagent_spawned"; subagentSessionId: string; name: string }
+  | {
+      sessionUpdate: "subagent_state_update";
+      subagentSessionId: string;
+      state: "completed" | "failed" | "cancelled" | "disconnected";
+    };
+const parents = new Map<string, string>();
+const topOf = (sessionId: string): string => {
+  const parent = parents.get(sessionId);
+  return parent ? topOf(parent) : sessionId;
+};
+function subagent(sessionId: string, u: ExtensionUpdate): acp.SessionUpdate | null {
+  if (u.sessionUpdate !== "subagent_spawned" && u.sessionUpdate !== "subagent_state_update")
+    return null;
+  const id = u.subagentSessionId;
+  if (u.sessionUpdate === "subagent_spawned") {
+    parents.set(id, sessionId);
+    sessionStates.task(topOf(sessionId), { id, name: u.name, subagent: true });
+    return {
+      sessionUpdate: "tool_call",
+      toolCallId: id,
+      title: u.name,
+      name: "Agent",
+      kind: "other",
+      status: "in_progress",
+    };
+  }
+  sessionStates.taskEnded(topOf(sessionId), id);
+  return {
+    sessionUpdate: "tool_call_update",
+    toolCallId: id,
+    status: u.state === "completed" ? "completed" : "failed",
+  };
+}
+
+// The adapter's updates on commands left running in the background; true when u is one.
+type AsyncTaskUpdate =
+  | { sessionUpdate: "async_task_spawned"; asyncTaskId: string; name: string }
+  | { sessionUpdate: "async_task_progress"; asyncTaskId: string }
+  | {
+      sessionUpdate: "async_task_state_update";
+      asyncTaskId: string;
+      state: "running" | "paused" | "completed" | "failed" | "stopped";
+    };
+function backgroundTask(sessionId: string, u: ExtensionUpdate): boolean {
+  if (u.sessionUpdate === "async_task_spawned")
+    sessionStates.task(sessionId, { id: u.asyncTaskId, name: u.name });
+  else if (u.sessionUpdate === "async_task_state_update") {
+    if (u.state !== "running" && u.state !== "paused")
+      sessionStates.taskEnded(sessionId, u.asyncTaskId);
+  } else if (u.sessionUpdate !== "async_task_progress") return false;
+  return true;
+}
+
+// Stops a command the agent left running in the background; the agent is told it was stopped.
+export async function stopBackgroundTask(db: Db, agentSessionId: string, taskId: string) {
+  const a = await adapter((await sessionOf(db, agentSessionId)).agent);
+  await a.agent.request("_session/async_task/stop", {
+    sessionId: agentSessionId,
+    asyncTaskId: taskId,
+  });
+}
+
+// A subagent's requests are asked in the session the user chats with.
 async function askPermission(
   p: acp.RequestPermissionRequest,
 ): Promise<acp.RequestPermissionResponse> {
-  const ask = listening.get(p.sessionId)?.handlers.onPermission;
+  const sessionId = topOf(p.sessionId);
+  const ask = listening.get(sessionId)?.handlers.onPermission;
   const reject =
     p.options.find((o) => o.kind === "reject_once") ??
     p.options.find((o) => o.kind.startsWith("reject"));
@@ -261,7 +389,7 @@ async function askPermission(
       : { outcome: { outcome: "cancelled" } };
   const id = randomUUID();
   const optionId = await new Promise<string | null>((resolve) => {
-    pending.set(id, { sessionId: p.sessionId, resolve });
+    pending.set(id, { sessionId, resolve });
     ask({
       id,
       title: p.toolCall.title ?? "Use a tool",
@@ -269,7 +397,7 @@ async function askPermission(
     }).then(resolve);
   });
   pending.delete(id);
-  sessionStates.permission(p.sessionId, null);
+  sessionStates.permission(sessionId, null);
   return optionId
     ? { outcome: { outcome: "selected", optionId } }
     : { outcome: { outcome: "cancelled" } };
@@ -284,7 +412,9 @@ export function answerPermission(id: string, optionId: string | null) {
 // so text shows as it's written and a tool's title fills in (its first update carries only the tool's kind).
 let nextEntry = 0;
 function chat(onEntry: (e: ChatEntry) => void) {
-  let last: (ChatEntry & { toolCallId?: string; name?: string | null }) | null = null;
+  let last: (ChatEntry & { name?: string | null }) | null = null;
+  const tools = new Map<string, ChatEntry & { name?: string | null }>();
+  let messageId: string | null | undefined;
   const emit = (e: typeof last) => {
     last = e;
     if (e?.text.trim())
@@ -300,22 +430,26 @@ function chat(onEntry: (e: ChatEntry) => void) {
     if (u.sessionUpdate === "agent_message_chunk" || u.sessionUpdate === "user_message_chunk") {
       if (u.content.type !== "text") return;
       const kind = u.sessionUpdate === "agent_message_chunk" ? "text" : "user";
-      const text = last?.kind === kind ? last.text : "";
-      emit({ id: last?.kind === kind ? last.id : nextEntry++, kind, text: text + u.content.text });
-    } else if (u.sessionUpdate === "tool_call") {
+      // A new messageId is a new message, such as the agent's reply after a subagent it waited on finished.
+      const same = last?.kind === kind && (!u.messageId || !messageId || u.messageId === messageId);
+      messageId = u.messageId ?? messageId;
       emit({
-        id: nextEntry++,
-        kind: "tool",
-        text: toolTitle(u),
-        toolCallId: u.toolCallId,
-        name: u.name,
+        id: same ? last!.id : nextEntry++,
+        kind,
+        text: (same ? last!.text : "") + u.content.text,
       });
-    } else if (
-      u.sessionUpdate === "tool_call_update" &&
-      u.title &&
-      last?.toolCallId === u.toolCallId
-    ) {
-      emit({ ...last, text: toolTitle({ title: u.title, name: u.name ?? last.name }) });
+    } else if (u.sessionUpdate === "tool_call") {
+      const tool = { id: nextEntry++, kind: "tool" as const, text: toolTitle(u), name: u.name };
+      tools.set(u.toolCallId, tool);
+      emit(tool);
+    } else if (u.sessionUpdate === "tool_call_update" && u.title) {
+      // Tools the agent calls in parallel start one after another, and their titles come in later, in any order.
+      const tool = tools.get(u.toolCallId);
+      if (!tool) return;
+      tool.text = toolTitle({ title: u.title, name: u.name ?? tool.name });
+      const after = last;
+      emit(tool);
+      last = after;
     }
   };
 }
@@ -537,6 +671,29 @@ async function history(
     listening.delete(sessionId);
   }
 }
+
+// Closes a workspace's open agent sessions, ending their agent processes and any turn running; for a workspace being
+// removed. Sessions of workspaces still in the sidebar stay open, and keep running when the user looks elsewhere.
+export async function closeWorkspaceSessions(db: Db, workspaceId: number): Promise<void> {
+  const rows = await db
+    .selectFrom("agent_sessions")
+    .select(["agent_session_id as sessionId", "agent"])
+    .where("workspace_id", "=", workspaceId)
+    .execute();
+  await Promise.all(
+    rows.map(async ({ sessionId, agent }) => {
+      const a = await adapters.get(agent as Agent)?.catch(() => null);
+      if (!a?.open.delete(sessionId)) return;
+      configs.delete(sessionId);
+      await a.agent.request(acp.methods.agent.session.close, { sessionId }).catch(() => {});
+    }),
+  );
+}
+
+// Whether an agent is at work on a turn or a file summary, which stopping the adapters would end.
+// ponytail: the agent's own turns and background tasks between turns don't count; track them if a relaunch cuts one
+// short.
+export const agentsBusy = () => listening.size > 0;
 
 export async function stopAgents() {
   for (const a of adapters.values())

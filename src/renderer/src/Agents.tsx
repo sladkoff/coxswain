@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import type { Agent, AgentSession, Pick } from "../../core/agents";
+import type { BackgroundTask } from "../../core/session-state";
 import type { AttachedPrompt } from "../../core/views";
 import type { Workspace } from "../../core/workspaces";
 import { Entry, TurnStatus } from "./ChatEntry";
@@ -11,6 +12,7 @@ import {
   GaugeIcon,
   PanelLeftIcon,
   SparklesIcon,
+  SpinnerIcon,
   SquarePenIcon,
   StopIcon,
   XIcon,
@@ -197,6 +199,9 @@ export function Agents({ workspace, onViewThread, composerPrompt, onShowSidebar 
           "border-neutral-300 dark:border-neutral-700",
         )}
       >
+        {session && !!live?.tasks.length && (
+          <BackgroundTasks agentSessionId={session.agentSessionId} tasks={live.tasks} />
+        )}
         {attached && <AttachedCard prompt={attached} onRemove={() => patch({ attached: null })} />}
         <TextArea
           bare
@@ -363,6 +368,37 @@ function AttachedCard(props: { prompt: AttachedPrompt; onRemove: () => void }) {
       >
         {props.prompt.prompt}
       </button>
+    </div>
+  );
+}
+
+// The commands the agent left running in the background, each with Stop, and its subagents, on top of the composer
+// while they run. The agent is told when a command ends and answers on its own; the turn's Stop stops subagents.
+function BackgroundTasks(props: { agentSessionId: string; tasks: BackgroundTask[] }) {
+  return (
+    <div className={cn("flex flex-col border-b px-2 py-1 text-xs", divider)}>
+      {props.tasks.map((t) => (
+        <div key={t.id} className="flex min-w-0 items-center gap-1.5">
+          <span className={cn("shrink-0", muted)}>
+            <SpinnerIcon />
+          </span>
+          <span className="min-w-0 flex-1 truncate" title={t.name}>
+            {t.subagent && <span className={muted}>Agent </span>}
+            {t.name}
+          </span>
+          {!t.subagent && (
+            <Button
+              variant="ghost"
+              className="shrink-0 p-0.5 text-neutral-500"
+              title="Stop this background command"
+              aria-label={`Stop ${t.name}`}
+              onClick={() => window.coxswain.stopBackgroundTask(props.agentSessionId, t.id)}
+            >
+              <XIcon />
+            </Button>
+          )}
+        </div>
+      ))}
     </div>
   );
 }

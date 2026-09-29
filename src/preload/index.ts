@@ -233,6 +233,9 @@ const api = {
     ipcRenderer.invoke("settings:set-comment-to-agent", toAgent),
   stopTurn: (agentSessionId: string): Promise<void> =>
     ipcRenderer.invoke("agents:stop-turn", agentSessionId),
+  // Stops a command the agent left running in the background.
+  stopBackgroundTask: (agentSessionId: string, taskId: string): Promise<void> =>
+    ipcRenderer.invoke("agents:stop-task", agentSessionId, taskId),
   onPermission: (callback: (agentSessionId: string, permission: Permission) => void) => {
     const listener = (_: unknown, id: string, p: Permission) => callback(id, p);
     ipcRenderer.on("agents:permission", listener);

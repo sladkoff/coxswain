@@ -3,6 +3,37 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-29 — General improvements
+
+- Removing a workspace closes its open agent sessions (`closeWorkspaceSessions`, `session/close`), so their agent
+  processes end instead of running on until the app quits against an MCP URL whose workspace is gone. Sessions of
+  workspaces still in the sidebar stay open when the user looks elsewhere, so a turn keeps running.
+- **Background tasks** (glossary, ADR 0018): a command the agent leaves running in the background, such as
+  `sleep 60` or a dev server, is listed on top of the composer until it ends, with × to stop it.
+- The agent's reply when a background task ends now shows: that turn, which the agent starts on its own, reached no
+  run and was dropped, so a "ping me in a minute" never came back.
+- Running subagents are listed with the background tasks (_Agent_ and its name), from start to end, for Claude Code
+  and Codex alike: both adapters implement ACP's draft subagent sessions, now advertised (ADR 0018). A subagent's start
+  becomes its `Agent …` line in the chat, live and in a reopened session; Codex's _Start subagent_ / _Complete
+  subagent_ lines are gone. Its permission requests reach the pane's prompt. `claude-agent-acp` is patched so its
+  replay keeps the subagent (`patches/`; drop it once upstream fixes it). No × for a subagent: no adapter offers it.
+- Codex's background tasks use the same updates as Claude Code's, for commands in a background terminal; Codex mostly
+  runs commands in the foreground, so a "ping me in 10 seconds" shows no bar there.
+- The agent's messages in one turn are separate entries again, split on ACP's `messageId`: its reply before a
+  subagent finished and the one after ran together without a space.
+- The message Claude Code sends itself when a background task ends (`<task-notification>…`), which a session's
+  history replays as the user's, shows as one line with its summary instead of the raw XML.
+- Tools called in parallel get their titles: a title that arrived after the next tool had started was dropped, so the
+  line stayed the tool's kind (_Terminal_).
+- **Rebuild and Reload** (View menu, ⇧⌘R), under `pnpm start` only, to work on coxswain in coxswain: it runs
+  `pnpm build` and, when only the UI changed, reloads the window while the agents keep working in the main process. A
+  new main process or preload relaunches the app, and asks first while a turn or file summary runs, since the
+  relaunch stops it; sessions resume after. A failed build leaves the running app as it was and shows the error.
+  `ponytail:` the agent's own turns and background tasks between turns don't count as working.
+- Tech debt: `ponytail:` the `async_task_*` and `subagent_*` updates are handled on the incoming stream before the ACP
+  SDK sees them, since it checks each `session/update` against its schema and drops them; hand them to the SDK once it
+  has them. A patched adapter (`patches/`), to drop on its next release that fixes the replay. A turn the agent starts on its own shows no _Working_ and has no Stop.
+
 ## 2026-09-28 — View prompts
 
 For G3 ([issue 2](https://github.com/sladkoff/coxswain/issues/2)): understanding a huge agent-written PR well enough
@@ -1425,7 +1456,8 @@ code are found with `grep -rn "ponytail:" src`.
 **UI**
 
 - shadcn/ui isn't set up (ADR 0004); `src/renderer/src/components/` holds our own controls until it is.
-- Keyboard shortcuts cover Settings, Open Quickly, the command palette (⌘K), Toggle Navigator, Back and Forward;
+- Keyboard shortcuts cover Settings, Open Quickly, the command palette (⌘K), Toggle Navigator, Back, Forward and
+  Rebuild and Reload (⇧⌘R, `pnpm start` only);
   the rest are reached through ⌘K.
 - ADR 0004's system accent colour, reduced motion and high contrast aren't wired up.
 - The native menu is laid out for macOS only.

@@ -50,7 +50,10 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "esbuild"
-    ]
+    ],
+    "patchedDependencies": {
+      "@agentclientprotocol/claude-agent-acp@0.81.2": "patches/@agentclientprotocol__claude-agent-acp@0.81.2.patch"
+    }
   },
   "build": {
     "appId": "dev.coxswain.app",

@@ -30,6 +30,7 @@ test("a delayed IPC read cannot erase streamed text, permission or turn completi
     running: false,
     permission: null,
     error: null,
+    tasks: [],
   };
   const query = core("readAgentState", "session");
   const pending = queryClient.fetchQuery(query);

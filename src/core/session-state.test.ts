@@ -67,3 +67,47 @@ test("independent sessions finish while no pane listens, and failed history load
   assert.equal((await states.read("a", async () => [])).running, false);
   assert.equal((await states.read("b", async () => [])).running, true);
 });
+
+test("parallel tools' titles fill in where they are; background tasks show until they end", async () => {
+  const states = new SessionStates();
+  states.task("a", { id: "t0", name: "unread" });
+  states.entry("a", { kind: "text", text: "unread" });
+  await states.read("a", async () => []);
+  assert.equal(
+    (await states.read("a", async () => [])).entries.length,
+    0,
+    "a session not read is skipped",
+  );
+  states.entry("a", { id: 1, kind: "tool", text: "Terminal" });
+  states.entry("a", { id: 2, kind: "tool", text: "Terminal" });
+  states.entry("a", { id: 1, kind: "tool", text: "Bash sleep 60" });
+  states.entry("a", { kind: "text", text: "Started" });
+  let s = await states.read("a", async () => []);
+  assert.deepEqual(
+    s.entries.map((e) => e.text),
+    ["Bash sleep 60", "Terminal", "Started"],
+  );
+  states.task("a", { id: "t1", name: "sleep 60" });
+  states.task("a", { id: "t1", name: "sleep 60" });
+  states.task("a", { id: "t2", name: "pnpm dev" });
+  states.taskEnded("a", "t1");
+  s = await states.read("a", async () => []);
+  assert.deepEqual(s.tasks, [{ id: "t2", name: "pnpm dev" }]);
+  states.taskEnded("a");
+  assert.deepEqual((await states.read("a", async () => [])).tasks, [], "the agent went away");
+});
+
+test("subagents are listed with commands until they end, also past the turn", async () => {
+  const states = new SessionStates();
+  await states.read("a", async () => []);
+  states.start("a");
+  states.task("a", { id: "c", name: "pnpm dev" });
+  states.task("a", { id: "s", name: "Sleep then write file", subagent: true });
+  states.finish("a", { status: "ok" });
+  assert.deepEqual(
+    (await states.read("a", async () => [])).tasks.map((t) => t.name),
+    ["pnpm dev", "Sleep then write file"],
+  );
+  states.taskEnded("a", "s");
+  assert.deepEqual((await states.read("a", async () => [])).tasks, [{ id: "c", name: "pnpm dev" }]);
+});

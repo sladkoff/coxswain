@@ -1,0 +1,15 @@
+diff --git a/dist/acp-agent.js b/dist/acp-agent.js
+index beba2ff4f21e6805099c55215345a95a046c608a..d30ec8a498fbbb8762506e4db582419a244a46bc 100644
+--- a/dist/acp-agent.js
++++ b/dist/acp-agent.js
+@@ -5416,6 +5416,10 @@ export class ClaudeAcpAgent {
+                     (notification.update.sessionUpdate === "tool_call" ||
+                         notification.update.sessionUpdate === "tool_call_update") &&
+                     isNativeSubagentControlTool(toolName)) {
++                    // coxswain patch: a subagent's own messages aren't in the main history (they're in
++                    // subagents/agent-*.jsonl), so announce it where its Agent call is, as live.
++                    if (notification.update.sessionUpdate === "tool_call" && replayChildren.has(notification.update.toolCallId))
++                        await announceReplayChild(notification.update.toolCallId);
+                     continue;
+                 }
+                 await this.client.sessionUpdate({ ...notification, sessionId: replayTargetSessionId });
