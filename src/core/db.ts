@@ -157,6 +157,12 @@ export const migrations = [
     body text not null,
     created_at text not null
   )`,
+  // Original attachment previews, linked from the agent-owned transcript (ADR 0032).
+  `create table agent_attachments (
+    id text primary key,
+    agent_session_id text not null references agent_sessions (agent_session_id) on delete cascade,
+    attachments text not null
+  )`,
 ];
 
 // ADR 0016: the tables as the migrations above leave them. Change this with every migration that changes a table.
@@ -179,6 +185,7 @@ type Tables = {
     title: string;
     created_at: string;
   };
+  agent_attachments: { id: string; agent_session_id: string; attachments: string };
   agent_sessions: {
     id: Generated<number>;
     workspace_id: number;

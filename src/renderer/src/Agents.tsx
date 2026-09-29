@@ -1,6 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import type { Agent, AgentSession, Pick } from "../../core/agents";
+import type { Attachment } from "../../core/attachments";
+import { Attachments, draftAttachmentPreviews } from "./Attachments";
 import type { BackgroundTask } from "../../core/session-state";
 import type { AttachedPrompt } from "../../core/views";
 import type { Workspace } from "../../core/workspaces";
@@ -11,6 +13,7 @@ import {
   ChevronDownIcon,
   GaugeIcon,
   PanelLeftIcon,
+  PaperclipIcon,
   SparklesIcon,
   SpinnerIcon,
   SquarePenIcon,
@@ -41,7 +44,8 @@ type Props = {
 export function Agents({ workspace, onViewThread, composerPrompt, onShowSidebar }: Props) {
   const pane = useAgentPane(workspace.id);
   const patch = (change: Parameters<typeof setAgentPane>[1]) => setAgentPane(workspace.id, change);
-  const { picked, newAgent, draft, attached } = pane;
+  const { picked, newAgent, draft, attached, attachments, attaching } = pane;
+  const [dragging, setDragging] = useState(false);
   const sessionsQuery = useQuery(core("listAgentSessions", workspace.id));
   const sessions = sessionsQuery.data ?? [];
   const session = picked ? sessions.find((s) => s.agentSessionId === picked) : sessions.at(-1);
@@ -61,6 +65,30 @@ export function Agents({ workspace, onViewThread, composerPrompt, onShowSidebar 
   const loading = !sessionsQuery.data || (!!session && !live);
   const lastAgent = useQuery(core("newSessionAgent")).data ?? "claude";
   const agent = session?.agent ?? newAgent ?? lastAgent;
+  const capabilities = useQuery(core("agentAttachmentCapabilities", agent));
+  const unsupportedImages = capabilities.isSuccess && !capabilities.data.image;
+  const attachmentError =
+    unsupportedImages && attachments.some((a) => a.content.type === "image")
+      ? "This agent does not support image attachments. Remove the images or choose another agent."
+      : null;
+  const addAttachments = async (read: () => Promise<Attachment[]>) => {
+    if (attaching || running) return;
+    patch({ attaching: true, error: null });
+    try {
+      const added = await read();
+      setAgentPane(workspace.id, (before) => {
+        const next = [...before.attachments, ...added];
+        if (next.length > 10) return { error: "Attach up to 10 files per message." };
+        if (next.reduce((sum, a) => sum + a.size, 0) > 20 * 1024 * 1024)
+          return { error: "Attachments must total 20 MB or less." };
+        return { attachments: next };
+      });
+    } catch (e) {
+      patch({ error: (e as Error).message });
+    } finally {
+      patch({ attaching: false });
+    }
+  };
   const composer = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
     if (!composerPrompt || composerPrompt === pane.composerPrompt) return;
@@ -76,17 +104,40 @@ export function Agents({ workspace, onViewThread, composerPrompt, onShowSidebar 
 
   const send = async () => {
     const message = draft.trim();
-    if ((!message && !attached) || running || loading) return;
+    if (
+      (!message && !attached && !attachments.length) ||
+      running ||
+      loading ||
+      attaching ||
+      attachmentError
+    )
+      return;
     patch({
       sending: true,
       pendingMessage: attached
-        ? { kind: "user", text: "", view: { title: attached.title, note: message } }
-        : { kind: "user", text: message },
+        ? {
+            kind: "user",
+            text: "",
+            view: { title: attached.title, note: message },
+            attachments: draftAttachmentPreviews(attachments),
+          }
+        : { kind: "user", text: message, attachments: draftAttachmentPreviews(attachments) },
       beforeRevision: live?.revision ?? 0,
       draft: "",
       attached: null,
+      attachments: [],
       error: null,
     });
+    const restore = (error: string) =>
+      setAgentPane(workspace.id, (before) => ({
+        error,
+        draft: draft && before.draft ? `${draft}\n\n${before.draft}` : draft || before.draft,
+        attached: before.attached ?? attached,
+        attachments: [
+          ...attachments,
+          ...before.attachments.filter((a) => !attachments.some((sent) => sent.id === a.id)),
+        ],
+      }));
     try {
       const current = session ?? (await window.coxswain.startAgentSession(workspace.id, agent));
       // Do this even if the pane has unmounted while session creation was pending.
@@ -100,10 +151,11 @@ export function Agents({ workspace, onViewThread, composerPrompt, onShowSidebar 
         current.agentSessionId,
         message,
         attached ?? undefined,
+        attachments,
       );
-      if (result.status === "error") patch({ error: result.message });
+      if (result.status === "error") restore(result.message);
     } catch (e) {
-      patch({ error: (e as Error).message });
+      restore((e as Error).message);
     } finally {
       patch({ sending: false, pendingMessage: null });
     }
@@ -185,7 +237,7 @@ export function Agents({ workspace, onViewThread, composerPrompt, onShowSidebar 
         <TurnStatus
           running={running}
           permission={permission}
-          error={error}
+          error={error ?? attachmentError}
           onAnswer={(optionId) => {
             window.coxswain.answerPermission(permission!.id, optionId);
           }}
@@ -194,7 +246,29 @@ export function Agents({ workspace, onViewThread, composerPrompt, onShowSidebar 
       </div>
       {/* The composer: one box, the model and effort and Send (Stop while a turn runs) along its bottom. */}
       <div
+        onDragOver={(e) => {
+          if (!e.dataTransfer.types.includes("Files")) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = running || attaching ? "none" : "copy";
+          setDragging(!running && !attaching);
+        }}
+        onDragLeave={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragging(false);
+          const files = Array.from(e.dataTransfer.files);
+          if (files.length) void addAttachments(() => window.coxswain.prepareAttachments(files));
+        }}
+        onPaste={(e) => {
+          const files = Array.from(e.clipboardData.files);
+          if (!files.length) return;
+          e.preventDefault();
+          void addAttachments(() => window.coxswain.prepareAttachments(files));
+        }}
         className={cn(
+          dragging && "ring-2 ring-neutral-400",
           "mx-2 mb-2 flex flex-col rounded-xl border bg-white focus-within:border-neutral-400 dark:bg-neutral-900 dark:focus-within:border-neutral-600",
           "border-neutral-300 dark:border-neutral-700",
         )}
@@ -203,6 +277,18 @@ export function Agents({ workspace, onViewThread, composerPrompt, onShowSidebar 
           <BackgroundTasks agentSessionId={session.agentSessionId} tasks={live.tasks} />
         )}
         {attached && <AttachedCard prompt={attached} onRemove={() => patch({ attached: null })} />}
+        <Attachments
+          attachments={draftAttachmentPreviews(attachments)}
+          onRemove={
+            running
+              ? undefined
+              : (id) =>
+                  setAgentPane(workspace.id, (before) => ({
+                    attachments: before.attachments.filter((a) => a.id !== id),
+                  }))
+          }
+        />
+        {attaching && <div className={cn("px-3 py-1 text-xs", muted)}>Adding attachments…</div>}
         <TextArea
           bare
           ref={composer}
@@ -215,6 +301,16 @@ export function Agents({ workspace, onViewThread, composerPrompt, onShowSidebar 
         />
         {/* However narrow the pane: the picks shrink and truncate, Working keeps only its spinner, Send and Stop stay. */}
         <div className="@container flex min-w-0 items-center gap-0.5 px-1.5 pb-1.5">
+          <Button
+            variant="ghost"
+            className={cn("shrink-0 p-1.5", muted)}
+            title="Attach files"
+            aria-label="Attach files"
+            disabled={running || attaching}
+            onClick={() => void addAttachments(() => window.coxswain.pickAttachments())}
+          >
+            <PaperclipIcon />
+          </Button>
           <div className="flex min-w-0 flex-1 items-center gap-0.5">
             <AgentPickers workspaceId={workspace.id} agent={agent} />
           </div>
@@ -240,7 +336,13 @@ export function Agents({ workspace, onViewThread, composerPrompt, onShowSidebar 
             <button
               title="Send (Enter; Shift+Enter for a new line)"
               aria-label="Send"
-              disabled={(!draft.trim() && !attached) || running || loading}
+              disabled={
+                (!draft.trim() && !attached && !attachments.length) ||
+                running ||
+                loading ||
+                attaching ||
+                !!attachmentError
+              }
               className="flex size-7 shrink-0 items-center justify-center rounded-full bg-neutral-900 text-white hover:bg-neutral-700 disabled:bg-neutral-200 disabled:text-neutral-400 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300 dark:disabled:bg-neutral-800 dark:disabled:text-neutral-500"
               onClick={send}
             >

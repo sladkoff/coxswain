@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import type { Agent, ChatEntry } from "../../core/agents";
+import type { Attachment } from "../../core/attachments";
 import type { AttachedPrompt } from "../../core/views";
 
 // Presentation state lives for the window, not for one mounting of Agents. In particular a session
@@ -12,6 +13,8 @@ type Pane = {
   picked: string | null;
   newAgent: Agent | null;
   draft: string;
+  attachments: Attachment[];
+  attaching: boolean;
   sending: boolean;
   pendingMessage: ChatEntry | null;
   beforeRevision: number;
@@ -21,6 +24,8 @@ const empty: Pane = {
   picked: null,
   newAgent: null,
   draft: "",
+  attachments: [],
+  attaching: false,
   attached: null,
   sending: false,
   pendingMessage: null,
@@ -33,8 +38,9 @@ const subscribe = (listener: () => void) => {
   listeners.add(listener);
   return () => void listeners.delete(listener);
 };
-export function setAgentPane(id: number, patch: Partial<Pane>) {
-  panes.set(id, { ...(panes.get(id) ?? empty), ...patch });
+export function setAgentPane(id: number, patch: Partial<Pane> | ((before: Pane) => Partial<Pane>)) {
+  const before = panes.get(id) ?? empty;
+  panes.set(id, { ...before, ...(typeof patch === "function" ? patch(before) : patch) });
   listeners.forEach((listener) => listener());
 }
 export const useAgentPane = (id: number) =>

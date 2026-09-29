@@ -48,6 +48,8 @@ Claude Code (`@agentclientprotocol/claude-agent-acp`, built on the Claude Agent 
 8. **Permission requests reach the user.** `session/request_permission` becomes a prompt with the options the agent
    offers, in the agent pane, or in the thread whose comment started the turn.
 9. **Chat entries are made from ACP updates**, not from Claude Code's message shapes. `ChatEntry` is the UI's type.
+   Attachment previews are restored from coxswain's own records, linked by a prompt header ([ADR 0032](0032-agent-attachments.md)).
+   Prompt content is gated by the agent's `promptCapabilities` returned by initialization.
 10. **Codex through `codex-acp`, pointed at the user's own `codex`** (`CODEX_PATH`), in its _Approve for me_ mode.
     The agent pane's instructions go in as Codex config (`CODEX_CONFIG`'s `developer_instructions`), since its
     sessions take no system prompt. `agent_sessions.agent` says which agent a session is on; it never changes.

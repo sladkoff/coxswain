@@ -36,6 +36,7 @@ agent sessions can finish and write at the same time.
    - guides ([ADR 0023](0023-guides-made-by-the-agent-pane.md));
    - reviewed file diffs, by fingerprint ([ADR 0014](0014-reviewed-follows-file-diff-contents.md));
    - agent sessions: which agent and the agent's own session ID;
+   - original attachment previews, which ACP history does not reliably preserve ([ADR 0032](0032-agent-attachments.md));
    - a few settings the core needs.
 3. **Don't copy what others own.** Branches, worktrees and diffs are read from git. PRs are fetched
    from GitHub. Agent transcripts are read back from the agent by session ID
