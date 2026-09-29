@@ -7,10 +7,12 @@ import type { ChangedFile, CodeLineList, FileText } from "../../core/git";
 import type { NewEntry, ReviewEntry } from "../../core/review";
 import type { Workspace } from "../../core/workspaces";
 import { Button } from "./components/button";
+import { useCodeFind } from "./code-find";
+import { findHighlightCSS } from "./find";
 import { Centered } from "./components/layout";
 import { cn, divider, muted } from "./components/styles";
 import { ProblemMessage } from "./components/text";
-import { changed, core } from "./queries";
+import { changed, core, queryClient } from "./queries";
 import { type Draft, DraftBox, lines, ThreadBox } from "./Thread";
 
 // What the Viewer shows: the file diff of a changed file, or a whole file as it is in the worktree, scrolled to a
@@ -65,7 +67,8 @@ const baseOptions = {
   overflow: "wrap",
   stickyHeader: true,
   // Go to Definition: a token under the pointer while ⌘ is held reads as a link.
-  unsafeCSS: "[data-definition-link] { text-decoration: underline; cursor: pointer; }",
+  unsafeCSS:
+    "[data-definition-link] { text-decoration: underline; cursor: pointer; }" + findHighlightCSS,
 } as const;
 
 // L3: shows the diff or file opened from the Navigator.
@@ -163,9 +166,52 @@ export const Viewer = memo(function Viewer(props: Props) {
     else showLine(await window.coxswain.findUsages(workspace.id, token), "usages");
   };
 
+  const files = useMemo(() => {
+    const text = (f: FileText) => (f.status === "ok" ? (f.text ?? "") : "");
+    return (
+      o &&
+      n && { old: { name: oldPath, contents: text(o) }, new: { name: path, contents: text(n) } }
+    );
+  }, [o, n]);
+  const root = useRef<HTMLDivElement>(null);
+  const onPostRender = useCodeFind<Box>({
+    root,
+    placeholder,
+    path,
+    kind: opened.kind,
+    files: files || undefined,
+    identity: `${workspace.id}:${mergeBase}:${head ?? "live"}:${opened.kind}:${path}`,
+    reveal: () => setNear(true),
+    load: async () => {
+      const [old, next] = await Promise.all([
+        readOld
+          ? queryClient.fetchQuery({
+              ...core("readFileAt", workspace.id, mergeBase, oldPath),
+              staleTime: Infinity,
+            })
+          : emptyText,
+        readNew
+          ? queryClient.fetchQuery({
+              ...(head
+                ? core("readFileAt", workspace.id, head, path)
+                : core("readWorktreeFile", workspace.id, path)),
+              staleTime: Infinity,
+            })
+          : emptyText,
+      ]);
+      if (old.status !== "ok" || next.status !== "ok") throw new Error(`Could not read ${path}`);
+      if (old.binary || next.binary) return null;
+      return {
+        old: { name: oldPath, contents: old.text ?? "" },
+        new: { name: path, contents: next.text ?? "" },
+      };
+    },
+  });
+
   const options = useMemo(
     () => ({
       ...baseOptions,
+      onPostRender,
       diffStyle: props.diffStyle,
       enableGutterUtility: true,
       // In a diff the range has a side; a whole file is always the worktree. ponytail: a range spanning
@@ -189,16 +235,9 @@ export const Viewer = memo(function Viewer(props: Props) {
       onTokenClick: (t: { tokenText: string }, e: MouseEvent) =>
         e.metaKey && void goToDefinition(t.tokenText),
     }),
-    [props.diffStyle, workspace.id, path, props.onOpenFile],
+    [props.diffStyle, workspace.id, path, props.onOpenFile, onPostRender],
   );
 
-  const files = useMemo(() => {
-    const text = (f: FileText) => (f.status === "ok" ? (f.text ?? "") : "");
-    return (
-      o &&
-      n && { old: { name: oldPath, contents: text(o) }, new: { name: path, contents: text(n) } }
-    );
-  }, [o, n]);
   const annotations = useMemo(() => {
     // Threads show under their first question, so only anchored entries without a parent get a box.
     // A whole file shows the new side (snapshot or worktree), so only new-side entries belong in it.
@@ -228,7 +267,6 @@ export const Viewer = memo(function Viewer(props: Props) {
   }, [entries, draft, opened]);
 
   // Go to Definition's line: selected, and scrolled to once the library has drawn it.
-  const root = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const line = opened.kind === "file" && opened.line;
     if (!line || !files) return;
@@ -260,16 +298,28 @@ export const Viewer = memo(function Viewer(props: Props) {
       </div>
     );
   }
-  if (!o || !n || !files) return <Centered>Loading…</Centered>;
+  if (!o || !n || !files)
+    return (
+      <div ref={placeholder}>
+        <Centered>Loading…</Centered>
+      </div>
+    );
   if (o.status !== "ok" || n.status !== "ok")
     return (
-      <Centered>
-        <ProblemMessage
-          problem={o.status !== "ok" ? o : (n as Exclude<FileText, { status: "ok" }>)}
-        />
-      </Centered>
+      <div ref={placeholder}>
+        <Centered>
+          <ProblemMessage
+            problem={o.status !== "ok" ? o : (n as Exclude<FileText, { status: "ok" }>)}
+          />
+        </Centered>
+      </div>
     );
-  if (o.binary || n.binary) return <Centered>Binary file, not shown</Centered>;
+  if (o.binary || n.binary)
+    return (
+      <div ref={placeholder}>
+        <Centered>Binary file, not shown</Centered>
+      </div>
+    );
 
   const anchored = (d: Draft, body: string): NewEntry => {
     const [start, end] = [d.startLine, d.endLine].sort((a, b) => a - b);
@@ -339,6 +389,7 @@ export const Viewer = memo(function Viewer(props: Props) {
   return (
     <div
       ref={root}
+      tabIndex={-1}
       onContextMenu={(e) => void tokenMenu(e.nativeEvent)}
       className={props.stacked ? "select-text" : "min-h-0 flex-1 overflow-auto select-text"}
     >

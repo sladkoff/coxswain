@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Agent, AgentSession, Pick } from "../../core/agents";
 import type { Attachment } from "../../core/attachments";
 import { Attachments, draftAttachmentPreviews } from "./Attachments";
@@ -7,6 +7,8 @@ import type { BackgroundTask } from "../../core/session-state";
 import type { AttachedPrompt } from "../../core/views";
 import type { Workspace } from "../../core/workspaces";
 import { Entry, TurnStatus } from "./ChatEntry";
+import { FindBar } from "./FindBar";
+import { chatFindTarget, findSnapshot, refreshFind, registerFindTarget } from "./find";
 import { Button } from "./components/button";
 import {
   ArrowUpIcon,
@@ -96,10 +98,19 @@ export function Agents({ workspace, onViewThread, composerPrompt, onShowSidebar 
     composer.current?.focus();
   }, [composerPrompt]);
 
+  const transcript = useRef<HTMLDivElement>(null);
+  const findTarget = useMemo(
+    () => chatFindTarget(() => transcript.current),
+    [workspace.id, session?.agentSessionId],
+  );
+  useEffect(() => registerFindTarget(findTarget), [findTarget]);
+  useEffect(() => {
+    refreshFind(findTarget);
+  }, [findTarget, entries]);
   const bottom = useRef<HTMLDivElement>(null);
   // Braces matter: Chromium's scrollIntoView returns a promise, which React would take for a cleanup function.
   useEffect(() => {
-    bottom.current?.scrollIntoView();
+    if (findSnapshot().target !== findTarget) bottom.current?.scrollIntoView();
   }, [entries, running, permission]);
 
   const send = async () => {
@@ -223,7 +234,12 @@ export function Agents({ workspace, onViewThread, composerPrompt, onShowSidebar 
           </Button>
         </div>
       </div>
-      <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2">
+      <FindBar pane="chat" />
+      <div
+        ref={transcript}
+        tabIndex={-1}
+        className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2"
+      >
         {loading && !running && <div className={cn("m-auto text-xs", muted)}>Loading session…</div>}
         {entries.length === 0 && !running && !loading && (
           <div className={cn("m-auto text-xs", muted)}>
@@ -231,7 +247,9 @@ export function Agents({ workspace, onViewThread, composerPrompt, onShowSidebar 
           </div>
         )}
         {entries.map((e, i) => (
-          <Entry key={i} entry={e} onViewThread={onViewThread} />
+          <div key={i} data-find-entry={i} className="contents">
+            <Entry entry={e} onViewThread={onViewThread} />
+          </div>
         ))}
         {pendingMessage && <Entry entry={pendingMessage} />}
         <TurnStatus

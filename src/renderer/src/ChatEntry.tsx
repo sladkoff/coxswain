@@ -31,11 +31,17 @@ export function Entry({
     return (
       <SentCard className="flex flex-col">
         <Attachments attachments={entry.attachments ?? []} />
-        <div className={cn("px-2.5 pt-2 text-xs", entry.view.note ? "" : "pb-2", muted)}>
+        <div
+          data-find-text
+          className={cn("px-2.5 pt-2 text-xs", entry.view.note ? "" : "pb-2", muted)}
+        >
           View · <span className="font-medium">{entry.view.title}</span> sent to Agent
         </div>
         {entry.view.note && (
-          <div className="line-clamp-6 px-2.5 py-1.5 whitespace-pre-wrap select-text [overflow-wrap:anywhere]">
+          <div
+            data-find-text
+            className="line-clamp-6 px-2.5 py-1.5 whitespace-pre-wrap select-text [overflow-wrap:anywhere]"
+          >
             {entry.view.note}
           </div>
         )}
@@ -43,13 +49,17 @@ export function Entry({
     );
   if (entry.kind === "tool")
     // shrink-0: truncate's overflow lets a flex item shrink to nothing once the chat overflows, leaving only the gaps.
-    return <div className={cn("shrink-0 truncate font-mono text-xs", muted)}>⏺ {entry.text}</div>;
+    return (
+      <div data-find-text className={cn("shrink-0 truncate font-mono text-xs", muted)}>
+        ⏺ {entry.text}
+      </div>
+    );
   // my-3: room above and below the user's messages, between the agent's turns.
   if (entry.kind === "user")
     return (
       <div className="my-3 self-end rounded-md bg-neutral-100 px-2 py-1 whitespace-pre-wrap select-text [overflow-wrap:anywhere] dark:bg-neutral-800">
         <Attachments attachments={entry.attachments ?? []} />
-        {entry.text}
+        <span data-find-text>{entry.text}</span>
       </div>
     );
   return <Prose>{entry.text}</Prose>;
@@ -79,12 +89,15 @@ function CommentCard({
         onClick={view}
         className={cn("flex items-start gap-2 px-2.5 pt-2 text-left text-xs", muted)}
       >
-        <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">
+        <span data-find-text className="min-w-0 flex-1 [overflow-wrap:anywhere]">
           Comment on <span className="font-mono">{c.where}</span> sent to Agent
         </span>
         <span>›</span>
       </button>
-      <div className="line-clamp-6 px-2.5 py-1.5 whitespace-pre-wrap select-text [overflow-wrap:anywhere]">
+      <div
+        data-find-text
+        className="line-clamp-6 px-2.5 py-1.5 whitespace-pre-wrap select-text [overflow-wrap:anywhere]"
+      >
         {c.body}
       </div>
       <button

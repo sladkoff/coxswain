@@ -278,7 +278,28 @@ const menu = Menu.buildFromTemplate([
       { role: "close" },
     ],
   },
-  { role: "editMenu" },
+  {
+    label: "Edit",
+    submenu: [
+      { role: "undo" },
+      { role: "redo" },
+      { type: "separator" },
+      { role: "cut" },
+      { role: "copy" },
+      { role: "paste" },
+      { role: "pasteAndMatchStyle" },
+      { role: "delete" },
+      { role: "selectAll" },
+      { type: "separator" },
+      { label: "Find…", accelerator: "CmdOrCtrl+F", click: () => runAction("find") },
+      { label: "Find Next", accelerator: "CmdOrCtrl+G", click: () => runAction("find-next") },
+      {
+        label: "Find Previous",
+        accelerator: "CmdOrCtrl+Shift+G",
+        click: () => runAction("find-previous"),
+      },
+    ],
+  },
   {
     label: "View",
     submenu: [

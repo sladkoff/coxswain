@@ -108,3 +108,20 @@ body {
     color: var(--color-neutral-400);
   }
 }
+
+/* Find paints text without changing the user's selection or React-owned nodes. */
+::highlight(find-matches) {
+  background-color: #facc1566;
+  color: inherit;
+}
+::highlight(find-current) {
+  background-color: #fb923c;
+  color: #171717;
+}
+[data-find-revealed] .line-clamp-6 {
+  -webkit-line-clamp: unset;
+}
+[data-find-revealed] .truncate {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
