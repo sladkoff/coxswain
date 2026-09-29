@@ -47,8 +47,6 @@ import {
 } from "../core/attachments";
 import {
   cloneProject,
-  findDefinitions,
-  findUsages,
   listBranches,
   listChangedFiles,
   listCommits,
@@ -61,6 +59,7 @@ import {
   readWorktreeFile,
   snapshot,
 } from "../core/git";
+import { type CodeAt, findDefinitions, findUsages, stopLanguageServers } from "../core/lsp";
 import { onHeadMoved, watchWorkspace } from "../core/watch";
 import {
   listViews,
@@ -424,11 +423,11 @@ app.whenReady().then(() => {
   ipcMain.handle("git:read-file-at", (_, workspaceId: number, commit: string, path: string) =>
     readFileAt(db, workspaceId, commit, path),
   );
-  ipcMain.handle("git:definitions", (_, workspaceId: number, from: string, token: string) =>
-    findDefinitions(db, workspaceId, from, token),
+  ipcMain.handle("lsp:definitions", (_, workspaceId: number, at: CodeAt) =>
+    findDefinitions(db, workspaceId, at),
   );
-  ipcMain.handle("git:usages", (_, workspaceId: number, token: string) =>
-    findUsages(db, workspaceId, token),
+  ipcMain.handle("lsp:usages", (_, workspaceId: number, at: CodeAt) =>
+    findUsages(db, workspaceId, at),
   );
   ipcMain.handle("agents:attachment-capabilities", (_, agent: Agent) =>
     agentAttachmentCapabilities(agent),
@@ -859,7 +858,10 @@ function permission(to: WebContents, show: () => void): Promise<string | null> {
 }
 
 // Stopping the adapters ends every turn still running.
-app.on("will-quit", stopAgents);
+app.on("will-quit", () => {
+  stopAgents();
+  stopLanguageServers();
+});
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();

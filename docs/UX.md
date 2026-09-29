@@ -152,13 +152,15 @@ branch`, when it was updated, and _Has a workspace_ if it does. _Branch_: one fi
   when all are, the canvas says _All N files reviewed_ with _Show them_. A file diff's header has a _Reviewed_
   checkbox.
 
-  **Go to Definition.** Holding ⌘ over a name or a relative import path in a file diff or a whole file underlines it;
+  **Go to Definition.** Holding ⌘ over a name or an import path in a file diff or a whole file underlines it;
   ⌘-click shows the file where it's defined on the canvas, scrolled to that line and with the line selected, and the
-  Navigator on _Files_. With several matches, a native menu lists them (file, line and the line's code) to pick one.
-  Right-clicking a name opens a native menu with _Go to Definition_ and _Find Usages_; _Find Usages_ lists every line
-  of the worktree with that name as a whole word in the same kind of menu (the first 30, then _N more_), and picking
-  one shows it the same way. The menu shows even for one line, and says _No usages found_ or _No definition found_
-  when there are none.
+  Navigator on _Files_. The file's language server answers (ADR 0034), at the side clicked: the old side of a file diff
+  asks about the base, so a result there opens that file as it was at the base. With several definitions (e.g.
+  overloads), a native menu lists them (file, line and the line's code) to pick one. Right-clicking a name opens a
+  native menu with _Go to Definition_ and _Find Usages_; _Find Usages_ lists every reference the language server
+  finds in the same kind of menu (the first 30, then _N more_), and picking one shows it the same way. The menu shows
+  even for one line, and says _No usages found_, _No definition found_ or, in a file no language server takes (so far only
+  TypeScript, JavaScript and Python), _No language server for .go files_.
 
   **Threads.** The workspace's entries (glossary) go between the lines while they're current, i.e. their lines still
   read as the code they were written on; the header says _N outdated_ for the others, and a click shows them above

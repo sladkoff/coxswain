@@ -3,6 +3,45 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-29 — Language servers for Go to Definition and Find Usages
+
+For G3 ([issue 16](https://github.com/sladkoff/coxswain/issues/16), ADR 0034).
+
+### What works
+
+- **Go to Definition and Find Usages ask TypeScript's own server** (`lsp.ts`, `language-servers/typescript.ts`):
+  `tsc --lsp --stdio` from TypeScript 7, started per checkout on the first click. Members resolve (`workspace.id`
+  goes to `Workspace.id`), overloads list each, and usages are references, not words. The grep and its regexes are
+  gone; a file no server takes says so in the menu.
+- **Both sides of a file diff.** A token on the old side asks about the base, on the new side (or a whole file) about
+  the head, or the worktree when there is none. A commit that isn't the worktree's snapshot gets a read-only checkout
+  in `~/coxswain/checkouts/<owner>/<name>/<sha>/` (`checkoutAt` in `git.ts`) with the worktree's `node_modules`
+  linked in. Results open at the same revision: a whole file can now show a commit (`fileAt` in the canvas location).
+- **Pluggable:** a language is a `LanguageServer` file in `src/core/language-servers/` and a line in
+  `languageServers`: its extensions and LSP language IDs, how to start it, and the dependency folders it reads.
+- At most `lspLimits.servers` (4) run; the least recently used stops, and checkouts no server reads are removed. All
+  stop on quit. `tsc` watches its files itself, so agent edits are seen.
+- `typescript` is now a pinned dependency of the app; its native binary is unpacked from the asar.
+- **Python** (`language-servers/python.ts`): pyrefly 1.3.2, fetched on first use from its GitHub release for the
+  platform, checked against a pinned sha256 and kept in `~/coxswain/language-servers/` (`download.ts`, reusable for
+  later native servers). A worktree's `.venv` or `venv` is linked into commit checkouts like `node_modules`.
+
+### Tech debt
+
+- A commit's checkout reads the worktree's dependencies, not its own; results in them (outside the checkout) are left
+  out there (`ponytail:` in `lsp.ts`).
+- ⌘ still underlines names in files no server takes; the menu then says there's none.
+- No "indexing" state: the first click in a big repository waits for the server to load the project.
+- A packaged build bundles only the host platform's `tsc`, like the agent SDKs; cross-platform builds need the other
+  `@typescript/typescript-*` packages installed (ADR 0024).
+- Python in a repository that needs its venv to import its own packages (a uv workspace) finds nothing across them
+  until the venv exists; coxswain doesn't create it. Checked on cortea without one: an import resolves to itself.
+- pyrefly's Linux builds are glibc only (`ponytail:` in `python.ts`); its Windows zip layout is assumed, not checked.
+- Updating pyrefly is by hand: the version and six checksums in `python.ts`.
+- A checkout made while another request prunes could be removed and made again (`ponytail:` in `lsp.ts`).
+- Checked in the app over the IPC and by ⌘-click on both sides; _Find Usages_' native menu wasn't clicked through
+  (its results were checked over the same IPC).
+
 ## 2026-09-29 — Find in the canvas and agent pane
 
 For G3 and G5 ([issue 15](https://github.com/sladkoff/coxswain/issues/15), ADR 0033).

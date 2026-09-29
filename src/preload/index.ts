@@ -15,12 +15,12 @@ import type {
   ChangedFileList,
   CloneResult,
   Commit,
-  CodeLineList,
   FileText,
   FileTreeResult,
   GitProblem,
   WorktreeResult,
 } from "../core/git";
+import type { CodeAt, CodeLineList } from "../core/lsp";
 import type {
   CreatedPullRequest,
   CurrentUser,
@@ -104,12 +104,11 @@ const api = {
     ipcRenderer.invoke("git:read-worktree-file", workspaceId, path),
   readFileAt: (workspaceId: number, commit: string, path: string): Promise<FileText> =>
     ipcRenderer.invoke("git:read-file-at", workspaceId, commit, path),
-  // Go to Definition: where a token clicked in a worktree file (from) is defined.
-  findDefinitions: (workspaceId: number, from: string, token: string): Promise<CodeLineList> =>
-    ipcRenderer.invoke("git:definitions", workspaceId, from, token),
-  // Find Usages: the worktree's lines with the name as a whole word.
-  findUsages: (workspaceId: number, token: string): Promise<CodeLineList> =>
-    ipcRenderer.invoke("git:usages", workspaceId, token),
+  // Go to Definition and Find Usages (ADR 0034): where a name clicked is defined or used, at the same revision.
+  findDefinitions: (workspaceId: number, at: CodeAt): Promise<CodeLineList> =>
+    ipcRenderer.invoke("lsp:definitions", workspaceId, at),
+  findUsages: (workspaceId: number, at: CodeAt): Promise<CodeLineList> =>
+    ipcRenderer.invoke("lsp:usages", workspaceId, at),
   // The startup check: which of git, gh (signed in) and claude are missing.
   checkSetup: (): Promise<SetupCheck> => ipcRenderer.invoke("setup:check"),
   listWorkspaces: (projectId: number): Promise<Workspace[]> =>

@@ -10,6 +10,7 @@ export type CanvasSearch = {
   view?: "files"; // the Navigator's toggle on Files
   file?: string; // a whole file, shown in place of the file diffs while the toggle is on Files
   line?: number; // … scrolled to and selected when it's opened, not on Back or Forward
+  fileAt?: string; // … at this commit, not the worktree: where Go to Definition or Find Usages found it (ADR 0034)
   at?: string; // the file diff picked in Diffs
   commit?: Commit; // one commit's diff (or an agent turn's) in place of all changes
   scope?: "pushed" | "local"; // only what's on GitHub, or only the local changes on top (ADR 0028); left out: all

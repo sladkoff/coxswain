@@ -3,7 +3,8 @@ import { File, MultiFileDiff } from "@pierre/diffs/react";
 import { useQuery } from "@tanstack/react-query";
 import { memo, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import type { ChatEntry, Permission } from "../../core/agents";
-import type { ChangedFile, CodeLineList, FileText } from "../../core/git";
+import type { ChangedFile, FileText } from "../../core/git";
+import type { CodeAt, CodeLineList } from "../../core/lsp";
 import type { NewEntry, ReviewEntry } from "../../core/review";
 import type { Workspace } from "../../core/workspaces";
 import { Button } from "./components/button";
@@ -15,11 +16,11 @@ import { ProblemMessage } from "./components/text";
 import { changed, core, queryClient } from "./queries";
 import { type Draft, DraftBox, lines, ThreadBox } from "./Thread";
 
-// What the Viewer shows: the file diff of a changed file, or a whole file as it is in the worktree, scrolled to a
-// line with `line` (Go to Definition, Find Usages).
+// What the Viewer shows: the file diff of a changed file, or a whole file as it is in the worktree (or at `commit`, where
+// Go to Definition or Find Usages found it), scrolled to a line with `line`.
 export type Opened =
   | { kind: "diff"; file: ChangedFile }
-  | { kind: "file"; path: string; line?: number };
+  | { kind: "file"; path: string; line?: number; commit?: string };
 export const openedPath = (opened: Opened) =>
   opened.kind === "diff" ? opened.file.path : opened.path;
 
@@ -50,11 +51,20 @@ type Props = {
   turns: Record<number, Turn>; // by thread
   onAsk: Ask;
   onAnswerPermission: (threadId: number, id: string, optionId: string) => void;
-  onOpenFile: (path: string, line: number) => void; // a whole file on the canvas at that line
+  onOpenFile: (path: string, line: number, commit?: string) => void; // a whole file on the canvas at that line
   diffStyle: "unified" | "split";
   // One of several file diffs one after another: the parent scrolls, not the Viewer.
   stacked?: boolean;
   revealThread?: number; // navigation also opens outdated threads and forces this file to load
+};
+
+// A token under the pointer, as @pierre/diffs reports it: side only in a file diff.
+type Token = {
+  tokenElement: HTMLElement;
+  tokenText: string;
+  lineNumber: number;
+  lineCharStart: number;
+  side?: "deletions" | "additions";
 };
 
 // The side of a file diff that isn't read: an added file's old side, a deleted one's new side, a whole file's old side.
@@ -125,8 +135,20 @@ export const Viewer = memo(function Viewer(props: Props) {
 
   // Go to Definition: ⌘ over a token underlines it, ⌘-click opens where it's defined, picked from a menu if several.
   // A right-click on a token offers it and Find Usages, whose results always show in the menu, even one: it may be the
-  // line clicked. ponytail: the picker is a native menu of the first 30, a results pane if long lists need browsing.
-  const hovered = useRef<{ element: HTMLElement; text: string } | null>(null);
+  // line clicked. Both ask the file's language server at the side's revision (ADR 0034): the old side of a file diff
+  // is the base, the new side and a whole file the head, or the worktree when there is none.
+  // ponytail: the picker is a native menu of the first 30, a results pane if long lists need browsing.
+  const hovered = useRef<{ element: HTMLElement; at: CodeAt } | null>(null);
+  const codeAt = (t: Token): CodeAt => {
+    const old = t.side === "deletions";
+    return {
+      commit: old ? mergeBase : (head ?? null),
+      path: old ? oldPath : path,
+      line: t.lineNumber,
+      // On the name, not an import path's quote.
+      character: t.lineCharStart + Math.max(0, t.tokenText.search(/\w/)),
+    };
+  };
   useEffect(() => {
     const mark = (e: KeyboardEvent) =>
       hovered.current?.element.toggleAttribute("data-definition-link", e.metaKey);
@@ -138,7 +160,7 @@ export const Viewer = memo(function Viewer(props: Props) {
     };
   }, []);
   // Shows a result line: at once if it's the only definition, else picked from a menu that says when there's none.
-  const showLine = async (found: CodeLineList, what: "definition" | "usages") => {
+  const showLine = async (at: CodeAt, found: CodeLineList, what: "definition" | "usages") => {
     const all = found.status === "ok" ? found.lines : [];
     const ls = all.slice(0, 30);
     const i =
@@ -153,17 +175,17 @@ export const Viewer = memo(function Viewer(props: Props) {
                 ? "No definition found"
                 : "No usages found",
           );
-    props.onOpenFile(ls[i].path, ls[i].line);
+    props.onOpenFile(ls[i].path, ls[i].line, at.commit ?? undefined);
   };
-  const goToDefinition = async (token: string) =>
-    showLine(await window.coxswain.findDefinitions(workspace.id, path, token), "definition");
+  const goToDefinition = async (at: CodeAt) =>
+    showLine(at, await window.coxswain.findDefinitions(workspace.id, at), "definition");
   const tokenMenu = async (e: MouseEvent) => {
-    const token = hovered.current?.text;
-    if (!token) return;
+    const at = hovered.current?.at;
+    if (!at) return;
     e.preventDefault();
     const action = await window.coxswain.showTokenMenu();
-    if (action === "definition") goToDefinition(token);
-    else showLine(await window.coxswain.findUsages(workspace.id, token), "usages");
+    if (action === "definition") goToDefinition(at);
+    else showLine(at, await window.coxswain.findUsages(workspace.id, at), "usages");
   };
 
   const files = useMemo(() => {
@@ -223,24 +245,25 @@ export const Viewer = memo(function Viewer(props: Props) {
           endLine: r.end,
         }),
       onLineSelectionChange: setSelection,
-      onTokenEnter: (t: { tokenElement: HTMLElement; tokenText: string }, e: PointerEvent) => {
+      onTokenEnter: (t: Token, e: PointerEvent) => {
         if (!/\w/.test(t.tokenText)) return;
-        hovered.current = { element: t.tokenElement, text: t.tokenText };
+        hovered.current = { element: t.tokenElement, at: codeAt(t) };
         t.tokenElement.toggleAttribute("data-definition-link", e.metaKey);
       },
-      onTokenLeave: (t: { tokenElement: HTMLElement }) => {
+      onTokenLeave: (t: Token) => {
         t.tokenElement.removeAttribute("data-definition-link");
         hovered.current = null;
       },
-      onTokenClick: (t: { tokenText: string }, e: MouseEvent) =>
-        e.metaKey && void goToDefinition(t.tokenText),
+      onTokenClick: (t: Token, e: MouseEvent) =>
+        e.metaKey && /\w/.test(t.tokenText) && void goToDefinition(codeAt(t)),
     }),
-    [props.diffStyle, workspace.id, path, props.onOpenFile, onPostRender],
+    [props.diffStyle, workspace.id, path, oldPath, mergeBase, head, props.onOpenFile, onPostRender],
   );
 
   const annotations = useMemo(() => {
     // Threads show under their first question, so only anchored entries without a parent get a box.
-    // A whole file shows the new side (snapshot or worktree), so only new-side entries belong in it.
+    // A whole file shows the new side (snapshot or worktree), so only new-side entries belong in it; one at a commit
+    // Go to Definition found it at, none: they're about the canvas's range.
     // Only current entries go between the lines (ADR 0015); outdated ones open from the header.
     const boxes: { side: "old" | "new"; line: number; box: Box }[] = [
       ...entries
@@ -249,7 +272,7 @@ export const Viewer = memo(function Viewer(props: Props) {
             e.path === path &&
             !e.parentId &&
             e.state === "current" &&
-            (opened.kind === "diff" || e.side === "new"),
+            (opened.kind === "diff" || (e.side === "new" && !opened.commit)),
         )
         .map((e) => ({ side: e.side!, line: e.endLine!, box: { entry: e } })),
       ...(draft
