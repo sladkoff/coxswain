@@ -212,7 +212,8 @@ branch`, when it was updated, and _Has a workspace_ if it does. _Branch_: one fi
   the agent picks (the model ✦ and the effort, each a button with a native menu of the agent's choices, kept per agent
   for all its sessions) and a round send button, greyed out while the box is empty. While a turn runs, _Working_ and a
   round stop button take its place. Commands the agent left running in the background sit on top of the box, one line
-  each with a spinner, what it does and × to stop it, until they end; the agent's reply when one ends shows in the chat
+  each with a spinner, what it does and × to stop it, until they end, and so do its subagents (_Agent_ and the
+  subagent's task, without ×: the turn's stop button stops them); the agent's reply when one ends shows in the chat
   like a turn. A view prompt from _New View_ sits on top of the box as a card (_View_ and its
   title, then the first lines of the prompt, all of it on a click; × takes it off); the box then asks _What to focus on (optional)…_ and Send works
   with it empty. Sent, the chat shows it as a card with the note. When the agent wants a tool that auto mode would block, a permission prompt

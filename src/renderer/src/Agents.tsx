@@ -372,8 +372,8 @@ function AttachedCard(props: { prompt: AttachedPrompt; onRemove: () => void }) {
   );
 }
 
-// The commands the agent left running in the background, on top of the composer while they run, each with Stop. The
-// agent is told when one ends and answers on its own.
+// The commands the agent left running in the background, each with Stop, and its subagents, on top of the composer
+// while they run. The agent is told when a command ends and answers on its own; the turn's Stop stops subagents.
 function BackgroundTasks(props: { agentSessionId: string; tasks: BackgroundTask[] }) {
   return (
     <div className={cn("flex flex-col border-b px-2 py-1 text-xs", divider)}>
@@ -383,17 +383,20 @@ function BackgroundTasks(props: { agentSessionId: string; tasks: BackgroundTask[
             <SpinnerIcon />
           </span>
           <span className="min-w-0 flex-1 truncate" title={t.name}>
+            {t.subagent && <span className={muted}>Agent </span>}
             {t.name}
           </span>
-          <Button
-            variant="ghost"
-            className="shrink-0 p-0.5 text-neutral-500"
-            title="Stop this background command"
-            aria-label={`Stop ${t.name}`}
-            onClick={() => window.coxswain.stopBackgroundTask(props.agentSessionId, t.id)}
-          >
-            <XIcon />
-          </Button>
+          {!t.subagent && (
+            <Button
+              variant="ghost"
+              className="shrink-0 p-0.5 text-neutral-500"
+              title="Stop this background command"
+              aria-label={`Stop ${t.name}`}
+              onClick={() => window.coxswain.stopBackgroundTask(props.agentSessionId, t.id)}
+            >
+              <XIcon />
+            </Button>
+          )}
         </div>
       ))}
     </div>

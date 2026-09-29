@@ -232,6 +232,7 @@ function adapter(name: Agent): Promise<Adapter> {
       .onRequest(acp.methods.client.session.requestPermission, (ctx) => askPermission(ctx.params))
       .onNotification(acp.methods.client.session.update, (ctx) => {
         const { sessionId, update: u } = ctx.params;
+        subagent(sessionId, u);
         // Claude Code names a session a moment after its first turn ends, when no run listens any more.
         if (u.sessionUpdate === "session_info_update" && u.title)
           titleListeners.forEach((l) => l(sessionId, u.title!));
@@ -323,6 +324,26 @@ function backgroundTask(sessionId: string, u: AsyncTaskUpdate): boolean {
   return true;
 }
 
+// A subagent runs from its Agent call until that call ends, or, run in the background (the call ends at once), until
+// the turn does. Its own updates carry the call's id and aren't in the chat.
+const inBackground = new Set<string>();
+function subagent(sessionId: string, u: acp.SessionUpdate) {
+  if (u.sessionUpdate !== "tool_call" && u.sessionUpdate !== "tool_call_update") return;
+  const meta = (
+    u._meta as { claudeCode?: { subagent?: boolean; toolResponse?: { isAsync?: boolean } } }
+  )?.claudeCode;
+  const id = u.toolCallId;
+  if (u.sessionUpdate === "tool_call") {
+    if (meta?.subagent) sessionStates.task(sessionId, { id, name: u.title, subagent: true });
+    return;
+  }
+  if (meta?.subagent && u.title)
+    sessionStates.task(sessionId, { id, name: u.title, subagent: true });
+  if (meta?.toolResponse?.isAsync) inBackground.add(id);
+  if ((u.status === "completed" || u.status === "failed") && !inBackground.delete(id))
+    sessionStates.taskEnded(sessionId, id);
+}
+
 // Stops a command the agent left running in the background; the agent is told it was stopped.
 export async function stopBackgroundTask(db: Db, agentSessionId: string, taskId: string) {
   const a = await adapter((await sessionOf(db, agentSessionId)).agent);
@@ -370,6 +391,7 @@ let nextEntry = 0;
 function chat(onEntry: (e: ChatEntry) => void) {
   let last: (ChatEntry & { name?: string | null }) | null = null;
   const tools = new Map<string, ChatEntry & { name?: string | null }>();
+  let messageId: string | null | undefined;
   const emit = (e: typeof last) => {
     last = e;
     if (e?.text.trim())
@@ -385,8 +407,14 @@ function chat(onEntry: (e: ChatEntry) => void) {
     if (u.sessionUpdate === "agent_message_chunk" || u.sessionUpdate === "user_message_chunk") {
       if (u.content.type !== "text") return;
       const kind = u.sessionUpdate === "agent_message_chunk" ? "text" : "user";
-      const text = last?.kind === kind ? last.text : "";
-      emit({ id: last?.kind === kind ? last.id : nextEntry++, kind, text: text + u.content.text });
+      // A new messageId is a new message, such as the agent's reply after a subagent it waited on finished.
+      const same = last?.kind === kind && (!u.messageId || !messageId || u.messageId === messageId);
+      messageId = u.messageId ?? messageId;
+      emit({
+        id: same ? last!.id : nextEntry++,
+        kind,
+        text: (same ? last!.text : "") + u.content.text,
+      });
     } else if (u.sessionUpdate === "tool_call") {
       const tool = { id: nextEntry++, kind: "tool" as const, text: toolTitle(u), name: u.name };
       tools.set(u.toolCallId, tool);

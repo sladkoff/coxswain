@@ -13,6 +13,12 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
   Codex's adapter sends no such updates.
 - The agent's reply when a background task ends now shows: that turn, which the agent starts on its own, reached no
   run and was dropped, so a "ping me in a minute" never came back.
+- Running subagents are listed with the background tasks (_Agent_ and the subagent's task), from their Agent call
+  until it ends, or for one in the background until the turn ends. `ponytail:` that's a few seconds late, while the
+  agent answers; the adapter's subagent sessions would say when, but they take the Agent call out of the replayed
+  history (ADR 0018).
+- The agent's messages in one turn are separate entries again, split on ACP's `messageId`: its reply before a
+  subagent finished and the one after ran together without a space.
 - The message Claude Code sends itself when a background task ends (`<task-notification>…`), which a session's
   history replays as the user's, shows as one line with its summary instead of the raw XML.
 - Tools called in parallel get their titles: a title that arrived after the next tool had started was dropped, so the

@@ -60,8 +60,10 @@ Claude Code (`@agentclientprotocol/claude-agent-acp`, built on the Claude Agent 
     commands left running in the background; they are kept in the session projection and stopped with
     `_session/async_task/stop`. The SDK checks every `session/update` against its schema and drops these, so they
     are taken off the incoming stream before it sees them. Updates that reach no run (Claude Code answering a background task that ended) go straight to the
-    projection. Subagent sessions (`nativeSubagentSessions`, draft ACP) aren't advertised: a subagent is still the
-    one tool line of its Agent call.
+    projection. Subagent sessions (`nativeSubagentSessions`, draft ACP) aren't advertised: with them the adapter
+    replaces the Agent call with a child session, and its history replay leaves the subagent out, so a reopened
+    session would lose it. A subagent stays the one tool line of its Agent call (`_meta.claudeCode.subagent`), and runs
+    until that call ends, or, when it runs in the background, until the turn ends, which the adapter holds open for it.
 
 ## Alternatives considered
 
