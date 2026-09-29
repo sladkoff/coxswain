@@ -24,24 +24,28 @@ our own per language would be a type checker per language.
    file extensions it takes (and their LSP language IDs), how to start it, and which dependency folders it reads
    (e.g. `node_modules`). Adding a language is a new file there and a line in `languageServers`; the client, the
    checkouts and the UI don't change.
-3. **Shipped, native servers, pinned.** TypeScript and JavaScript use TypeScript 7's own server, `tsc --lsp
---stdio`, the Go binary from `typescript`'s per-platform package, a dependency of the app. It's unpacked from the
-   asar so it can be run. Python is next with pyrefly (a Rust binary, fetched from its GitHub release by version and
-   checksum), not built yet.
+3. **Native servers, pinned.** TypeScript and JavaScript use TypeScript 7's own server, `tsc --lsp --stdio`, the Go
+   binary from `typescript`'s per-platform package, a dependency of the app, unpacked from the asar so it can be run.
+   Python uses pyrefly (`pyrefly lsp`), a Rust binary that isn't on npm: on first use it's fetched from its GitHub
+   release for the platform, checked against the sha256 pinned in `python.ts`, unpacked with the system's `tar` and
+   kept in `~/coxswain/language-servers/pyrefly-<version>/` (`download.ts`, for any later server shipped that way).
 4. **Every side of a file diff is a checkout.** A side is the worktree or a commit (the merge base, the head, a
    snapshot, a turn's before or after). The worktree, or a commit that is its current snapshot, is served in the
    worktree. Any other commit gets a detached, read-only `git worktree add --detach` in
    `~/coxswain/checkouts/<owner>/<name>/<sha>/`, with the worktree's dependency folders symlinked in. Results open at
    the same revision on the canvas.
 5. **Servers start on first use and are few.** One per checkout and language, reused while it answers; the least
-   recently used stops beyond `lspLimits.servers`, and the oldest checkouts of a repository are removed beyond
-   `lspLimits.checkouts`. All stop when the app quits. Servers watch their files themselves (`tsc` does when the
+   recently used stops beyond `lspLimits.servers`, and a commit's checkout that no running server reads is removed.
+   All stop when the app quits. Servers watch their files themselves (`tsc` does when the
    client doesn't register watchers), so agent edits are seen.
 
 ## Alternatives considered
 
 - **Keep grep as a fallback.** Answers for every language, but with the wrong answers the servers exist to fix, and
   two behaviours for one action.
+- **basedpyright for Python.** On npm and runs on Electron's Node, so nothing to download, but slower and heavier
+  than a native checker; pyrefly is stable (1.x) and a single binary.
+- **ty for Python.** Also a single native binary, but still 0.0.x, and finds nothing from packages without a `.venv`.
 - **`typescript-language-server` or `vtsls`.** Wrap the old `tsserver` (Node) rather than TypeScript 7's native one.
 - **`vscode-languageclient`, `monaco-languageclient`.** Need VS Code's or Monaco's API; we only need the protocol.
 - **Our own resolvers on tree-sitter.** Scopes and imports only; members need types, i.e. a type checker per language.
@@ -55,6 +59,8 @@ our own per language would be a type checker per language.
 - A commit checkout costs one checkout's disk and, in a blobless clone, fetching that commit's files the first time.
 - A commit checkout reads the worktree's dependencies, not the ones it had: a base with other versions resolves
   against the worktree's. Results in files outside the checkout (a linked `node_modules`) aren't listed.
-- Nothing is found until a worktree's dependencies are installed, for names from packages; names in the repository are
-  found without them.
+- Names from packages are only found once the worktree's dependencies are installed (`node_modules`, a Python
+  `.venv`). A Python repository whose own packages are only importable through its venv (a uv workspace with
+  editable installs) finds nothing across them until `uv sync` has run.
+- The first Python file clicked on a machine downloads pyrefly (about 14 MB), so it needs the network once.
 - Languages without a server have no Go to Definition or Find Usages.

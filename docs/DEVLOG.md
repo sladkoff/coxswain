@@ -22,16 +22,22 @@ For G3 ([issue 16](https://github.com/sladkoff/coxswain/issues/16), ADR 0034).
 - At most `lspLimits.servers` (4) run; the least recently used stops, and checkouts no server reads are removed. All
   stop on quit. `tsc` watches its files itself, so agent edits are seen.
 - `typescript` is now a pinned dependency of the app; its native binary is unpacked from the asar.
+- **Python** (`language-servers/python.ts`): pyrefly 1.3.2, fetched on first use from its GitHub release for the
+  platform, checked against a pinned sha256 and kept in `~/coxswain/language-servers/` (`download.ts`, reusable for
+  later native servers). A worktree's `.venv` or `venv` is linked into commit checkouts like `node_modules`.
 
 ### Tech debt
 
-- Python (pyrefly) isn't built yet; only TypeScript and JavaScript files have a server.
 - A commit's checkout reads the worktree's dependencies, not its own; results in them (outside the checkout) are left
   out there (`ponytail:` in `lsp.ts`).
 - ⌘ still underlines names in files no server takes; the menu then says there's none.
 - No "indexing" state: the first click in a big repository waits for the server to load the project.
 - A packaged build bundles only the host platform's `tsc`, like the agent SDKs; cross-platform builds need the other
   `@typescript/typescript-*` packages installed (ADR 0024).
+- Python in a repository that needs its venv to import its own packages (a uv workspace) finds nothing across them
+  until the venv exists; coxswain doesn't create it. Checked on cortea without one: an import resolves to itself.
+- pyrefly's Linux builds are glibc only (`ponytail:` in `python.ts`); its Windows zip layout is assumed, not checked.
+- Updating pyrefly is by hand: the version and six checksums in `python.ts`.
 - A checkout made while another request prunes could be removed and made again (`ponytail:` in `lsp.ts`).
 - Checked in the app over the IPC and by ⌘-click on both sides; _Find Usages_' native menu wasn't clicked through
   (its results were checked over the same IPC).

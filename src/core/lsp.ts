@@ -168,7 +168,7 @@ async function start(server: LanguageServer, checkout: Checkout): Promise<Runnin
       const to = join(checkout.path, d);
       if (existsSync(from) && !existsSync(to)) symlinkSync(from, to, "junction");
     }
-  const { command, args } = server.start();
+  const { command, args } = await server.start();
   const child = spawn(command, args, { cwd: checkout.path, stdio: ["pipe", "pipe", "ignore"] });
   const connection = createMessageConnection(
     new StreamMessageReader(child.stdout!),

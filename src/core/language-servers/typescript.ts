@@ -17,7 +17,7 @@ export const typescript: LanguageServer = {
     ".jsx": "javascriptreact",
   },
   dependencies: ["node_modules"],
-  start: () => {
+  start: async () => {
     const platform = `@typescript/typescript-${process.platform}-${process.arch}/package.json`;
     const require = createRequire(import.meta.url);
     const pkg = require.resolve(platform, {
