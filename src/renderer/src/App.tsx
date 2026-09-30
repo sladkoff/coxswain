@@ -147,6 +147,13 @@ export function App() {
   const canBack = location.state.__TSR_index > 0;
   const canForward = location.state.__TSR_index < router.history.length - 1;
   useEffect(() => window.coxswain.setNavigation(canBack, canForward), [canBack, canForward]);
+  // ADR 0030: coming back to the window rereads the worktree, for edits made in an editor or terminal meanwhile.
+  useEffect(() => {
+    if (!currentWorkspace) return;
+    const reread = () => void changed({ workspaceId: currentWorkspace.id, what: "worktree" });
+    window.addEventListener("focus", reread);
+    return () => window.removeEventListener("focus", reread);
+  }, [currentWorkspace?.id]);
   // Initial project load (or removal of the selected workspace) uses its last opened workspace.
   useEffect(() => {
     if (currentWorkspace && search.ws !== currentWorkspace.id)
@@ -206,6 +213,12 @@ export function App() {
   // Without either, the diff: all of it, or only what's on GitHub or only the local changes on top (ADR 0028). The
   // local changes are the live worktree, like all of it; the rest are pinned ranges.
   const scope = s.scope ?? "all";
+  // HEAD, and whether anything isn't committed on top of it: the Commits pane's Uncommitted changes.
+  const uncommitted = useQuery({
+    ...core("uncommitted", currentWorkspace?.id ?? 0),
+    enabled: !!currentWorkspace && !!pr.commits,
+  }).data;
+  const committed = uncommitted?.status === "ok" ? uncommitted.head : null;
   const range: { base: string; head?: string } | null = commit
     ? { base: commit.parent, head: commit.sha }
     : canvasView
@@ -214,7 +227,9 @@ export function App() {
         ? { base: pr.commits.mergeBase, head: pr.commits.head }
         : pr.commits && scope === "local"
           ? { base: pr.commits.head }
-          : null;
+          : committed && scope === "uncommitted"
+            ? { base: committed }
+            : null;
 
   // What a new view is asked for: the commit, turn or scope the diff shows, or null for all of the workspace's changes
   // (also while a view shows).
@@ -237,7 +252,9 @@ export function App() {
         }
       : !canvasView && pr.commits && scope === "local"
         ? { what: "the local changes, not on GitHub yet", base: pr.commits.head, head: null }
-        : null;
+        : !canvasView && committed && scope === "uncommitted"
+          ? { what: "the uncommitted changes", base: committed, head: null }
+          : null;
 
   // The workspace's entries, as the canvas shows them (ADR 0015: current or outdated in the live diff, shown or not in
   // the range picked). An explanation or finding shows only with its view.
@@ -518,7 +535,7 @@ export function App() {
     if ((t === "diffs" || t === "files") && t !== view)
       void show({ view: t === "files" ? "files" : undefined });
   };
-  const pickScope = (picked: "all" | "pushed" | "local") =>
+  const pickScope = (picked: "all" | "pushed" | "local" | "uncommitted") =>
     void show({
       scope: picked === "all" ? undefined : picked,
       commit: undefined,
@@ -747,6 +764,7 @@ export function App() {
             : "Show Only Pushed Changes",
         ],
         ["local", "Show Only Local Changes"],
+        ["uncommitted", "Show Only Uncommitted Changes"],
       ] as const
     ).map(([value, title]) => ({
       id: `scope:${value}`,
@@ -968,6 +986,9 @@ export function App() {
                         problem={gitProblem}
                         current={commit}
                         onPick={pickCommit}
+                        uncommitted={uncommitted?.status === "ok" ? uncommitted.size : null}
+                        uncommittedOn={!commit && !canvasView && scope === "uncommitted"}
+                        onPickUncommitted={() => pickScope("uncommitted")}
                         onPush={() => void push(currentWorkspace)}
                         onOpenPullRequest={() => void openPullRequest(currentWorkspace)}
                       />

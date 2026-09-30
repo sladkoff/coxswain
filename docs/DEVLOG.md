@@ -32,10 +32,20 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
   snapshots). Turns whose snapshots differ with nothing changed between them (the agent only committed earlier
   changes) are left out. The Diff tab's range menu offers _Commit…_ and _Agent Turn…_; there's a Show or Hide Agent Turns command.
 
+- **Uncommitted changes in the Commits pane**, after _All Changes_ while the worktree has any: its files and lines
+  added and removed, from `git diff HEAD` and the untracked files (`uncommitted`, summing the file list of HEAD → worktree). Picking it shows
+  only them, live, as a new scope, _Uncommitted_ (HEAD → worktree), also in the range menu and the command palette.
+- **Coming back to the window rereads the worktree** (ADR 0030), so edits made in an editor or a terminal show in the
+  diff, _Uncommitted changes_ and the comments' states. Pays off the debt that uncommitted edits outside an agent turn
+  didn't refresh the diff; edits while coxswain has focus still wait for the next refresh.
+
 ### Tech debt
 
 - `ponytail:` the line diff gives up past 2000 edits between two versions (`follow.ts`); files at commits are cached
   for the session, never evicted (`entries.ts`).
+- A comment on removed lines in a commit diff, _Local_ or _Uncommitted_ can read as outdated at once (ADR 0015's
+  consequences). A thread written in _Local_ or _Uncommitted_ opens in _All_: `threadLocation` only restores commits
+  and views.
 - Not yet checked in the running app.
 
 ## 2026-09-30 — Reviewed in views; threads: queued questions, follow-ups, resolving; current agent session

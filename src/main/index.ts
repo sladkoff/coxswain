@@ -63,6 +63,7 @@ import {
   readFileAt,
   readWorktreeFile,
   snapshot,
+  uncommitted,
 } from "../core/git";
 import { type CodeAt, findDefinitions, findUsages, stopLanguageServers } from "../core/lsp";
 import { onHeadMoved, watchWorkspace } from "../core/watch";
@@ -410,6 +411,7 @@ app.whenReady().then(() => {
   );
   ipcMain.handle("git:branches", (_, projectId: number) => listBranches(db, projectId));
   ipcMain.handle("git:snapshot", (_, workspaceId: number) => snapshot(db, workspaceId));
+  ipcMain.handle("git:uncommitted", (_, workspaceId: number) => uncommitted(db, workspaceId));
   ipcMain.handle("git:push", (_, workspaceId: number) => push(db, workspaceId));
   ipcMain.handle("git:open-pull-request", async (_, workspaceId: number) => {
     const pr = await openPullRequest(db, workspaceId);
@@ -674,7 +676,7 @@ app.whenReady().then(() => {
   // The Diff tab's range: a scope (none checked while a commit or turn shows), or the Commits pane to pick one.
   ipcMain.handle(
     "menus:range",
-    (e, scope: "all" | "pushed" | "local" | null, hasPr: boolean) =>
+    (e, scope: "all" | "pushed" | "local" | "uncommitted" | null, hasPr: boolean) =>
       new Promise<RangePick>((resolve) =>
         Menu.buildFromTemplate([
           ...(
@@ -682,6 +684,7 @@ app.whenReady().then(() => {
               ["all", "All Changes"],
               ["pushed", hasPr ? "The PR's Changes" : "Pushed Changes"],
               ["local", "Local Changes"],
+              ["uncommitted", "Uncommitted Changes"],
             ] as const
           ).map(([value, label]) => ({
             label,

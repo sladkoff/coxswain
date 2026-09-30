@@ -15,11 +15,14 @@ type Props = {
   problem: string | null; // why the last push failed
   current: Commit | null; // null: all changes
   onPick: (commit: Commit | null) => void;
+  uncommitted: Size | null; // what the worktree has on top of HEAD; null: nothing
+  uncommittedOn: boolean; // the diff shows only that
+  onPickUncommitted: () => void;
   onPush: () => void;
   onOpenPullRequest: () => void;
 };
 
-// The Commits pane, left of the canvas: All Changes, then the commits, newest first; those not pushed yet are marked,
+// The Commits pane, left of the canvas: All Changes, Uncommitted changes if there are any, then the commits, newest first; those not pushed yet are marked,
 // with Push (and Open Pull Request… for a branch without one). Picking a commit shows its diff. A commit shows its
 // subject over its sha, author, when and size.
 export function Commits(props: Props) {
@@ -47,7 +50,17 @@ export function Commits(props: Props) {
         </div>
       )}
       {props.problem && <ErrorText className="mb-1 px-2">{props.problem}</ErrorText>}
-      <AllChanges on={current === null} onPick={() => onPick(null)} />
+      <AllChanges on={current === null && !props.uncommittedOn} onPick={() => onPick(null)} />
+      {props.uncommitted && (
+        <Row
+          title={`The changes in the worktree that aren't committed yet, untracked files included\n${size(props.uncommitted)}`}
+          on={props.uncommittedOn}
+          onClick={props.onPickUncommitted}
+          subject="Uncommitted changes"
+          by={count(props.uncommitted.files, "file")}
+          size={props.uncommitted}
+        />
+      )}
       {!listed ? (
         <div className={cn("px-2 py-1", muted)}>Loading…</div>
       ) : listed.status !== "ok" ? (
@@ -129,7 +142,7 @@ function Row(props: {
   marks?: (string | false)[];
   sha?: string;
   by: string;
-  date: string;
+  date?: string;
   size: Size;
 }) {
   const marks = (props.marks ?? []).filter(Boolean);
@@ -150,7 +163,8 @@ function Row(props: {
       <span className={cn("flex w-full gap-1.5 text-[11px]", muted)}>
         {props.sha && <span className="shrink-0 font-mono">{props.sha.slice(0, 7)}</span>}
         <span className="truncate">
-          {props.by} · {ago(props.date)}
+          {props.by}
+          {props.date && ` · ${ago(props.date)}`}
         </span>
         {props.size.files > 0 && (
           <span className="ml-auto shrink-0 font-mono">

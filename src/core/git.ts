@@ -334,6 +334,26 @@ export function snapshot(
   }));
 }
 
+// What the worktree has on top of HEAD, not committed yet: `git diff HEAD` plus untracked files, as the diff of that
+// range lists them. The Commits pane's Uncommitted changes. size null: nothing uncommitted.
+export function uncommitted(
+  db: Db,
+  workspaceId: number,
+): Promise<{ status: "ok"; head: string; size: Size | null } | GitProblem> {
+  return withGit(async () => {
+    const path = await openedWorktree(db, workspaceId);
+    const head = (await gitText(path, ["rev-parse", "HEAD"])).trim();
+    const changed = await listChangedFiles(db, workspaceId, head);
+    if (changed.status !== "ok") return changed;
+    const size = {
+      files: changed.files.length,
+      additions: changed.files.reduce((n, f) => n + f.additions, 0),
+      deletions: changed.files.reduce((n, f) => n + f.deletions, 0),
+    };
+    return { status: "ok" as const, head, size: size.files ? size : null };
+  });
+}
+
 // #31: the commit an entry's code is at, kept from git gc under refs/coxswain/revisions/ so a force-push or rebase
 // doesn't lose it: the commit given, or a snapshot of the worktree without one.
 export async function pinRevision(

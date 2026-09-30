@@ -16,6 +16,7 @@ import type {
   ChangedFileList,
   CloneResult,
   LoggedCommit,
+  Size,
   FileText,
   FileTreeResult,
   GitProblem,
@@ -46,7 +47,7 @@ export type ViewSettings = {
   layout: "tree" | "list";
 };
 // What the Diff tab shows (glossary: scope), or "commits" / "turns" to pick a commit or an agent turn in its pane.
-export type RangePick = "all" | "pushed" | "local" | "commits" | "turns";
+export type RangePick = "all" | "pushed" | "local" | "uncommitted" | "commits" | "turns";
 // What the core changed on its own, e.g. when an agent turn ends, so the UI refetches it (ADR 0017).
 export type Changed = {
   workspaceId: number;
@@ -80,6 +81,11 @@ const api = {
   // The worktree as a commit, uncommitted changes included (ADR 0028): what a new view is pinned to.
   snapshot: (workspaceId: number): Promise<{ status: "ok"; sha: string } | GitProblem> =>
     ipcRenderer.invoke("git:snapshot", workspaceId),
+  // HEAD, and how much the worktree has on top of it, not committed; size null when nothing.
+  uncommitted: (
+    workspaceId: number,
+  ): Promise<{ status: "ok"; head: string; size: Size | null } | GitProblem> =>
+    ipcRenderer.invoke("git:uncommitted", workspaceId),
   // Pushes the worktree's branch; never forced.
   push: (workspaceId: number): Promise<{ status: "ok" } | GitProblem> =>
     ipcRenderer.invoke("git:push", workspaceId),
@@ -307,8 +313,10 @@ const api = {
   // The bottom bar's Hand off menu: send the open threads to the agent, or copy them as a prompt. Pending if dismissed.
   showHandOffMenu: (): Promise<"agent" | "copy"> => ipcRenderer.invoke("menus:hand-off"),
   // The Diff tab's range menu: a scope, or "commits". `scope` is null while a commit or turn shows. Pending if dismissed.
-  showRangeMenu: (scope: "all" | "pushed" | "local" | null, hasPr: boolean): Promise<RangePick> =>
-    ipcRenderer.invoke("menus:range", scope, hasPr),
+  showRangeMenu: (
+    scope: "all" | "pushed" | "local" | "uncommitted" | null,
+    hasPr: boolean,
+  ): Promise<RangePick> => ipcRenderer.invoke("menus:range", scope, hasPr),
   // A thread's ⋯ menu; stays pending if dismissed.
   showThreadMenu: (can: { edit: boolean; send: boolean }): Promise<"edit" | "delete" | "send"> =>
     ipcRenderer.invoke("menus:thread", can),

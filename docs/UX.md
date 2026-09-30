@@ -133,21 +133,23 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   chevrons are greyed out at either end.
 
   _Commits_ in the pane's bar shows the commits pane in the Navigator's place (one or the other): _All Changes_, then
-  the PR's commits (and local ones on top, marked _local_), newest first, each on two lines: its subject (and _merge_
-  for a merge commit), then its short sha, author (_+N_ for co-authors), how long ago, and its lines added and
-  removed. Its tooltip has the whole message, the author's email and date, co-authors, who committed it if someone
-  else, and how many files it changed. Picking a commit shows its commit diff on the canvas. _Turns_ shows, the same
-  way, _All Changes_ and then the agent turns that changed the worktree, newest first: the turn's first message over
-  the agent that ran it (_Claude Code_, _Codex_; _Agent_ for turns from before that was recorded), how long ago, and
-  its lines added and removed. Picking one shows its turn diff (glossary); the _Diff_ tab's range then names the
-  commit or _Turn: …_, with ✕ back to all changes. At the top of
-  _Commits_, how many commits aren't pushed, with _Push_ (confirmed; never forced) or, for a branch workspace without a PR, _Open Pull
+  _Uncommitted changes_ while the worktree has any (its files and lines added and removed; picking it shows only them,
+  live, as the scope _Uncommitted_), then the PR's commits (and local ones on top, marked _local_), newest first, each
+  on two lines: its subject (and _merge_ for a merge commit), then its short sha, author (_+N_ for co-authors), how
+  long ago, and its lines added and removed. Its tooltip has the whole message, the author's email and date,
+  co-authors, who committed it if someone else, and how many files it changed. Picking a commit shows its commit diff
+  on the canvas. _Turns_ shows, the same way, _All Changes_ and then the agent turns that changed the worktree, newest
+  first: the turn's first message over the agent that ran it (_Claude Code_, _Codex_; _Agent_ for turns from before
+  that was recorded), how long ago, and its lines added and removed. Picking one shows its turn diff (glossary); the
+  _Diff_ tab's range then names the commit or _Turn: …_, with ✕ back to all changes. At the top of _Commits_, how many
+  commits aren't pushed, with _Push_ (confirmed; never forced) or, for a branch workspace without a PR, _Open Pull
   Request…_ (confirmed: pushes, opens a draft PR into its base branch and shows it in the browser). A push that fails
   says why there.
 
   **Range.** The _Diff_ tab carries what the diff shows, always, a view showing or not, so the chips after it never
-  move: the scope (glossary) _All_, _PR_ (_Pushed_ for a branch without a PR) or _Local_, or the commit or turn picked.
-  Clicking it opens a native menu: _All Changes_, _The PR's Changes_ (_Pushed Changes_), _Local Changes_, _Commit…_
+  move: the scope (glossary) _All_, _PR_ (_Pushed_ for a branch without a PR), _Local_ or _Uncommitted_, or the commit or
+  turn picked.
+  Clicking it opens a native menu: _All Changes_, _The PR's Changes_ (_Pushed Changes_), _Local Changes_, _Uncommitted Changes_, _Commit…_
   and _Agent Turn…_, which show the commits or the turns. Picking a scope shows the diff. _PR_ is pinned like a commit; _Local_
   is live.
 

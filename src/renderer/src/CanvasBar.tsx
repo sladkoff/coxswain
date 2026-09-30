@@ -64,7 +64,7 @@ type Props = {
   view: View | null;
   views: View[]; // newest first
   snapshot: string | null; // the worktree now; a view of the worktree pinned to another is stale
-  scope: "all" | "pushed" | "local";
+  scope: "all" | "pushed" | "local" | "uncommitted";
   hasPr: boolean; // what's pushed is the PR's
   onRangeMenu: () => void; // the Diff tab's range: a scope, or a commit or turn from the Commits pane
   onClearCommit: () => void;
@@ -91,7 +91,12 @@ export function CanvasBar(props: Props) {
     ? props.commit.turn
       ? `Turn: ${props.commit.subject}`
       : props.commit.sha.slice(0, 7)
-    : { all: "All", pushed: props.hasPr ? "PR" : "Pushed", local: "Local" }[props.scope];
+    : {
+        all: "All",
+        pushed: props.hasPr ? "PR" : "Pushed",
+        local: "Local",
+        uncommitted: "Uncommitted",
+      }[props.scope];
   return (
     <div
       className={cn(
