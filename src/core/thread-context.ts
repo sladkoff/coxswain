@@ -3,11 +3,14 @@ import type { ReviewEntry } from "./review";
 // What a comment sent to the agent says about where it is and what came before it: pure, so it can be tested without an
 // agent.
 
-// An anchor as the agent reads it: the file, the lines, which side and revision, and the code as it was.
+// An anchor as the agent reads it: the file, the lines, which side and revision, and the code as it was; or on a view's
+// prose (ADR 0036), the view, the section, numbered as its tools number them, and the passage.
 export function describe(
   a: Pick<ReviewEntry, "path" | "side" | "startLine" | "endLine" | "code"> &
-    Partial<Pick<ReviewEntry, "base" | "head">>,
+    Partial<Pick<ReviewEntry, "base" | "head" | "viewId" | "section">>,
 ): string {
+  if (a.section != null)
+    return `this passage of section ${a.section + 1} of view ${a.viewId} (see list_views):\n${quote(a.code ?? "")}`;
   const lines =
     a.startLine === a.endLine ? `line ${a.startLine}` : `lines ${a.startLine}-${a.endLine}`;
   const at = (sha: string) => `commit ${sha.slice(0, 7)}`;
@@ -20,11 +23,22 @@ export function describe(
   return `\`${a.path}\` ${lines} (${where}):\n${fence(a.code ?? "")}`;
 }
 
+// Prose as a markdown quote.
+const quote = (text: string) =>
+  text
+    .split("\n")
+    .map((l) => `> ${l}`)
+    .join("\n");
+
 // Code in a fence longer than any run of backticks in it.
 export function fence(code: string): string {
   const f = "`".repeat(Math.max(3, ...[...code.matchAll(/`+/g)].map((m) => m[0].length + 1)));
   return `${f}\n${code}\n${f}`;
 }
+
+// Whether an entry has an anchor: lines of a file, or a view's prose.
+export const anchored = (e: Pick<ReviewEntry, "path" | "section">) =>
+  e.path != null || e.section != null;
 
 // Entries the agent wrote, not the user.
 export const byAgent = (e: Pick<ReviewEntry, "kind">) =>
@@ -39,14 +53,14 @@ export function unseen(
   thread: Omit<ReviewEntry, "state" | "shown" | "now">[],
   agentSessionId: string,
 ): string {
-  if (question.path) return `About ${describe(question)}`;
+  if (anchored(question)) return `About ${describe(question)}`;
   const asked = thread.findLast((e) => e.kind === "question");
   if (asked && asked.agentSessionId === agentSessionId)
     return thread
       .filter((e) => e.kind === "note" && e.id > asked.id)
       .map((n) => `Earlier in the thread: ${n.body}`)
       .join("\n\n");
-  const about = thread[0]?.path ? [`About ${describe(thread[0])}`] : [];
+  const about = thread[0] && anchored(thread[0]) ? [`About ${describe(thread[0])}`] : [];
   const lines = thread.map((e) => `${byAgent(e) ? "You" : "Me"}: ${e.body}`);
   const so = `The thread so far, oldest first ("Me" is me, "You" is you, maybe in another session):\n${lines.join("\n")}`;
   return [...about, ...(lines.length ? [so] : [])].join("\n\n");

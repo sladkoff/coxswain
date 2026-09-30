@@ -13,8 +13,8 @@ import { findHighlightCSS } from "./find";
 import { Centered } from "./components/layout";
 import { cn, divider, muted } from "./components/styles";
 import { ProblemMessage } from "./components/text";
-import { changed, core, queryClient } from "./queries";
-import { type Draft, DraftBox, lines, ThreadBox } from "./Thread";
+import { core, queryClient } from "./queries";
+import { type Draft, DraftBox, EntryThread, lines, postEntry } from "./Thread";
 
 // What the Viewer shows: the file diff of a changed file, or a whole file as it is in the worktree (or at `commit`, where
 // Go to Definition or Find Usages found it), scrolled to a line with `line`.
@@ -33,7 +33,7 @@ export type Turn = {
   live: ChatEntry[];
   permission: Permission | null;
 };
-type Ask = (question: NewEntry | { workspaceId: number; threadId: number }) => void;
+export type Ask = (question: NewEntry | { workspaceId: number; threadId: number }) => void;
 
 // What an inline box between the lines shows: an entry with its thread, or the form for a new one.
 // One object type, not a union: the library's annotation types distribute over unions.
@@ -397,48 +397,26 @@ export const Viewer = memo(function Viewer(props: Props) {
     };
     return { workspaceId: workspace.id, body, anchor };
   };
-  // A note, or with toAgent a question for the agent pane's session; its answer goes in the thread.
-  const post = async (e: NewEntry, toAgent: boolean) => {
-    if (toAgent) return props.onAsk(e);
-    await window.coxswain.addNote(e);
-    changed({ workspaceId: workspace.id, what: "entries" });
-  };
-  const edit = async (e: ReviewEntry, body: string) => {
-    await window.coxswain.editEntry(e.id, body);
-    changed({ workspaceId: workspace.id, what: "entries" });
-  };
-  const resolve = async (e: ReviewEntry, resolved: boolean) => {
-    await window.coxswain.resolveThread(e.id, resolved);
-    changed({ workspaceId: workspace.id, what: "entries" });
-  };
-  const remove = async (e: ReviewEntry) => {
-    await window.coxswain.deleteEntry(e.id);
-    changed({ workspaceId: workspace.id, what: "entries" });
-  };
   const render = ({ draft, entry }: Box) =>
     draft ? (
       <DraftBox
-        draft={draft}
+        label={lines(
+          Math.min(draft.startLine, draft.endLine),
+          Math.max(draft.startLine, draft.endLine),
+        )}
         onSend={(body, toAgent) => {
-          post(anchored(draft, body), toAgent);
+          void postEntry(anchored(draft, body), toAgent, props.onAsk);
           closeDraft();
         }}
         onCancel={closeDraft}
       />
     ) : entry ? (
-      <ThreadBox
+      <EntryThread
         root={entry}
-        replies={entries.filter((e) => e.parentId === entry.id)}
+        entries={entries}
         turn={props.turns[entry.id]}
-        onReply={(body, toAgent) =>
-          post({ workspaceId: workspace.id, body, parentId: entry.id }, toAgent)
-        }
-        onStop={() => window.coxswain.stopQuestion(entry.id)}
-        onAnswerPermission={(id, optionId) => props.onAnswerPermission(entry.id, id, optionId)}
-        onEdit={(body) => edit(entry, body)}
-        onResolve={(resolved) => resolve(entry, resolved)}
-        onRemove={() => remove(entry)}
-        onSend={() => props.onAsk({ workspaceId: workspace.id, threadId: entry.id })}
+        onAsk={props.onAsk}
+        onAnswerPermission={props.onAnswerPermission}
       />
     ) : null;
 

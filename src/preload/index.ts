@@ -329,6 +329,8 @@ const api = {
     ipcRenderer.invoke("menus:pick", labels, checked),
   // A token's context menu in the canvas; stays pending if dismissed.
   showTokenMenu: (): Promise<"definition" | "usages"> => ipcRenderer.invoke("menus:token"),
+  // A view's prose's context menu: Comment, or Copy; stays pending unless Comment is picked.
+  showProseMenu: (): Promise<"comment"> => ipcRenderer.invoke("menus:prose"),
   // Definitions or usages to pick from, how many didn't fit, and what to say when there are none: the index of the
   // picked label. Pending if dismissed.
   showCodeLinesMenu: (labels: string[], more: number, none: string): Promise<number> =>

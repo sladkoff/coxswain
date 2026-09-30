@@ -749,6 +749,18 @@ app.whenReady().then(() => {
         ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
       ),
   );
+  // Right-click on a view's prose (ADR 0036): Comment on the passage picked. Resolves only on Comment.
+  ipcMain.handle(
+    "menus:prose",
+    (e) =>
+      new Promise<"comment">((resolve) =>
+        Menu.buildFromTemplate([
+          { label: "Comment", click: () => resolve("comment") },
+          { type: "separator" },
+          { role: "copy" },
+        ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
+      ),
+  );
   // Definitions or usages to pick from: one item per label, then "N more" (disabled) if some didn't fit, or `none`
   // (disabled) if there are none. Resolves with the picked index, only on a click.
   ipcMain.handle(

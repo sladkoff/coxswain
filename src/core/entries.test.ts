@@ -115,4 +115,48 @@ test("an entry follows its lines from its revision: moved, shown per range, outd
   // Its own lines changed: outdated everywhere, with what stands there now.
   write("0\n1\n2\nTHREE\nfour\n5\n");
   assert.deepEqual((await listed())[0], ["Why three?", "outdated", false, 2, "2\nTHREE\nfour"]);
+
+  // ADR 0036: a note on a view's prose, current while its section is as it was, outdated once it's rewritten.
+  const sections = (...md: string[]) => JSON.stringify(md);
+  await db
+    .insertInto("views")
+    .values({
+      id: 1,
+      workspace_id: 1,
+      base: mergeBase,
+      head: mergeBase,
+      title: "Data flow",
+      guide: 0,
+      sections: sections("## One\n\nThe cache is filled lazily.", "## Two\n\nThen it's read."),
+      created_at: "",
+    })
+    .execute();
+  const prose = { viewId: 1, section: 0, quote: "filled lazily", at: 13 };
+  await addNote(db, { workspaceId: 1, body: "When exactly?", anchor: prose });
+  await assert.rejects(
+    addNote(db, { workspaceId: 1, body: "?", anchor: { ...prose, section: 5 } }),
+    /No section 5/,
+  );
+  const onProse = async () =>
+    (await listEntries(db, 1, mergeBase, mergeBase)).find((e) => e.body === "When exactly?")!;
+  const written = await onProse();
+  assert.deepEqual(
+    [
+      written.path,
+      written.viewId,
+      written.section,
+      written.code,
+      written.quoteAt,
+      written.state,
+      written.shown,
+    ],
+    [null, 1, 0, "filled lazily", 13, "current", true],
+  );
+  // Another section rewritten leaves it current; its own, outdated.
+  const rewrite = (md: string) =>
+    db.updateTable("views").set({ sections: md }).where("id", "=", 1).execute();
+  await rewrite(sections("## One\n\nThe cache is filled lazily.", "## Two\n\nRead later."));
+  assert.equal((await onProse()).state, "current");
+  await rewrite(sections("## One\n\nThe cache is filled at start.", "## Two\n\nRead later."));
+  assert.deepEqual([(await onProse()).state, (await onProse()).shown], ["outdated", false]);
 });

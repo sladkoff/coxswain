@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import type { ReviewEntry } from "../../core/review";
+import type { NewEntry, ReviewEntry } from "../../core/review";
 import { Entry, TurnStatus } from "./ChatEntry";
 import { Button, SegmentedControl } from "./components/button";
 import { TextArea } from "./components/field";
@@ -8,31 +8,37 @@ import { SendIcon } from "./components/icons";
 import { cn, divider, muted } from "./components/styles";
 import { Prose } from "./components/text";
 import { byAgent } from "./format";
-import { core, queryClient } from "./queries";
-import type { Turn } from "./Viewer";
+import { changed, core, queryClient } from "./queries";
+import type { Ask, Turn } from "./Viewer";
 
 // The lines a new thread is on, picked in a file diff's gutter.
 export type Draft = { side: "old" | "new"; startLine: number; endLine: number };
 
 export const lines = (start: number, end: number) =>
   start === end ? `Line ${start}` : `Lines ${start}–${end}`;
+// What a thread is on, in its header: its lines, or on a view's prose the start of its quote (ADR 0036).
+export const anchorLabel = (e: Pick<ReviewEntry, "section" | "code" | "startLine" | "endLine">) =>
+  e.section != null ? quoted(e.code ?? "") : lines(e.startLine!, e.endLine!);
+export const quoted = (text: string) => {
+  const t = text.replace(/\s+/g, " ").trim();
+  return `“${t.length > 40 ? `${t.slice(0, 40)}…` : t}”`;
+};
 // contain: inline-size, so nothing in a box (a resolved thread's one-line header) widens the file diff's code column.
 const box =
   "m-2 flex [contain:inline-size] flex-col gap-1.5 rounded-md border border-neutral-300 bg-white p-2 font-sans text-sm dark:border-neutral-700 dark:bg-neutral-900";
 
 type DraftBoxProps = {
-  draft: Draft;
+  label: string; // what it's on: its lines, or the passage quoted
   onSend: (body: string, toAgent: boolean) => void;
   onCancel: () => void;
 };
 
-// A new thread on the lines picked.
-export function DraftBox({ draft, onSend, onCancel }: DraftBoxProps) {
-  const [start, end] = [draft.startLine, draft.endLine].sort((a, b) => a - b);
+// A new thread on the lines or passage picked.
+export function DraftBox({ label, onSend, onCancel }: DraftBoxProps) {
   return (
     <div className={box}>
       <div className={cn("flex items-center justify-between text-xs", muted)}>
-        <span>{lines(start, end)}</span>
+        <span className="truncate">{label}</span>
         <Button variant="ghost" title="Cancel (Esc)" className="px-1" onClick={onCancel}>
           ✕
         </Button>
@@ -161,8 +167,8 @@ export function ThreadBox({
   return (
     <div id={`thread:${root.id}`} className={box}>
       <div className={cn("flex items-center gap-2 text-xs", muted)}>
-        <span className="shrink-0">
-          {lines(root.startLine!, root.endLine!)}
+        <span className={root.section != null ? "min-w-0 truncate" : "shrink-0"}>
+          {anchorLabel(root)}
           {root.state === "outdated" && " · outdated"}
         </span>
         {root.resolvedAt ? (
@@ -247,6 +253,42 @@ export function ThreadBox({
         </>
       )}
     </div>
+  );
+}
+
+// A note, or with toAgent a question for the agent pane's session; its answer goes in the thread.
+export async function postEntry(e: NewEntry, toAgent: boolean, onAsk: Ask) {
+  if (toAgent) return onAsk(e);
+  await window.coxswain.addNote(e);
+  changed({ workspaceId: e.workspaceId, what: "entries" });
+}
+
+// A thread on the canvas, wired to the core: replies, the agent's turn, edit, resolve, delete and send.
+export function EntryThread(props: {
+  root: ReviewEntry;
+  entries: ReviewEntry[]; // the workspace's
+  turn: Turn | undefined;
+  onAsk: Ask;
+  onAnswerPermission: (threadId: number, id: string, optionId: string) => void;
+}) {
+  const { root, onAsk } = props;
+  const workspaceId = root.workspaceId;
+  const done = () => changed({ workspaceId, what: "entries" });
+  return (
+    <ThreadBox
+      root={root}
+      replies={props.entries.filter((e) => e.parentId === root.id)}
+      turn={props.turn}
+      onReply={(body, toAgent) =>
+        postEntry({ workspaceId, body, parentId: root.id }, toAgent, onAsk)
+      }
+      onStop={() => window.coxswain.stopQuestion(root.id)}
+      onAnswerPermission={(id, optionId) => props.onAnswerPermission(root.id, id, optionId)}
+      onEdit={(body) => window.coxswain.editEntry(root.id, body).then(done)}
+      onResolve={(resolved) => window.coxswain.resolveThread(root.id, resolved).then(done)}
+      onRemove={() => window.coxswain.deleteEntry(root.id).then(done)}
+      onSend={() => onAsk({ workspaceId, threadId: root.id })}
+    />
   );
 }
 

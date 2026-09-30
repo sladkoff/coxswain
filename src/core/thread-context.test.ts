@@ -27,6 +27,8 @@ const entry = (
     resolvedAt: null,
     agentSessionId: null,
     revision: null,
+    section: null,
+    quoteAt: null,
     ...more,
   }) satisfies Omit<ReviewEntry, "state" | "shown" | "now">;
 
@@ -58,4 +60,16 @@ test("a follow-up in another session sends where the thread is and all of it (#1
 
 test("a thread's first question carries its own anchor", () => {
   assert.match(unseen({ ...root, agentSessionId: null }, [], "s1"), /^About `a\.ts` line 3/);
+});
+
+test("a thread on a view's prose says where in the view and quotes the passage (ADR 0036)", () => {
+  const onProse = entry(1, "question", "Is this right?", {
+    viewId: 7,
+    section: 1,
+    code: "The cache is filled\nlazily.",
+  });
+  assert.equal(
+    unseen(onProse, [], "s1"),
+    "About this passage of section 2 of view 7 (see list_views):\n> The cache is filled\n> lazily.",
+  );
 });

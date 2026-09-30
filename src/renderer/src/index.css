@@ -114,6 +114,12 @@ body {
   background-color: #facc1566;
   color: inherit;
 }
+/* ADR 0036: the passages of a view's prose that threads are on. */
+::highlight(prose-quote) {
+  background-color: #facc1533;
+  text-decoration: underline 2px #eab30899;
+  text-underline-offset: 3px;
+}
 ::highlight(find-current) {
   background-color: #fb923c;
   color: #171717;

@@ -1,6 +1,7 @@
 import { cn, muted } from "./components/styles";
 import { Prose } from "./components/text";
 import { count } from "./format";
+import { useBlockEnd } from "./ProseThreads";
 
 // A view's prose: text at a line length that's easy to follow; diagrams and tables take the column's width, a diagram
 // on a card like the file diffs.
@@ -50,10 +51,18 @@ export function ViewSectionHeader(props: {
 }
 
 // A section's markdown between its file diffs. Close above the diff it leads into, set apart from the one before it
-// (after: the part before is a file diff).
-export function ViewProse({ children, after }: { children: string; after?: boolean }) {
+// (after: the part before is a file diff). part: its index among the section's parts, where its threads are (ADR 0036).
+export function ViewProse(props: { children: string; after?: boolean; part: number }) {
+  const blockEnd = useBlockEnd(props.part);
   return (
-    <Prose className={cn("px-6 pb-2.5", after ? "pt-6" : "pt-1", viewProse)}>{children}</Prose>
+    <div data-part={props.part}>
+      <Prose
+        className={cn("px-6 pb-2.5", props.after ? "pt-6" : "pt-1", viewProse)}
+        blockEnd={blockEnd}
+      >
+        {props.children}
+      </Prose>
+    </div>
   );
 }
 

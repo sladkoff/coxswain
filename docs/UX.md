@@ -198,6 +198,12 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   _Edit_ (the first comment, in place, if it's yours), _Delete_ (the thread, after a confirmation), and _Send to Agent_, which makes the
   thread's latest note a question, with the notes before it since the last question; the answer comes in the thread.
 
+  **Threads on a view's prose** ([ADR 0036](adr/0036-threads-on-view-prose.md)). Right-click on text selected in a
+  view's prose (or on a paragraph, list or table, for all of it) and pick _Comment_: the same comment box opens after
+  that block, with the passage quoted at its top and highlighted in the text. The thread stays there, the passage
+  highlighted until it's resolved. If the agent rewrites the section, the thread goes outdated and moves to the top of
+  the section. The threads list shows these threads under the view's title, each with its section (_§ 2_).
+
   **The bottom bar** has the review at a glance on the left and _Hand off_ on the right. On the left: the thread
   toggle (a chevron, how many open threads, or _All N resolved_ once none is open, and _● N waiting_ while the agent answers one), how many of the files are
   reviewed with a progress bar (_8/29 reviewed_), and the lines added and removed. The toggle opens the threads above

@@ -1,4 +1,11 @@
-import { type ReactNode, useEffect, useState, useSyncExternalStore } from "react";
+import {
+  createContext,
+  type ReactNode,
+  useContext,
+  useEffect,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { GitProblem } from "../../../core/git";
@@ -24,26 +31,66 @@ const components: Components = {
 };
 const inlineComponents: Components = { ...components, p: (p) => <>{p.children}</> };
 
+// ADR 0036: with blockEnd, each top-level block (a paragraph, a list, a table, a diagram) is marked data-block with
+// its index, and blockEnd's node for it renders right after it: a view's threads on prose.
+type Hast = {
+  type: string;
+  tagName?: string;
+  properties?: Record<string, unknown>;
+  children: Hast[];
+};
+const markBlocks = () => (tree: Hast) => {
+  let i = 0;
+  tree.children = tree.children.map((el) =>
+    el.type !== "element"
+      ? el
+      : {
+          type: "element",
+          tagName: "prose-block",
+          properties: { block: i },
+          children: [{ ...el, properties: { ...el.properties, dataBlock: i++ } }],
+        },
+  );
+};
+const BlockEnd = createContext<((block: number) => ReactNode) | undefined>(undefined);
+const blockComponents = {
+  ...components,
+  "prose-block": ({ block, children }: { block: number; children: ReactNode }) => (
+    <>
+      {children}
+      {useContext(BlockEnd)?.(Number(block))}
+    </>
+  ),
+} as Components;
+
 // Markdown from GitHub or an agent, selectable. Links get target=_blank so the main process opens them in the browser.
 // A mermaid code block is drawn as its diagram (ADR 0026). inline: no paragraphs and no wrapper, for a title.
 export function Prose({
   children,
   inline,
   className,
+  blockEnd,
 }: {
   children: string;
   inline?: boolean;
   className?: string;
+  blockEnd?: (block: number) => ReactNode;
 }) {
   const md = (
-    <Markdown remarkPlugins={[remarkGfm]} components={inline ? inlineComponents : components}>
+    <Markdown
+      remarkPlugins={[remarkGfm]}
+      rehypePlugins={blockEnd ? [markBlocks] : undefined}
+      components={inline ? inlineComponents : blockEnd ? blockComponents : components}
+    >
       {children}
     </Markdown>
   );
   return inline ? (
     md
   ) : (
-    <div className={cn("markdown select-text [overflow-wrap:anywhere]", className)}>{md}</div>
+    <div className={cn("markdown select-text [overflow-wrap:anywhere]", className)}>
+      <BlockEnd.Provider value={blockEnd}>{md}</BlockEnd.Provider>
+    </div>
   );
 }
 
