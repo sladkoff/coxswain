@@ -7,6 +7,9 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 
 ### What works
 
+- **One search in _New workspace_.** The _Pull request_ / _Branch_ tabs are gone: one field finds open PRs and
+  branches on GitHub (a branch with an open PR shows only as that PR), and offers the rest as a new branch, spaces
+  made dashes. Enter creates it only when nothing was found, so it never swallows a PR search.
 - A view section's header has a _Reviewed_ checkbox: ticking it marks every file and file diff the section embeds as
   reviewed, unticking unmarks them all. It's ticked once they all are.
 - In a view, a reviewed file diff or file collapses to its header instead of hiding, so the prose leading into it

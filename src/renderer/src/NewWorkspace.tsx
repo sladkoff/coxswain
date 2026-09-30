@@ -2,9 +2,9 @@ import { useQuery } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
 import type { PullRequest } from "../../core/github";
 import type { Project } from "../../core/projects";
-import { Button, SegmentedControl } from "./components/button";
+import { Button } from "./components/button";
 import { ChevronDownIcon, GitBranchIcon, GitPullRequestIcon } from "./components/icons";
-import { Dialog, ListRow, ProblemCard, SearchField } from "./components/layout";
+import { Dialog, ListHeading, ListRow, ProblemCard, SearchField } from "./components/layout";
 import { cn, divider, muted } from "./components/styles";
 import { ErrorText } from "./components/text";
 import { ago } from "./format";
@@ -20,70 +20,109 @@ type Props = {
   onClose: () => void;
 };
 
-// A new workspace, on one of two tabs: an open PR, or a branch (a new one, or one already on GitHub).
-export function NewWorkspace(props: Props) {
-  const [tab, setTab] = useState<"pr" | "branch">("pr");
-  return (
-    <Dialog
-      title="New workspace"
-      subtitle={`${props.project.owner}/${props.project.name}`}
-      onClose={props.onClose}
-    >
-      <div className="flex shrink-0 px-4 pb-3">
-        <SegmentedControl
-          value={tab}
-          onChange={setTab}
-          options={[
-            { value: "pr", label: "Pull request", title: "Review or work on an open pull request" },
-            { value: "branch", label: "Branch", title: "Start a branch, or work on one on GitHub" },
-          ]}
-        />
-      </div>
-      {tab === "pr" ? <PullRequests {...props} /> : <Branches {...props} />}
-    </Dialog>
-  );
-}
-
-const Empty = ({ children }: { children: string }) => (
-  <div className={cn("py-3 text-center text-xs", muted)}>{children}</div>
-);
-
-const Badge = ({ children }: { children: string }) => (
-  <span
-    className={cn(
-      "shrink-0 rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] dark:bg-neutral-800",
-      muted,
-    )}
-  >
-    {children}
-  </span>
-);
-
-// The repository's open PRs, searchable; picking one opens its workspace, made if it has none.
-function PullRequests({ project, openPrNumbers, onSelect }: Props) {
-  const result = useQuery(core("listPullRequests", project.owner, project.name));
-  const pulls = result.data?.status === "ok" ? result.data.pulls : null;
-  const problem = result.data && result.data.status !== "ok" ? result.data : null;
+// A new workspace from one search field: it finds the repository's open PRs and its branches on GitHub, and offers to
+// create the name typed as a new branch (spaces become dashes), from the default branch unless another is picked.
+export function NewWorkspace({
+  project,
+  openPrNumbers,
+  openBranches,
+  onSelect,
+  onBranch,
+  onClose,
+}: Props) {
+  const pullsQuery = useQuery(core("listPullRequests", project.owner, project.name));
+  const branchesQuery = useQuery(core("listBranches", project.id));
+  const pulls = pullsQuery.data?.status === "ok" ? pullsQuery.data.pulls : null;
+  const listed = branchesQuery.data;
+  const branches = listed?.status === "ok" ? listed.branches : null;
   const [query, setQuery] = useState("");
+  const [picked, setPicked] = useState<string>();
+  const base = picked ?? (listed?.status === "ok" ? listed.defaultBranch : undefined);
+  const [error, setError] = useState<string | null>(null);
   const q = query.trim().toLowerCase();
-  const shown = (pulls ?? []).filter(
+  const name = branchName(query);
+  const shownPulls = (pulls ?? []).filter(
     (p) => !q || `#${p.number} ${p.title} ${p.author} ${p.headRef}`.toLowerCase().includes(q),
   );
+  // A branch with an open PR is found as that PR.
+  const heads = new Set((pulls ?? []).map((p) => p.headRef));
+  const shownBranches = (branches ?? []).filter(
+    (b) =>
+      !heads.has(b) &&
+      (b.toLowerCase().includes(q) || b.toLowerCase().includes(name.toLowerCase())),
+  );
+  const exists = !!branches?.includes(name);
+  const start = async (branch: string) => {
+    if (!base) return;
+    try {
+      await onBranch(branch, base);
+    } catch (err) {
+      // An IPC rejection carries the core's message after Electron's own prefix.
+      setError(
+        (err as Error).message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ""),
+      );
+    }
+  };
+  // Enter creates the branch only when nothing was found, so it never swallows a search for a PR.
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    if (name && !exists && !shownPulls.length && !shownBranches.length) void start(name);
+  };
+  const problems = [pullsQuery, branchesQuery].flatMap((r) =>
+    r.data && r.data.status !== "ok" ? [{ problem: r.data, retry: () => void r.refetch() }] : [],
+  );
+  const loading = !pullsQuery.data || !branchesQuery.data;
   return (
-    <>
-      <SearchField
-        autoFocus
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder="Search by title, number, author or branch"
-      />
-      {problem && (
-        <div className="px-4 pt-3">
-          <ProblemCard problem={problem} onRetry={() => result.refetch()} />
+    <Dialog title="New workspace" subtitle={`${project.owner}/${project.name}`} onClose={onClose}>
+      <form onSubmit={submit} className="contents">
+        <SearchField
+          autoFocus
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setError(null);
+          }}
+          placeholder="Search pull requests and branches, or name a new branch"
+        />
+      </form>
+      {name && !exists && (
+        <div className={cn("flex shrink-0 items-center gap-2 border-b px-4 py-2.5", divider)}>
+          <span className="min-w-0 flex-1 truncate">
+            <span className={muted}>New branch</span>{" "}
+            <span className="font-mono text-[12px] font-medium">{name}</span>
+          </span>
+          <Button
+            type="button"
+            title="The branch it starts from, and its PR goes into"
+            disabled={!base}
+            className="flex shrink-0 items-center gap-1 text-xs"
+            onClick={async () => {
+              if (!branches) return;
+              const i = await window.coxswain.showPickMenu(branches, branches.indexOf(base!));
+              setPicked(branches[i]);
+            }}
+          >
+            <span className={muted}>from</span> {base ?? "…"} <ChevronDownIcon />
+          </Button>
+          <Button
+            variant="primary"
+            className="shrink-0 text-xs"
+            disabled={!base}
+            onClick={() => void start(name)}
+          >
+            Create
+          </Button>
         </div>
       )}
-      <div className="min-h-0 flex-1 overflow-y-auto p-2">
-        {shown.map((p) => (
+      {error && <ErrorText className="shrink-0 px-4 pt-2">{error}</ErrorText>}
+      {problems.map(({ problem, retry }, i) => (
+        <div key={i} className="px-4 pt-3">
+          <ProblemCard problem={problem} onRetry={retry} />
+        </div>
+      ))}
+      <div className="min-h-0 flex-1 overflow-y-auto p-2 pt-0">
+        {shownPulls.length > 0 && <ListHeading>PULL REQUESTS</ListHeading>}
+        {shownPulls.map((p) => (
           <ListRow key={p.number} className="flex items-start gap-2.5" onClick={() => onSelect(p)}>
             <span
               title={p.draft ? "Draft" : "Open"}
@@ -111,100 +150,8 @@ function PullRequests({ project, openPrNumbers, onSelect }: Props) {
             </span>
           </ListRow>
         ))}
-        {!problem && (!pulls || !shown.length) && (
-          <Empty>
-            {!pulls ? "Loading…" : pulls.length === 0 ? "No open pull requests" : "No match"}
-          </Empty>
-        )}
-      </div>
-    </>
-  );
-}
-
-// One field for a branch's name: it filters the repository's branches on GitHub, to work on one as it is there, and
-// offers to create the name typed, from the default branch unless another is picked in the native menu.
-function Branches({ project, openBranches, onBranch }: Props) {
-  const query = useQuery(core("listBranches", project.id));
-  const listed = query.data;
-  const branches = listed?.status === "ok" ? listed.branches : null;
-  const [name, setName] = useState("");
-  const [picked, setPicked] = useState<string>();
-  const base = picked ?? (listed?.status === "ok" ? listed.defaultBranch : undefined);
-  const [error, setError] = useState<string | null>(null);
-  const typed = name.trim();
-  const q = typed.toLowerCase();
-  const shown = (branches ?? []).filter((b) => b.toLowerCase().includes(q));
-  const exists = !!branches?.includes(typed);
-  const start = async (branch: string) => {
-    if (!base) return;
-    try {
-      await onBranch(branch, base);
-    } catch (err) {
-      // An IPC rejection carries the core's message after Electron's own prefix.
-      setError(
-        (err as Error).message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ""),
-      );
-    }
-  };
-  const create = (e: FormEvent) => {
-    e.preventDefault();
-    if (typed) void start(typed);
-  };
-  return (
-    <>
-      <form onSubmit={create} className="contents">
-        <SearchField
-          autoFocus
-          value={name}
-          onChange={(e) => {
-            setName(e.target.value);
-            setError(null);
-          }}
-          placeholder="Branch name: a new one, or one on GitHub"
-        />
-      </form>
-      {typed && !exists && (
-        <div className={cn("flex shrink-0 items-center gap-2 border-b px-4 py-2.5", divider)}>
-          <span className="min-w-0 flex-1 truncate">
-            <span className={muted}>New branch</span>{" "}
-            <span className="font-mono text-[12px] font-medium">{typed}</span>
-          </span>
-          <Button
-            type="button"
-            title="The branch it starts from, and its PR goes into"
-            disabled={!base}
-            className="flex shrink-0 items-center gap-1 text-xs"
-            onClick={async () => {
-              if (!branches) return;
-              const i = await window.coxswain.showPickMenu(branches, branches.indexOf(base!));
-              setPicked(branches[i]);
-            }}
-          >
-            <span className={muted}>from</span> {base ?? "…"} <ChevronDownIcon />
-          </Button>
-          <Button
-            variant="primary"
-            className="shrink-0 text-xs"
-            disabled={!base}
-            onClick={() => void start(typed)}
-          >
-            Create
-          </Button>
-        </div>
-      )}
-      {error && <ErrorText className="shrink-0 px-4 pt-2">{error}</ErrorText>}
-      {listed && listed.status !== "ok" && (
-        <div className="px-4 pt-3">
-          <ProblemCard problem={listed} onRetry={() => void query.refetch()} />
-        </div>
-      )}
-      <div className="min-h-0 flex-1 overflow-y-auto p-2">
-        {shown.length > 0 && (
-          <div className={cn("px-2 pt-1 pb-1 text-[10.5px] font-semibold tracking-wide", muted)}>
-            ON GITHUB
-          </div>
-        )}
-        {shown.map((b) => (
+        {shownBranches.length > 0 && <ListHeading>BRANCHES ON GITHUB</ListHeading>}
+        {shownBranches.map((b) => (
           <ListRow key={b} className="flex items-center gap-2.5" onClick={() => void start(b)}>
             <span className={cn("shrink-0", muted)}>
               <GitBranchIcon />
@@ -214,9 +161,29 @@ function Branches({ project, openBranches, onBranch }: Props) {
             {openBranches.includes(b) && <Badge>Has a workspace</Badge>}
           </ListRow>
         ))}
-        {!branches && !listed?.status && <Empty>Loading…</Empty>}
-        {branches && !shown.length && !typed && <Empty>No branches on GitHub</Empty>}
+        {loading && <Empty>Loading…</Empty>}
+        {!loading && !q && !shownPulls.length && !shownBranches.length && (
+          <Empty>No open pull requests or branches</Empty>
+        )}
       </div>
-    </>
+    </Dialog>
   );
 }
+
+// What's typed, as a branch name: spaces become dashes ("some improvement" → "some-improvement").
+const branchName = (typed: string) => typed.trim().replace(/\s+/g, "-");
+
+const Empty = ({ children }: { children: string }) => (
+  <div className={cn("py-3 text-center text-xs", muted)}>{children}</div>
+);
+
+const Badge = ({ children }: { children: string }) => (
+  <span
+    className={cn(
+      "shrink-0 rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] dark:bg-neutral-800",
+      muted,
+    )}
+  >
+    {children}
+  </span>
+);
