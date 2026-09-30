@@ -482,8 +482,10 @@ app.whenReady().then(() => {
       pendingStates.clear();
     }, 16);
   });
-  ipcMain.handle("review:list", (_, workspaceId: number, base: string, head?: string) =>
-    listEntries(db, workspaceId, base, head),
+  ipcMain.handle(
+    "review:list",
+    (_, workspaceId: number, mergeBase: string, base: string, head?: string) =>
+      listEntries(db, workspaceId, mergeBase, base, head),
   );
   ipcMain.handle("review:add-note", (_, note: NewEntry) => addNote(db, note));
   ipcMain.handle("review:delete", (_, id: number) => deleteEntry(db, id));

@@ -334,6 +334,23 @@ export function snapshot(
   }));
 }
 
+// #31: the commit an entry's code is at, kept from git gc under refs/coxswain/revisions/ so a force-push or rebase
+// doesn't lose it: the commit given, or a snapshot of the worktree without one.
+export async function pinRevision(
+  db: Db,
+  workspaceId: number,
+  commit: string | null,
+): Promise<string> {
+  if (commit && !isCommit(commit)) throw new GitError(`Not a commit: ${commit}`);
+  const path = await openedWorktree(db, workspaceId);
+  const sha = commit ?? (await snapshotOf(path));
+  await git(path, ["update-ref", `refs/coxswain/revisions/${sha}`, sha]);
+  return sha;
+}
+
+// The merge base the workspace was last opened on, for the core's own reads of the live diff (Hand off).
+export const currentMergeBase = (workspaceId: number) => lastOpened.get(workspaceId)?.mergeBase;
+
 // Pushes the worktree's branch to GitHub and makes it its upstream. Never forced: if the branch moved on there, it fails
 // with git's message.
 export function push(db: Db, workspaceId: number): Promise<{ status: "ok" } | GitProblem> {

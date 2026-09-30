@@ -3,6 +3,30 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-10-01 — Outdated follows the code (#31)
+
+### What works
+
+- **An entry goes outdated only when its own lines change.** It's followed from its revision with a line diff
+  (`core/follow.ts`, Myers): lines added above move it, an edit next to it leaves it current. Judged once, against the
+  live diff (the worktree; the merge base for removed lines), so a comment from _All_ no longer reads as outdated
+  while a commit diff is on screen, and an agent's uncommitted edit shows at once.
+- **Every anchored entry has a revision** (migration: `entries.revision`): its range's commit, or a snapshot of the
+  worktree on the live diff, kept under `refs/coxswain/revisions/`. Those written on the live diff before have none
+  and read as outdated.
+- **Where it shows is per range**: between the lines of any range with its lines unchanged, at the lines they moved
+  to. The threads list mutes the others and says where they were written (_in All_, _in abc1234_, _in a view_).
+- An outdated thread opens above its file with its code _Then_ and _Now_; _Hand off_ sends it with what its lines
+  read now and asks the agent to check it still applies. ADR 0015 is rewritten for all this.
+- Entry storage and state moved from `review.ts` to `entries.ts`, which `node --test` can load, with a test over a
+  real repository.
+
+### Tech debt
+
+- `ponytail:` the line diff gives up past 2000 edits between two versions (`follow.ts`); files at commits are cached
+  for the session, never evicted (`entries.ts`).
+- Not yet checked in the running app.
+
 ## 2026-09-30 — Reviewed in views; threads: queued questions, follow-ups, resolving; current agent session
 
 ### What works

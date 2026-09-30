@@ -170,6 +170,11 @@ export const migrations = [
   // workspace's current session, which the pane opens and questions go to.
   `alter table agent_sessions add column used_at text not null default '';
   update agent_sessions set used_at = created_at`,
+  // #31: the commit an anchored entry's code is at, its side of the range it was written in (a snapshot of the worktree
+  // on the live diff), which the entry's lines are followed from. Null for those written on the live diff before: they
+  // have none, so they read as outdated.
+  `alter table entries add column revision text;
+  update entries set revision = case when side = 'old' then base else head end where path is not null`,
 ];
 
 // ADR 0016: the tables as the migrations above leave them. Change this with every migration that changes a table.
@@ -262,6 +267,7 @@ type Tables = {
     created_at: string;
     resolved_at: Generated<string | null>;
     agent_session_id: Generated<string | null>;
+    revision: string | null;
   };
 };
 

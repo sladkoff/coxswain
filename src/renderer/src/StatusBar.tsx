@@ -186,23 +186,26 @@ function ThreadRow(props: {
   const lines = t.startLine === t.endLine ? `${t.startLine}` : `${t.startLine}–${t.endLine}`;
   const answers = replies.filter((r) => r.kind === "answer").length;
   const others = replies.length - answers;
-  // The one state that matters most, as a dot and a word; replies after it.
+  // The one state that matters most, as a dot and a word; replies after it. A current thread whose lines aren't in the
+  // range on screen says where it was written (ADR 0015); a click goes there.
   const [dot, state] = props.answering
     ? ["bg-amber-500", "agent answering"]
     : t.state === "outdated"
       ? ["bg-neutral-400", "outdated"]
-      : answers
-        ? ["bg-green-600", count(answers, "answer")]
-        : t.kind === "question"
-          ? ["bg-blue-500", "sent to agent"]
-          : [null, null];
+      : !t.shown
+        ? [null, t.viewId ? "in a view" : t.head ? `in ${t.head.slice(0, 7)}` : "in All"]
+        : answers
+          ? ["bg-green-600", count(answers, "answer")]
+          : t.kind === "question"
+            ? ["bg-blue-500", "sent to agent"]
+            : [null, null];
   return (
     <div className="flex items-center pr-1 hover:bg-neutral-100 dark:hover:bg-neutral-800">
       <button
         onClick={props.onClick}
         className={cn(
           "flex min-w-0 flex-1 items-center gap-2.5 py-1 pr-2 pl-5 text-left",
-          t.state === "outdated" && muted,
+          (t.state === "outdated" || !t.shown) && muted,
         )}
       >
         <span className={cn("w-14 shrink-0 font-mono text-[11px]", muted)}>{lines}</span>

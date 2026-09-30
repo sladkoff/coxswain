@@ -186,9 +186,15 @@ const api = {
     attachments?: Attachment[],
   ): Promise<TurnResult> =>
     ipcRenderer.invoke("agents:run-turn", agentSessionId, message, view, attachments),
-  // The workspace's entries, each current or outdated in the view of base → head (ADR 0015).
-  listEntries: (workspaceId: number, base: string, head?: string): Promise<ReviewEntry[]> =>
-    ipcRenderer.invoke("review:list", workspaceId, base, head),
+  // The workspace's entries, each current or outdated in the live diff from mergeBase, and shown or not in the view of
+  // base → head (ADR 0015).
+  listEntries: (
+    workspaceId: number,
+    mergeBase: string,
+    base: string,
+    head?: string,
+  ): Promise<ReviewEntry[]> =>
+    ipcRenderer.invoke("review:list", workspaceId, mergeBase, base, head),
   addNote: (note: NewEntry): Promise<ReviewEntry> => ipcRenderer.invoke("review:add-note", note),
   deleteEntry: (id: number): Promise<void> => ipcRenderer.invoke("review:delete", id),
   resolveThread: (id: number, resolved: boolean): Promise<void> =>

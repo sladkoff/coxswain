@@ -239,12 +239,13 @@ export function App() {
         ? { what: "the local changes, not on GitHub yet", base: pr.commits.head, head: null }
         : null;
 
-  // The workspace's entries, as the canvas shows them (ADR 0015: the live diff, or the range picked). An explanation or
-  // finding shows only with its view.
-  const base = range?.base ?? pr.commits?.mergeBase;
+  // The workspace's entries, as the canvas shows them (ADR 0015: current or outdated in the live diff, shown or not in
+  // the range picked). An explanation or finding shows only with its view.
+  const mergeBase = pr.commits?.mergeBase;
+  const base = range?.base ?? mergeBase;
   const entriesQuery = useQuery({
-    ...core("listEntries", currentWorkspace?.id ?? 0, base ?? "", range?.head),
-    enabled: !!currentWorkspace && !!base,
+    ...core("listEntries", currentWorkspace?.id ?? 0, mergeBase ?? "", base ?? "", range?.head),
+    enabled: !!currentWorkspace && !!base && !!mergeBase,
   });
   const allEntries = entriesQuery.data;
   const entries = useMemo(
@@ -254,7 +255,6 @@ export function App() {
   // Callbacks handed to the Viewers are stable (useCallback), so a memoised Viewer doesn't redraw its file diff.
   // Paths of the reviewed file diffs: the live diff's, reloaded with the changes, since a file diff that changed is no
   // longer reviewed (ADR 0014); or at a view's head, where they stay as they were.
-  const mergeBase = pr.commits?.mergeBase;
   const reviewedBase = range?.base ?? mergeBase;
   const reviewedQuery = useQuery({
     ...core("listReviewed", currentWorkspace?.id ?? 0, reviewedBase ?? "", range?.head),
@@ -585,20 +585,16 @@ export function App() {
     // A chat card can refer to a thread outside the currently filtered view.
     if (!root && currentWorkspace && pr.commits) {
       const all = await queryClient.fetchQuery(
-        core("listEntries", currentWorkspace.id, pr.commits.mergeBase),
+        core("listEntries", currentWorkspace.id, pr.commits.mergeBase, pr.commits.mergeBase),
       );
       root = all.find((e) => e.id === threadId);
     }
     if (!root?.path || root.workspaceId !== shown.current.ws) return;
     setViewSettings((settings) => ({ ...settings, showReviewed: true }));
-    // Already on the canvas (its file shows and it's current there, e.g. a note written in the view shown): scroll to
+    // Already on the canvas (its file shows and its lines are there, e.g. a note written in the view shown): scroll to
     // it in place rather than leave for the range it was written in.
     const here = entries.find((e) => e.id === threadId);
-    if (
-      here?.state === "current" &&
-      !showFile &&
-      canvasFiles.some((f) => openedPath(f) === root.path)
-    )
+    if (here?.shown && !showFile && canvasFiles.some((f) => openedPath(f) === root.path))
       await show({ thread: threadId, at: root.path });
     else await show(threadLocation(root));
     setThreadPicks((n) => n + 1);

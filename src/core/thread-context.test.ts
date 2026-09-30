@@ -7,7 +7,7 @@ const entry = (
   id: number,
   kind: ReviewEntry["kind"],
   body: string,
-  more: Partial<ReviewEntry> = {},
+  more: Partial<Omit<ReviewEntry, "state" | "shown" | "now">> = {},
 ) =>
   ({
     id,
@@ -26,8 +26,9 @@ const entry = (
     createdAt: "",
     resolvedAt: null,
     agentSessionId: null,
+    revision: null,
     ...more,
-  }) satisfies Omit<ReviewEntry, "state">;
+  }) satisfies Omit<ReviewEntry, "state" | "shown" | "now">;
 
 const root = entry(1, "question", "Why a map?", {
   path: "a.ts",

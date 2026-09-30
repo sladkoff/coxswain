@@ -277,14 +277,14 @@ export const Viewer = memo(function Viewer(props: Props) {
     // Threads show under their first question, so only anchored entries without a parent get a box.
     // A whole file shows the new side (snapshot or worktree), so only new-side entries belong in it; one at a commit
     // Go to Definition found it at, none: they're about the canvas's range.
-    // Only current entries go between the lines (ADR 0015); outdated ones open from the header.
+    // Only entries whose lines are in this range go between the lines (ADR 0015); outdated ones open from the header.
     const boxes: { side: "old" | "new"; line: number; box: Box }[] = [
       ...entries
         .filter(
           (e) =>
             e.path === path &&
             !e.parentId &&
-            e.state === "current" &&
+            e.shown &&
             (opened.kind === "diff" || (e.side === "new" && !opened.commit)),
         )
         .map((e) => ({ side: e.side!, line: e.endLine!, box: { entry: e } })),
@@ -442,7 +442,9 @@ export const Viewer = memo(function Viewer(props: Props) {
       />
     ) : null;
 
-  const outdated = entries.filter((e) => e.path === path && !e.parentId && e.state === "outdated");
+  const outdated = entries.filter(
+    (e) => e.path === path && !e.parentId && !e.shown && e.state === "outdated",
+  );
 
   return (
     <div
@@ -451,7 +453,7 @@ export const Viewer = memo(function Viewer(props: Props) {
       onContextMenu={(e) => void tokenMenu(e.nativeEvent)}
       className={props.stacked ? "select-text" : "min-h-0 flex-1 overflow-auto select-text"}
     >
-      {(showOutdated || revealed?.state === "outdated") && (
+      {(showOutdated || (revealed && !revealed.shown && revealed.state === "outdated")) && (
         <OutdatedThreads entries={outdated} renderThread={(entry) => render({ entry })} />
       )}
       {opened.kind === "file" ? (
@@ -496,7 +498,8 @@ export const Viewer = memo(function Viewer(props: Props) {
   );
 });
 
-// Above a file diff: its threads about code that has changed since (ADR 0015), each with the code it was about.
+// Above a file diff: its threads about code that has changed since (ADR 0015), each with the code it was about and what
+// stands there now.
 function OutdatedThreads({
   entries,
   renderThread,
@@ -512,15 +515,23 @@ function OutdatedThreads({
             Outdated · {lines(e.startLine!, e.endLine!)}
             {e.side === "old" && ", removed"}: the code it was about has changed.
           </div>
-          <pre className="mx-2 mt-1 overflow-x-auto rounded bg-neutral-100 p-1.5 font-mono text-xs dark:bg-neutral-800">
-            {e.code}
-          </pre>
+          <Code label="Then">{e.code ?? ""}</Code>
+          {e.now !== null && <Code label="Now">{e.now || "(gone)"}</Code>}
           {renderThread(e)}
         </div>
       ))}
     </div>
   );
 }
+
+const Code = ({ label, children }: { label: string; children: string }) => (
+  <div className="mx-2 mt-1 flex gap-2">
+    <span className={cn("w-8 shrink-0 pt-1.5 text-right text-[11px]", muted)}>{label}</span>
+    <pre className="min-w-0 flex-1 overflow-x-auto rounded bg-neutral-100 p-1.5 font-mono text-xs dark:bg-neutral-800">
+      {children}
+    </pre>
+  </div>
+);
 
 // On a file diff's header: how many outdated threads (a click shows them) and the Reviewed checkbox.
 function DiffHeaderActions(props: {

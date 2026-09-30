@@ -163,9 +163,10 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   even for one line, and says _No usages found_, _No definition found_ or, in a file no language server takes (so far only
   TypeScript, JavaScript and Python), _No language server for .go files_.
 
-  **Threads.** The workspace's entries (glossary) go between the lines while they're current, i.e. their lines still
-  read as the code they were written on; the header says _N outdated_ for the others, and a click shows them above
-  the file diff with that code. Hovering a line shows a `+` in the gutter; clicking it (or dragging it over a range)
+  **Threads.** The workspace's entries (glossary) go between the lines wherever their lines are, unchanged, in the
+  range on screen, having moved with lines added above them. One outdated there (its own commit diff) says so after
+  its lines. The header says _N outdated_ for the file's outdated threads that aren't, and a click shows them above
+  the file diff with the code they were about (_Then_) and what stands there now (_Now_). Hovering a line shows a `+` in the gutter; clicking it (or dragging it over a range)
   opens a comment box: the lines at its top, ✕ at its top right to cancel (or Esc), the text, and at the bottom right
   a _Comment_ / _Agent_ toggle and a send button (Enter; Shift+Enter adds a line). The toggle is one global
   preference, kept across boxes and restarts. Sending starts a **thread** between the lines: every comment is one.
@@ -196,7 +197,8 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   reviewed with a progress bar (_8/29 reviewed_), and the lines added and removed. The toggle opens the threads above
   the bar: a header with _Threads_ and _Open N_ · _Resolved N_, then the threads grouped under their file, one line
   each: its lines, its first comment, and a dot with how far it got (_agent answering_, _outdated_, _N answers_, _sent
-  to agent_) and its replies, then a ✓ that resolves it (under _Resolved_, green, reopens it; not while the agent
+  to agent_) and its replies; one whose lines aren't in the range on screen is muted and says where it was written
+  (_in All_, _in abc1234_, _in a view_) instead, then a ✓ that resolves it (under _Resolved_, green, reopens it; not while the agent
   answers). Clicking one scrolls the canvas to it.
 
   _Hand off N_ (N the open threads it takes: not resolved, and the agent's explanations and findings only once the user
@@ -309,5 +311,6 @@ A prose-only view has no reviewable files. An empty view says _Nothing in this v
   earlier messages, pending permissions and errors survive switching workspaces; the agent pane reattaches to the
   core's session state. A turn can finish while its pane is hidden.
 - Picking a comment from the bottom bar or a chat card selects its view or recorded range and enables Show Reviewed
-  Files before scrolling to its thread. The Reviewed mark stays. An outdated thread opens above its file with the
-  original code, rather than leaving navigation at a hidden annotation.
+  Files before scrolling to its thread, or stays where it is if the thread is on screen there. The Reviewed mark
+  stays. An outdated thread opens above its file with its code then and now, rather than leaving navigation at a
+  hidden annotation.

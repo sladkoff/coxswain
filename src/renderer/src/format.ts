@@ -40,8 +40,8 @@ const threadKinds: ThreadKind[] = ["note", "question", "explanation", "finding"]
 export function countItems(entries: ReviewEntry[]): Map<string, ItemCount> {
   const counts = new Map<string, ItemCount>();
   for (const e of entries) {
-    // Only what's about the code on screen (ADR 0015): not outdated entries.
-    if (!e.path || e.parentId || e.state !== "current" || e.kind === "answer") continue;
+    // Only what's about the code on screen (ADR 0015): entries whose lines are there.
+    if (!e.path || e.parentId || !e.shown || e.kind === "answer") continue;
     const c = counts.get(e.path) ?? { note: 0, question: 0, explanation: 0, finding: 0 };
     c[e.kind]++;
     counts.set(e.path, c);
