@@ -91,13 +91,13 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   (amber: waiting on a permission, pulsing blue: working, green: done; none when idle; a row is always two lines, so the dot has room); _+ New Workspace_ at the end, and a + next to _Workspaces_ (in reach however long the list), start one. Right-clicking a workspace offers _Remove Workspace…_, which asks
   first: its comments, reviewed files and agent sessions go, its worktree stays on disk. A workspace is either a PR or a branch (ADR 0028), and has
   one worktree; a branch workspace's row shows its branch name. _New Workspace_ opens the _New workspace_
-  dialog over the window, the project under its title, with two tabs. _Pull request_: a search field (title, number,
-  author, branch) and the repository's open PRs, each with a PR icon (grey for a draft), its title, `#number · author ·
-branch`, when it was updated, and _Has a workspace_ if it does. _Branch_: one field for the branch's name, which
-  filters the repository's branches on GitHub (the default one and those with a workspace marked); picking one works on
-  it as it is there. A name that isn't one of them gets a row _New branch `name`_ with _from_ and the branch it starts
-  from (the default one; a native menu picks another) and _Create_ (or Enter); a name git won't take is refused under
-  the field. Opening a
+  dialog over the window, the project under its title, with one search field. It finds the repository's open PRs (by
+  title, number, author or branch), each with a PR icon (grey for a draft), its title, `#number · author · branch`,
+  when it was updated, and _Has a workspace_ if it does; and its branches on GitHub without an open PR (the default one
+  and those with a workspace marked), where picking one works on it as it is there. What's typed that isn't a branch
+  gets a row _New branch `name`_, spaces made dashes (`some improvement` → `some-improvement`), with _from_ and the
+  branch it starts from (the default one; a native menu picks another) and _Create_ (or Enter, when nothing was found);
+  a name git won't take is refused under the field. Opening a
   PR whose branch has a workspace makes that workspace the PR's, and so does opening a branch workspace once GitHub
   has a PR for its branch. While the project is being cloned, its initial pulses.
 

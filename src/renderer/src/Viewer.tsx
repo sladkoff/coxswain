@@ -350,6 +350,28 @@ export const Viewer = memo(function Viewer(props: Props) {
         </Centered>
       </div>
     );
+  if (o.image || n.image)
+    return (
+      <div ref={placeholder} className={cn("border-b", divider)}>
+        {opened.kind === "diff" && (
+          <div className={cn("px-3 py-2 font-mono text-xs", muted)}>{path}</div>
+        )}
+        <div className="flex items-start justify-center gap-4 p-4">
+          {[o.image, n.image].map(
+            (src, i) =>
+              src && (
+                <img
+                  key={i}
+                  src={src}
+                  alt={path}
+                  title={o.image && n.image ? (i ? "After" : "Before") : undefined}
+                  className="max-h-[70vh] min-w-0 object-contain"
+                />
+              ),
+          )}
+        </div>
+      </div>
+    );
   if (o.binary || n.binary)
     return (
       <div ref={placeholder}>

@@ -7,6 +7,18 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 
 ### What works
 
+- **A new app icon:** a shell seen from above on dark water, the cox a red dot at the stern (`resources/icon.svg`),
+  given depth with gradients, a glow on the water, the hull's shadow and a Dock shadow (stacked tiles, as AppKit draws
+  SVG drop shadows at low resolution),
+  inset to macOS's 824px tile on the 1024px canvas. `icon.png` is now rendered by `scripts/render-icon.swift`:
+  `qlmanage`, used before, fills the background white, so the corners weren't transparent.
+- **Images in the viewer.** A PNG, JPEG, GIF, WebP, AVIF, BMP or ICO file shows as the image, opened from the file
+  tree or in a file diff (before and after side by side), instead of _Binary file, not shown_. The core sends it as a
+  `data:` URL in `FileText.image`.
+  - Tech debt: the whole image goes over IPC as base64 (`ponytail:` in `git.ts`); a custom protocol would stream it.
+- **One search in _New workspace_.** The _Pull request_ / _Branch_ tabs are gone: one field finds open PRs and
+  branches on GitHub (a branch with an open PR shows only as that PR), and offers the rest as a new branch, spaces
+  made dashes. Enter creates it only when nothing was found, so it never swallows a PR search.
 - A view section's header has a _Reviewed_ checkbox: ticking it marks every file and file diff the section embeds as
   reviewed, unticking unmarks them all. It's ticked once they all are.
 - In a view, a reviewed file diff or file collapses to its header instead of hiding, so the prose leading into it
@@ -1171,7 +1183,7 @@ The local development loop (#3, ADR 0028), for G5.
 
 - coxswain has an icon: a racing shell seen from above, oars out, with the cox in amber at the stern.
   The source is `resources/icon.svg`, rendered to `resources/icon.png` with
-  `qlmanage -t -s 1024 -o resources resources/icon.svg` (then rename the output to `icon.png`).
+  `swift scripts/render-icon.swift resources/icon.svg resources/icon.png`.
 - The main process sets it as the Dock icon on macOS and as the window icon on Windows and Linux.
 
 ### Tech debt
