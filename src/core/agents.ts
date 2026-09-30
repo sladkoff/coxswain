@@ -32,6 +32,7 @@ export type AgentSession = {
   agentSessionId: string;
   createdAt: string;
   title: string | null;
+  current: boolean; // the workspace's current session: the one last used (made, picked or sent a message)
 };
 
 // One line of the chat: something the user said, text the agent wrote, or a tool the agent used. comment: the user's
@@ -94,7 +95,11 @@ function withComment(entry: ChatEntry): ChatEntry {
   return { ...entry, comment: { threadId: Number(m[2]), where: m[1], body } };
 }
 
-export type TurnResult = { status: "ok" } | { status: "error"; message: string };
+// unsent: the message waited in the queue and was taken off, so the agent never saw it.
+export type TurnResult =
+  | { status: "ok" }
+  | { status: "unsent" }
+  | { status: "error"; message: string };
 
 // A tool use the agent asks the user to approve (ADR 0018), with the options the agent offers: allow once, always,
 // reject.
@@ -116,10 +121,12 @@ type RunOptions = {
   picks?: Picks;
   oneShot?: string;
 };
-// onPermission resolves with the option picked, or null to cancel. Without it, every request is rejected.
+// onPermission resolves with the option picked, or null to cancel. Without it, every request is rejected. onQueued:
+// runTurn's message waits behind the running turn.
 type RunHandlers = {
   onEntry?: (entry: ChatEntry) => void;
   onPermission?: (p: Permission) => Promise<string | null>;
+  onQueued?: () => void;
 };
 
 export type Agent = "claude" | "codex";
@@ -858,15 +865,24 @@ export const firstMessageTitle = (prompt: string): string => {
     .slice(0, 80);
 };
 
-// The workspace's agent sessions in the agent pane, oldest first; the last one is the current one, which questions go
-// to too (ADR 0021).
-export function listAgentSessions(db: Db, workspaceId: number): Promise<AgentSession[]> {
-  return db
-    .selectFrom("agent_sessions")
-    .select(columns)
-    .where("workspace_id", "=", workspaceId)
-    .orderBy("id")
-    .execute() as Promise<AgentSession[]>;
+// The workspace's agent sessions in the agent pane, oldest first. The one last used is current: the pane opens it, and
+// questions go to it (ADR 0021).
+export async function listAgentSessions(db: Db, workspaceId: number): Promise<AgentSession[]> {
+  const sessions = db.selectFrom("agent_sessions").where("workspace_id", "=", workspaceId);
+  const [rows, current] = await Promise.all([
+    sessions.select(columns).orderBy("id").execute(),
+    sessions.select("id").orderBy("used_at", "desc").orderBy("id", "desc").executeTakeFirst(),
+  ]);
+  return rows.map((s) => ({ ...s, current: s.id === current?.id }) as AgentSession);
+}
+
+// The session was used: picked in the agent pane or sent a message, so it's the workspace's current one.
+export async function pickAgentSession(db: Db, agentSessionId: string) {
+  await db
+    .updateTable("agent_sessions")
+    .set({ used_at: new Date().toISOString() })
+    .where("agent_session_id", "=", agentSessionId)
+    .execute();
 }
 
 // The agent picks the session ID (ADR 0018, 6). agent: the one picked for it, kept for the next new session; without
@@ -887,16 +903,19 @@ export async function startAgentSession(
     picks: await agentPicks(db, agent),
   });
   await sessionStates.read(id, async () => []);
-  return db
+  const now = new Date().toISOString();
+  const row = await db
     .insertInto("agent_sessions")
     .values({
       workspace_id: workspaceId,
       agent,
       agent_session_id: id,
-      created_at: new Date().toISOString(),
+      created_at: now,
+      used_at: now,
     })
     .returning(columns)
-    .executeTakeFirstOrThrow() as Promise<AgentSession>;
+    .executeTakeFirstOrThrow();
+  return { ...row, current: true } as AgentSession;
 }
 
 // The agent a new session gets unless another is picked: the one picked last.
@@ -1037,8 +1056,8 @@ export const readAgentState = (db: Db, agentSessionId: string) =>
   });
 
 // Sends one message in an agent session and streams the reply as chat entries until the turn ends. While another turn
-// runs the message waits in the session's queue (#24), until that turn ends, it is taken off (a result of ok), or it is
-// sent into the running turn (steerQueued), which then answers it.
+// runs the message waits in the session's queue (#24), until that turn ends, it is taken off (a result of unsent), or it
+// is sent into the running turn (steerQueued), which then answers it.
 export async function runTurn(
   db: Db,
   agentSessionId: string,
@@ -1057,6 +1076,7 @@ export async function runTurn(
     const attachmentId = attachments.length
       ? await saveAttachments(db, agentSessionId, attachments)
       : null;
+    await pickAgentSession(db, agentSessionId);
     const entry = withComment({
       kind: "user",
       text: prompt,
@@ -1069,7 +1089,7 @@ export async function runTurn(
       .where("agent_session_id", "=", agentSessionId)
       .where("title", "is", null)
       .execute();
-    let go = await sessionStates.queue(agentSessionId, entry);
+    let go = await sessionStates.queue(agentSessionId, entry, false, handlers.onQueued);
     while (go === "steer") {
       const { outcome } = (await a.agent.request("_session/steering", {
         sessionId: agentSessionId,
@@ -1086,9 +1106,9 @@ export async function runTurn(
         sessionStates.entry(agentSessionId, entry);
         return result;
       }
-      go = await sessionStates.queue(agentSessionId, entry, true);
+      go = await sessionStates.queue(agentSessionId, entry, true, handlers.onQueued);
     }
-    if (!go) return result;
+    if (!go) return { status: "unsent" };
     started = true;
     const streaming: RunHandlers = {
       onEntry: (entry) => {
@@ -1147,6 +1167,11 @@ export function steerQueued(agentSessionId: string, queuedId: number) {
 // A queued message's ×: it isn't sent.
 export function unqueue(agentSessionId: string, queuedId: number) {
   sessionStates.dequeue(agentSessionId, queuedId, null);
+}
+
+// A thread's Stop: takes its comment off the queue if it waits there, or else stops the turn answering it.
+export async function stopComment(db: Db, agentSessionId: string, threadId: number) {
+  if (!sessionStates.dequeueThread(agentSessionId, threadId)) await stopTurn(db, agentSessionId);
 }
 
 // The workspace's agent turns that changed its worktree, newest first, each as a commit from its before to its after.

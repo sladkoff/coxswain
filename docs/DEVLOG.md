@@ -3,6 +3,39 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-30 — Reviewed in views; threads: queued questions, follow-ups, resolving; current agent session
+
+### What works
+
+- A view section's header has a _Reviewed_ checkbox: ticking it marks every file and file diff the section embeds as
+  reviewed, unticking unmarks them all. It's ticked once they all are.
+- In a view, a reviewed file diff or file collapses to its header instead of hiding, so the prose leading into it
+  still reads (#14). _Show Reviewed Files_ expands them; ticking one keeps its header where it was on screen. Sections
+  no longer drop out of a view when all their files are reviewed.
+- **Queued questions in threads.** A question asked while the session's turn runs shows _Queued_ in its thread, not
+  _Working…_, and _Don't Send_ in place of _Stop_ (`review:queued`, `SessionStates.queue`'s `onQueued`).
+  - A thread's Stop now stops its own question: off the queue if it waits there, or the turn answering it. Before, it
+    stopped whatever the workspace's last session was running, often another thread's turn.
+  - Taken off the queue (there or with × in the agent pane), a question becomes a note again (`TurnResult` `unsent`),
+    so _Send to Agent_ can send it later. Before, it stayed a question with no answer and couldn't be sent again.
+  - Queued comments have no _Send now_: steering one put its answer into the running turn's thread and left its own
+    thread with none. The core refuses to steer them too.
+- **Carrying on a thread with the agent (#11).** A reply has the _Comment_ / _Agent_ toggle too, on _Agent_ after
+  the agent's answer, explanation or finding. A question records the session it went to (migration:
+  `entries.agent_session_id`); a follow-up in another session (a new session since, or the other agent) sends the
+  lines and the whole thread so far, not just the notes since the last question, which that session never saw. The
+  prompt's thread context is in `core/thread-context.ts`, pure and tested.
+  - Tech debt: questions asked before the migration have no session, so their first follow-up sends the whole thread
+    once. `byAgent` is still copied in the renderer (`format.ts`, `ponytail:`), now shared by the bottom bar and
+    threads.
+- **Resolve from the bottom bar.** Each thread in the bar's list ends in a ✓ that resolves it, or reopens it under
+  _Resolved_, as the thread's own ✓ does.
+- **The current agent session is the one last used.** `agent_sessions.used_at` (migration) is set when a session is
+  made, picked in the agent pane's header, or sent a message; `listAgentSessions` marks the latest `current`. The
+  pane opens it, also after a restart (it used to open the newest), and questions and _Hand off_ go to it, so a
+  comment goes to the session shown. Pays off the `ponytail:` in `Agents.tsx` that comments went to the latest
+  session, not the one shown.
+
 ## 2026-09-29 — Queueing and steering in the agent pane
 
 For G5 ([issue 24](https://github.com/sladkoff/coxswain/issues/24), ADR 0018 point 13).

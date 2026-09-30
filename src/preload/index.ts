@@ -137,6 +137,9 @@ const api = {
   // agent: the one picked for it; without it, the one picked last.
   startAgentSession: (workspaceId: number, agent?: Agent): Promise<AgentSession> =>
     ipcRenderer.invoke("agents:start", workspaceId, agent),
+  // A session picked in the agent pane's header: the workspace's current one from now on, also after a restart.
+  pickAgentSession: (agentSessionId: string): Promise<void> =>
+    ipcRenderer.invoke("agents:pick", agentSessionId),
   newSessionAgent: (): Promise<Agent> => ipcRenderer.invoke("agents:new-session-agent"),
   // The composer's model and effort for an agent's sessions, with the choices; kept for every session of the agent.
   listAgentPicks: (workspaceId: number, agent: Agent): Promise<AgentPicks> =>
@@ -197,8 +200,8 @@ const api = {
     ipcRenderer.invoke("review:send-thread", workspaceId, threadId),
   askQuestion: (question: NewEntry): Promise<ReviewEntry> =>
     ipcRenderer.invoke("review:ask", question),
-  stopQuestion: (workspaceId: number): Promise<void> =>
-    ipcRenderer.invoke("review:stop", workspaceId),
+  // A thread's Stop: its question comes off the queue, or the turn answering it stops.
+  stopQuestion: (threadId: number): Promise<void> => ipcRenderer.invoke("review:stop", threadId),
   // Every thread to the agent pane's session in one message; resolves when the agent's turn ends.
   sendReview: (workspaceId: number): Promise<TurnResult> =>
     ipcRenderer.invoke("review:send-all", workspaceId),
@@ -214,6 +217,12 @@ const api = {
     const listener = (_: unknown, id: number, p: Permission) => callback(id, p);
     ipcRenderer.on("review:permission", listener);
     return () => void ipcRenderer.off("review:permission", listener);
+  },
+  // The question waits behind the running turn; its first chat entry says it started.
+  onQuestionQueued: (callback: (threadId: number) => void) => {
+    const listener = (_: unknown, id: number) => callback(id);
+    ipcRenderer.on("review:queued", listener);
+    return () => void ipcRenderer.off("review:queued", listener);
   },
   onQuestionEnd: (callback: (threadId: number, result: TurnResult) => void) => {
     const listener = (_: unknown, id: number, result: TurnResult) => callback(id, result);

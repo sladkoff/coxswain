@@ -169,16 +169,22 @@ branch`, when it was updated, and _Has a workspace_ if it does. _Branch_: one fi
   opens a comment box: the lines at its top, ✕ at its top right to cancel (or Esc), the text, and at the bottom right
   a _Comment_ / _Agent_ toggle and a send button (Enter; Shift+Enter adds a line). The toggle is one global
   preference, kept across boxes and restarts. Sending starts a **thread** between the lines: every comment is one.
-  Under its comments, a reply box adds another comment to the thread; a reply is always a note, with no toggle. Each
+  Under its comments, a reply box adds another comment to the thread, with its own _Comment_ / _Agent_ toggle: on
+  _Agent_ after the agent's answer, explanation or finding, so a conversation carries on with Enter; otherwise the
+  saved preference. Changing it there changes only that box. Each
   comment is labelled _You_, or _You → agent_ when it went to the agent, and the agent's answers _Agent_.
 
   On _Comment_, a comment is a note. On _Agent_, it's a question: a turn in the agent pane's agent session
   (ADR 0021), which shows it as a card (_Comment on `path:lines` sent to Agent_, the comment, and _View thread_,
-  which scrolls the canvas to the thread). The agent is given the thread's notes it hasn't seen (and the lines, if
-  the thread began as a note): the reply streams into the thread, with each tool used as one line, and is kept as an
+  which scrolls the canvas to the thread). The agent is given what it hasn't seen of the thread: in the session its last
+  question went to, the notes since; in any other (a new session since, or the other agent), the lines and the whole
+  thread so far: the reply streams into the thread, with each tool used as one line, and is kept as an
   answer when the turn ends. A tool use auto mode would block stops the turn with a permission prompt in the thread:
   what the agent wants to run and the agent's options (_Yes_, _No_, sometimes _Always_); the turn carries on once one
-  is picked, or ends with _Stop_. Questions run one at a time, and not while the agent pane's own turn runs.
+  is picked, or ends with _Stop_. A question asked while the session's turn runs queues behind it: the thread says
+  _Queued_ instead of _Working…_, and _Don't Send_ in place of _Stop_ takes it off the queue. A question taken off,
+  there or with × in the agent pane, becomes a note again, so _Send to Agent_ can send it later. Stop on a thread
+  stops only its own turn.
 
   The thread's header has a ✓ to resolve it: the thread folds to its header (_Resolved_ and its first comment), is
   left out of _Hand off_, and the ✓, green now, reopens it. Right of it, a ⋯ button with a native menu:
@@ -186,11 +192,12 @@ branch`, when it was updated, and _Has a workspace_ if it does. _Branch_: one fi
   thread's latest note a question, with the notes before it since the last question; the answer comes in the thread.
 
   **The bottom bar** has the review at a glance on the left and _Hand off_ on the right. On the left: the thread
-  toggle (a chevron, how many threads, and _● N waiting_ while the agent answers one), how many of the files are
+  toggle (a chevron, how many open threads, or _All N resolved_ once none is open, and _● N waiting_ while the agent answers one), how many of the files are
   reviewed with a progress bar (_8/29 reviewed_), and the lines added and removed. The toggle opens the threads above
   the bar: a header with _Threads_ and _Open N_ · _Resolved N_, then the threads grouped under their file, one line
   each: its lines, its first comment, and a dot with how far it got (_agent answering_, _outdated_, _N answers_, _sent
-  to agent_) and its replies. Clicking one scrolls the canvas to it.
+  to agent_) and its replies, then a ✓ that resolves it (under _Resolved_, green, reopens it; not while the agent
+  answers). Clicking one scrolls the canvas to it.
 
   _Hand off N_ (N the open threads it takes: not resolved, and the agent's explanations and findings only once the user
   replied) opens a native menu: _Send to Agent_ sends them in one message to the agent pane's session: where each
@@ -214,9 +221,10 @@ branch`, when it was updated, and _Has a workspace_ if it does. _Branch_: one fi
   tools (ADR 0023); asking for one in the agent pane's own words does the same. A view shows on the canvas as soon as
   the agent starts it, and fills in as it adds to it. While it's being written, a line above it, outside its scroll,
   says so with a spinner (_The agent is still writing this view. Read on; more may come._), its chip turns a spinner,
-  and a guide's files in no section yet show under _Not yet in the guide_. The view shows its sections in order, each with its heading and how many file
-  diffs it embeds, then its markdown (ADR 0026): prose, tables, mermaid diagrams, and embedded file diffs, which work
-  as in the diff (threads, _Reviewed_). Laid out to skim: a line above each section; embedded file diffs as cards; prose
+  and a guide's files in no section yet show under _Not yet in the guide_. The view shows its sections in order, each with its heading, how many file
+  diffs it embeds and a _Reviewed_ checkbox that marks them all (ticked once all are; unticking unmarks them all), then its markdown (ADR 0026): prose, tables, mermaid diagrams, and embedded file diffs, which work
+  as in the diff (threads, _Reviewed_), except that a reviewed one collapses to its header rather than hiding, so the
+  prose leading into it still has it under it (_Show Reviewed Files_ expands them). Laid out to skim: a line above each section; embedded file diffs as cards; prose
   close above the diff it leads into and apart from the one before; text at most 72 characters wide, diagrams and
   tables the column's width, a diagram on its own card. A diagram that doesn't parse shows its code and the error. A
   guide goes through every file: those no section embeds come after it under _Not in the guide_. Muted file diffs
@@ -224,13 +232,14 @@ branch`, when it was updated, and _Has a workspace_ if it does. _Branch_: one fi
   the heading says why. On the canvas's left, a table of contents: how many embedded file diffs are
   reviewed in all with a bar, then every section with how many of its file diffs are reviewed (✓ when all are) and, if
   any, how many threads are on them, yours and the agent's (a muted speech bubble and the number). The section being read is marked as you scroll; a click jumps
-  to it, first showing reviewed file diffs if all of its are. Explanations (labelled _Explanation_) and, with review,
+  to it. Explanations (labelled _Explanation_) and, with review,
   findings (labelled _Finding_) are threads between the lines, which can be replied to like any other; they show only
   with their view. A view shows the changes as they were, local ones included (pinned to a snapshot, like a
   commit), and its _Reviewed_ ticks stay; once the worktree has moved on (new commits or edits), an amber bar says so. Picking a commit hides the view, and the other way round.
 
 - **L4 — Agent pane**, left of the canvas, always shown; its border can be dragged. A chat with one of the
-  workspace's agent sessions, the latest unless another is picked in the header. The header starts with the session's
+  workspace's agent sessions: the current one, the one last used (made, picked in the header or sent a message),
+  also after a restart. Picking one makes it current, so comments from the canvas go to the session shown. The header starts with the session's
   title (_Session N_ before its first message) and a chevron, whose native menu lists them all with their dates, then
   the session's agent, muted. At its right, a pencil button starts another agent session on the agent picked last; the
   chevron next to it picks another (_Claude Code_, _Codex_), which the session keeps. The chat shows its turns, with
@@ -243,7 +252,8 @@ branch`, when it was updated, and _Has a workspace_ if it does. _Branch_: one fi
   sending then queues the message. Queued messages sit on top of the box, one line each (_Queued_, the message,
   _Send now_ and ×), and run as the next turns, in order, when the running one ends (also after Stop). _Send now_
   steers: the message goes into the running turn, which carries on with it. Comments and reviews sent from the canvas
-  while a turn runs queue the same way. Commands the agent left running in the background sit on top of the box, one line
+  while a turn runs queue the same way; a comment has no _Send now_, since the running turn's reply is kept as its
+  own thread's answer and the comment's would never reach its thread. Commands the agent left running in the background sit on top of the box, one line
   each with a spinner, what it does and × to stop it, until they end, and so do its subagents (_Agent_ and the
   subagent's task, without ×: the turn's stop button stops them); the agent's reply when one ends shows in the chat
   like a turn. A view prompt from _New View_ sits on top of the box as a card (_View_ and its
@@ -262,7 +272,7 @@ branch`, when it was updated, and _Has a workspace_ if it does. _Branch_: one fi
 Whole-code views (#31) work even when the workspace has no changes. The agent can trace a process with prose,
 diagrams and source files pinned to the view's snapshot. Source-file headers have _Reviewed_ and support the same
 line comments and explanations as diffs. A file's Reviewed mark is independent of its diff and survives into another
-view only if its contents match. Reviewed source files hide under _Show Reviewed Files_ just like diffs. The table
+view only if its contents match. Reviewed source files collapse under _Show Reviewed Files_ just like diffs. The table
 of contents and bottom bar count the files and diffs in the view; the Navigator still represents the range's changes.
 A prose-only view has no reviewable files. An empty view says _Nothing in this view yet_.
 
@@ -284,8 +294,7 @@ A prose-only view has no reviewable files. An empty view says _Nothing in this v
 3. **The review as a whole:** where do you write a comment that isn't on lines? _Post_ is still open. Should the PR's
    GitHub comments and reviews show in coxswain, and where?
 4. **Agents in L4:** tabs, a list, or split panes, and how running and finished agent sessions look.
-   Earlier agent sessions are reachable from the header's picker, one at a time. Comments still go to the latest
-   session, not the one shown.
+   Earlier agent sessions are reachable from the header's picker, one at a time.
 5. **The local loop:** coxswain pushes and opens PRs, but doesn't commit; agents do, or the user in a terminal.
    Should it commit (with a message to write) too? Turn diffs pile up under _Agent turns_; should older ones fold away,
    and should the canvas say which turn a local change came from?

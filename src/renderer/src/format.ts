@@ -1,6 +1,11 @@
 import type { ReviewEntry } from "../../core/review";
 import type { Workspace } from "../../core/workspaces";
 
+// Entries the agent wrote, not the user. ponytail: the same rule as byAgent in core/thread-context.ts, copied since the
+// renderer imports no core code; share a pure module if it ever changes.
+export const byAgent = (e: Pick<ReviewEntry, "kind">) =>
+  e.kind === "answer" || e.kind === "explanation" || e.kind === "finding";
+
 export const count = (n: number, word: string, plural = `${word}s`) =>
   `${n} ${n === 1 ? word : plural}`;
 export const shortDateTime = (iso: string) =>

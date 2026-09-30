@@ -145,6 +145,40 @@ test("messages sent during a turn queue behind it, run in order, and can be take
   assert.equal(await steered, null);
 });
 
+test("a queued comment says so, isn't steered into another thread's turn, and comes off by its thread", async () => {
+  const states = new SessionStates();
+  await states.read("a", async () => []);
+  let queuedCalls = 0;
+  const onQueued = () => queuedCalls++;
+  assert.equal(await states.queue("a", { kind: "user", text: "first" }, false, onQueued), "turn");
+  assert.equal(queuedCalls, 0, "a message that runs at once isn't queued");
+  const comment = (threadId: number) => ({
+    kind: "user" as const,
+    text: `comment ${threadId}`,
+    comment: { threadId, where: "a.ts:1", body: "why?" },
+  });
+  const seven = states.queue("a", comment(7), false, onQueued);
+  const eight = states.queue("a", comment(8), false, onQueued);
+  assert.equal(queuedCalls, 2);
+  const [first] = (await states.read("a", async () => [])).queued;
+  states.dequeue("a", first.id, "steer");
+  assert.equal(
+    (await states.read("a", async () => [])).queued.length,
+    2,
+    "Send now leaves a comment queued: its answer would land in the running turn's thread",
+  );
+  assert.equal(states.dequeueThread("a", 8), true);
+  assert.equal(await eight, null);
+  assert.equal(states.dequeueThread("a", 8), false, "not queued any more");
+  states.finish("a", { status: "ok" });
+  assert.equal(await seven, "turn");
+  assert.equal(
+    states.dequeueThread("a", 7),
+    false,
+    "running, not queued: Stop stops the turn instead",
+  );
+});
+
 test("a session is working, then waiting on a permission, then done until seen", async () => {
   const states = new SessionStates();
   const status = async () => agentStatus(await states.read("a", async () => []));

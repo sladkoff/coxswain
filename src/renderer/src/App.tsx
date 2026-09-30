@@ -269,9 +269,12 @@ export function App() {
   const isReviewed = (opened: Opened) =>
     (opened.kind === "file" ? reviewedFiles : reviewed).includes(openedPath(opened));
   // A ticked file diff is hidden unless Show Reviewed Files is on: the next one takes its place on screen, rather than
-  // everything below moving up under the scroll. Show Reviewed Files through a ref, so the callback stays stable.
+  // everything below moving up under the scroll. In a view it collapses instead, and its header stays where it was.
+  // Show Reviewed Files and the view through refs, so the callback stays stable.
   const showReviewed = useRef(viewSettings.showReviewed);
   showReviewed.current = viewSettings.showReviewed;
+  const inView = useRef(!!canvasView);
+  inView.current = !!canvasView;
   const markReviewed = useCallback(
     (path: string, on: boolean, kind?: "file") => {
       if (!currentWorkspace || !reviewedBase) return;
@@ -280,18 +283,32 @@ export function App() {
       const i = diffs.findIndex((el) => el.id === `diff:${path}`);
       const next = diffs[i + 1];
       mark(currentWorkspace.id, reviewedBase, path, on, range?.head, kind);
-      if (!on || showReviewed.current || i < 0 || !next || !scroller) return;
+      const anchor = inView.current ? diffs[i] : next;
+      if (!on || showReviewed.current || i < 0 || !anchor || !scroller) return;
       const top = scroller.getBoundingClientRect().top;
       const at = Math.max(diffs[i].getBoundingClientRect().top, top);
       reviewScroll.current?.();
       reviewScroll.current = restoreScroll(canvas.current!, {
         top: 0,
-        anchor: next.id,
+        anchor: anchor.id,
         offset: top - at,
       });
     },
     [currentWorkspace?.id, reviewedBase, range?.head],
   );
+  // Marks all of a view section's files and file diffs, or unmarks them.
+  const markSection = (files: Opened[], on: boolean) => {
+    if (!currentWorkspace || !reviewedBase) return;
+    for (const d of files.filter((d) => isReviewed(d) !== on))
+      mark(
+        currentWorkspace.id,
+        reviewedBase,
+        openedPath(d),
+        on,
+        range?.head,
+        d.kind === "file" ? "file" : undefined,
+      );
+  };
   // Questions' turns by thread, kept here so they outlive the Viewer showing them. The reply streams in as chat
   // entries; once the turn ends it's an answer entry. A tool use to approve waits in permission until answered.
   const [turns, setTurns] = useState<Record<number, Turn>>({});
@@ -301,16 +318,23 @@ export function App() {
         ...t,
         [id]: {
           running: true,
+          queued: false,
           error: null,
           live: upsert(t[id]?.live ?? [], c),
           permission: t[id]?.permission ?? null,
         },
       })),
     );
+    const offQueued = window.coxswain.onQuestionQueued((id) =>
+      setTurns((t) => ({
+        ...t,
+        [id]: { running: true, queued: true, error: null, live: [], permission: null },
+      })),
+    );
     const offPermission = window.coxswain.onQuestionPermission((id, permission) =>
       setTurns((t) => ({
         ...t,
-        [id]: { running: true, error: null, live: t[id]?.live ?? [], permission },
+        [id]: { running: true, queued: false, error: null, live: t[id]?.live ?? [], permission },
       })),
     );
     // The answer entry comes with the core's change event, just before this.
@@ -319,6 +343,7 @@ export function App() {
         ...t,
         [id]: {
           running: false,
+          queued: false,
           error: result.status === "error" ? result.message : null,
           live: [],
           permission: null,
@@ -327,6 +352,7 @@ export function App() {
     );
     return () => {
       offChat();
+      offQueued();
       offPermission();
       offEnd();
     };
@@ -347,6 +373,7 @@ export function App() {
       ...t,
       [id]: {
         running: true,
+        queued: t[id]?.queued ?? false, // review:queued can come before the question
         error: null,
         live: t[id]?.live ?? [],
         permission: t[id]?.permission ?? null,
@@ -389,21 +416,21 @@ export function App() {
     () => (range ? rangeChanged?.map((file) => ({ kind: "diff" as const, file })) : diffs),
     [!!range, rangeChanged, diffs],
   );
-  // Reviewed file diffs are hidden unless Show Reviewed Files is on, as in the Navigator.
+  // Reviewed file diffs are hidden unless Show Reviewed Files is on, as in the Navigator. In a view they collapse to
+  // their header instead, so the prose leading into them still has them under it.
   const isShown = (d: Opened) => viewSettings.showReviewed || !isReviewed(d);
   const shownDiffs = useMemo(
     () => diffDiffs?.filter(isShown),
     [diffDiffs, reviewed, viewSettings.showReviewed],
   );
   // With a view, its sections in order: prose and the file diffs it embeds; for a guide, then the files in none.
-  // Sections whose file diffs are all reviewed stay listed (the table of contents shows them); the canvas skips them.
   const sections = useMemo(() => {
     if (!canvasView || !diffDiffs) return null;
     const byPath = new Map(diffDiffs.map((d) => [d.file.path, d]));
     // Muted (glossary): a section of only muted embeds is low-lighted whole; its heading says why.
     const section = (title: string | null, parts: SectionPart[], allMuted: boolean) => {
       const files = parts.flatMap((p) => (p.kind === "code" ? [p.d] : []));
-      return { title, parts, muted: allMuted, files, shown: files.filter(isShown) };
+      return { title, parts, muted: allMuted, files };
     };
     const listed = new Set<string>();
     const all = canvasView.sections.map((x) => {
@@ -430,22 +457,9 @@ export function App() {
     return all;
   }, [canvasView, diffDiffs, reviewed, reviewedFiles, viewSettings.showReviewed]);
   const canvasFiles = sections?.flatMap((s) => s.files) ?? diffDiffs ?? [];
-  // The table of contents: the section at the top of the canvas's scroll, and a section picked while it was hidden
-  // (all its file diffs reviewed), scrolled to once Show Reviewed Files has shown it.
+  // The table of contents: the section at the top of the canvas's scroll.
   const [currentSection, setCurrentSection] = useState(0);
-  const [pendingSection, setPendingSection] = useState<number | null>(null);
-  const scrollToSection = (i: number) =>
-    document.getElementById(`view-section-${i}`)?.scrollIntoView();
-  useEffect(() => {
-    if (pendingSection === null) return;
-    scrollToSection(pendingSection);
-    setPendingSection(null);
-  }, [pendingSection, viewSettings.showReviewed]);
-  const pickSection = (i: number) => {
-    if (sections?.[i] && sectionShown(sections[i])) return scrollToSection(i);
-    setViewSettings((v) => ({ ...v, showReviewed: true }));
-    setPendingSection(i);
-  };
+  const pickSection = (i: number) => document.getElementById(`view-section-${i}`)?.scrollIntoView();
   // The last section whose top has scrolled past the top of the canvas (with a little slack) is the current one. Only
   // the canvas's own scroll: file diffs also scroll sideways inside it.
   const onCanvasScroll = (e: UIEvent<HTMLDivElement>) => {
@@ -460,7 +474,7 @@ export function App() {
       const el = document.getElementById(`view-section-${i}`);
       return el && el.getBoundingClientRect().top <= top ? [i] : [];
     });
-    setCurrentSection(passed.at(-1) ?? sections.findIndex(sectionShown));
+    setCurrentSection(passed.at(-1) ?? 0);
   };
   // A prompt for the agent pane's composer, from the new view menu; a new object each time, so the same one attaches
   // again. The user sends it from the agent pane; the view shows as soon as the agent starts it.
@@ -1049,7 +1063,7 @@ export function App() {
                         (!canvasView.guide || !diffDiffs.length) ? (
                           <div className={cn("p-4 text-xs", muted)}>Nothing in this view yet.</div>
                         ) : (
-                          (!canvasView || canvasFiles.length > 0) &&
+                          !canvasView &&
                           canvasFiles.every((file) => !isShown(file)) && (
                             <div className={cn("p-4 text-xs", muted)}>
                               {canvasFiles.length ? (
@@ -1079,66 +1093,62 @@ export function App() {
                               title: undefined,
                               muted: false,
                               files: diffDiffs,
-                              shown: shownDiffs,
                               parts: shownDiffs.map((d) => ({ kind: "code", d, muted: false })),
                             },
                           ]
-                        ).map(
-                          (x, i) =>
-                            sectionShown(x) && (
-                              <section
-                                key={i}
-                                id={`view-section-${i}`}
-                                className={cn(
-                                  x.muted && "opacity-60",
-                                  // A view's sections: a line between them, room at the end.
-                                  x.title !== undefined && "border-t pb-4 first:border-t-0",
-                                  divider,
-                                )}
-                              >
-                                {x.title !== undefined && (
-                                  <ViewSectionHeader
-                                    title={x.title}
-                                    files={x.files.length}
-                                    reviewed={x.files.filter(isReviewed).length}
-                                    writing={!!canvasView?.writing}
+                        ).map((x, i) => (
+                          <section
+                            key={i}
+                            id={`view-section-${i}`}
+                            className={cn(
+                              x.muted && "opacity-60",
+                              // A view's sections: a line between them, room at the end.
+                              x.title !== undefined && "border-t pb-4 first:border-t-0",
+                              divider,
+                            )}
+                          >
+                            {x.title !== undefined && (
+                              <ViewSectionHeader
+                                title={x.title}
+                                files={x.files.length}
+                                reviewed={x.files.filter(isReviewed).length}
+                                writing={!!canvasView?.writing}
+                                onReviewedChange={(on) => markSection(x.files, on)}
+                              />
+                            )}
+                            {(x.parts as SectionPart[]).map((p, j) =>
+                              p.kind === "prose" ? (
+                                <ViewProse
+                                  key={j}
+                                  after={(x.parts as SectionPart[])[j - 1]?.kind === "code"}
+                                >
+                                  {p.text}
+                                </ViewProse>
+                              ) : (
+                                <div
+                                  key={openedPath(p.d)}
+                                  id={`diff:${openedPath(p.d)}`}
+                                  className={cn(
+                                    p.muted && !x.muted && "opacity-60",
+                                    x.title !== undefined && viewDiff,
+                                  )}
+                                >
+                                  <Viewer
+                                    stacked
+                                    opened={p.d}
+                                    reviewed={isReviewed(p.d)}
+                                    collapsed={!isShown(p.d)}
+                                    {...viewerProps(
+                                      currentWorkspace,
+                                      range?.base ?? pr.commits!.mergeBase,
+                                      range?.head,
+                                    )}
                                   />
-                                )}
-                                {(x.parts as SectionPart[]).map((p, j) =>
-                                  p.kind === "prose" ? (
-                                    <ViewProse
-                                      key={j}
-                                      after={(x.parts as SectionPart[])[j - 1]?.kind === "code"}
-                                    >
-                                      {p.text}
-                                    </ViewProse>
-                                  ) : (
-                                    isShown(p.d) && (
-                                      <div
-                                        key={openedPath(p.d)}
-                                        id={`diff:${openedPath(p.d)}`}
-                                        className={cn(
-                                          p.muted && !x.muted && "opacity-60",
-                                          x.title !== undefined && viewDiff,
-                                        )}
-                                      >
-                                        <Viewer
-                                          stacked
-                                          opened={p.d}
-                                          reviewed={isReviewed(p.d)}
-                                          {...viewerProps(
-                                            currentWorkspace,
-                                            range?.base ?? pr.commits!.mergeBase,
-                                            range?.head,
-                                          )}
-                                        />
-                                      </div>
-                                    )
-                                  ),
-                                )}
-                              </section>
-                            ),
-                        )}
+                                </div>
+                              ),
+                            )}
+                          </section>
+                        ))}
                       </Virtualizer>
                     </>
                   )}
@@ -1168,9 +1178,6 @@ export function App() {
 
 // A part of a view section on the canvas: its markdown, or a source file or file diff it embeds.
 type SectionPart = { kind: "prose"; text: string } | { kind: "code"; d: Opened; muted: boolean };
-// A section shows unless all its files and diffs are hidden (reviewed); one with none always does.
-const sectionShown = (x: { files: unknown[]; shown: unknown[] }) =>
-  !x.files.length || x.shown.length > 0;
 
 const canvasScroller = (canvas: HTMLElement) =>
   canvas.querySelector<HTMLElement>(":scope > .overflow-auto:not(.hidden)");

@@ -28,6 +28,7 @@ export const openedPath = (opened: Opened) =>
 // waiting for the user's approval.
 export type Turn = {
   running: boolean;
+  queued: boolean; // waiting behind the session's running turn
   error: string | null;
   live: ChatEntry[];
   permission: Permission | null;
@@ -55,6 +56,7 @@ type Props = {
   diffStyle: "unified" | "split";
   // One of several file diffs one after another: the parent scrolls, not the Viewer.
   stacked?: boolean;
+  collapsed?: boolean; // only its header, e.g. a reviewed file diff in a view
   revealThread?: number; // navigation also opens outdated threads and forces this file to load
 };
 
@@ -235,6 +237,7 @@ export const Viewer = memo(function Viewer(props: Props) {
       ...baseOptions,
       onPostRender,
       diffStyle: props.diffStyle,
+      collapsed: props.collapsed,
       enableGutterUtility: true,
       // In a diff the range has a side; a whole file is always the worktree. ponytail: a range spanning
       // both sides of a diff is taken as the side it ends on.
@@ -257,7 +260,17 @@ export const Viewer = memo(function Viewer(props: Props) {
       onTokenClick: (t: Token, e: MouseEvent) =>
         e.metaKey && /\w/.test(t.tokenText) && void goToDefinition(codeAt(t)),
     }),
-    [props.diffStyle, workspace.id, path, oldPath, mergeBase, head, props.onOpenFile, onPostRender],
+    [
+      props.diffStyle,
+      props.collapsed,
+      workspace.id,
+      path,
+      oldPath,
+      mergeBase,
+      head,
+      props.onOpenFile,
+      onPostRender,
+    ],
   );
 
   const annotations = useMemo(() => {
@@ -398,7 +411,7 @@ export const Viewer = memo(function Viewer(props: Props) {
         onReply={(body, toAgent) =>
           post({ workspaceId: workspace.id, body, parentId: entry.id }, toAgent)
         }
-        onStop={() => window.coxswain.stopQuestion(workspace.id)}
+        onStop={() => window.coxswain.stopQuestion(entry.id)}
         onAnswerPermission={(id, optionId) => props.onAnswerPermission(entry.id, id, optionId)}
         onEdit={(body) => edit(entry, body)}
         onResolve={(resolved) => resolve(entry, resolved)}

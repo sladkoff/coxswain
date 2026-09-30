@@ -15,12 +15,14 @@ const viewProse = cn(
 export const notInGuide = (writing: boolean) =>
   writing ? "Not yet in the guide" : "Not in the guide";
 
-// Above a view section: its title and how many file diffs it embeds. title null: the files in no section of a guide.
+// Above a view section: its title, how many file diffs it embeds and a Reviewed checkbox for them all, ticked once all
+// are. title null: the files in no section of a guide.
 export function ViewSectionHeader(props: {
   title: string | null;
   files: number;
   reviewed: number;
   writing: boolean;
+  onReviewedChange: (on: boolean) => void;
 }) {
   return (
     <div className="flex flex-col gap-1 px-6 pt-8 pb-2 select-text">
@@ -28,9 +30,19 @@ export function ViewSectionHeader(props: {
         {props.title !== null ? <Prose inline>{props.title}</Prose> : notInGuide(props.writing)}
       </h2>
       {props.files > 0 && (
-        <div className={cn("text-xs", muted)}>
-          {count(props.files, "file")}
-          {props.reviewed > 0 && ` · ${props.reviewed} reviewed`}
+        <div className={cn("flex items-center gap-3 text-xs", muted)}>
+          <span>
+            {count(props.files, "file")}
+            {props.reviewed > 0 && ` · ${props.reviewed} reviewed`}
+          </span>
+          <label className="flex items-center gap-1 select-none">
+            <input
+              type="checkbox"
+              checked={props.reviewed === props.files}
+              onChange={(e) => props.onReviewedChange(e.target.checked)}
+            />
+            Reviewed
+          </label>
         </div>
       )}
     </div>

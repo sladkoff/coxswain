@@ -5,7 +5,8 @@ import { ChevronDownIcon } from "./components/icons";
 import { ProgressBar } from "./components/layout";
 import { cn, divider, muted } from "./components/styles";
 import { ErrorText } from "./components/text";
-import { count } from "./format";
+import { byAgent, count } from "./format";
+import { changed } from "./queries";
 import type { Turn } from "./Viewer";
 
 type Props = {
@@ -35,6 +36,7 @@ export function StatusBar(props: Props) {
   );
   const handOff = threads.filter((e) => !e.resolvedAt && (!byAgent(e) || replied.has(e.id)));
   const resolved = threads.filter((e) => e.resolvedAt);
+  const openCount = threads.length - resolved.length;
   const answering = threads.filter((e) => props.turns[e.id]?.running).length;
   const reviewed = props.files.filter((f) => props.reviewed.includes(f.path)).length;
   const add = props.files.reduce((n, f) => n + (f.additions ?? 0), 0);
@@ -64,7 +66,7 @@ export function StatusBar(props: Props) {
               value={listed}
               onChange={setListed}
               options={[
-                { value: "open", label: `Open ${threads.length - resolved.length}` },
+                { value: "open", label: `Open ${openCount}` },
                 { value: "resolved", label: `Resolved ${resolved.length}` },
               ]}
             />
@@ -89,6 +91,10 @@ export function StatusBar(props: Props) {
                     replies={props.entries.filter((e) => e.parentId === t.id)}
                     answering={!!props.turns[t.id]?.running}
                     onClick={() => props.onViewThread(t.id)}
+                    onResolve={async (resolved) => {
+                      await window.coxswain.resolveThread(t.id, resolved);
+                      changed({ workspaceId: props.workspaceId, what: "entries" });
+                    }}
                   />
                 ))}
               </div>
@@ -110,7 +116,10 @@ export function StatusBar(props: Props) {
           <span className={cn("flex", !open && "rotate-180")}>
             <ChevronDownIcon />
           </span>
-          {count(threads.length, "thread")}
+          {/* The open threads, the ones still to deal with; all resolved says so rather than a count of nothing. */}
+          {openCount > 0 || !resolved.length
+            ? count(openCount, "open thread")
+            : `All ${resolved.length} resolved`}
           {answering > 0 && (
             <span className="flex items-center gap-1">
               · <span className="size-1.5 rounded-full bg-amber-500" /> {answering} waiting
@@ -164,18 +173,14 @@ export function StatusBar(props: Props) {
   );
 }
 
-// ponytail: the same rule as byAgent in core/review.ts, copied since the renderer imports no core code; share a pure
-// module if a third place needs it.
-const byAgent = (e: Pick<ReviewEntry, "kind">) =>
-  e.kind === "answer" || e.kind === "explanation" || e.kind === "finding";
-
 // One thread in the bar's list, under its file: its lines, its first comment, and how far it got. A click shows it on
-// the canvas.
+// the canvas; the ✓ at its end resolves it (or reopens it, among the resolved), as the thread's own ✓ does.
 function ThreadRow(props: {
   root: ReviewEntry;
   replies: ReviewEntry[];
   answering: boolean;
   onClick: () => void;
+  onResolve: (resolved: boolean) => void;
 }) {
   const { root: t, replies } = props;
   const lines = t.startLine === t.endLine ? `${t.startLine}` : `${t.startLine}–${t.endLine}`;
@@ -192,19 +197,31 @@ function ThreadRow(props: {
           ? ["bg-blue-500", "sent to agent"]
           : [null, null];
   return (
-    <button
-      onClick={props.onClick}
-      className={cn(
-        "flex items-center gap-2.5 py-1 pr-2 pl-5 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800",
-        t.state === "outdated" && muted,
-      )}
-    >
-      <span className={cn("w-14 shrink-0 font-mono text-[11px]", muted)}>{lines}</span>
-      <span className="min-w-0 flex-1 truncate">{t.body}</span>
-      <span className={cn("flex shrink-0 items-center gap-1.5", muted)}>
-        {dot && <span className={cn("size-1.5 rounded-full", dot)} />}
-        {[state, others > 0 && count(others, "reply", "replies")].filter(Boolean).join(" · ")}
-      </span>
-    </button>
+    <div className="flex items-center pr-1 hover:bg-neutral-100 dark:hover:bg-neutral-800">
+      <button
+        onClick={props.onClick}
+        className={cn(
+          "flex min-w-0 flex-1 items-center gap-2.5 py-1 pr-2 pl-5 text-left",
+          t.state === "outdated" && muted,
+        )}
+      >
+        <span className={cn("w-14 shrink-0 font-mono text-[11px]", muted)}>{lines}</span>
+        <span className="min-w-0 flex-1 truncate">{t.body}</span>
+        <span className={cn("flex shrink-0 items-center gap-1.5", muted)}>
+          {dot && <span className={cn("size-1.5 rounded-full", dot)} />}
+          {[state, others > 0 && count(others, "reply", "replies")].filter(Boolean).join(" · ")}
+        </span>
+      </button>
+      <Button
+        variant="ghost"
+        title={t.resolvedAt ? "Reopen the thread" : "Resolve: mark the thread done"}
+        aria-label={t.resolvedAt ? "Reopen" : "Resolve"}
+        disabled={props.answering}
+        className={cn("shrink-0 px-1.5 py-0.5", t.resolvedAt ? "text-green-600" : muted)}
+        onClick={() => props.onResolve(!t.resolvedAt)}
+      >
+        ✓
+      </Button>
+    </div>
   );
 }

@@ -34,6 +34,7 @@ import {
   runTurn,
   formatView,
   startAgentSession,
+  pickAgentSession,
   setAgentPick,
   closeWorkspaceSessions,
   stopAgents,
@@ -454,6 +455,9 @@ app.whenReady().then(() => {
   ipcMain.handle("agents:start", (_, workspaceId: number, agent?: Agent) =>
     startAgentSession(db, workspaceId, agent),
   );
+  ipcMain.handle("agents:pick", (_, agentSessionId: string) =>
+    pickAgentSession(db, agentSessionId),
+  );
   ipcMain.handle("agents:new-session-agent", () => newSessionAgent(db));
   ipcMain.handle("agents:picks", (_, workspaceId: number, agent: Agent) =>
     listAgentPicks(db, workspaceId, agent),
@@ -485,7 +489,8 @@ app.whenReady().then(() => {
   ipcMain.handle("review:delete", (_, id: number) => deleteEntry(db, id));
   // A question (review:ask), or a thread's *Send to agent* (review:send-thread: its latest note made a question, null
   // if it has none). Returns the question once saved; the reply streams as review:chat to the thread and agents:entry
-  // to the agent pane, a tool use to approve comes as review:permission, and the turn's end as review:turn-end.
+  // to the agent pane, a tool use to approve comes as review:permission, waiting behind the running turn as
+  // review:queued, and the turn's end as review:turn-end.
   type Handlers = Parameters<typeof sendThread> extends [unknown, unknown, ...infer H] ? H : never;
   const asking = async (
     e: Electron.IpcMainInvokeEvent,
@@ -500,6 +505,7 @@ app.whenReady().then(() => {
         send("agents:entry", agentSessionId, entry);
       },
       (threadId, p) => permission(e.sender, () => send("review:permission", threadId, p)),
+      (threadId) => send("review:queued", threadId),
     );
     if (!asked) return null;
     changed(e.sender, { workspaceId, what: "entries" }); // the question
@@ -546,7 +552,7 @@ app.whenReady().then(() => {
     if (prompt) clipboard.writeText(prompt);
     return !!prompt;
   });
-  ipcMain.handle("review:stop", (_, workspaceId: number) => stopQuestion(db, workspaceId));
+  ipcMain.handle("review:stop", (_, threadId: number) => stopQuestion(db, threadId));
   ipcMain.handle(
     "reviewed:list",
     (_, workspaceId: number, mergeBase: string, head?: string, kind?: "diff" | "file") =>
