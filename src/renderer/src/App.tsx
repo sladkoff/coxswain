@@ -292,6 +292,20 @@ export function App() {
     },
     [currentWorkspace?.id, reviewedBase, range?.head],
   );
+  // Marks all of a view section's files and file diffs, or unmarks them. A section whose all are reviewed then hides
+  // unless Show Reviewed Files is on, as each of its file diffs would.
+  const markSection = (files: Opened[], on: boolean) => {
+    if (!currentWorkspace || !reviewedBase) return;
+    for (const d of files.filter((d) => isReviewed(d) !== on))
+      mark(
+        currentWorkspace.id,
+        reviewedBase,
+        openedPath(d),
+        on,
+        range?.head,
+        d.kind === "file" ? "file" : undefined,
+      );
+  };
   // Questions' turns by thread, kept here so they outlive the Viewer showing them. The reply streams in as chat
   // entries; once the turn ends it's an answer entry. A tool use to approve waits in permission until answered.
   const [turns, setTurns] = useState<Record<number, Turn>>({});
@@ -1102,6 +1116,7 @@ export function App() {
                                     files={x.files.length}
                                     reviewed={x.files.filter(isReviewed).length}
                                     writing={!!canvasView?.writing}
+                                    onReviewedChange={(on) => markSection(x.files, on)}
                                   />
                                 )}
                                 {(x.parts as SectionPart[]).map((p, j) =>

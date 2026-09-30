@@ -214,8 +214,8 @@ branch`, when it was updated, and _Has a workspace_ if it does. _Branch_: one fi
   tools (ADR 0023); asking for one in the agent pane's own words does the same. A view shows on the canvas as soon as
   the agent starts it, and fills in as it adds to it. While it's being written, a line above it, outside its scroll,
   says so with a spinner (_The agent is still writing this view. Read on; more may come._), its chip turns a spinner,
-  and a guide's files in no section yet show under _Not yet in the guide_. The view shows its sections in order, each with its heading and how many file
-  diffs it embeds, then its markdown (ADR 0026): prose, tables, mermaid diagrams, and embedded file diffs, which work
+  and a guide's files in no section yet show under _Not yet in the guide_. The view shows its sections in order, each with its heading, how many file
+  diffs it embeds and a _Reviewed_ checkbox that marks them all (ticked once all are; unticking unmarks them all), then its markdown (ADR 0026): prose, tables, mermaid diagrams, and embedded file diffs, which work
   as in the diff (threads, _Reviewed_). Laid out to skim: a line above each section; embedded file diffs as cards; prose
   close above the diff it leads into and apart from the one before; text at most 72 characters wide, diagrams and
   tables the column's width, a diagram on its own card. A diagram that doesn't parse shows its code and the error. A

@@ -3,6 +3,14 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-09-30 — Mark a view section as reviewed
+
+### What works
+
+- A view section's header has a _Reviewed_ checkbox: ticking it marks every file and file diff the section embeds as
+  reviewed, unticking unmarks them all. It's ticked once they all are. With _Show Reviewed Files_ off the section then
+  hides, as its file diffs would.
+
 ## 2026-09-29 — Queueing and steering in the agent pane
 
 For G5 ([issue 24](https://github.com/sladkoff/coxswain/issues/24), ADR 0018 point 13).
