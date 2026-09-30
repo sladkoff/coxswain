@@ -1,10 +1,50 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-12.14 -12.14 124.28 124.28" width="1024" height="1024">
-  <defs><clipPath id="tile"><rect width="100" height="100" rx="22.5"/></clipPath></defs>
+  <!-- coxswain: a racing shell seen from above on dark water, the cox (red) at the stern. -->
+  <defs>
+    <clipPath id="tile"><rect width="100" height="100" rx="22.5"/></clipPath>
+    <linearGradient id="water" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#245A80"/>
+      <stop offset="0.55" stop-color="#153049"/>
+      <stop offset="1" stop-color="#0A1824"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.3" cy="0.15" r="0.75">
+      <stop offset="0" stop-color="#5FB3E0" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#5FB3E0" stop-opacity="0"/>
+    </radialGradient>
+    <!-- Across the hull, in its own frame: lit on top, shaded underneath. -->
+    <linearGradient id="hull" gradientUnits="userSpaceOnUse" x1="0" y1="38" x2="0" y2="62">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="0.5" stop-color="#F4F1EA"/>
+      <stop offset="1" stop-color="#C9C0AE"/>
+    </linearGradient>
+    <radialGradient id="cox" cx="0.35" cy="0.35" r="0.7">
+      <stop offset="0" stop-color="#FF9A6B"/>
+      <stop offset="0.6" stop-color="#E4572E"/>
+      <stop offset="1" stop-color="#B83A18"/>
+    </radialGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.35"/>
+      <stop offset="0.3" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="soft" x="-20%" y="-50%" width="140%" height="200%">
+      <feGaussianBlur stdDeviation="2.2"/>
+    </filter>
+  </defs>
+  <!-- The Dock icon's shadow, as stacked tiles: AppKit draws feDropShadow at low resolution. -->
+  <g fill="#000">
+    <rect x="-1.2" y="-0.4" width="102.4" height="102.4" rx="23.7" opacity="0.06"/>
+    <rect x="-0.7" y="0.2" width="101.4" height="101.4" rx="23.2" opacity="0.08"/>
+    <rect x="-0.3" y="0.6" width="100.6" height="100.6" rx="22.8" opacity="0.12"/>
+  </g>
   <g clip-path="url(#tile)">
-    <rect width="100" height="100" fill="#13232F"/>
+    <rect width="100" height="100" fill="url(#water)"/>
+    <rect width="100" height="100" fill="url(#glow)"/>
     <g transform="rotate(-45 50 50)">
-      <path d="M-30 50 Q50 31 130 50 Q50 69 -30 50 Z" fill="#F4F1EA"/>
-      <circle cx="22" cy="50" r="4.6" fill="#E4572E"/>
+      <path d="M-30 50 Q50 31 130 50 Q50 69 -30 50 Z" fill="#000" opacity="0.45" filter="url(#soft)" transform="translate(2.5 4.5)"/>
+      <path d="M-30 50 Q50 31 130 50 Q50 69 -30 50 Z" fill="url(#hull)"/>
+      <circle cx="22" cy="51" r="4.6" fill="#000" opacity="0.25"/>
+      <circle cx="22" cy="50" r="4.6" fill="url(#cox)"/>
     </g>
   </g>
+  <rect x="0.4" y="0.4" width="99.2" height="99.2" rx="22.1" fill="none" stroke="url(#rim)" stroke-width="0.8"/>
 </svg>
