@@ -2,7 +2,7 @@ import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, extname, join, relative, resolve } from "node:path";
 import type { Db } from "./db";
 import {
   createPullRequest,
@@ -32,8 +32,10 @@ export type FileTreeResult = { status: "ok"; paths: string[] } | GitProblem;
 // A commit of the PR, or a local one on top. parent: its first parent, the old side of its commit diff. An agent turn
 // is shown like one (turn: when it ran): its snapshots after and before (ADR 0028), subject its first message.
 export type Commit = { sha: string; parent: string; subject: string; turn?: string };
-// text is null when the file doesn't exist on that side or is binary.
-export type FileText = { status: "ok"; text: string | null; binary: boolean } | GitProblem;
+// text is null when the file doesn't exist on that side or is binary. image: a binary image's data: URL, to show it.
+export type FileText =
+  | { status: "ok"; text: string | null; binary: boolean; image?: string }
+  | GitProblem;
 export type CloneResult = { status: "ok" } | GitProblem | GitHubProblem;
 // head: what's on GitHub (ADR 0028), the PR's head or the branch's; the merge base while a branch isn't pushed. Local
 // changes are what the worktree has on top of it. prNumber: the workspace's PR, which a branch workspace gets once one
@@ -540,10 +542,31 @@ export async function listFilesAt(db: Db, workspaceId: number, commit: string): 
   });
 }
 
-const asText = (bytes: Buffer): FileText =>
-  bytes.includes(0)
+const imageTypes: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".avif": "image/avif",
+  ".bmp": "image/bmp",
+  ".ico": "image/x-icon",
+};
+
+// ponytail: the whole image goes over IPC as base64; stream it from a custom protocol if big images drag.
+export const asText = (bytes: Buffer, file: string): FileText => {
+  const type = imageTypes[extname(file).toLowerCase()];
+  if (type)
+    return {
+      status: "ok",
+      text: null,
+      binary: true,
+      image: `data:${type};base64,${bytes.toString("base64")}`,
+    };
+  return bytes.includes(0)
     ? { status: "ok", text: null, binary: true }
     : { status: "ok", text: bytes.toString("utf8"), binary: false };
+};
 
 // A file as it is in the worktree now.
 export function readWorktreeFile(db: Db, workspaceId: number, file: string): Promise<FileText> {
@@ -552,7 +575,7 @@ export function readWorktreeFile(db: Db, workspaceId: number, file: string): Pro
     const full = resolve(path, file);
     if (relative(path, full).startsWith("..")) throw new GitError(`Outside the worktree: ${file}`);
     return existsSync(full)
-      ? asText(readFileSync(full))
+      ? asText(readFileSync(full), file)
       : { status: "ok" as const, text: null, binary: false };
   });
 }
@@ -654,7 +677,10 @@ export function readFileAt(
 ): Promise<FileText> {
   return withGit(async () => {
     if (!isCommit(commit)) throw new GitError(`Not a commit: ${commit}`);
-    return asText(await git(await openedWorktree(db, workspaceId), ["show", `${commit}:${file}`]));
+    return asText(
+      await git(await openedWorktree(db, workspaceId), ["show", `${commit}:${file}`]),
+      file,
+    );
   });
 }
 

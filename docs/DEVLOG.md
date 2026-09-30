@@ -7,6 +7,10 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 
 ### What works
 
+- **Images in the viewer.** A PNG, JPEG, GIF, WebP, AVIF, BMP or ICO file shows as the image, opened from the file
+  tree or in a file diff (before and after side by side), instead of _Binary file, not shown_. The core sends it as a
+  `data:` URL in `FileText.image`.
+  - Tech debt: the whole image goes over IPC as base64 (`ponytail:` in `git.ts`); a custom protocol would stream it.
 - **One search in _New workspace_.** The _Pull request_ / _Branch_ tabs are gone: one field finds open PRs and
   branches on GitHub (a branch with an open PR shows only as that PR), and offers the rest as a new branch, spaces
   made dashes. Enter creates it only when nothing was found, so it never swallows a PR search.
