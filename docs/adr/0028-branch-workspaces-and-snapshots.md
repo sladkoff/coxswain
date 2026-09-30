@@ -25,8 +25,8 @@ made. The user needs to see what is in flight: what's on GitHub, what's only her
    the base branch (titled by its one commit, else by the branch), then shows it in the browser to finish.
 3. **What's on GitHub is the head.** `openWorktree` returns `head`: the PR's head, or the branch's on GitHub, or the
    merge base while a branch isn't pushed. The **scope** picks a range over it: _All_ is merge base → worktree,
-   _PR_/_Pushed_ is merge base → head (pinned, like a commit diff), _Local_ is head → worktree. Commits after head are
-   marked _local_; _Push_ pushes the branch, never forced. For a branch without a PR the merge base is git's
+   and the layers that add up to it are _PR_/_On GitHub_, merge base → head, _Not Pushed_, head → HEAD (both pinned,
+   like a commit diff), and _Uncommitted_, HEAD → worktree. Commits after head are marked _not pushed_; _Push_ pushes the branch, never forced. For a branch without a PR the merge base is git's
    (`merge-base origin/<base> HEAD`); for a PR it stays GitHub's (ADR 0008).
 4. **Snapshots pin the worktree.** A snapshot is the worktree as a commit: `git add --all` into a copy of the worktree's
    index (`GIT_INDEX_FILE`), `write-tree`, then `commit-tree` on HEAD with a fixed author and date, so the same files

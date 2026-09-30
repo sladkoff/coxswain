@@ -35,6 +35,10 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 - **Uncommitted changes in the Commits pane**, after _All Changes_ while the worktree has any: its files and lines
   added and removed, from `git diff HEAD` and the untracked files (`uncommitted`, summing the file list of HEAD → worktree). Picking it shows
   only them, live, as a new scope, _Uncommitted_ (HEAD → worktree), also in the range menu and the command palette.
+- **Scopes are layers.** The range menu has _All Changes_, then the three layers that add up to it, each with its size
+  and greyed out when empty: _In the PR_ / _On GitHub_ (merge base → GitHub's head), _Not Pushed_ (GitHub's head →
+  HEAD, pinned) and _Uncommitted_ (HEAD → worktree). _Local_ (GitHub's head → worktree) is gone: it held the other two
+  at once. Unpushed commits are marked _not pushed_, not _local_.
 - **Coming back to the window rereads the worktree** (ADR 0030), so edits made in an editor or a terminal show in the
   diff, _Uncommitted changes_ and the comments' states. Pays off the debt that uncommitted edits outside an agent turn
   didn't refresh the diff; edits while coxswain has focus still wait for the next refresh.
@@ -43,9 +47,8 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 
 - `ponytail:` the line diff gives up past 2000 edits between two versions (`follow.ts`); files at commits are cached
   for the session, never evicted (`entries.ts`).
-- A comment on removed lines in a commit diff, _Local_ or _Uncommitted_ can read as outdated at once (ADR 0015's
-  consequences). A thread written in _Local_ or _Uncommitted_ opens in _All_: `threadLocation` only restores commits
-  and views.
+- A comment on removed lines in a commit diff, _Not Pushed_ or _Uncommitted_ can read as outdated at once (ADR 0015's
+  consequences). A thread written in _Uncommitted_ opens in _All_: `threadLocation` only restores commits and views.
 - Not yet checked in the running app.
 
 ## 2026-09-30 — Reviewed in views; threads: queued questions, follow-ups, resolving; current agent session

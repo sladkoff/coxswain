@@ -47,7 +47,9 @@ export type ViewSettings = {
   layout: "tree" | "list";
 };
 // What the Diff tab shows (glossary: scope), or "commits" / "turns" to pick a commit or an agent turn in its pane.
-export type RangePick = "all" | "pushed" | "local" | "uncommitted" | "commits" | "turns";
+export type RangePick = "all" | "pushed" | "unpushed" | "uncommitted" | "commits" | "turns";
+// How much each layer of the diff has, for the range menu: commits, and files for uncommitted.
+export type Layers = { pushed: number; unpushed: number; uncommitted: number };
 // What the core changed on its own, e.g. when an agent turn ends, so the UI refetches it (ADR 0017).
 export type Changed = {
   workspaceId: number;
@@ -314,9 +316,10 @@ const api = {
   showHandOffMenu: (): Promise<"agent" | "copy"> => ipcRenderer.invoke("menus:hand-off"),
   // The Diff tab's range menu: a scope, or "commits". `scope` is null while a commit or turn shows. Pending if dismissed.
   showRangeMenu: (
-    scope: "all" | "pushed" | "local" | "uncommitted" | null,
+    scope: "all" | "pushed" | "unpushed" | "uncommitted" | null,
     hasPr: boolean,
-  ): Promise<RangePick> => ipcRenderer.invoke("menus:range", scope, hasPr),
+    layers: Layers,
+  ): Promise<RangePick> => ipcRenderer.invoke("menus:range", scope, hasPr, layers),
   // A thread's ⋯ menu; stays pending if dismissed.
   showThreadMenu: (can: { edit: boolean; send: boolean }): Promise<"edit" | "delete" | "send"> =>
     ipcRenderer.invoke("menus:thread", can),

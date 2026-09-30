@@ -75,7 +75,7 @@ export function Commits(props: Props) {
             on={c.sha === current?.sha && !current.turn}
             onClick={() => onPick(c)}
             subject={c.subject}
-            marks={[c.merge && "merge", local.has(c.sha) && "local"]}
+            marks={[c.merge && "merge", local.has(c.sha) && "not pushed"]}
             sha={c.sha}
             by={`${c.author}${c.coAuthors.length ? ` +${c.coAuthors.length}` : ""}`}
             date={c.date}

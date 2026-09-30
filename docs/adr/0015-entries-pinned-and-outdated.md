@@ -53,8 +53,8 @@ range on screen is another, or because lines were added above it, misleads too.
 - A comment on removed lines goes outdated only when a rebase or a merge of the base branch changes them; lines put
   back in the worktree aren't noticed, and the user resolves it.
 - A comment on lines a commit diff removes that the PR added earlier isn't at the merge base, so it reads as outdated
-  at once; it shows in that commit diff still. The same goes for removed lines in _Local_ and _Uncommitted_, whose old
-  side is the PR's head or HEAD. Judging the old side against its own base moved forward would fix it.
+  at once; it shows in that commit diff still. The same goes for removed lines in _Not Pushed_ and _Uncommitted_, whose
+  old side is the PR's head or HEAD. Judging the old side against its own base moved forward would fix it.
 - Entries written on the live diff before revisions read as outdated, with no _Now_.
 - Past 2000 edits between two versions the line diff gives up, and only the lines both versions start and end with
   count as kept (`ponytail:` in `core/follow.ts`).

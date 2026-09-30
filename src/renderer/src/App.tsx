@@ -210,8 +210,9 @@ export function App() {
     newest.current = { workspaceId: currentWorkspace.id, id: latest?.id ?? 0 };
   }, [currentWorkspace?.id, views, pr.commits, pr.snapshot, pr.snapshotReady]);
   const canvasView = (viewId != null && views?.find((v) => v.id === viewId)) || null;
-  // Without either, the diff: all of it, or only what's on GitHub or only the local changes on top (ADR 0028). The
-  // local changes are the live worktree, like all of it; the rest are pinned ranges.
+  // Without either, the diff: all of it, or one of its layers (glossary: scope), which add up to it: what's on GitHub,
+  // the commits not pushed yet, and what isn't committed (ADR 0028). Uncommitted is the live worktree, like all of it;
+  // the rest are pinned ranges.
   const scope = s.scope ?? "all";
   // HEAD, and whether anything isn't committed on top of it: the Commits pane's Uncommitted changes.
   const uncommitted = useQuery({
@@ -225,8 +226,8 @@ export function App() {
       ? { base: canvasView.base, head: canvasView.head }
       : pr.commits && scope === "pushed"
         ? { base: pr.commits.mergeBase, head: pr.commits.head }
-        : pr.commits && scope === "local"
-          ? { base: pr.commits.head }
+        : pr.commits && committed && scope === "unpushed"
+          ? { base: pr.commits.head, head: committed }
           : committed && scope === "uncommitted"
             ? { base: committed }
             : null;
@@ -246,15 +247,31 @@ export function App() {
           what:
             currentWorkspace?.prNumber != null
               ? "the PR's changes on GitHub"
-              : "the pushed changes",
+              : "the changes on GitHub",
           base: pr.commits.mergeBase,
           head: pr.commits.head,
         }
-      : !canvasView && pr.commits && scope === "local"
-        ? { what: "the local changes, not on GitHub yet", base: pr.commits.head, head: null }
+      : !canvasView && pr.commits && committed && scope === "unpushed"
+        ? { what: "the commits not pushed yet", base: pr.commits.head, head: committed }
         : !canvasView && committed && scope === "uncommitted"
           ? { what: "the uncommitted changes", base: committed, head: null }
           : null;
+
+  // How much each layer has, for the range menu: commits on GitHub and not pushed, files not committed.
+  const allCommits = useQuery({
+    ...core("listCommits", currentWorkspace?.id ?? 0, pr.commits?.mergeBase ?? ""),
+    enabled: !!currentWorkspace && !!pr.commits,
+  }).data;
+  const unpushedCommits = useQuery({
+    ...core("listCommits", currentWorkspace?.id ?? 0, pr.commits?.head ?? ""),
+    enabled: !!currentWorkspace && !!pr.commits,
+  }).data;
+  const commitCount = (l: typeof allCommits) => (l?.status === "ok" ? l.commits.length : 0);
+  const layers = {
+    pushed: commitCount(allCommits) - commitCount(unpushedCommits),
+    unpushed: commitCount(unpushedCommits),
+    uncommitted: uncommitted?.status === "ok" ? (uncommitted.size?.files ?? 0) : 0,
+  };
 
   // The workspace's entries, as the canvas shows them (ADR 0015: current or outdated in the live diff, shown or not in
   // the range picked). An explanation or finding shows only with its view.
@@ -535,7 +552,7 @@ export function App() {
     if ((t === "diffs" || t === "files") && t !== view)
       void show({ view: t === "files" ? "files" : undefined });
   };
-  const pickScope = (picked: "all" | "pushed" | "local" | "uncommitted") =>
+  const pickScope = (picked: "all" | "pushed" | "unpushed" | "uncommitted") =>
     void show({
       scope: picked === "all" ? undefined : picked,
       commit: undefined,
@@ -761,9 +778,9 @@ export function App() {
           "pushed",
           currentWorkspace?.prNumber !== null
             ? "Show Only the PR's Changes"
-            : "Show Only Pushed Changes",
+            : "Show Only What's on GitHub",
         ],
-        ["local", "Show Only Local Changes"],
+        ["unpushed", "Show Only the Commits Not Pushed"],
         ["uncommitted", "Show Only Uncommitted Changes"],
       ] as const
     ).map(([value, title]) => ({
@@ -1028,6 +1045,7 @@ export function App() {
                   const picked = await window.coxswain.showRangeMenu(
                     commit ? null : scope,
                     currentWorkspace.prNumber !== null,
+                    layers,
                   );
                   if (picked === "commits" || picked === "turns") showPane(picked);
                   else pickScope(picked);

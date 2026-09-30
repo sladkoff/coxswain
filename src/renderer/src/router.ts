@@ -13,8 +13,9 @@ export type CanvasSearch = {
   fileAt?: string; // … at this commit, not the worktree: where Go to Definition or Find Usages found it (ADR 0034)
   at?: string; // the file diff picked in Diffs
   commit?: Commit; // one commit's diff (or an agent turn's) in place of all changes
-  // Only what's on GitHub, only the local changes on top (ADR 0028), or only what isn't committed; left out: all.
-  scope?: "pushed" | "local" | "uncommitted";
+  // One layer of the diff: what's on GitHub, the commits not pushed yet (ADR 0028), or what isn't committed; left out:
+  // all of it.
+  scope?: "pushed" | "unpushed" | "uncommitted";
   viewId?: number | null; // the view shown (ADR 0026); null: none, chosen by the user; left out: the newest if not stale
 };
 

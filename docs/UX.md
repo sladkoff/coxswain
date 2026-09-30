@@ -134,7 +134,7 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
 
   _Commits_ in the pane's bar shows the commits pane in the Navigator's place (one or the other): _All Changes_, then
   _Uncommitted changes_ while the worktree has any (its files and lines added and removed; picking it shows only them,
-  live, as the scope _Uncommitted_), then the PR's commits (and local ones on top, marked _local_), newest first, each
+  live, as the scope _Uncommitted_), then the PR's commits (and local ones on top, marked _not pushed_), newest first, each
   on two lines: its subject (and _merge_ for a merge commit), then its short sha, author (_+N_ for co-authors), how
   long ago, and its lines added and removed. Its tooltip has the whole message, the author's email and date,
   co-authors, who committed it if someone else, and how many files it changed. Picking a commit shows its commit diff
@@ -147,11 +147,11 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   says why there.
 
   **Range.** The _Diff_ tab carries what the diff shows, always, a view showing or not, so the chips after it never
-  move: the scope (glossary) _All_, _PR_ (_Pushed_ for a branch without a PR), _Local_ or _Uncommitted_, or the commit or
-  turn picked.
-  Clicking it opens a native menu: _All Changes_, _The PR's Changes_ (_Pushed Changes_), _Local Changes_, _Uncommitted Changes_, _Commit…_
-  and _Agent Turn…_, which show the commits or the turns. Picking a scope shows the diff. _PR_ is pinned like a commit; _Local_
-  is live.
+  move: the scope (glossary) _All_, _PR_ (_On GitHub_ for a branch without a PR), _Not Pushed_ or _Uncommitted_, or the
+  commit or turn picked. Clicking it opens a native menu: _All Changes_, then the layers that add up to it, each with
+  how much it has and greyed out when it has nothing: _In the PR (3 commits)_ (_On GitHub_), _Not Pushed (2 commits)_
+  and _Uncommitted (4 files)_; then _Commit…_ and _Agent Turn…_, which show the commits or the turns. Picking a scope
+  shows the diff. _PR_ and _Not Pushed_ are pinned like a commit; _Uncommitted_ is live.
 
 - **L3 — Canvas.** All file diffs of the workspace one after another, to scroll through. The display options (sliders)
   in its bar open a native menu: _Unified_ or _Split_ file diffs, _Show Reviewed Files_, and the Navigator's _Files as
@@ -223,7 +223,7 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   ones (_Guide_, _Review_ (a guide with findings), _Questions for the author_, _Data model_, _Data flow_), then the
   user's own, then _New View…_ (a view of whatever the user types) and _New Prompt…_ (Settings, at a new prompt's title;
   saved prompts are deleted there too). While the diff shows a commit, an agent
-  turn or the _PR_/_Pushed_ or _Local_ scope, the menu's first line names it (_Of commit 1c8d547 (…)_, greyed out) and
+  turn or a scope other than _All_, the menu's first line names it (_Of commit 1c8d547 (…)_, greyed out) and
   the view is of that range only, like the command palette's New View actions. Each attaches the prompt to the agent
   pane's composer as a card, which the user sends with an optional note on what to focus on; the agent pane's session makes the view with coxswain's
   tools (ADR 0023); asking for one in the agent pane's own words does the same. A view shows on the canvas as soon as
