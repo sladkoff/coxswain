@@ -3,13 +3,15 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
-## 2026-09-30 — Mark a view section as reviewed
+## 2026-09-30 — Reviewed in views: whole sections, collapsed file diffs
 
 ### What works
 
 - A view section's header has a _Reviewed_ checkbox: ticking it marks every file and file diff the section embeds as
-  reviewed, unticking unmarks them all. It's ticked once they all are. With _Show Reviewed Files_ off the section then
-  hides, as its file diffs would.
+  reviewed, unticking unmarks them all. It's ticked once they all are.
+- In a view, a reviewed file diff or file collapses to its header instead of hiding, so the prose leading into it
+  still reads (#14). _Show Reviewed Files_ expands them; ticking one keeps its header where it was on screen. Sections
+  no longer drop out of a view when all their files are reviewed.
 
 ## 2026-09-29 — Queueing and steering in the agent pane
 

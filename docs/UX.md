@@ -216,7 +216,8 @@ branch`, when it was updated, and _Has a workspace_ if it does. _Branch_: one fi
   says so with a spinner (_The agent is still writing this view. Read on; more may come._), its chip turns a spinner,
   and a guide's files in no section yet show under _Not yet in the guide_. The view shows its sections in order, each with its heading, how many file
   diffs it embeds and a _Reviewed_ checkbox that marks them all (ticked once all are; unticking unmarks them all), then its markdown (ADR 0026): prose, tables, mermaid diagrams, and embedded file diffs, which work
-  as in the diff (threads, _Reviewed_). Laid out to skim: a line above each section; embedded file diffs as cards; prose
+  as in the diff (threads, _Reviewed_), except that a reviewed one collapses to its header rather than hiding, so the
+  prose leading into it still has it under it (_Show Reviewed Files_ expands them). Laid out to skim: a line above each section; embedded file diffs as cards; prose
   close above the diff it leads into and apart from the one before; text at most 72 characters wide, diagrams and
   tables the column's width, a diagram on its own card. A diagram that doesn't parse shows its code and the error. A
   guide goes through every file: those no section embeds come after it under _Not in the guide_. Muted file diffs
@@ -224,7 +225,7 @@ branch`, when it was updated, and _Has a workspace_ if it does. _Branch_: one fi
   the heading says why. On the canvas's left, a table of contents: how many embedded file diffs are
   reviewed in all with a bar, then every section with how many of its file diffs are reviewed (✓ when all are) and, if
   any, how many threads are on them, yours and the agent's (a muted speech bubble and the number). The section being read is marked as you scroll; a click jumps
-  to it, first showing reviewed file diffs if all of its are. Explanations (labelled _Explanation_) and, with review,
+  to it. Explanations (labelled _Explanation_) and, with review,
   findings (labelled _Finding_) are threads between the lines, which can be replied to like any other; they show only
   with their view. A view shows the changes as they were, local ones included (pinned to a snapshot, like a
   commit), and its _Reviewed_ ticks stay; once the worktree has moved on (new commits or edits), an amber bar says so. Picking a commit hides the view, and the other way round.
@@ -262,7 +263,7 @@ branch`, when it was updated, and _Has a workspace_ if it does. _Branch_: one fi
 Whole-code views (#31) work even when the workspace has no changes. The agent can trace a process with prose,
 diagrams and source files pinned to the view's snapshot. Source-file headers have _Reviewed_ and support the same
 line comments and explanations as diffs. A file's Reviewed mark is independent of its diff and survives into another
-view only if its contents match. Reviewed source files hide under _Show Reviewed Files_ just like diffs. The table
+view only if its contents match. Reviewed source files collapse under _Show Reviewed Files_ just like diffs. The table
 of contents and bottom bar count the files and diffs in the view; the Navigator still represents the range's changes.
 A prose-only view has no reviewable files. An empty view says _Nothing in this view yet_.
 
