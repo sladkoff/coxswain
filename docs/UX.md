@@ -192,11 +192,12 @@ branch`, when it was updated, and _Has a workspace_ if it does. _Branch_: one fi
   thread's latest note a question, with the notes before it since the last question; the answer comes in the thread.
 
   **The bottom bar** has the review at a glance on the left and _Hand off_ on the right. On the left: the thread
-  toggle (a chevron, how many threads, and _● N waiting_ while the agent answers one), how many of the files are
+  toggle (a chevron, how many open threads, or _All N resolved_ once none is open, and _● N waiting_ while the agent answers one), how many of the files are
   reviewed with a progress bar (_8/29 reviewed_), and the lines added and removed. The toggle opens the threads above
   the bar: a header with _Threads_ and _Open N_ · _Resolved N_, then the threads grouped under their file, one line
   each: its lines, its first comment, and a dot with how far it got (_agent answering_, _outdated_, _N answers_, _sent
-  to agent_) and its replies. Clicking one scrolls the canvas to it.
+  to agent_) and its replies, then a ✓ that resolves it (under _Resolved_, green, reopens it; not while the agent
+  answers). Clicking one scrolls the canvas to it.
 
   _Hand off N_ (N the open threads it takes: not resolved, and the agent's explanations and findings only once the user
   replied) opens a native menu: _Send to Agent_ sends them in one message to the agent pane's session: where each

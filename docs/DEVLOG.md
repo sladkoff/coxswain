@@ -28,6 +28,8 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
   - Tech debt: questions asked before the migration have no session, so their first follow-up sends the whole thread
     once. `byAgent` is still copied in the renderer (`format.ts`, `ponytail:`), now shared by the bottom bar and
     threads.
+- **Resolve from the bottom bar.** Each thread in the bar's list ends in a ✓ that resolves it, or reopens it under
+  _Resolved_, as the thread's own ✓ does.
 
 ## 2026-09-29 — Queueing and steering in the agent pane
 
