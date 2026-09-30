@@ -1,8 +1,8 @@
 name: Release
 
 # Actions → Release → Run workflow, with a version like 0.2.0: bumps package.json on main, tags v0.2.0, builds and
-# Run it with: gh workflow run release.yml -f version=0.2.0
 # creates the GitHub release. A version with a pre-release part (0.2.0-rc.1) makes a GitHub pre-release.
+# Run it with: gh workflow run release.yml -f version=0.2.0
 on:
   workflow_dispatch:
     inputs:
