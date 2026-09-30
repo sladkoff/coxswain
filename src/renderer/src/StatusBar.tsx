@@ -17,6 +17,7 @@ type Props = {
   reviewed: string[];
   turns: Record<number, Turn>;
   onViewThread: (threadId: number) => void;
+  viewTitle?: string; // the view on the canvas, whose prose threads are listed under it (ADR 0036)
 };
 
 // The canvas's bottom bar: the review at a glance on the left (threads, with how many wait on the agent, how many of
@@ -29,7 +30,7 @@ export function StatusBar(props: Props) {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const threads = props.entries.filter((e) => e.path && !e.parentId);
+  const threads = props.entries.filter((e) => (e.path || e.section != null) && !e.parentId);
   // What Hand off takes, as the review prompt does (core/review.ts): not resolved, and not the agent's own explanations
   // or findings unless the user replied to them.
   const replied = new Set(
@@ -43,7 +44,11 @@ export function StatusBar(props: Props) {
   const add = props.files.reduce((n, f) => n + (f.additions ?? 0), 0);
   const del = props.files.reduce((n, f) => n + (f.deletions ?? 0), 0);
   const shown = listed === "open" ? threads.filter((e) => !e.resolvedAt) : resolved;
-  const byFile = Map.groupBy(shown, (t) => t.path!);
+  // Under their file; those on the view's prose under it, first. "" can't be a path.
+  const byFile = Map.groupBy(
+    shown.toSorted((a, b) => Number(!!a.path) - Number(!!b.path)),
+    (t) => t.path ?? "",
+  );
   const handOffTo = async () => {
     const to = await window.coxswain.showHandOffMenu();
     setError(null);
@@ -76,14 +81,19 @@ export function StatusBar(props: Props) {
             {shown.length === 0 && (
               <div className={cn("px-2 py-1", muted)}>
                 {threads.length === 0
-                  ? "No threads yet. Click a line's gutter to start one."
+                  ? "No threads yet. Click a line's gutter, or right-click a view's text, to start one."
                   : `No ${listed} threads.`}
               </div>
             )}
             {[...byFile].map(([path, list]) => (
               <div key={path} className="flex flex-col">
-                <div className="px-2 pt-1.5 pb-0.5 font-mono text-[11px] text-blue-600 dark:text-blue-400">
-                  {path}
+                <div
+                  className={cn(
+                    "px-2 pt-1.5 pb-0.5 text-blue-600 dark:text-blue-400",
+                    path ? "font-mono text-[11px]" : "font-medium",
+                  )}
+                >
+                  {path || (props.viewTitle ?? "This view")}
                 </div>
                 {list.map((t) => (
                   <ThreadRow
@@ -191,7 +201,13 @@ function ThreadRow(props: {
   onResolve: (resolved: boolean) => void;
 }) {
   const { root: t, replies } = props;
-  const lines = t.startLine === t.endLine ? `${t.startLine}` : `${t.startLine}–${t.endLine}`;
+  const lines = match(t)
+    .with({ section: P.number.select() }, (section) => `§ ${section + 1}`)
+    .when(
+      (t) => t.startLine === t.endLine,
+      () => `${t.startLine}`,
+    )
+    .otherwise(() => `${t.startLine}–${t.endLine}`);
   const answers = replies.filter((r) => r.kind === "answer").length;
   const others = replies.length - answers;
   // The one state that matters most, as a dot and a word; replies after it. A current thread whose lines aren't in the

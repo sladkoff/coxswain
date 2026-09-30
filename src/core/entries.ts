@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { Db } from "./db";
 import { follow, lineMap } from "./follow.ts";
 import { pinRevision, readTexts } from "./git.ts";
@@ -17,6 +18,9 @@ type Anchor = {
   base: string;
   head: string | null;
 };
+// ADR 0036: a passage of a view's prose: the view, its section (0-based), the text picked (quote) and where it starts in
+// the section's text as the canvas renders it (at), to tell it from the same words elsewhere in the section.
+export type ProseAnchor = { viewId: number; section: number; quote: string; at: number };
 
 export type ReviewEntry = {
   id: number;
@@ -35,7 +39,9 @@ export type ReviewEntry = {
   createdAt: string;
   resolvedAt: string | null; // on a thread's first entry: when it was resolved
   agentSessionId: string | null; // a question: the agent session it went to
-  revision: string | null;
+  revision: string | null; // on prose: the section's version, a hash of its markdown (ADR 0036)
+  section: number | null; // on prose: its section in the view; code is then the quote
+  quoteAt: number | null; // on prose: where the quote starts in the section's text
   // ADR 0015: current while its lines are unchanged in the live diff (the worktree, or the merge base for the old
   // side), wherever they moved; outdated once they changed. The same whatever range it's listed for. A reply or
   // answer takes its thread's. Floating entries are current.
@@ -47,7 +53,12 @@ export type ReviewEntry = {
 };
 
 // A note or question from the user: anchored, or a follow-up in a thread (parentId).
-export type NewEntry = { workspaceId: number; body: string; anchor?: Anchor; parentId?: number };
+export type NewEntry = {
+  workspaceId: number;
+  body: string;
+  anchor?: Anchor | ProseAnchor;
+  parentId?: number;
+};
 
 export const columns = [
   "id",
@@ -67,6 +78,8 @@ export const columns = [
   "resolved_at as resolvedAt",
   "agent_session_id as agentSessionId",
   "revision",
+  "section",
+  "quote_at as quoteAt",
 ] as const;
 
 // Every entry of the workspace, in order.
@@ -139,6 +152,21 @@ export async function listEntries(
       return [e.id, { state, now, shown: inRange?.status === "moved", lines: inRange }] as const;
     }),
   );
+  // ADR 0036: an entry on prose is current, and shown in its view, while its section is as it was.
+  const onProse = rows.filter((e) => e.section != null && !e.parentId);
+  const versions = await sectionVersions(
+    db,
+    onProse.map((e) => e.viewId!),
+  );
+  for (const e of onProse) {
+    const current = versions.get(e.viewId!)?.[e.section!] === e.revision;
+    followed.set(e.id, {
+      state: current ? "current" : "outdated",
+      now: null,
+      shown: current,
+      lines: null,
+    });
+  }
   return rows.map((e) => {
     const f = followed.get(e.parentId ?? e.id);
     const lines =
@@ -158,9 +186,9 @@ export async function listEntries(
 export async function addEntry(db: Db, kind: ReviewEntry["kind"], e: NewEntry): Promise<Row> {
   if (!e.body.trim()) throw new Error(`A ${kind} needs text`);
   const a = e.anchor;
-  if (a && a.side !== "old" && a.side !== "new") throw new Error(`Not a side: ${a.side}`);
-  const [start, end] = a ? [a.startLine, a.endLine].sort((x, y) => x - y) : [null, null];
-  const revision = a && (await pinRevision(db, e.workspaceId, a.side === "old" ? a.base : a.head));
+  const at =
+    a &&
+    ("viewId" in a ? await onProse(db, e.workspaceId, a) : await onLines(db, e.workspaceId, a));
   return db
     .insertInto("entries")
     .values({
@@ -169,18 +197,70 @@ export async function addEntry(db: Db, kind: ReviewEntry["kind"], e: NewEntry): 
       body: e.body.trim(),
       parent_id: e.parentId ?? null,
       view_id: null,
-      path: a?.path ?? null,
-      side: a?.side ?? null,
-      start_line: start,
-      end_line: end,
-      code: a?.code ?? null,
-      base: a?.base ?? null,
-      head: a?.head ?? null,
-      revision: revision ?? null,
+      path: null,
+      side: null,
+      start_line: null,
+      end_line: null,
+      code: null,
+      base: null,
+      head: null,
+      revision: null,
+      ...at,
       created_at: new Date().toISOString(),
     })
     .returning(columns)
     .executeTakeFirstOrThrow();
+}
+
+async function onLines(db: Db, workspaceId: number, a: Anchor) {
+  if (a.side !== "old" && a.side !== "new") throw new Error(`Not a side: ${a.side}`);
+  const [start, end] = [a.startLine, a.endLine].sort((x, y) => x - y);
+  const revision = await pinRevision(db, workspaceId, a.side === "old" ? a.base : a.head);
+  return {
+    path: a.path,
+    side: a.side,
+    start_line: start,
+    end_line: end,
+    code: a.code,
+    base: a.base,
+    head: a.head,
+    revision,
+  };
+}
+
+// ADR 0036: an entry on prose belongs to its view, and is pinned to its section as it is now.
+async function onProse(db: Db, workspaceId: number, a: ProseAnchor) {
+  if (!a.quote.trim()) throw new Error("Pick some text to comment on");
+  const view = await db
+    .selectFrom("views")
+    .select("sections")
+    .where("id", "=", a.viewId)
+    .where("workspace_id", "=", workspaceId)
+    .executeTakeFirst();
+  const markdown = view && (JSON.parse(view.sections) as string[])[a.section];
+  if (markdown === undefined) throw new Error(`No section ${a.section} in view ${a.viewId}`);
+  return {
+    view_id: a.viewId,
+    section: a.section,
+    code: a.quote,
+    quote_at: a.at,
+    revision: sectionVersion(markdown),
+  };
+}
+
+// A section's version: a hash of its markdown, which only write_section replacing it changes.
+export const sectionVersion = (markdown: string) =>
+  createHash("sha1").update(markdown).digest("hex");
+
+// Each view's sections, as versions.
+async function sectionVersions(db: Db, viewIds: number[]): Promise<Map<number, string[]>> {
+  if (!viewIds.length) return new Map();
+  const rows = await db
+    .selectFrom("views")
+    .select(["id", "sections"])
+    .where("id", "in", [...new Set(viewIds)])
+    .execute();
+  return new Map(rows.map((r) => [r.id, (JSON.parse(r.sections) as string[]).map(sectionVersion)]));
 }
 
 // A new entry is current, and shown in the view it was written in.

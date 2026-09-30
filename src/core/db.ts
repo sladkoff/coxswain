@@ -178,6 +178,10 @@ export const migrations = [
   // The agent session a turn ran in, to audit later; null for turns from before. Not a foreign key: the turn stays when
   // its session goes.
   `alter table turns add column agent_session_id text`,
+  // ADR 0036: an entry on a view's prose: the section it's in (0-based) and where its quote (in code) starts in the
+  // section's text. Its revision is then the section's version, a hash of its markdown.
+  `alter table entries add column section integer;
+  alter table entries add column quote_at integer`,
 ];
 
 // ADR 0016: the tables as the migrations above leave them. Change this with every migration that changes a table.
@@ -272,6 +276,8 @@ type Tables = {
     resolved_at: Generated<string | null>;
     agent_session_id: Generated<string | null>;
     revision: string | null;
+    section: Generated<number | null>;
+    quote_at: Generated<number | null>;
   };
 };
 

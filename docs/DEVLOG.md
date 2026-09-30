@@ -3,6 +3,28 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-10-01 — Threads on a view's prose (#28)
+
+### What works
+
+- **Comment on a view's prose.** Right-click selected text in a view (or a block, for all of it) → _Comment_: a note
+  or question on that passage, shown after its block with the passage highlighted (CSS Custom Highlight API). Same
+  thread box, _Comment_ / _Agent_ toggle, resolve, _Hand off_ and threads list (under the view's title, _§ N_) as on
+  lines. The agent is told the view, section and quote, so it can answer or rewrite the section (ADR 0036).
+- Migration: `entries.section`, `entries.quote_at`. A prose entry's revision is a hash of its section's markdown:
+  outdated once `write_section` replaces the section, and then shown at the top of the section.
+- `Prose` can render something after each top-level block (`blockEnd`, a rehype step marking `data-block`).
+- `EntryThread` and `postEntry` (`Thread.tsx`) wire a thread to the core for both file diffs and prose; `Viewer` uses
+  them.
+- Checked in the running app: select, _Comment_, send, thread after the paragraph, listed under the view; section
+  rewritten → outdated at the top.
+
+### Tech debt
+
+- `ProseThreads` walks the section's text after every render to place threads and highlights; cheap for a section,
+  but memoise on the section and its threads if views get long.
+- A quote spanning blocks shows after the last one, and its highlight covers any thread in between.
+
 ## 2026-10-01 — Outdated follows the code (#31); more in the commits pane
 
 ### What works

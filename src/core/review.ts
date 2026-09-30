@@ -19,7 +19,7 @@ import {
   type ReviewEntry,
   type Row,
 } from "./entries.ts";
-import { byAgent, describe, fence, unseen } from "./thread-context.ts";
+import { anchored, byAgent, describe, fence, unseen } from "./thread-context.ts";
 import { currentMergeBase } from "./git";
 
 export { addNote, listEntries, type NewEntry, type ReviewEntry } from "./entries.ts";
@@ -50,8 +50,10 @@ async function currentSession(db: Db, workspaceId: number): Promise<string> {
   return last.agentSessionId;
 }
 
-const where = (e: Pick<ReviewEntry, "path" | "startLine" | "endLine">) =>
-  `${e.path}:${e.startLine === e.endLine ? e.startLine : `${e.startLine}–${e.endLine}`}`;
+const where = (e: Pick<ReviewEntry, "path" | "startLine" | "endLine" | "viewId" | "section">) =>
+  e.section != null
+    ? `view ${e.viewId} § ${e.section + 1}`
+    : `${e.path}:${e.startLine === e.endLine ? e.startLine : `${e.startLine}–${e.endLine}`}`;
 
 // Adds a question and sends it to the workspace's agent session as a comment, streaming the reply; the agent's text
 // becomes an answer entry in the question's thread. Returns the question once saved and the session it went to, and
@@ -109,7 +111,11 @@ async function ask(
     .execute();
   const root = thread[0] ?? question;
   const agentSessionId = await currentSession(db, question.workspaceId);
-  const comment = { threadId, where: root.path ? where(root) : "the review", body: question.body };
+  const comment = {
+    threadId,
+    where: anchored(root) ? where(root) : "the review",
+    body: question.body,
+  };
   const prompt = formatComment(comment, unseen(question, thread, agentSessionId));
   await db
     .updateTable("entries")
@@ -157,7 +163,7 @@ export async function stopQuestion(db: Db, threadId: number) {
 function reviewPrompt(entries: ReviewEntry[]): { threads: number; prompt: string } {
   const replied = new Set(entries.filter((e) => e.parentId && !byAgent(e)).map((e) => e.parentId));
   const roots = entries.filter(
-    (e) => e.path && !e.parentId && !e.resolvedAt && (!byAgent(e) || replied.has(e.id)),
+    (e) => anchored(e) && !e.parentId && !e.resolvedAt && (!byAgent(e) || replied.has(e.id)),
   );
   const parts = roots.map((root, i) => {
     const thread = [root, ...entries.filter((e) => e.parentId === root.id)];
@@ -173,9 +179,11 @@ answer what's still open, and tell me briefly what you did for each and what you
 
 // An outdated thread's lines have changed since, maybe for it: what they read now, for the agent to check first.
 const since = (e: ReviewEntry) =>
-  e.now == null
-    ? "These lines have changed since. Check whether the comment still applies before acting on it."
-    : `These lines have changed since${e.now ? `; they now read:\n${fence(e.now)}` : " and are gone."} Check whether the comment still applies before acting on it.`;
+  e.section != null
+    ? "This section of the view has been rewritten since. Check whether the comment still applies before acting on it."
+    : e.now == null
+      ? "These lines have changed since. Check whether the comment still applies before acting on it."
+      : `These lines have changed since${e.now ? `; they now read:\n${fence(e.now)}` : " and are gone."} Check whether the comment still applies before acting on it.`;
 
 // The workspace's entries in the live diff, as the review prompt describes them.
 async function liveEntries(db: Db, workspaceId: number): Promise<ReviewEntry[]> {

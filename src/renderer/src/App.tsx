@@ -30,6 +30,7 @@ import { Setup } from "./Setup";
 import { StatusBar } from "./StatusBar";
 import { usePullRequest } from "./usePullRequest";
 import { SpinnerIcon } from "./components/icons";
+import { ProseThreads } from "./ProseThreads";
 import { viewDiff, ViewProse, ViewSectionHeader } from "./ViewSection";
 import { ViewToc } from "./ViewToc";
 import type { ViewSettings } from "../../preload";
@@ -626,13 +627,15 @@ export function App() {
       );
       root = all.find((e) => e.id === threadId);
     }
-    if (!root?.path || root.workspaceId !== shown.current.ws) return;
+    if ((!root?.path && root?.section == null) || root.workspaceId !== shown.current.ws) return;
     setViewSettings((settings) => ({ ...settings, showReviewed: true }));
     // Already on the canvas (its file shows and its lines are there, e.g. a note written in the view shown): scroll to
     // it in place rather than leave for the range it was written in.
     const here = entries.find((e) => e.id === threadId);
-    if (here?.shown && !showFile && canvasFiles.some((f) => openedPath(f) === root.path))
-      await show({ thread: threadId, at: root.path });
+    if (root.section != null && !showFile && canvasView?.id === root.viewId)
+      await show({ thread: threadId });
+    else if (here?.shown && !showFile && canvasFiles.some((f) => openedPath(f) === root.path))
+      await show({ thread: threadId, at: root.path! });
     else await show(threadLocation(root));
     setThreadPicks((n) => n + 1);
   };
@@ -662,10 +665,16 @@ export function App() {
       if (scroller) scroller.scrollTop = 0;
     }
   }, [location.state.__TSR_key, currentWorkspace?.id, canvasReady]);
+  // What holds the thread: its file diff, or on a view's prose its section (ADR 0036).
+  const threadSection = allEntries?.find((e) => e.id === s.thread)?.section;
+  const threadIn = match({ at: s.at, section: threadSection })
+    .with({ at: P.string.select() }, (at) => `diff:${at}`)
+    .with({ section: P.number.select() }, (section) => `view-section-${section}`)
+    .otherwise(() => null);
   useEffect(() => {
-    if (!s.thread || !s.at || !canvasReady || !canvas.current) return;
-    return scrollToThread(canvas.current, s.at, s.thread);
-  }, [location.state.__TSR_key, s.thread, s.at, canvasReady, threadPicks]);
+    if (!s.thread || !threadIn || !canvasReady || !canvas.current) return;
+    return scrollToThread(canvas.current, threadIn, s.thread);
+  }, [location.state.__TSR_key, s.thread, threadIn, canvasReady, threadPicks]);
 
   // The action registry (ADR 0027): everything the command palette lists and the native menu runs, by id. Rebuilt each
   // render, so each action's enabled and run see the current state.
@@ -1162,37 +1171,48 @@ export function App() {
                                 onReviewedChange={(on) => markSection(x.files, on)}
                               />
                             )}
-                            {(x.parts as SectionPart[]).map((p, j) =>
-                              p.kind === "prose" ? (
-                                <ViewProse
-                                  key={j}
-                                  after={(x.parts as SectionPart[])[j - 1]?.kind === "code"}
-                                >
-                                  {p.text}
-                                </ViewProse>
-                              ) : (
-                                <div
-                                  key={openedPath(p.d)}
-                                  id={`diff:${openedPath(p.d)}`}
-                                  className={cn(
-                                    p.muted && !x.muted && "opacity-60",
-                                    x.title !== undefined && viewDiff,
-                                  )}
-                                >
-                                  <Viewer
-                                    stacked
-                                    opened={p.d}
-                                    reviewed={isReviewed(p.d)}
-                                    collapsed={!isShown(p.d)}
-                                    {...viewerProps(
-                                      currentWorkspace,
-                                      range?.base ?? pr.commits!.mergeBase,
-                                      range?.head,
+                            <ProseThreads
+                              workspaceId={currentWorkspace.id}
+                              viewId={canvasView?.id ?? 0}
+                              section={i}
+                              entries={entries}
+                              turns={turns}
+                              onAsk={ask}
+                              onAnswerPermission={answerPermission}
+                            >
+                              {(x.parts as SectionPart[]).map((p, j) =>
+                                p.kind === "prose" ? (
+                                  <ViewProse
+                                    key={j}
+                                    part={j}
+                                    after={(x.parts as SectionPart[])[j - 1]?.kind === "code"}
+                                  >
+                                    {p.text}
+                                  </ViewProse>
+                                ) : (
+                                  <div
+                                    key={openedPath(p.d)}
+                                    id={`diff:${openedPath(p.d)}`}
+                                    className={cn(
+                                      p.muted && !x.muted && "opacity-60",
+                                      x.title !== undefined && viewDiff,
                                     )}
-                                  />
-                                </div>
-                              ),
-                            )}
+                                  >
+                                    <Viewer
+                                      stacked
+                                      opened={p.d}
+                                      reviewed={isReviewed(p.d)}
+                                      collapsed={!isShown(p.d)}
+                                      {...viewerProps(
+                                        currentWorkspace,
+                                        range?.base ?? pr.commits!.mergeBase,
+                                        range?.head,
+                                      )}
+                                    />
+                                  </div>
+                                ),
+                              )}
+                            </ProseThreads>
                           </section>
                         ))}
                       </Virtualizer>
@@ -1215,6 +1235,7 @@ export function App() {
             reviewed={sections ? canvasFiles.filter(isReviewed).map(openedPath) : reviewed}
             turns={turns}
             onViewThread={viewThread}
+            viewTitle={canvasView?.title}
           />
         )}
       </div>
@@ -1297,11 +1318,11 @@ function WritingViewNotice() {
 }
 
 // Scrolls to a thread once it's drawn. The file diffs' Virtualizer draws only the lines near the viewport, so a thread
-// further away isn't there yet: go to its file, page down it until the thread is drawn, then keep it in place until it
+// further away isn't there yet: go to its file (or view section), page down it until the thread is drawn, then keep it in place until it
 // holds (after a jump the Virtualizer applies a fix-up worked out for the old place, as in restoreScroll). Waits for the
 // file while it loads; stops when the user scrolls, and is cancelled on navigation. ponytail: a screen per step, about
 // a second per thousand lines of a long file; ask the library for the line's position if that's too slow.
-function scrollToThread(canvas: HTMLElement, path: string, threadId: number) {
+function scrollToThread(canvas: HTMLElement, containerId: string, threadId: number) {
   let timer: ReturnType<typeof setTimeout>;
   let steps = 200;
   let held = 0;
@@ -1313,7 +1334,7 @@ function scrollToThread(canvas: HTMLElement, path: string, threadId: number) {
   const go = () => {
     timer = setTimeout(go, 50);
     const scroller = canvasScroller(canvas);
-    const file = document.getElementById(`diff:${path}`);
+    const file = document.getElementById(containerId);
     if (!scroller || !file || !canvas.contains(file)) return;
     if (steps-- <= 0) return stop();
     const view = scroller.getBoundingClientRect();
