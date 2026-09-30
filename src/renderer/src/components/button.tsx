@@ -34,18 +34,21 @@ export function ButtonGroup({ className, ...props }: ComponentProps<"div">) {
   );
 }
 
-// Shows or hides something, or picks a mode: filled while on.
+// Shows or hides something, or picks a mode: filled while on. icon: square padding around an icon, as a ghost Button
+// with p-1 has, so the two line up (cn doesn't merge classes, so padding can't be overridden through className).
 export function ToggleButton({
   on,
+  icon,
   className,
   ...props
-}: ComponentProps<"button"> & { on: boolean }) {
+}: ComponentProps<"button"> & { on: boolean; icon?: boolean }) {
   return (
     <button
       {...props}
       aria-pressed={on}
       className={cn(
-        "rounded px-2 py-0.5 disabled:opacity-50",
+        "rounded disabled:opacity-50",
+        icon ? "p-1" : "px-2 py-0.5",
         selectable(on),
         !on && muted,
         className,
@@ -61,7 +64,8 @@ export function SegmentedControl<T extends string | boolean>(props: {
   onChange: (value: T) => void;
 }) {
   return (
-    <div className="flex rounded-md bg-neutral-100 p-0.5 text-xs dark:bg-neutral-800">
+    // Short of room, the options shrink and cut their labels off, rather than wrap onto a second line.
+    <div className="flex min-w-0 rounded-md bg-neutral-100 p-0.5 text-xs dark:bg-neutral-800">
       {props.options.map((o) => (
         <button
           key={String(o.value)}
@@ -69,7 +73,7 @@ export function SegmentedControl<T extends string | boolean>(props: {
           aria-pressed={o.value === props.value}
           onClick={() => props.onChange(o.value)}
           className={cn(
-            "rounded px-2 py-0.5",
+            "min-w-0 truncate rounded px-2 py-0.5",
             o.value === props.value ? "bg-white shadow-sm dark:bg-neutral-600" : muted,
           )}
         >

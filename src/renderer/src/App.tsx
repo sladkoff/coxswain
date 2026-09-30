@@ -1,4 +1,5 @@
 import { Virtualizer } from "@pierre/diffs/react";
+import { match, P } from "ts-pattern";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation, useNavigate, useRouter, useSearch } from "@tanstack/react-router";
 import { type UIEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -13,7 +14,7 @@ import { activateFindPane, closeFind, nextFind, openFind } from "./find";
 import { upsert } from "./ChatEntry";
 import { CanvasBar, PaneBar, type PaneTab, viewTitles } from "./CanvasBar";
 import { type Action, CommandPalette } from "./CommandPalette";
-import { Commits } from "./Commits";
+import { Commits, Turns } from "./Commits";
 import { Button } from "./components/button";
 import { Centered, Splitter, viewerMin } from "./components/layout";
 import { cn, divider, muted, titleBar } from "./components/styles";
@@ -66,11 +67,11 @@ export function App() {
   // L1, the workspace sidebar: shown until hidden with its button, back with the agent pane's. ponytail: resets on
   // restart, like the pane widths.
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  // The pane on the left of the canvas: the Navigator or the commits, under its own bar. Starts hidden; hiding it
+  // The pane on the left of the canvas: the Navigator, the commits or the agent turns, under its own bar. Starts hidden; hiding it
   // keeps which one it was, for ⌘B.
   const [paneOpen, setPaneOpen] = useState(false);
-  const [pane, setPane] = useState<"navigator" | "commits">("navigator");
-  const showPane = (p: "navigator" | "commits") => {
+  const [pane, setPane] = useState<"navigator" | "commits" | "turns">("navigator");
+  const showPane = (p: "navigator" | "commits" | "turns") => {
     setPane(p);
     setPaneOpen(true);
   };
@@ -147,6 +148,13 @@ export function App() {
   const canBack = location.state.__TSR_index > 0;
   const canForward = location.state.__TSR_index < router.history.length - 1;
   useEffect(() => window.coxswain.setNavigation(canBack, canForward), [canBack, canForward]);
+  // ADR 0030: coming back to the window rereads the worktree, for edits made in an editor or terminal meanwhile.
+  useEffect(() => {
+    if (!currentWorkspace) return;
+    const reread = () => void changed({ workspaceId: currentWorkspace.id, what: "worktree" });
+    window.addEventListener("focus", reread);
+    return () => window.removeEventListener("focus", reread);
+  }, [currentWorkspace?.id]);
   // Initial project load (or removal of the selected workspace) uses its last opened workspace.
   useEffect(() => {
     if (currentWorkspace && search.ws !== currentWorkspace.id)
@@ -203,48 +211,76 @@ export function App() {
     newest.current = { workspaceId: currentWorkspace.id, id: latest?.id ?? 0 };
   }, [currentWorkspace?.id, views, pr.commits, pr.snapshot, pr.snapshotReady]);
   const canvasView = (viewId != null && views?.find((v) => v.id === viewId)) || null;
-  // Without either, the diff: all of it, or only what's on GitHub or only the local changes on top (ADR 0028). The
-  // local changes are the live worktree, like all of it; the rest are pinned ranges.
+  // Without either, the diff: all of it, or one of its layers (glossary: scope), which add up to it: what's on GitHub,
+  // the commits not pushed yet, and what isn't committed (ADR 0028). Uncommitted is the live worktree, like all of it;
+  // the rest are pinned ranges.
   const scope = s.scope ?? "all";
-  const range: { base: string; head?: string } | null = commit
-    ? { base: commit.parent, head: commit.sha }
-    : canvasView
-      ? { base: canvasView.base, head: canvasView.head }
-      : pr.commits && scope === "pushed"
-        ? { base: pr.commits.mergeBase, head: pr.commits.head }
-        : pr.commits && scope === "local"
-          ? { base: pr.commits.head }
-          : null;
+  // HEAD, and whether anything isn't committed on top of it: the Commits pane's Uncommitted changes.
+  const uncommitted = useQuery({
+    ...core("uncommitted", currentWorkspace?.id ?? 0),
+    enabled: !!currentWorkspace && !!pr.commits,
+  }).data;
+  const committed = uncommitted?.status === "ok" ? uncommitted.head : null;
+  // The range the diff shows (null: all of it, live), and what a new view is asked to cover: the commit, turn or scope
+  // (null for all of the workspace's changes, also while a view shows). head null: the live worktree.
+  const shownRange = match({ commit, canvasView, scope, commits: pr.commits, committed })
+    .returnType<{ what: string | null; base: string; head: string | null } | null>()
+    .with({ commit: P.nonNullable.select() }, (c) => ({
+      what: c.turn
+        ? `the agent turn "${c.subject}"`
+        : `commit ${c.sha.slice(0, 7)} ("${c.subject}")`,
+      base: c.parent,
+      head: c.sha,
+    }))
+    .with({ canvasView: P.nonNullable.select() }, (v) => ({
+      what: null,
+      base: v.base,
+      head: v.head,
+    }))
+    .with({ scope: "pushed", commits: P.nonNullable.select() }, (c) => ({
+      what:
+        currentWorkspace?.prNumber != null ? "the PR's changes on GitHub" : "the changes on GitHub",
+      base: c.mergeBase,
+      head: c.head,
+    }))
+    .with({ scope: "unpushed", commits: P.nonNullable, committed: P.string }, (r) => ({
+      what: "the commits not pushed yet",
+      base: r.commits.head,
+      head: r.committed,
+    }))
+    .with({ scope: "uncommitted", committed: P.string.select() }, (head) => ({
+      what: "the uncommitted changes",
+      base: head,
+      head: null,
+    }))
+    .otherwise(() => null);
+  const range = shownRange && { base: shownRange.base, head: shownRange.head ?? undefined };
+  const viewRange: ViewRange | null =
+    shownRange?.what != null ? { ...shownRange, what: shownRange.what } : null;
 
-  // What a new view is asked for: the commit, turn or scope the diff shows, or null for all of the workspace's changes
-  // (also while a view shows).
-  const viewRange: ViewRange | null = commit
-    ? commit.turn
-      ? { what: `the agent turn "${commit.subject}"`, base: commit.parent, head: commit.sha }
-      : {
-          what: `commit ${commit.sha.slice(0, 7)} ("${commit.subject}")`,
-          base: commit.parent,
-          head: commit.sha,
-        }
-    : !canvasView && pr.commits && scope === "pushed"
-      ? {
-          what:
-            currentWorkspace?.prNumber != null
-              ? "the PR's changes on GitHub"
-              : "the pushed changes",
-          base: pr.commits.mergeBase,
-          head: pr.commits.head,
-        }
-      : !canvasView && pr.commits && scope === "local"
-        ? { what: "the local changes, not on GitHub yet", base: pr.commits.head, head: null }
-        : null;
+  // How much each layer has, for the range menu: commits on GitHub and not pushed, files not committed.
+  const allCommits = useQuery({
+    ...core("listCommits", currentWorkspace?.id ?? 0, pr.commits?.mergeBase ?? ""),
+    enabled: !!currentWorkspace && !!pr.commits,
+  }).data;
+  const unpushedCommits = useQuery({
+    ...core("listCommits", currentWorkspace?.id ?? 0, pr.commits?.head ?? ""),
+    enabled: !!currentWorkspace && !!pr.commits,
+  }).data;
+  const commitCount = (l: typeof allCommits) => (l?.status === "ok" ? l.commits.length : 0);
+  const layers = {
+    pushed: commitCount(allCommits) - commitCount(unpushedCommits),
+    unpushed: commitCount(unpushedCommits),
+    uncommitted: uncommitted?.status === "ok" ? (uncommitted.size?.files ?? 0) : 0,
+  };
 
-  // The workspace's entries, as the canvas shows them (ADR 0015: the live diff, or the range picked). An explanation or
-  // finding shows only with its view.
-  const base = range?.base ?? pr.commits?.mergeBase;
+  // The workspace's entries, as the canvas shows them (ADR 0015: current or outdated in the live diff, shown or not in
+  // the range picked). An explanation or finding shows only with its view.
+  const mergeBase = pr.commits?.mergeBase;
+  const base = range?.base ?? mergeBase;
   const entriesQuery = useQuery({
-    ...core("listEntries", currentWorkspace?.id ?? 0, base ?? "", range?.head),
-    enabled: !!currentWorkspace && !!base,
+    ...core("listEntries", currentWorkspace?.id ?? 0, mergeBase ?? "", base ?? "", range?.head),
+    enabled: !!currentWorkspace && !!base && !!mergeBase,
   });
   const allEntries = entriesQuery.data;
   const entries = useMemo(
@@ -254,7 +290,6 @@ export function App() {
   // Callbacks handed to the Viewers are stable (useCallback), so a memoised Viewer doesn't redraw its file diff.
   // Paths of the reviewed file diffs: the live diff's, reloaded with the changes, since a file diff that changed is no
   // longer reviewed (ADR 0014); or at a view's head, where they stay as they were.
-  const mergeBase = pr.commits?.mergeBase;
   const reviewedBase = range?.base ?? mergeBase;
   const reviewedQuery = useQuery({
     ...core("listReviewed", currentWorkspace?.id ?? 0, reviewedBase ?? "", range?.head),
@@ -510,13 +545,15 @@ export function App() {
       fileAt: undefined,
       at: undefined,
     });
-  // The pane's bar: Changes and Files are the Navigator's toggle (a history entry, ADR 0025), Commits the other pane.
-  const paneTab: PaneTab = pane === "commits" ? "commits" : view;
+  // The pane's bar: Changes and Files are the Navigator's toggle (a history entry, ADR 0025), Commits and Turns other
+  // panes.
+  const paneTab: PaneTab = pane === "navigator" ? view : pane;
   const pickPaneTab = (t: PaneTab) => {
-    setPane(t === "commits" ? "commits" : "navigator");
-    if (t !== "commits" && t !== view) void show({ view: t === "files" ? "files" : undefined });
+    setPane(t === "commits" || t === "turns" ? t : "navigator");
+    if ((t === "diffs" || t === "files") && t !== view)
+      void show({ view: t === "files" ? "files" : undefined });
   };
-  const pickScope = (picked: "all" | "pushed" | "local") =>
+  const pickScope = (picked: "all" | "pushed" | "unpushed" | "uncommitted") =>
     void show({
       scope: picked === "all" ? undefined : picked,
       commit: undefined,
@@ -585,20 +622,16 @@ export function App() {
     // A chat card can refer to a thread outside the currently filtered view.
     if (!root && currentWorkspace && pr.commits) {
       const all = await queryClient.fetchQuery(
-        core("listEntries", currentWorkspace.id, pr.commits.mergeBase),
+        core("listEntries", currentWorkspace.id, pr.commits.mergeBase, pr.commits.mergeBase),
       );
       root = all.find((e) => e.id === threadId);
     }
     if (!root?.path || root.workspaceId !== shown.current.ws) return;
     setViewSettings((settings) => ({ ...settings, showReviewed: true }));
-    // Already on the canvas (its file shows and it's current there, e.g. a note written in the view shown): scroll to
+    // Already on the canvas (its file shows and its lines are there, e.g. a note written in the view shown): scroll to
     // it in place rather than leave for the range it was written in.
     const here = entries.find((e) => e.id === threadId);
-    if (
-      here?.state === "current" &&
-      !showFile &&
-      canvasFiles.some((f) => openedPath(f) === root.path)
-    )
+    if (here?.shown && !showFile && canvasFiles.some((f) => openedPath(f) === root.path))
       await show({ thread: threadId, at: root.path });
     else await show(threadLocation(root));
     setThreadPicks((n) => n + 1);
@@ -722,6 +755,12 @@ export function App() {
       run: () => (paneOpen && pane === "commits" ? setPaneOpen(false) : showPane("commits")),
     },
     {
+      id: "toggle-turns",
+      title: "Show or Hide Agent Turns",
+      enabled: ready,
+      run: () => (paneOpen && pane === "turns" ? setPaneOpen(false) : showPane("turns")),
+    },
+    {
       id: "show-diff",
       title: "Show the Diff Without a View",
       enabled: ready && !!canvasView,
@@ -740,9 +779,10 @@ export function App() {
           "pushed",
           currentWorkspace?.prNumber !== null
             ? "Show Only the PR's Changes"
-            : "Show Only Pushed Changes",
+            : "Show Only What's on GitHub",
         ],
-        ["local", "Show Only Local Changes"],
+        ["unpushed", "Show Only the Commits Not Pushed"],
+        ["uncommitted", "Show Only Uncommitted Changes"],
       ] as const
     ).map(([value, title]) => ({
       id: `scope:${value}`,
@@ -952,7 +992,9 @@ export function App() {
                     onTab={pickPaneTab}
                     onHide={() => setPaneOpen(false)}
                   />
-                  {paneTab === "commits" ? (
+                  {paneTab === "turns" ? (
+                    <Turns workspaceId={currentWorkspace.id} current={commit} onPick={pickCommit} />
+                  ) : paneTab === "commits" ? (
                     pr.commits && (
                       <Commits
                         workspaceId={currentWorkspace.id}
@@ -962,6 +1004,9 @@ export function App() {
                         problem={gitProblem}
                         current={commit}
                         onPick={pickCommit}
+                        uncommitted={uncommitted?.status === "ok" ? uncommitted.size : null}
+                        uncommittedOn={!commit && !canvasView && scope === "uncommitted"}
+                        onPickUncommitted={() => pickScope("uncommitted")}
                         onPush={() => void push(currentWorkspace)}
                         onOpenPullRequest={() => void openPullRequest(currentWorkspace)}
                       />
@@ -1001,8 +1046,9 @@ export function App() {
                   const picked = await window.coxswain.showRangeMenu(
                     commit ? null : scope,
                     currentWorkspace.prNumber !== null,
+                    layers,
                   );
-                  if (picked === "commits") showPane("commits");
+                  if (picked === "commits" || picked === "turns") showPane(picked);
                   else pickScope(picked);
                 }}
                 onClearCommit={() => pickCommit(null)}

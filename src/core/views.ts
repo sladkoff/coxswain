@@ -6,6 +6,7 @@ import {
   listFilesAt,
   openedBefore,
   openWorktree,
+  pinRevision,
   readTexts,
   resolveCommit,
   snapshot,
@@ -484,6 +485,7 @@ async function addOnLines(
   if (start < 1 || end > lines.length)
     throw new Error(`${a.path} has ${lines.length} lines on the ${a.side} side`);
   if (!a.body.trim()) throw new Error("body is empty");
+  const revision = await pinRevision(db, workspaceId, commit);
   beingWritten(workspaceId, view.id);
   await db
     .insertInto("entries")
@@ -500,6 +502,7 @@ async function addOnLines(
       code: lines.slice(start - 1, end).join("\n"),
       base: view.base,
       head: view.head,
+      revision,
       created_at: new Date().toISOString(),
     })
     .execute();

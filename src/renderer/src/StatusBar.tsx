@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { match, P } from "ts-pattern";
 import type { ReviewEntry } from "../../core/review";
 import { Button, SegmentedControl, ToggleButton } from "./components/button";
 import { ChevronDownIcon } from "./components/icons";
@@ -173,6 +174,13 @@ export function StatusBar(props: Props) {
   );
 }
 
+// Where a thread was written, for one whose lines aren't in the range on screen.
+const writtenIn = (t: ReviewEntry) =>
+  match(t)
+    .with({ viewId: P.number }, () => "in a view")
+    .with({ head: P.string.select() }, (head) => `in ${head.slice(0, 7)}`)
+    .otherwise(() => "in All");
+
 // One thread in the bar's list, under its file: its lines, its first comment, and how far it got. A click shows it on
 // the canvas; the ✓ at its end resolves it (or reopens it, among the resolved), as the thread's own ✓ does.
 function ThreadRow(props: {
@@ -186,23 +194,23 @@ function ThreadRow(props: {
   const lines = t.startLine === t.endLine ? `${t.startLine}` : `${t.startLine}–${t.endLine}`;
   const answers = replies.filter((r) => r.kind === "answer").length;
   const others = replies.length - answers;
-  // The one state that matters most, as a dot and a word; replies after it.
-  const [dot, state] = props.answering
-    ? ["bg-amber-500", "agent answering"]
-    : t.state === "outdated"
-      ? ["bg-neutral-400", "outdated"]
-      : answers
-        ? ["bg-green-600", count(answers, "answer")]
-        : t.kind === "question"
-          ? ["bg-blue-500", "sent to agent"]
-          : [null, null];
+  // The one state that matters most, as a dot and a word; replies after it. A current thread whose lines aren't in the
+  // range on screen says where it was written (ADR 0015); a click goes there.
+  const [dot, state] = match({ answering: props.answering, t, answers })
+    .returnType<[string | null, string | null]>()
+    .with({ answering: true }, () => ["bg-amber-500", "agent answering"])
+    .with({ t: { state: "outdated" } }, () => ["bg-neutral-400", "outdated"])
+    .with({ t: { shown: false } }, () => [null, writtenIn(t)])
+    .with({ answers: P.number.gt(0) }, () => ["bg-green-600", count(answers, "answer")])
+    .with({ t: { kind: "question" } }, () => ["bg-blue-500", "sent to agent"])
+    .otherwise(() => [null, null]);
   return (
     <div className="flex items-center pr-1 hover:bg-neutral-100 dark:hover:bg-neutral-800">
       <button
         onClick={props.onClick}
         className={cn(
           "flex min-w-0 flex-1 items-center gap-2.5 py-1 pr-2 pl-5 text-left",
-          t.state === "outdated" && muted,
+          (t.state === "outdated" || !t.shown) && muted,
         )}
       >
         <span className={cn("w-14 shrink-0 font-mono text-[11px]", muted)}>{lines}</span>

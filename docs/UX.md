@@ -8,7 +8,7 @@ Direction for the main screen and navigation. Expected to change as we build; te
 Agent-first. Opening a PR shows the project column (L1), the agent pane (L4) on the left and the canvas (L3) on the
 right. The canvas is one explorer that both the agent and the human annotate; for now it shows _Changes_, the
 workspace's file diffs, with the Navigator (L2) or the commits pane on its left. The top bar follows the columns: over
-the left pane, its own bar (hide it, and _Changes_ · _Files_ · _Commits_ to switch it); over the canvas, what the canvas
+the left pane, its own bar (hide it, and _Changes_ · _Files_ · _Commits_ · _Turns_ to switch it); over the canvas, what the canvas
 shows — _Diff_ with its range, a chip per view, a dashed _New View_ chip — then Back and Forward chevrons, a magnifier
 (Open Quickly), the display options (sliders) and Activity (a pulse icon; see below). A bar at its bottom sums up the
 review.
@@ -103,10 +103,10 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
 
 - **L2 — Navigator**, on the left of the canvas, under its own bar, as wide as it. Hidden at first; the panel button
   at the canvas bar's left, _View > Toggle Navigator_ or ⌘B shows it, and the same button at its bar's left hides it
-  (it comes back as it was, on the Navigator or the commits pane). Its border can be dragged. A segmented control in its
+  (it comes back as it was, on the Navigator, the commits or the turns). Its border can be dragged. A segmented control in its
   bar switches between _Changes N_ (N the number of changed files), the changed files as a tree with their status and
-  +/− lines, _Files_, the whole file tree of the workspace, with folders that contain changes marked, and _Commits_
-  (below). Both lists come from the worktree, so _Changes_ shows the PR's file diffs and local changes (e.g. an
+  +/− lines, _Files_, the whole file tree of the workspace, with folders that contain changes marked, _Commits_
+  and _Turns_ (below). Both lists come from the worktree, so _Changes_ shows the PR's file diffs and local changes (e.g. an
   agent's) together, a file with local changes marked with an amber ● after its +/− lines, and reloads after each
   turn. Reviewed files are hidden unless _Show Reviewed Files_ is on, and then show a ✓; the bottom bar counts them.
   The display options list _Files as Tree_ or _Files as List_ (a flat list, each file's folder dimmed next to its +/−
@@ -132,20 +132,26 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   file diffs by the one at the top. The keys work wherever the focus is, the Navigator included; the menu items and
   chevrons are greyed out at either end.
 
-  _Commits_ in the pane's bar shows the commits pane in the Navigator's place (one or the other): _All Changes_,
-  then, if any agent turn changed the worktree, _Agent turns_ (when, and the turn's first message) and _Commits_: the
-  PR's commits (and local ones on top, marked _local_), newest first. Picking a commit shows its commit diff on the
-  canvas, and picking a turn its turn diff (glossary); the _Diff_ tab's range then names the commit or _Turn: …_, with ✕
-  back to all changes. At the top, how
-  many commits aren't pushed, with _Push_ (confirmed; never forced) or, for a branch workspace without a PR, _Open Pull
+  _Commits_ in the pane's bar shows the commits pane in the Navigator's place (one or the other): _All Changes_, then
+  _Uncommitted changes_ while the worktree has any (its files and lines added and removed; picking it shows only them,
+  live, as the scope _Uncommitted_), then the PR's commits (and local ones on top, marked _not pushed_), newest first, each
+  on two lines: its subject (and _merge_ for a merge commit), then its short sha, author (_+N_ for co-authors), how
+  long ago, and its lines added and removed. Its tooltip has the whole message, the author's email and date,
+  co-authors, who committed it if someone else, and how many files it changed. Picking a commit shows its commit diff
+  on the canvas. _Turns_ shows, the same way, _All Changes_ and then the agent turns that changed the worktree, newest
+  first: the turn's first message over the agent that ran it (_Claude Code_, _Codex_; _Agent_ for turns from before
+  that was recorded), how long ago, and its lines added and removed. Picking one shows its turn diff (glossary); the
+  _Diff_ tab's range then names the commit or _Turn: …_, with ✕ back to all changes. At the top of _Commits_, how many
+  commits aren't pushed, with _Push_ (confirmed; never forced) or, for a branch workspace without a PR, _Open Pull
   Request…_ (confirmed: pushes, opens a draft PR into its base branch and shows it in the browser). A push that fails
   says why there.
 
   **Range.** The _Diff_ tab carries what the diff shows, always, a view showing or not, so the chips after it never
-  move: the scope (glossary) _All_, _PR_ (_Pushed_ for a branch without a PR) or _Local_, or the commit or turn picked.
-  Clicking it opens a native menu: _All Changes_, _The PR's Changes_ (_Pushed Changes_), _Local Changes_, and _Commit
-  or Agent Turn…_, which shows the commits pane. Picking a scope shows the diff. _PR_ is pinned like a commit; _Local_
-  is live.
+  move: the scope (glossary) _All_, _PR_ (_On GitHub_ for a branch without a PR), _Not Pushed_ or _Uncommitted_, or the
+  commit or turn picked. Clicking it opens a native menu: _All Changes_, then the layers that add up to it, each with
+  how much it has and greyed out when it has nothing: _In the PR (3 commits)_ (_On GitHub_), _Not Pushed (2 commits)_
+  and _Uncommitted (4 files)_; then _Commit…_ and _Agent Turn…_, which show the commits or the turns. Picking a scope
+  shows the diff. _PR_ and _Not Pushed_ are pinned like a commit; _Uncommitted_ is live.
 
 - **L3 — Canvas.** All file diffs of the workspace one after another, to scroll through. The display options (sliders)
   in its bar open a native menu: _Unified_ or _Split_ file diffs, _Show Reviewed Files_, and the Navigator's _Files as
@@ -163,9 +169,10 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   even for one line, and says _No usages found_, _No definition found_ or, in a file no language server takes (so far only
   TypeScript, JavaScript and Python), _No language server for .go files_.
 
-  **Threads.** The workspace's entries (glossary) go between the lines while they're current, i.e. their lines still
-  read as the code they were written on; the header says _N outdated_ for the others, and a click shows them above
-  the file diff with that code. Hovering a line shows a `+` in the gutter; clicking it (or dragging it over a range)
+  **Threads.** The workspace's entries (glossary) go between the lines wherever their lines are, unchanged, in the
+  range on screen, having moved with lines added above them. One outdated there (its own commit diff) says so after
+  its lines. The header says _N outdated_ for the file's outdated threads that aren't, and a click shows them above
+  the file diff with the code they were about (_Then_) and what stands there now (_Now_). Hovering a line shows a `+` in the gutter; clicking it (or dragging it over a range)
   opens a comment box: the lines at its top, ✕ at its top right to cancel (or Esc), the text, and at the bottom right
   a _Comment_ / _Agent_ toggle and a send button (Enter; Shift+Enter adds a line). The toggle is one global
   preference, kept across boxes and restarts. Sending starts a **thread** between the lines: every comment is one.
@@ -196,7 +203,8 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   reviewed with a progress bar (_8/29 reviewed_), and the lines added and removed. The toggle opens the threads above
   the bar: a header with _Threads_ and _Open N_ · _Resolved N_, then the threads grouped under their file, one line
   each: its lines, its first comment, and a dot with how far it got (_agent answering_, _outdated_, _N answers_, _sent
-  to agent_) and its replies, then a ✓ that resolves it (under _Resolved_, green, reopens it; not while the agent
+  to agent_) and its replies; one whose lines aren't in the range on screen is muted and says where it was written
+  (_in All_, _in abc1234_, _in a view_) instead, then a ✓ that resolves it (under _Resolved_, green, reopens it; not while the agent
   answers). Clicking one scrolls the canvas to it.
 
   _Hand off N_ (N the open threads it takes: not resolved, and the agent's explanations and findings only once the user
@@ -215,7 +223,7 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   ones (_Guide_, _Review_ (a guide with findings), _Questions for the author_, _Data model_, _Data flow_), then the
   user's own, then _New View…_ (a view of whatever the user types) and _New Prompt…_ (Settings, at a new prompt's title;
   saved prompts are deleted there too). While the diff shows a commit, an agent
-  turn or the _PR_/_Pushed_ or _Local_ scope, the menu's first line names it (_Of commit 1c8d547 (…)_, greyed out) and
+  turn or a scope other than _All_, the menu's first line names it (_Of commit 1c8d547 (…)_, greyed out) and
   the view is of that range only, like the command palette's New View actions. Each attaches the prompt to the agent
   pane's composer as a card, which the user sends with an optional note on what to focus on; the agent pane's session makes the view with coxswain's
   tools (ADR 0023); asking for one in the agent pane's own words does the same. A view shows on the canvas as soon as
@@ -296,7 +304,7 @@ A prose-only view has no reviewable files. An empty view says _Nothing in this v
 4. **Agents in L4:** tabs, a list, or split panes, and how running and finished agent sessions look.
    Earlier agent sessions are reachable from the header's picker, one at a time.
 5. **The local loop:** coxswain pushes and opens PRs, but doesn't commit; agents do, or the user in a terminal.
-   Should it commit (with a message to write) too? Turn diffs pile up under _Agent turns_; should older ones fold away,
+   Should it commit (with a message to write) too? Turn diffs pile up under _Turns_; should older ones fold away,
    and should the canvas say which turn a local change came from?
 6. **The canvas:** what else it shows (the PR's description and history), and how the agent and the human switch
    between them. An annotation on lines is an entry (ADR 0023); the agent has tools to make views (ADR 0026), but not
@@ -309,5 +317,6 @@ A prose-only view has no reviewable files. An empty view says _Nothing in this v
   earlier messages, pending permissions and errors survive switching workspaces; the agent pane reattaches to the
   core's session state. A turn can finish while its pane is hidden.
 - Picking a comment from the bottom bar or a chat card selects its view or recorded range and enables Show Reviewed
-  Files before scrolling to its thread. The Reviewed mark stays. An outdated thread opens above its file with the
-  original code, rather than leaving navigation at a hidden annotation.
+  Files before scrolling to its thread, or stays where it is if the thread is on screen there. The Reviewed mark
+  stays. An outdated thread opens above its file with its code then and now, rather than leaving navigation at a
+  hidden annotation.

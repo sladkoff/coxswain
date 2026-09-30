@@ -3,6 +3,61 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-10-01 — Outdated follows the code (#31); more in the commits pane
+
+### What works
+
+- **An entry goes outdated only when its own lines change.** It's followed from its revision with a line diff
+  (`core/follow.ts`, Myers): lines added above move it, an edit next to it leaves it current. Judged once, against the
+  live diff (the worktree; the merge base for removed lines), so a comment from _All_ no longer reads as outdated
+  while a commit diff is on screen, and an agent's uncommitted edit shows at once.
+- **Every anchored entry has a revision** (migration: `entries.revision`): its range's commit, or a snapshot of the
+  worktree on the live diff, kept under `refs/coxswain/revisions/`. Those written on the live diff before have none
+  and read as outdated.
+- **Where it shows is per range**: between the lines of any range with its lines unchanged, at the lines they moved
+  to. The threads list mutes the others and says where they were written (_in All_, _in abc1234_, _in a view_).
+- An outdated thread opens above its file with its code _Then_ and _Now_; _Hand off_ sends it with what its lines
+  read now and asks the agent to check it still applies. ADR 0015 is rewritten for all this.
+- Entry storage and state moved from `review.ts` to `entries.ts`, which `node --test` can load, with a test over a
+  real repository.
+
+- **More in the commits pane.** Each commit shows its subject over its short sha, author (and co-authors), how long
+  ago, and its lines added and removed; merges are marked. The tooltip has the whole message, the author's email and
+  date, co-authors, who committed it if someone else (a rebase, GitHub's merge button) and how many files it changed.
+  `listCommits` returns `LoggedCommit`s, parsed from `git log --shortstat` by `parseLog` (tested).
+
+- Each agent turn records the session it ran in (migration: `turns.agent_session_id`), to audit later.
+- **Agent turns have their own tab**, _Turns_, next to _Commits_, in the same rows: the turn's first message over the
+  agent that ran it (from its session), how long ago, and its lines added and removed (`diffSize`, cached per pair of
+  snapshots). Turns whose snapshots differ with nothing changed between them (the agent only committed earlier
+  changes) are left out. The Diff tab's range menu offers _Commit…_ and _Agent Turn…_; there's a Show or Hide Agent Turns command.
+
+- **Uncommitted changes in the Commits pane**, after _All Changes_ while the worktree has any: its files and lines
+  added and removed, from `git diff HEAD` and the untracked files (`uncommitted`, summing the file list of HEAD → worktree). Picking it shows
+  only them, live, as a new scope, _Uncommitted_ (HEAD → worktree), also in the range menu and the command palette.
+- **Scopes are layers.** The range menu has _All Changes_, then the three layers that add up to it, each with its size
+  and greyed out when empty: _In the PR_ / _On GitHub_ (merge base → GitHub's head), _Not Pushed_ (GitHub's head →
+  HEAD, pinned) and _Uncommitted_ (HEAD → worktree). _Local_ (GitHub's head → worktree) is gone: it held the other two
+  at once. Unpushed commits are marked _not pushed_, not _local_.
+- **ts-pattern for branching** (ADR 0035): chained ternaries of three or more outcomes are `match`es now: the diff's
+  range and what a new view covers (one match, `shownRange`, where two chains had drifted), a thread's state in the
+  bottom bar, a workspace's PR icon, a queued message's text, a git status code, and the empty texts of the command
+  palette, Activity and the find bar. AGENTS.md says so for new code.
+- **The pane's bar in a narrow pane:** a segmented control's options cut their labels off rather than wrap onto a
+  second line, and the hide button keeps the size of the canvas bar's show button (`ToggleButton`'s `icon`: `cn`
+  doesn't merge classes, so its own padding beat the `p-1` passed in).
+- **Coming back to the window rereads the worktree** (ADR 0030), so edits made in an editor or a terminal show in the
+  diff, _Uncommitted changes_ and the comments' states. Pays off the debt that uncommitted edits outside an agent turn
+  didn't refresh the diff; edits while coxswain has focus still wait for the next refresh.
+
+### Tech debt
+
+- `ponytail:` the line diff gives up past 2000 edits between two versions (`follow.ts`); files at commits are cached
+  for the session, never evicted (`entries.ts`).
+- A comment on removed lines in a commit diff, _Not Pushed_ or _Uncommitted_ can read as outdated at once (ADR 0015's
+  consequences). A thread written in _Uncommitted_ opens in _All_: `threadLocation` only restores commits and views.
+- Not yet checked in the running app.
+
 ## 2026-09-30 — Reviewed in views; threads: queued questions, follow-ups, resolving; current agent session
 
 ### What works

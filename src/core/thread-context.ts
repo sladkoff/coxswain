@@ -17,10 +17,13 @@ export function describe(
       : a.head
         ? `as at ${at(a.head)}`
         : "as in the worktree then";
-  const fence = "`".repeat(
-    Math.max(3, ...[...(a.code ?? "").matchAll(/`+/g)].map((m) => m[0].length + 1)),
-  );
-  return `\`${a.path}\` ${lines} (${where}):\n${fence}\n${a.code}\n${fence}`;
+  return `\`${a.path}\` ${lines} (${where}):\n${fence(a.code ?? "")}`;
+}
+
+// Code in a fence longer than any run of backticks in it.
+export function fence(code: string): string {
+  const f = "`".repeat(Math.max(3, ...[...code.matchAll(/`+/g)].map((m) => m[0].length + 1)));
+  return `${f}\n${code}\n${f}`;
 }
 
 // Entries the agent wrote, not the user.
@@ -32,8 +35,8 @@ export const byAgent = (e: Pick<ReviewEntry, "kind">) =>
 // or the other agent) gets where the thread is and everything in it so far (#11), also what the agent wrote if the
 // thread began as its explanation or finding in a view.
 export function unseen(
-  question: Omit<ReviewEntry, "state">,
-  thread: Omit<ReviewEntry, "state">[],
+  question: Omit<ReviewEntry, "state" | "shown" | "now">,
+  thread: Omit<ReviewEntry, "state" | "shown" | "now">[],
   agentSessionId: string,
 ): string {
   if (question.path) return `About ${describe(question)}`;

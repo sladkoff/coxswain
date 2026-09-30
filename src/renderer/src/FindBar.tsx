@@ -1,4 +1,5 @@
 import { useEffect, useRef, useSyncExternalStore } from "react";
+import { match } from "ts-pattern";
 import { Button, ToggleButton } from "./components/button";
 import { Input } from "./components/field";
 import { cn, divider, muted } from "./components/styles";
@@ -55,13 +56,11 @@ export function FindBar({ pane }: { pane: FindPane }) {
         onChange={(e) => setFindQuery(e.target.value)}
       />
       <span aria-live="polite" className={cn("tabular-nums", muted)}>
-        {state.searching
-          ? "Searching…"
-          : state.query
-            ? state.matches.length
-              ? `${state.index + 1} of ${state.matches.length}`
-              : "No matches"
-            : ""}
+        {match(state)
+          .with({ searching: true }, () => "Searching…")
+          .with({ query: "" }, () => "")
+          .with({ matches: [] }, () => "No matches")
+          .otherwise((s) => `${s.index + 1} of ${s.matches.length}`)}
       </span>
       <ToggleButton
         on={state.matchCase}

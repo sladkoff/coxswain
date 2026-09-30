@@ -8,13 +8,15 @@ import type {
   ChatEntry,
   Permission,
   Pick,
+  TurnCommit,
   TurnResult,
 } from "../core/agents";
 import type {
   BranchList,
   ChangedFileList,
   CloneResult,
-  Commit,
+  LoggedCommit,
+  Size,
   FileText,
   FileTreeResult,
   GitProblem,
@@ -44,8 +46,10 @@ export type ViewSettings = {
   showReviewed: boolean;
   layout: "tree" | "list";
 };
-// What the Diff tab shows (glossary: scope), or "commits" to pick a commit or an agent turn in the Commits pane.
-export type RangePick = "all" | "pushed" | "local" | "commits";
+// What the Diff tab shows (glossary: scope), or "commits" / "turns" to pick a commit or an agent turn in its pane.
+export type RangePick = "all" | "pushed" | "unpushed" | "uncommitted" | "commits" | "turns";
+// How much each layer of the diff has, for the range menu: commits, and files for uncommitted.
+export type Layers = { pushed: number; unpushed: number; uncommitted: number };
 // What the core changed on its own, e.g. when an agent turn ends, so the UI refetches it (ADR 0017).
 export type Changed = {
   workspaceId: number;
@@ -79,6 +83,11 @@ const api = {
   // The worktree as a commit, uncommitted changes included (ADR 0028): what a new view is pinned to.
   snapshot: (workspaceId: number): Promise<{ status: "ok"; sha: string } | GitProblem> =>
     ipcRenderer.invoke("git:snapshot", workspaceId),
+  // HEAD, and how much the worktree has on top of it, not committed; size null when nothing.
+  uncommitted: (
+    workspaceId: number,
+  ): Promise<{ status: "ok"; head: string; size: Size | null } | GitProblem> =>
+    ipcRenderer.invoke("git:uncommitted", workspaceId),
   // Pushes the worktree's branch; never forced.
   push: (workspaceId: number): Promise<{ status: "ok" } | GitProblem> =>
     ipcRenderer.invoke("git:push", workspaceId),
@@ -89,7 +98,7 @@ const api = {
   listCommits: (
     workspaceId: number,
     mergeBase: string,
-  ): Promise<{ status: "ok"; commits: Commit[] } | GitProblem> =>
+  ): Promise<{ status: "ok"; commits: LoggedCommit[] } | GitProblem> =>
     ipcRenderer.invoke("git:commits", workspaceId, mergeBase),
   // With head: a commit diff, mergeBase being the commit's parent.
   listChangedFiles: (
@@ -130,7 +139,7 @@ const api = {
   removeWorkspace: (workspaceId: number): Promise<void> =>
     ipcRenderer.invoke("workspaces:remove", workspaceId),
   // The agent turns that changed the worktree, newest first, as commits between their snapshots (ADR 0028).
-  listTurns: (workspaceId: number): Promise<Commit[]> =>
+  listTurns: (workspaceId: number): Promise<TurnCommit[]> =>
     ipcRenderer.invoke("agents:turns", workspaceId),
   listAgentSessions: (workspaceId: number): Promise<AgentSession[]> =>
     ipcRenderer.invoke("agents:list", workspaceId),
@@ -186,9 +195,15 @@ const api = {
     attachments?: Attachment[],
   ): Promise<TurnResult> =>
     ipcRenderer.invoke("agents:run-turn", agentSessionId, message, view, attachments),
-  // The workspace's entries, each current or outdated in the view of base → head (ADR 0015).
-  listEntries: (workspaceId: number, base: string, head?: string): Promise<ReviewEntry[]> =>
-    ipcRenderer.invoke("review:list", workspaceId, base, head),
+  // The workspace's entries, each current or outdated in the live diff from mergeBase, and shown or not in the view of
+  // base → head (ADR 0015).
+  listEntries: (
+    workspaceId: number,
+    mergeBase: string,
+    base: string,
+    head?: string,
+  ): Promise<ReviewEntry[]> =>
+    ipcRenderer.invoke("review:list", workspaceId, mergeBase, base, head),
   addNote: (note: NewEntry): Promise<ReviewEntry> => ipcRenderer.invoke("review:add-note", note),
   deleteEntry: (id: number): Promise<void> => ipcRenderer.invoke("review:delete", id),
   resolveThread: (id: number, resolved: boolean): Promise<void> =>
@@ -300,8 +315,11 @@ const api = {
   // The bottom bar's Hand off menu: send the open threads to the agent, or copy them as a prompt. Pending if dismissed.
   showHandOffMenu: (): Promise<"agent" | "copy"> => ipcRenderer.invoke("menus:hand-off"),
   // The Diff tab's range menu: a scope, or "commits". `scope` is null while a commit or turn shows. Pending if dismissed.
-  showRangeMenu: (scope: "all" | "pushed" | "local" | null, hasPr: boolean): Promise<RangePick> =>
-    ipcRenderer.invoke("menus:range", scope, hasPr),
+  showRangeMenu: (
+    scope: "all" | "pushed" | "unpushed" | "uncommitted" | null,
+    hasPr: boolean,
+    layers: Layers,
+  ): Promise<RangePick> => ipcRenderer.invoke("menus:range", scope, hasPr, layers),
   // A thread's ⋯ menu; stays pending if dismissed.
   showThreadMenu: (can: { edit: boolean; send: boolean }): Promise<"edit" | "delete" | "send"> =>
     ipcRenderer.invoke("menus:thread", can),

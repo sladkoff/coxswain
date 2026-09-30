@@ -1,4 +1,5 @@
 import { execFile, spawn } from "node:child_process";
+import { match } from "ts-pattern";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
@@ -334,6 +335,43 @@ export function snapshot(
   }));
 }
 
+// What the worktree has on top of HEAD, not committed yet: `git diff HEAD` plus untracked files, as the diff of that
+// range lists them. The Commits pane's Uncommitted changes. size null: nothing uncommitted.
+export function uncommitted(
+  db: Db,
+  workspaceId: number,
+): Promise<{ status: "ok"; head: string; size: Size | null } | GitProblem> {
+  return withGit(async () => {
+    const path = await openedWorktree(db, workspaceId);
+    const head = (await gitText(path, ["rev-parse", "HEAD"])).trim();
+    const changed = await listChangedFiles(db, workspaceId, head);
+    if (changed.status !== "ok") return changed;
+    const size = {
+      files: changed.files.length,
+      additions: changed.files.reduce((n, f) => n + f.additions, 0),
+      deletions: changed.files.reduce((n, f) => n + f.deletions, 0),
+    };
+    return { status: "ok" as const, head, size: size.files ? size : null };
+  });
+}
+
+// #31: the commit an entry's code is at, kept from git gc under refs/coxswain/revisions/ so a force-push or rebase
+// doesn't lose it: the commit given, or a snapshot of the worktree without one.
+export async function pinRevision(
+  db: Db,
+  workspaceId: number,
+  commit: string | null,
+): Promise<string> {
+  if (commit && !isCommit(commit)) throw new GitError(`Not a commit: ${commit}`);
+  const path = await openedWorktree(db, workspaceId);
+  const sha = commit ?? (await snapshotOf(path));
+  await git(path, ["update-ref", `refs/coxswain/revisions/${sha}`, sha]);
+  return sha;
+}
+
+// The merge base the workspace was last opened on, for the core's own reads of the live diff (Hand off).
+export const currentMergeBase = (workspaceId: number) => lastOpened.get(workspaceId)?.mergeBase;
+
 // Pushes the worktree's branch to GitHub and makes it its upstream. Never forced: if the branch moved on there, it fails
 // with git's message.
 export function push(db: Db, workspaceId: number): Promise<{ status: "ok" } | GitProblem> {
@@ -412,25 +450,87 @@ export function listCommits(
   workspaceId: number,
   mergeBase: string,
   head?: string,
-): Promise<{ status: "ok"; commits: Commit[] } | GitProblem> {
+): Promise<{ status: "ok"; commits: LoggedCommit[] } | GitProblem> {
   return withGit(async () => {
     if (!isCommit(mergeBase)) throw new GitError(`Not a commit: ${mergeBase}`);
     if (head !== undefined && !isCommit(head)) throw new GitError(`Not a commit: ${head}`);
     const out = await gitText(await openedWorktree(db, workspaceId), [
       "log",
-      "-z",
-      "--format=%H%x1f%P%x1f%s",
+      "--shortstat",
+      `--format=${logFormat}`,
       `${mergeBase}..${head ?? "HEAD"}`,
     ]);
-    const commits = out
-      .split("\0")
-      .filter(Boolean)
-      .map((l) => {
-        const [sha, parents, subject] = l.split("\x1f");
-        return { sha, parent: parents.split(" ")[0], subject };
-      });
-    return { status: "ok" as const, commits };
+    return { status: "ok" as const, commits: parseLog(out) };
   });
+}
+
+// A commit as the Commits pane shows it: who wrote it and when, who committed it if someone else (a rebase, GitHub's
+// merge button), its message's body, co-authors from its trailers, and how much it changed.
+export type LoggedCommit = Commit & {
+  author: string;
+  email: string;
+  date: string; // ISO, the author's
+  committer: string;
+  body: string;
+  coAuthors: string[];
+  merge: boolean;
+  files: number;
+  additions: number;
+  deletions: number;
+};
+
+// One record per commit, fields between unit separators; --shortstat's line follows the last one.
+const logFormat = "%x1e%H%x1f%P%x1f%an%x1f%ae%x1f%aI%x1f%cn%x1f%s%x1f%b%x1f";
+
+export function parseLog(out: string): LoggedCommit[] {
+  return out
+    .split("\x1e")
+    .filter(Boolean)
+    .map((record) => {
+      const [sha, parents, author, email, date, committer, subject, body, stat = ""] =
+        record.split("\x1f");
+      const coAuthors = [...body.matchAll(/^Co-authored-by:\s*(.+?)\s*<[^>]*>\s*$/gim)].map(
+        (m) => m[1],
+      );
+      return {
+        sha,
+        parent: parents.split(" ")[0],
+        subject,
+        author,
+        email,
+        date,
+        committer,
+        body: body.replace(/^Co-authored-by:.*$/gim, "").trim(),
+        coAuthors,
+        merge: parents.includes(" "),
+        ...shortStat(stat),
+      };
+    });
+}
+
+// git's --shortstat line: "3 files changed, 10 insertions(+), 2 deletions(-)", any part left out when 0.
+export type Size = { files: number; additions: number; deletions: number };
+const shortStat = (stat: string): Size => {
+  const n = (word: string) => Number(stat.match(new RegExp(`(\\d+) ${word}`))?.[1] ?? 0);
+  return { files: n("files? changed"), additions: n("insertions?"), deletions: n("deletions?") };
+};
+
+// How much changed between two commits, e.g. an agent turn's snapshots. Cached: commits never change.
+const sizes = new Map<string, Size>();
+export async function diffSize(
+  db: Db,
+  workspaceId: number,
+  base: string,
+  head: string,
+): Promise<Size> {
+  if (!isCommit(base) || !isCommit(head)) throw new GitError(`Not a commit: ${base}..${head}`);
+  const key = `${base}..${head}`;
+  const known = sizes.get(key);
+  if (known) return known;
+  const path = await openedWorktree(db, workspaceId);
+  const size = shortStat(await gitText(path, ["diff", "--shortstat", base, head]));
+  sizes.set(key, size);
+  return size;
 }
 
 // Joins `git diff -z --name-status` and `--numstat` output by path, and adds untracked files as added.
@@ -457,13 +557,12 @@ function parseChanges(
     const previousPath = renamed ? n[i + 1] : null;
     const path = renamed ? n[i + 2] : n[i + 1];
     i += renamed ? 3 : 2;
-    const status = renamed
-      ? "renamed"
-      : code === "A"
-        ? "added"
-        : code === "D"
-          ? "deleted"
-          : "modified";
+    const status = match(code)
+      .returnType<ChangedFile["status"]>()
+      .with("R", "C", () => "renamed")
+      .with("A", () => "added")
+      .with("D", () => "deleted")
+      .otherwise(() => "modified");
     const [additions, deletions] = lines.get(path) ?? [0, 0];
     files.push({
       path,

@@ -27,7 +27,7 @@ test("default canvas waits for views and snapshot instead of flashing the diff",
     "explicit Diff stays selected",
   );
   assert.equal(defaultViewId({ viewId: 3 }, views, "head"), 3, "remembered view wins");
-  assert.equal(defaultViewId({ scope: "local" }, views, "head"), null);
+  assert.equal(defaultViewId({ scope: "unpushed" }, views, "head"), null);
 });
 
 test("thread navigation clears conflicting selections and returns to the thread's range", () => {
@@ -40,7 +40,7 @@ test("thread navigation clears conflicting selections and returns to the thread'
     viewId: 7,
   } as ReviewEntry;
   const previous = {
-    scope: "local" as const,
+    scope: "unpushed" as const,
     view: "files" as const,
     file: "b.ts",
     line: 8,

@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { match } from "ts-pattern";
 import { useEffect, useRef, useState } from "react";
 import type { SummaryCoverage, SummaryJob } from "../../core/summaries";
 import { Button } from "./components/button";
@@ -202,13 +203,11 @@ function Coverage(props: {
           {w.summarised}/{count(w.files, "file")} summarised at {w.head.slice(0, 7)}
         </span>
         <span className={cn("ml-auto", all ? "text-green-600 dark:text-green-400" : muted)}>
-          {all
-            ? "Up to date"
-            : props.running
-              ? "Summarising…"
-              : props.ahead
-                ? "Not yet"
-                : "For views only"}
+          {match({ all, running: props.running, ahead: props.ahead })
+            .with({ all: true }, () => "Up to date")
+            .with({ running: true }, () => "Summarising…")
+            .with({ ahead: true }, () => "Not yet")
+            .otherwise(() => "For views only")}
         </span>
       </div>
       <ProgressBar value={w.summarised} max={w.files} />

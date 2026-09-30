@@ -161,7 +161,10 @@ export function ThreadBox({
   return (
     <div id={`thread:${root.id}`} className={box}>
       <div className={cn("flex items-center gap-2 text-xs", muted)}>
-        <span className="shrink-0">{lines(root.startLine!, root.endLine!)}</span>
+        <span className="shrink-0">
+          {lines(root.startLine!, root.endLine!)}
+          {root.state === "outdated" && " · outdated"}
+        </span>
         {root.resolvedAt ? (
           <span className="min-w-0 flex-1 truncate">Resolved · {root.body}</span>
         ) : (

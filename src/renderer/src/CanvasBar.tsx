@@ -15,7 +15,7 @@ import {
 } from "./components/icons";
 import { cn, divider, muted, selectable, titleBar } from "./components/styles";
 
-export type PaneTab = "diffs" | "files" | "commits";
+export type PaneTab = "diffs" | "files" | "commits" | "turns";
 
 // The bar over the pane left of the canvas, as wide as it: hide it, and switch it between Changes (the Navigator's
 // file diffs), Files (the whole file tree) and Commits. It drags the window, like the canvas's bar.
@@ -34,12 +34,18 @@ export function PaneBar(props: {
         divider,
       )}
     >
-      <ToggleButton on title="Hide the navigator (⌘B)" className="p-1" onClick={props.onHide}>
+      <ToggleButton
+        on
+        icon
+        title="Hide the navigator (⌘B)"
+        className="shrink-0"
+        onClick={props.onHide}
+      >
         <ListTreeIcon />
       </ToggleButton>
       <SegmentedControl
         value={props.tab}
-        onChange={(t) => (t !== "commits" || props.ready) && props.onTab(t)}
+        onChange={(t) => ((t !== "commits" && t !== "turns") || props.ready) && props.onTab(t)}
         options={[
           {
             value: "diffs",
@@ -47,7 +53,8 @@ export function PaneBar(props: {
             title: "The changed files",
           },
           { value: "files", label: "Files", title: "The whole file tree of the workspace" },
-          { value: "commits", label: "Commits", title: "The commits and agent turns" },
+          { value: "commits", label: "Commits", title: "The commits" },
+          { value: "turns", label: "Turns", title: "The agent turns that changed the worktree" },
         ]}
       />
     </div>
@@ -63,7 +70,7 @@ type Props = {
   view: View | null;
   views: View[]; // newest first
   snapshot: string | null; // the worktree now; a view of the worktree pinned to another is stale
-  scope: "all" | "pushed" | "local";
+  scope: "all" | "pushed" | "unpushed" | "uncommitted";
   hasPr: boolean; // what's pushed is the PR's
   onRangeMenu: () => void; // the Diff tab's range: a scope, or a commit or turn from the Commits pane
   onClearCommit: () => void;
@@ -90,7 +97,12 @@ export function CanvasBar(props: Props) {
     ? props.commit.turn
       ? `Turn: ${props.commit.subject}`
       : props.commit.sha.slice(0, 7)
-    : { all: "All", pushed: props.hasPr ? "PR" : "Pushed", local: "Local" }[props.scope];
+    : {
+        all: "All",
+        pushed: props.hasPr ? "PR" : "On GitHub",
+        unpushed: "Not Pushed",
+        uncommitted: "Uncommitted",
+      }[props.scope];
   return (
     <div
       className={cn(

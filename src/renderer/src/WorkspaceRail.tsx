@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { match } from "ts-pattern";
+import { type ReactNode, useEffect } from "react";
 import type { AgentStatus } from "../../core/session-state";
 import type { PullRequestTitle } from "../../core/github";
 import type { Project } from "../../core/projects";
@@ -167,16 +168,25 @@ function WorkspaceRow({
 }) {
   const title = pull?.title ?? (w.prNumber !== null ? workspaceLabel(w) : w.branch!);
   const meta = [w.prNumber !== null && `#${w.prNumber}`, w.branch].filter(Boolean).join(" · ");
-  const [icon, color, state] =
-    w.prNumber === null
-      ? [<GitBranchIcon />, muted, "Branch"]
-      : pull?.state === "merged"
-        ? [<GitMergeIcon />, "text-purple-600 dark:text-purple-400", "Merged"]
-        : pull?.state === "closed"
-          ? [<GitPullRequestIcon />, "text-red-600 dark:text-red-400", "Closed"]
-          : pull?.draft
-            ? [<GitPullRequestIcon />, muted, "Draft"]
-            : [<GitPullRequestIcon />, "text-green-600 dark:text-green-500", "Open"];
+  const [icon, color, state] = match({
+    prNumber: w.prNumber,
+    state: pull?.state,
+    draft: pull?.draft,
+  })
+    .returnType<[ReactNode, string, string]>()
+    .with({ prNumber: null }, () => [<GitBranchIcon />, muted, "Branch"])
+    .with({ state: "merged" }, () => [
+      <GitMergeIcon />,
+      "text-purple-600 dark:text-purple-400",
+      "Merged",
+    ])
+    .with({ state: "closed" }, () => [
+      <GitPullRequestIcon />,
+      "text-red-600 dark:text-red-400",
+      "Closed",
+    ])
+    .with({ draft: true }, () => [<GitPullRequestIcon />, muted, "Draft"])
+    .otherwise(() => [<GitPullRequestIcon />, "text-green-600 dark:text-green-500", "Open"]);
   return (
     <button
       title={[title, meta, state, status !== "idle" && statusLabels[status]]

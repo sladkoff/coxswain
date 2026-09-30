@@ -18,7 +18,8 @@ did a push to the PR while the window had focus.
 1. **The core watches the HEAD of the workspace on screen** (`src/core/watch.ts`) every 3 s. HEAD moving is a change
    to the worktree: the UI refetches what depends on it (ADR 0017), and it's summarised ahead. Uncommitted edits aren't
    watched: they aren't summarised (ADR 0029), and refetching the diff on each would redraw it every few seconds while
-   an agent edits. The UI says which workspace shows; one is watched at a time.
+   an agent edits. Instead the UI rereads the worktree when its window gets focus, so edits made in an editor or a
+   terminal show on coming back. The UI says which workspace shows; one is watched at a time.
 2. **GitHub is checked every 2 minutes** while a workspace shows, by the worktree check the UI already makes
    (`openWorktree`, as a query refetched on an interval, window in the background too), which fetches, fast-forwards a
    worktree without local changes, and summarises ahead.

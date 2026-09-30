@@ -63,6 +63,7 @@ import {
   readFileAt,
   readWorktreeFile,
   snapshot,
+  uncommitted,
 } from "../core/git";
 import { type CodeAt, findDefinitions, findUsages, stopLanguageServers } from "../core/lsp";
 import { onHeadMoved, watchWorkspace } from "../core/watch";
@@ -111,7 +112,7 @@ import {
   type SummarySettings,
 } from "../core/summaries";
 import { checkSetup } from "../core/setup";
-import type { Changed, RangePick, ViewSettings } from "../preload";
+import type { Changed, Layers, RangePick, ViewSettings } from "../preload";
 import {
   listWorkspaces,
   openBranchWorkspace,
@@ -410,6 +411,7 @@ app.whenReady().then(() => {
   );
   ipcMain.handle("git:branches", (_, projectId: number) => listBranches(db, projectId));
   ipcMain.handle("git:snapshot", (_, workspaceId: number) => snapshot(db, workspaceId));
+  ipcMain.handle("git:uncommitted", (_, workspaceId: number) => uncommitted(db, workspaceId));
   ipcMain.handle("git:push", (_, workspaceId: number) => push(db, workspaceId));
   ipcMain.handle("git:open-pull-request", async (_, workspaceId: number) => {
     const pr = await openPullRequest(db, workspaceId);
@@ -482,8 +484,10 @@ app.whenReady().then(() => {
       pendingStates.clear();
     }, 16);
   });
-  ipcMain.handle("review:list", (_, workspaceId: number, base: string, head?: string) =>
-    listEntries(db, workspaceId, base, head),
+  ipcMain.handle(
+    "review:list",
+    (_, workspaceId: number, mergeBase: string, base: string, head?: string) =>
+      listEntries(db, workspaceId, mergeBase, base, head),
   );
   ipcMain.handle("review:add-note", (_, note: NewEntry) => addNote(db, note));
   ipcMain.handle("review:delete", (_, id: number) => deleteEntry(db, id));
@@ -669,28 +673,36 @@ app.whenReady().then(() => {
         ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
       ),
   );
-  // The Diff tab's range: a scope (none checked while a commit or turn shows), or the Commits pane to pick one.
+  // The Diff tab's range: All Changes, or one of the layers it adds up to, each with how much it has and disabled when
+  // empty (none checked while a commit or turn shows); or the Commits or Turns pane to pick one.
   ipcMain.handle(
     "menus:range",
-    (e, scope: "all" | "pushed" | "local" | null, hasPr: boolean) =>
-      new Promise<RangePick>((resolve) =>
+    (
+      e,
+      scope: "all" | "pushed" | "unpushed" | "uncommitted" | null,
+      hasPr: boolean,
+      layers: Layers,
+    ) =>
+      new Promise<RangePick>((resolve) => {
+        const item = (value: "all" | keyof Layers, label: string, size?: string) => ({
+          label: size ? `${label} (${size})` : label,
+          type: "checkbox" as const,
+          checked: scope === value,
+          enabled: value === "all" || scope === value || layers[value] > 0,
+          click: () => resolve(value),
+        });
+        const n = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
         Menu.buildFromTemplate([
-          ...(
-            [
-              ["all", "All Changes"],
-              ["pushed", hasPr ? "The PR's Changes" : "Pushed Changes"],
-              ["local", "Local Changes"],
-            ] as const
-          ).map(([value, label]) => ({
-            label,
-            type: "checkbox" as const,
-            checked: scope === value,
-            click: () => resolve(value),
-          })),
+          item("all", "All Changes"),
           { type: "separator" },
-          { label: "Commit or Agent Turn…", click: () => resolve("commits") },
-        ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
-      ),
+          item("pushed", hasPr ? "In the PR" : "On GitHub", n(layers.pushed, "commit")),
+          item("unpushed", "Not Pushed", n(layers.unpushed, "commit")),
+          item("uncommitted", "Uncommitted", n(layers.uncommitted, "file")),
+          { type: "separator" },
+          { label: "Commit…", click: () => resolve("commits") },
+          { label: "Agent Turn…", click: () => resolve("turns") },
+        ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined });
+      }),
   );
   // L1's project icon: switch to a project (the first, most recently opened, is current) or add one. Resolves only
   // on a click, like the menus above; null means Add Project.

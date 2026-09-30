@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { match, P } from "ts-pattern";
 import { useState } from "react";
 import { Input } from "./components/field";
 import { ListRow } from "./components/layout";
@@ -53,15 +54,12 @@ export function CommandPalette(props: {
           pick: () => props.onOpen(p),
         }))
       : [];
-  const empty = acting
-    ? "No matching actions"
-    : !props.workspaceId
-      ? "No workspace. Type > for actions"
-      : !files
-        ? "Loading…"
-        : files.status !== "ok"
-          ? files.message
-          : "No matching files";
+  const empty = match({ acting, workspaceId: props.workspaceId, files })
+    .with({ acting: true }, () => "No matching actions")
+    .with({ workspaceId: P.union(undefined, 0) }, () => "No workspace. Type > for actions")
+    .with({ files: undefined }, () => "Loading…")
+    .with({ files: { message: P.string.select() } }, (message) => message)
+    .otherwise(() => "No matching files");
 
   return (
     <div className="fixed inset-0 z-50 flex justify-center pt-24" onMouseDown={props.onClose}>
