@@ -43,6 +43,9 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
   range and what a new view covers (one match, `shownRange`, where two chains had drifted), a thread's state in the
   bottom bar, a workspace's PR icon, a queued message's text, a git status code, and the empty texts of the command
   palette, Activity and the find bar. AGENTS.md says so for new code.
+- **The pane's bar in a narrow pane:** a segmented control's options cut their labels off rather than wrap onto a
+  second line, and the hide button keeps the size of the canvas bar's show button (`ToggleButton`'s `icon`: `cn`
+  doesn't merge classes, so its own padding beat the `p-1` passed in).
 - **Coming back to the window rereads the worktree** (ADR 0030), so edits made in an editor or a terminal show in the
   diff, _Uncommitted changes_ and the comments' states. Pays off the debt that uncommitted edits outside an agent turn
   didn't refresh the diff; edits while coxswain has focus still wait for the next refresh.

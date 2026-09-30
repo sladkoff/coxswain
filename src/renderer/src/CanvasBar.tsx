@@ -34,7 +34,13 @@ export function PaneBar(props: {
         divider,
       )}
     >
-      <ToggleButton on title="Hide the navigator (⌘B)" className="p-1" onClick={props.onHide}>
+      <ToggleButton
+        on
+        icon
+        title="Hide the navigator (⌘B)"
+        className="shrink-0"
+        onClick={props.onHide}
+      >
         <ListTreeIcon />
       </ToggleButton>
       <SegmentedControl
