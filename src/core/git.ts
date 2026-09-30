@@ -468,7 +468,6 @@ export function parseLog(out: string): LoggedCommit[] {
     .map((record) => {
       const [sha, parents, author, email, date, committer, subject, body, stat = ""] =
         record.split("\x1f");
-      const n = (word: string) => Number(stat.match(new RegExp(`(\\d+) ${word}`))?.[1] ?? 0);
       const coAuthors = [...body.matchAll(/^Co-authored-by:\s*(.+?)\s*<[^>]*>\s*$/gim)].map(
         (m) => m[1],
       );
@@ -483,11 +482,34 @@ export function parseLog(out: string): LoggedCommit[] {
         body: body.replace(/^Co-authored-by:.*$/gim, "").trim(),
         coAuthors,
         merge: parents.includes(" "),
-        files: n("files? changed"),
-        additions: n("insertions?"),
-        deletions: n("deletions?"),
+        ...shortStat(stat),
       };
     });
+}
+
+// git's --shortstat line: "3 files changed, 10 insertions(+), 2 deletions(-)", any part left out when 0.
+export type Size = { files: number; additions: number; deletions: number };
+const shortStat = (stat: string): Size => {
+  const n = (word: string) => Number(stat.match(new RegExp(`(\\d+) ${word}`))?.[1] ?? 0);
+  return { files: n("files? changed"), additions: n("insertions?"), deletions: n("deletions?") };
+};
+
+// How much changed between two commits, e.g. an agent turn's snapshots. Cached: commits never change.
+const sizes = new Map<string, Size>();
+export async function diffSize(
+  db: Db,
+  workspaceId: number,
+  base: string,
+  head: string,
+): Promise<Size> {
+  if (!isCommit(base) || !isCommit(head)) throw new GitError(`Not a commit: ${base}..${head}`);
+  const key = `${base}..${head}`;
+  const known = sizes.get(key);
+  if (known) return known;
+  const path = await openedWorktree(db, workspaceId);
+  const size = shortStat(await gitText(path, ["diff", "--shortstat", base, head]));
+  sizes.set(key, size);
+  return size;
 }
 
 // Joins `git diff -z --name-status` and `--numstat` output by path, and adds untracked files as added.

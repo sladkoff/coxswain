@@ -28,7 +28,7 @@ import { shortDateTime } from "./format";
 import { changed, core, queryClient } from "./queries";
 import { setAgentPane, useAgentPane } from "./agent-pane";
 
-const agentNames: Record<Agent, string> = { claude: "Claude Code", codex: "Codex" };
+export const agentNames: Record<Agent, string> = { claude: "Claude Code", codex: "Codex" };
 
 // L4: a chat with one of the workspace's agent sessions: the current one (last used), or another picked in the header,
 // which then becomes current, so comments go to the session shown. A new session starts with its first message, on the

@@ -15,7 +15,7 @@ import {
 } from "./components/icons";
 import { cn, divider, muted, selectable, titleBar } from "./components/styles";
 
-export type PaneTab = "diffs" | "files" | "commits";
+export type PaneTab = "diffs" | "files" | "commits" | "turns";
 
 // The bar over the pane left of the canvas, as wide as it: hide it, and switch it between Changes (the Navigator's
 // file diffs), Files (the whole file tree) and Commits. It drags the window, like the canvas's bar.
@@ -39,7 +39,7 @@ export function PaneBar(props: {
       </ToggleButton>
       <SegmentedControl
         value={props.tab}
-        onChange={(t) => (t !== "commits" || props.ready) && props.onTab(t)}
+        onChange={(t) => ((t !== "commits" && t !== "turns") || props.ready) && props.onTab(t)}
         options={[
           {
             value: "diffs",
@@ -47,7 +47,8 @@ export function PaneBar(props: {
             title: "The changed files",
           },
           { value: "files", label: "Files", title: "The whole file tree of the workspace" },
-          { value: "commits", label: "Commits", title: "The commits and agent turns" },
+          { value: "commits", label: "Commits", title: "The commits" },
+          { value: "turns", label: "Turns", title: "The agent turns that changed the worktree" },
         ]}
       />
     </div>

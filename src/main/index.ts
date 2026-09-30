@@ -690,7 +690,8 @@ app.whenReady().then(() => {
             click: () => resolve(value),
           })),
           { type: "separator" },
-          { label: "Commit or Agent Turn…", click: () => resolve("commits") },
+          { label: "Commit…", click: () => resolve("commits") },
+          { label: "Agent Turn…", click: () => resolve("turns") },
         ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
       ),
   );

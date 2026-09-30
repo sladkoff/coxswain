@@ -13,7 +13,7 @@ import { activateFindPane, closeFind, nextFind, openFind } from "./find";
 import { upsert } from "./ChatEntry";
 import { CanvasBar, PaneBar, type PaneTab, viewTitles } from "./CanvasBar";
 import { type Action, CommandPalette } from "./CommandPalette";
-import { Commits } from "./Commits";
+import { Commits, Turns } from "./Commits";
 import { Button } from "./components/button";
 import { Centered, Splitter, viewerMin } from "./components/layout";
 import { cn, divider, muted, titleBar } from "./components/styles";
@@ -66,11 +66,11 @@ export function App() {
   // L1, the workspace sidebar: shown until hidden with its button, back with the agent pane's. ponytail: resets on
   // restart, like the pane widths.
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  // The pane on the left of the canvas: the Navigator or the commits, under its own bar. Starts hidden; hiding it
+  // The pane on the left of the canvas: the Navigator, the commits or the agent turns, under its own bar. Starts hidden; hiding it
   // keeps which one it was, for ⌘B.
   const [paneOpen, setPaneOpen] = useState(false);
-  const [pane, setPane] = useState<"navigator" | "commits">("navigator");
-  const showPane = (p: "navigator" | "commits") => {
+  const [pane, setPane] = useState<"navigator" | "commits" | "turns">("navigator");
+  const showPane = (p: "navigator" | "commits" | "turns") => {
     setPane(p);
     setPaneOpen(true);
   };
@@ -510,11 +510,13 @@ export function App() {
       fileAt: undefined,
       at: undefined,
     });
-  // The pane's bar: Changes and Files are the Navigator's toggle (a history entry, ADR 0025), Commits the other pane.
-  const paneTab: PaneTab = pane === "commits" ? "commits" : view;
+  // The pane's bar: Changes and Files are the Navigator's toggle (a history entry, ADR 0025), Commits and Turns other
+  // panes.
+  const paneTab: PaneTab = pane === "navigator" ? view : pane;
   const pickPaneTab = (t: PaneTab) => {
-    setPane(t === "commits" ? "commits" : "navigator");
-    if (t !== "commits" && t !== view) void show({ view: t === "files" ? "files" : undefined });
+    setPane(t === "commits" || t === "turns" ? t : "navigator");
+    if ((t === "diffs" || t === "files") && t !== view)
+      void show({ view: t === "files" ? "files" : undefined });
   };
   const pickScope = (picked: "all" | "pushed" | "local") =>
     void show({
@@ -716,6 +718,12 @@ export function App() {
       title: "Show or Hide Commits",
       enabled: ready,
       run: () => (paneOpen && pane === "commits" ? setPaneOpen(false) : showPane("commits")),
+    },
+    {
+      id: "toggle-turns",
+      title: "Show or Hide Agent Turns",
+      enabled: ready,
+      run: () => (paneOpen && pane === "turns" ? setPaneOpen(false) : showPane("turns")),
     },
     {
       id: "show-diff",
@@ -948,7 +956,9 @@ export function App() {
                     onTab={pickPaneTab}
                     onHide={() => setPaneOpen(false)}
                   />
-                  {paneTab === "commits" ? (
+                  {paneTab === "turns" ? (
+                    <Turns workspaceId={currentWorkspace.id} current={commit} onPick={pickCommit} />
+                  ) : paneTab === "commits" ? (
                     pr.commits && (
                       <Commits
                         workspaceId={currentWorkspace.id}
@@ -998,7 +1008,7 @@ export function App() {
                     commit ? null : scope,
                     currentWorkspace.prNumber !== null,
                   );
-                  if (picked === "commits") showPane("commits");
+                  if (picked === "commits" || picked === "turns") showPane(picked);
                   else pickScope(picked);
                 }}
                 onClearCommit={() => pickCommit(null)}

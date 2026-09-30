@@ -26,6 +26,12 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
   date, co-authors, who committed it if someone else (a rebase, GitHub's merge button) and how many files it changed.
   `listCommits` returns `LoggedCommit`s, parsed from `git log --shortstat` by `parseLog` (tested).
 
+- Each agent turn records the session it ran in (migration: `turns.agent_session_id`), to audit later.
+- **Agent turns have their own tab**, _Turns_, next to _Commits_, in the same rows: the turn's first message over the
+  agent that ran it (from its session), how long ago, and its lines added and removed (`diffSize`, cached per pair of
+  snapshots). Turns whose snapshots differ with nothing changed between them (the agent only committed earlier
+  changes) are left out. The Diff tab's range menu offers _Commit…_ and _Agent Turn…_; there's a Show or Hide Agent Turns command.
+
 ### Tech debt
 
 - `ponytail:` the line diff gives up past 2000 edits between two versions (`follow.ts`); files at commits are cached

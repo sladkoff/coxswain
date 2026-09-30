@@ -17,7 +17,7 @@ import {
   saveAttachments,
   sessionAttachments,
 } from "./attachments";
-import { type Commit, worktreePath } from "./git";
+import { type Commit, diffSize, type Size, worktreePath } from "./git";
 import { snapshotOf } from "./snapshot";
 import { chat } from "./agent-chat";
 import { agentStatuses, SessionStates, type AgentStatus } from "./session-state";
@@ -1148,6 +1148,7 @@ export async function runTurn(
             after,
             title: firstMessageTitle(prompt) || "Turn",
             created_at: new Date().toISOString(),
+            agent_session_id: agentSessionId,
           })
           .execute();
     }
@@ -1174,21 +1175,40 @@ export async function stopComment(db: Db, agentSessionId: string, threadId: numb
   if (!sessionStates.dequeueThread(agentSessionId, threadId)) await stopTurn(db, agentSessionId);
 }
 
-// The workspace's agent turns that changed its worktree, newest first, each as a commit from its before to its after.
+// A turn as the Turns pane lists it: a commit from its before to its after, the agent that ran it (null for turns from
+// before sessions were recorded, or whose session is gone) and how much it changed.
+export type TurnCommit = Commit & { turn: string; agent: Agent | null } & Size;
+const unknownSize: Size = { files: -1, additions: 0, deletions: 0 };
+
+// The workspace's agent turns that changed its worktree, newest first. A turn's snapshots can differ with nothing
+// changed between them, e.g. when the agent only committed its earlier changes: those are left out.
 // ponytail: two sessions' turns running at once in one workspace each get both's changes.
-export async function listTurns(db: Db, workspaceId: number): Promise<Commit[]> {
+export async function listTurns(db: Db, workspaceId: number): Promise<TurnCommit[]> {
   const rows = await db
     .selectFrom("turns")
-    .select(["before", "after", "title", "created_at"])
-    .where("workspace_id", "=", workspaceId)
-    .orderBy("id", "desc")
+    .leftJoin("agent_sessions", "agent_sessions.agent_session_id", "turns.agent_session_id")
+    .select([
+      "turns.before",
+      "turns.after",
+      "turns.title",
+      "turns.created_at",
+      "agent_sessions.agent",
+    ])
+    .where("turns.workspace_id", "=", workspaceId)
+    .orderBy("turns.id", "desc")
     .execute();
-  return rows.map((r) => ({
-    sha: r.after,
-    parent: r.before,
-    subject: r.title,
-    turn: r.created_at,
-  }));
+  const turns = await Promise.all(
+    rows.map(async (r) => ({
+      sha: r.after,
+      parent: r.before,
+      subject: r.title,
+      turn: r.created_at,
+      agent: (r.agent as Agent | null) ?? null,
+      // A worktree not ready yet, or snapshots gone: listed without a size.
+      ...(await diffSize(db, workspaceId, r.before, r.after).catch(() => unknownSize)),
+    })),
+  );
+  return turns.filter((t) => t.files !== 0);
 }
 
 export async function stopTurn(db: Db, agentSessionId: string) {

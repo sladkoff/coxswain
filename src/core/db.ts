@@ -175,6 +175,9 @@ export const migrations = [
   // have none, so they read as outdated.
   `alter table entries add column revision text;
   update entries set revision = case when side = 'old' then base else head end where path is not null`,
+  // The agent session a turn ran in, to audit later; null for turns from before. Not a foreign key: the turn stays when
+  // its session goes.
+  `alter table turns add column agent_session_id text`,
 ];
 
 // ADR 0016: the tables as the migrations above leave them. Change this with every migration that changes a table.
@@ -196,6 +199,7 @@ type Tables = {
     after: string;
     title: string;
     created_at: string;
+    agent_session_id: string | null;
   };
   agent_attachments: { id: string; agent_session_id: string; attachments: string };
   agent_sessions: {

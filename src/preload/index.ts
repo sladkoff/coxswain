@@ -8,13 +8,13 @@ import type {
   ChatEntry,
   Permission,
   Pick,
+  TurnCommit,
   TurnResult,
 } from "../core/agents";
 import type {
   BranchList,
   ChangedFileList,
   CloneResult,
-  Commit,
   LoggedCommit,
   FileText,
   FileTreeResult,
@@ -45,8 +45,8 @@ export type ViewSettings = {
   showReviewed: boolean;
   layout: "tree" | "list";
 };
-// What the Diff tab shows (glossary: scope), or "commits" to pick a commit or an agent turn in the Commits pane.
-export type RangePick = "all" | "pushed" | "local" | "commits";
+// What the Diff tab shows (glossary: scope), or "commits" / "turns" to pick a commit or an agent turn in its pane.
+export type RangePick = "all" | "pushed" | "local" | "commits" | "turns";
 // What the core changed on its own, e.g. when an agent turn ends, so the UI refetches it (ADR 0017).
 export type Changed = {
   workspaceId: number;
@@ -131,7 +131,7 @@ const api = {
   removeWorkspace: (workspaceId: number): Promise<void> =>
     ipcRenderer.invoke("workspaces:remove", workspaceId),
   // The agent turns that changed the worktree, newest first, as commits between their snapshots (ADR 0028).
-  listTurns: (workspaceId: number): Promise<Commit[]> =>
+  listTurns: (workspaceId: number): Promise<TurnCommit[]> =>
     ipcRenderer.invoke("agents:turns", workspaceId),
   listAgentSessions: (workspaceId: number): Promise<AgentSession[]> =>
     ipcRenderer.invoke("agents:list", workspaceId),
