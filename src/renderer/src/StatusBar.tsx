@@ -5,7 +5,7 @@ import { ChevronDownIcon } from "./components/icons";
 import { ProgressBar } from "./components/layout";
 import { cn, divider, muted } from "./components/styles";
 import { ErrorText } from "./components/text";
-import { count } from "./format";
+import { byAgent, count } from "./format";
 import type { Turn } from "./Viewer";
 
 type Props = {
@@ -163,11 +163,6 @@ export function StatusBar(props: Props) {
     </div>
   );
 }
-
-// ponytail: the same rule as byAgent in core/review.ts, copied since the renderer imports no core code; share a pure
-// module if a third place needs it.
-const byAgent = (e: Pick<ReviewEntry, "kind">) =>
-  e.kind === "answer" || e.kind === "explanation" || e.kind === "finding";
 
 // One thread in the bar's list, under its file: its lines, its first comment, and how far it got. A click shows it on
 // the canvas.

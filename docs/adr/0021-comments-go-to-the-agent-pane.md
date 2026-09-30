@@ -20,7 +20,9 @@ reply attached to the thread.
    shows (the latest; a new one if it has none). It runs with that session's options: every tool, auto mode
    (ADR 0013), so the agent may act on it.
 2. **The prompt starts with a header line**, `[Comment on <path:lines> · thread #<id>]`, then the comment, then
-   what the agent hasn't seen of the thread (the lines, earlier notes) after a `---`. The core reads the header back
+   what the agent hasn't seen of the thread after a `---`. A question records the session it went to
+   (`entries.agent_session_id`): a follow-up in that session gets only the notes since, while any other session (the
+   first question, a new session since, the other agent) gets the lines and the whole thread so far. The core reads the header back
    from the transcript into the chat entry (`comment`), and the chat draws it as a card. The agent's own transcript
    stays the only record of the chat (ADR 0005).
 3. **The reply streams to both** the thread and the agent pane, and its text is kept as an answer entry in the

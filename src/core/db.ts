@@ -163,6 +163,9 @@ export const migrations = [
     agent_session_id text not null references agent_sessions (agent_session_id) on delete cascade,
     attachments text not null
   )`,
+  // A question: the agent session it went to, so a follow-up to another session sends the thread along (#11). Not a
+  // foreign key: the question stays when its session goes.
+  `alter table entries add column agent_session_id text`,
 ];
 
 // ADR 0016: the tables as the migrations above leave them. Change this with every migration that changes a table.
@@ -253,6 +256,7 @@ type Tables = {
     head: string | null;
     created_at: string;
     resolved_at: Generated<string | null>;
+    agent_session_id: Generated<string | null>;
   };
 };
 

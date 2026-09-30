@@ -10,6 +10,7 @@ import {
   type TurnResult,
 } from "./agents";
 import type { Db } from "./db";
+import { byAgent, describe, unseen } from "./thread-context.ts";
 import { readTexts } from "./git";
 
 // ADR 0015: a workspace's entries (glossary): notes, questions and answers, threaded by parent_id; and the agent's
@@ -43,6 +44,7 @@ export type ReviewEntry = {
   head: string | null;
   createdAt: string;
   resolvedAt: string | null; // on a thread's first entry: when it was resolved
+  agentSessionId: string | null; // a question: the agent session it went to
   // In the view it was listed for (ADR 0015): current if its lines still read as its code; outdated if not. A reply
   // or answer takes its thread's. Floating entries are current.
   state: "current" | "outdated";
@@ -67,6 +69,7 @@ const columns = [
   "head",
   "created_at as createdAt",
   "resolved_at as resolvedAt",
+  "agent_session_id as agentSessionId",
 ] as const;
 
 // Every entry of the workspace, in order.
@@ -162,25 +165,6 @@ export async function deleteEntry(db: Db, id: number) {
   await db.deleteFrom("entries").where("id", "=", id).execute();
 }
 
-function describe(
-  a: Pick<ReviewEntry, "path" | "side" | "startLine" | "endLine" | "code"> &
-    Partial<Pick<ReviewEntry, "base" | "head">>,
-): string {
-  const lines =
-    a.startLine === a.endLine ? `line ${a.startLine}` : `lines ${a.startLine}-${a.endLine}`;
-  const at = (sha: string) => `commit ${sha.slice(0, 7)}`;
-  const where =
-    a.side === "old"
-      ? `removed, as at ${a.base ? at(a.base) : "the merge base"}`
-      : a.head
-        ? `as at ${at(a.head)}`
-        : "as in the worktree then";
-  const fence = "`".repeat(
-    Math.max(3, ...[...(a.code ?? "").matchAll(/`+/g)].map((m) => m[0].length + 1)),
-  );
-  return `\`${a.path}\` ${lines} (${where}):\n${fence}\n${a.code}\n${fence}`;
-}
-
 // The workspace's current agent session, the agent pane's: the latest, or a new one if it has none. Questions are
 // turns in it, so the agent pane shows them and the agent keeps one context.
 async function currentSession(db: Db, workspaceId: number): Promise<string> {
@@ -189,30 +173,8 @@ async function currentSession(db: Db, workspaceId: number): Promise<string> {
   return last.agentSessionId;
 }
 
-// Entries the agent wrote, not the user.
-const byAgent = (e: Pick<ReviewEntry, "kind">) =>
-  e.kind === "answer" || e.kind === "explanation" || e.kind === "finding";
-
 const where = (e: Pick<ReviewEntry, "path" | "startLine" | "endLine">) =>
   `${e.path}:${e.startLine === e.endLine ? e.startLine : `${e.startLine}–${e.endLine}`}`;
-
-// What the agent session hasn't seen of the question's thread, to go after it: the anchor, unless an earlier question
-// in the thread carried it, what the agent wrote if the thread began as its explanation or finding (it may have been
-// another session), and the notes written in the thread since its last question.
-function unseen(
-  question: Omit<ReviewEntry, "state">,
-  thread: Omit<ReviewEntry, "state">[],
-): string {
-  if (question.path) return `About ${describe(question)}`;
-  const asked = thread.findLast((e) => e.kind === "question");
-  const notes = thread.filter((e) => e.kind === "note" && e.id > (asked?.id ?? 0));
-  const about = !asked && thread[0]?.path ? [`About ${describe(thread[0])}`] : [];
-  const yours =
-    !asked && thread[0] && byAgent(thread[0])
-      ? [`You wrote there, in a view: ${thread[0].body}`]
-      : [];
-  return [...about, ...yours, ...notes.map((n) => `Earlier in the thread: ${n.body}`)].join("\n\n");
-}
 
 // Adds a question and sends it to the workspace's agent session as a comment, streaming the reply; the agent's text
 // becomes an answer entry in the question's thread. Returns the question once saved and the session it went to, and
@@ -271,9 +233,15 @@ async function ask(
   const root = thread[0] ?? question;
   const agentSessionId = await currentSession(db, question.workspaceId);
   const comment = { threadId, where: root.path ? where(root) : "the review", body: question.body };
+  const prompt = formatComment(comment, unseen(question, thread, agentSessionId));
+  await db
+    .updateTable("entries")
+    .set({ agent_session_id: agentSessionId })
+    .where("id", "=", question.id)
+    .execute();
   const texts = new Map<number | undefined, string>(); // by entry id, as they stream
   asking.set(threadId, agentSessionId);
-  const turn = runTurn(db, agentSessionId, formatComment(comment, unseen(question, thread)), {
+  const turn = runTurn(db, agentSessionId, prompt, {
     onEntry: (c) => {
       if (c.kind === "text") texts.set(c.id, c.text);
       onChat(threadId, c, agentSessionId);
@@ -291,13 +259,13 @@ async function ask(
       if (result.status === "unsent")
         await db
           .updateTable("entries")
-          .set({ kind: "note" })
+          .set({ kind: "note", agent_session_id: null })
           .where("id", "=", question.id)
           .execute();
       return result;
     })
     .finally(() => asking.delete(threadId));
-  return { question: { ...question, state: "current" }, agentSessionId, turn };
+  return { question: { ...question, agentSessionId, state: "current" }, agentSessionId, turn };
 }
 
 // A thread's Stop: its question comes off the queue, or the turn answering it stops. Nothing if it has none going.

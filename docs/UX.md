@@ -169,13 +169,16 @@ branch`, when it was updated, and _Has a workspace_ if it does. _Branch_: one fi
   opens a comment box: the lines at its top, ✕ at its top right to cancel (or Esc), the text, and at the bottom right
   a _Comment_ / _Agent_ toggle and a send button (Enter; Shift+Enter adds a line). The toggle is one global
   preference, kept across boxes and restarts. Sending starts a **thread** between the lines: every comment is one.
-  Under its comments, a reply box adds another comment to the thread; a reply is always a note, with no toggle. Each
+  Under its comments, a reply box adds another comment to the thread, with its own _Comment_ / _Agent_ toggle: on
+  _Agent_ after the agent's answer, explanation or finding, so a conversation carries on with Enter; otherwise the
+  saved preference. Changing it there changes only that box. Each
   comment is labelled _You_, or _You → agent_ when it went to the agent, and the agent's answers _Agent_.
 
   On _Comment_, a comment is a note. On _Agent_, it's a question: a turn in the agent pane's agent session
   (ADR 0021), which shows it as a card (_Comment on `path:lines` sent to Agent_, the comment, and _View thread_,
-  which scrolls the canvas to the thread). The agent is given the thread's notes it hasn't seen (and the lines, if
-  the thread began as a note): the reply streams into the thread, with each tool used as one line, and is kept as an
+  which scrolls the canvas to the thread). The agent is given what it hasn't seen of the thread: in the session its last
+  question went to, the notes since; in any other (a new session since, or the other agent), the lines and the whole
+  thread so far: the reply streams into the thread, with each tool used as one line, and is kept as an
   answer when the turn ends. A tool use auto mode would block stops the turn with a permission prompt in the thread:
   what the agent wants to run and the agent's options (_Yes_, _No_, sometimes _Always_); the turn carries on once one
   is picked, or ends with _Stop_. A question asked while the session's turn runs queues behind it: the thread says

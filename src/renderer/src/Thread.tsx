@@ -7,6 +7,7 @@ import { TextArea } from "./components/field";
 import { SendIcon } from "./components/icons";
 import { cn, divider, muted } from "./components/styles";
 import { Prose } from "./components/text";
+import { byAgent } from "./format";
 import { core, queryClient } from "./queries";
 import type { Turn } from "./Viewer";
 
@@ -45,7 +46,10 @@ type ComposerProps = {
   autoFocus?: boolean;
   rows: number;
   placeholder: string;
-  reply?: boolean; // a reply is always a note: no Comment/Agent toggle
+  // A reply's Comment/Agent pick is its box's own: Agent after the agent's own entry (afterAgent), so a conversation
+  // carries on with Enter, else the saved preference until changed.
+  reply?: boolean;
+  afterAgent?: boolean;
   onSend: (body: string, toAgent: boolean) => void;
   onCancel?: () => void;
 };
@@ -55,8 +59,10 @@ function Composer(props: ComposerProps) {
   const [body, setBody] = useState("");
   // A global preference (every composer shares it), so the query is updated at once, then stored.
   const saved = useQuery(core("getCommentToAgent")).data ?? false;
-  const toAgent = !props.reply && saved;
+  const [picked, setPicked] = useState<boolean | null>(null);
+  const toAgent = picked ?? (props.afterAgent || saved);
   const setToAgent = (on: boolean) => {
+    if (props.reply) return setPicked(on);
     queryClient.setQueryData(core("getCommentToAgent").queryKey, on);
     void window.coxswain.setCommentToAgent(on);
   };
@@ -84,20 +90,18 @@ function Composer(props: ComposerProps) {
         placeholder={`${props.placeholder} (Enter to send)`}
       />
       <div className="flex items-center justify-end gap-2">
-        {!props.reply && (
-          <SegmentedControl
-            value={toAgent}
-            onChange={setToAgent}
-            options={[
-              { value: false, label: "Comment", title: "Leave a comment for yourself" },
-              {
-                value: true,
-                label: "Agent",
-                title: "Send to the agent, who answers in the thread",
-              },
-            ]}
-          />
-        )}
+        <SegmentedControl
+          value={toAgent}
+          onChange={setToAgent}
+          options={[
+            { value: false, label: "Comment", title: "Leave a comment for yourself" },
+            {
+              value: true,
+              label: "Agent",
+              title: "Send to the agent, who answers in the thread",
+            },
+          ]}
+        />
         <Button variant="primary" title="Send (Enter)" disabled={!body.trim()} onClick={send}>
           <SendIcon />
         </Button>
@@ -228,7 +232,13 @@ export function ThreadBox({
             </Button>
           ) : (
             <div className={cn("flex flex-col gap-1.5 border-t pt-1.5", divider)}>
-              <Composer rows={1} placeholder="Reply" reply onSend={onReply} />
+              <Composer
+                rows={1}
+                placeholder="Reply"
+                reply
+                afterAgent={byAgent(replies.at(-1) ?? root)}
+                onSend={onReply}
+              />
             </div>
           )}
         </>

@@ -3,7 +3,7 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
-## 2026-09-30 — Reviewed in views; queued questions in threads
+## 2026-09-30 — Reviewed in views; queued questions and follow-ups in threads
 
 ### What works
 
@@ -20,6 +20,14 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
     so _Send to Agent_ can send it later. Before, it stayed a question with no answer and couldn't be sent again.
   - Queued comments have no _Send now_: steering one put its answer into the running turn's thread and left its own
     thread with none. The core refuses to steer them too.
+- **Carrying on a thread with the agent (#11).** A reply has the _Comment_ / _Agent_ toggle too, on _Agent_ after
+  the agent's answer, explanation or finding. A question records the session it went to (migration:
+  `entries.agent_session_id`); a follow-up in another session (a new session since, or the other agent) sends the
+  lines and the whole thread so far, not just the notes since the last question, which that session never saw. The
+  prompt's thread context is in `core/thread-context.ts`, pure and tested.
+  - Tech debt: questions asked before the migration have no session, so their first follow-up sends the whole thread
+    once. `byAgent` is still copied in the renderer (`format.ts`, `ponytail:`), now shared by the bottom bar and
+    threads.
 
 ## 2026-09-29 — Queueing and steering in the agent pane
 
