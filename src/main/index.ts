@@ -29,6 +29,8 @@ import {
   type Pick,
   readAgentState,
   onSessionState,
+  listAgentStatuses,
+  seeAgentSessions,
   runTurn,
   formatView,
   startAgentSession,
@@ -460,6 +462,8 @@ app.whenReady().then(() => {
     setAgentPick(db, agent, pick, value),
   );
   ipcMain.handle("agents:state", (_, agentSessionId: string) => readAgentState(db, agentSessionId));
+  ipcMain.handle("agents:statuses", () => listAgentStatuses(db));
+  ipcMain.handle("agents:seen", (_, workspaceId: number) => seeAgentSessions(db, workspaceId));
   // Coalesce token bursts; all windows can reattach to the same core-owned session state.
   // ponytail: each notification carries the full transcript; use versioned entry deltas if long
   // sessions make IPC copying expensive.

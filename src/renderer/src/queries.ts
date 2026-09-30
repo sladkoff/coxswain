@@ -22,6 +22,7 @@ type Extra = {
 };
 const extra: Partial<Record<Reads, Extra>> = {
   readAgentState: { staleTime: Infinity },
+  listAgentStatuses: { staleTime: Infinity }, // refetched when a status changes (below)
   listSummaryJobs: { staleTime: Infinity }, // the core pushes them (below)
   readFileAt: { staleTime: Infinity }, // a file at a commit never changes
   // Asks GitHub for the PR's head and fetches it; again every 2 minutes while the workspace shows (ADR 0030).
@@ -115,10 +116,16 @@ export function markReviewed(
 }
 
 // Installed once for the window, independently of the mounted agent pane.
+// The rail's statuses are asked for again only when a session's status changes, not at every token.
+const statuses = new Map<string, string>();
 window.coxswain.onAgentState((id, state) => {
   queryClient.setQueryData(core("readAgentState", id).queryKey, (before) =>
     before && before.revision > state.revision ? before : state,
   );
+  const status = [!!state.permission, state.running, state.done].join();
+  if (statuses.get(id) === status) return;
+  statuses.set(id, status);
+  void queryClient.invalidateQueries({ queryKey: core("listAgentStatuses").queryKey });
 });
 
 // ADR 0029: the core sends the file summary jobs whenever one changes.

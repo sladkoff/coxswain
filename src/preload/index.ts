@@ -33,7 +33,7 @@ import type { Project } from "../core/projects";
 import type { NewEntry, ReviewEntry } from "../core/review";
 import type { SetupCheck } from "../core/setup";
 import type { Workspace } from "../core/workspaces";
-import type { SessionState } from "../core/session-state";
+import type { AgentStatus, SessionState } from "../core/session-state";
 import type { SummaryCoverage, SummaryJob, SummarySettings } from "../core/summaries";
 
 // The Navigator's settings in its cog menu. layout: changed files as a tree or as a flat list.
@@ -145,6 +145,11 @@ const api = {
     ipcRenderer.invoke("agents:set-pick", agent, pick, value),
   readAgentState: (agentSessionId: string): Promise<SessionState> =>
     ipcRenderer.invoke("agents:state", agentSessionId),
+  // Each workspace's agent status, left out when idle; seeAgentSessions clears its finished turns' "done".
+  listAgentStatuses: (): Promise<Record<number, AgentStatus>> =>
+    ipcRenderer.invoke("agents:statuses"),
+  seeAgentSessions: (workspaceId: number): Promise<void> =>
+    ipcRenderer.invoke("agents:seen", workspaceId),
   onAgentState: (callback: (id: string, state: SessionState) => void) => {
     const listener = (_: unknown, id: string, state: SessionState) => callback(id, state);
     ipcRenderer.on("agents:state", listener);

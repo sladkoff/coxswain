@@ -18,6 +18,10 @@ For G5 ([issue 24](https://github.com/sladkoff/coxswain/issues/24), ADR 0018 poi
 - The session picker and New session work while a turn runs; sending and the pending message belong to the session
   they went to, so another can be shown or started meanwhile.
 - Attachments are checked and saved when a message is sent, so a bad one fails at once, not when its turn comes.
+- **Agent status in the sidebar.** Each workspace row is two lines, its git icon above a dot for its agent status:
+  amber while a permission waits, pulsing blue while a turn runs, green when a turn ended that the user hasn't looked
+  at. The core derives it from the session projection (`listAgentStatuses`); opening or leaving a workspace clears
+  _done_ (`seeAgentSessions`). The renderer refetches the statuses only when a session's status changes.
 
 ### Tech debt
 
@@ -25,6 +29,7 @@ For G5 ([issue 24](https://github.com/sladkoff/coxswain/issues/24), ADR 0018 poi
   composer if that surprises.
 - The queue lives in memory: quitting drops it, like a draft.
 - A steered message is added to the chat where it was sent, not where the agent took it in.
+- _Done_ lives in memory, so a restart forgets unseen finished turns.
 
 ## 2026-09-29 — Language servers for Go to Definition and Find Usages
 

@@ -10,7 +10,16 @@ export type SessionState = {
   error: string | null;
   tasks: BackgroundTask[];
   queued: QueuedMessage[];
+  done: boolean; // its last turn ended and the user hasn't looked since
 };
+
+// What a session's agent is up to, for the workspace rail: waiting on a permission, running a turn, finished one the
+// user hasn't looked at, or nothing. A workspace shows its sessions' first in this order.
+export const agentStatuses = ["waiting", "working", "done", "idle"] as const;
+export type AgentStatus = (typeof agentStatuses)[number];
+export function agentStatus(s: SessionState): AgentStatus {
+  return s.permission ? "waiting" : s.running ? "working" : s.done ? "done" : "idle";
+}
 
 // A message sent while a turn runs, waiting for it to end (#24). id: its place in the queue, to take it off or send it
 // into the running turn.
@@ -53,6 +62,7 @@ export class SessionStates {
           error: null,
           tasks: [],
           queued: [],
+          done: false,
         };
         this.states.set(id, state);
         return state;
@@ -71,7 +81,7 @@ export class SessionStates {
 
   start(id: string): boolean {
     if (this.states.get(id)!.running) return false;
-    this.update(id, { running: true, permission: null, error: null });
+    this.update(id, { running: true, permission: null, error: null, done: false });
     return true;
   }
 
@@ -108,6 +118,16 @@ export class SessionStates {
     this.update(id, { entries: at < 0 ? [...entries, entry] : entries.with(at, entry) });
   }
 
+  // The user looked at the session, so a finished turn is no longer news.
+  seen(id: string) {
+    if (this.states.get(id)?.done) this.update(id, { done: false });
+  }
+
+  // The loaded sessions' statuses; one not loaded ran no turn in this app, so it is idle.
+  statuses(): [string, AgentStatus][] {
+    return [...this.states].map(([id, s]) => [id, agentStatus(s)]);
+  }
+
   permission(id: string, permission: Permission | null) {
     this.update(id, { permission });
   }
@@ -134,6 +154,7 @@ export class SessionStates {
       queued,
       permission: null,
       error: !next && result.status === "error" ? result.message : null,
+      done: !next,
     });
     if (next) this.resolve(next.id, "turn");
   }

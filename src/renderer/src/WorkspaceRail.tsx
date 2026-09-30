@@ -1,4 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
+import type { AgentStatus } from "../../core/session-state";
 import type { PullRequestTitle } from "../../core/github";
 import type { Project } from "../../core/projects";
 import type { Workspace } from "../../core/workspaces";
@@ -12,7 +14,7 @@ import {
 } from "./components/icons";
 import { cn, divider, muted, noDrag, selectable, titleBar } from "./components/styles";
 import { workspaceLabel } from "./format";
-import { core } from "./queries";
+import { core, queryClient } from "./queries";
 
 type Props = {
   project: Project;
@@ -27,7 +29,8 @@ type Props = {
 };
 
 // L1, the sidebar: the current project, then its workspaces by title, then New Workspace. The titles and whether each
-// PR is still open come from GitHub; until they do, or offline, a PR workspace shows its number.
+// PR is still open come from GitHub; until they do, or offline, a PR workspace shows its number. A dot tells what its
+// agent is up to; opening a workspace, and leaving it, clears its "done".
 export function WorkspaceRail({
   project,
   cloning,
@@ -44,6 +47,19 @@ export function WorkspaceRail({
     ...core("listPullRequestTitles", project.owner, project.name, numbers),
     enabled: numbers.length > 0,
   }).data;
+  const statuses = useQuery(core("listAgentStatuses")).data ?? {};
+  const shown = current?.id;
+  useEffect(() => {
+    if (shown === undefined) return;
+    const seen = () =>
+      window.coxswain
+        .seeAgentSessions(shown)
+        .then(() =>
+          queryClient.invalidateQueries({ queryKey: core("listAgentStatuses").queryKey }),
+        );
+    void seen();
+    return () => void seen();
+  }, [shown]);
   const pulls = new Map(titles?.status === "ok" ? titles.pulls.map((p) => [p.number, p]) : []);
   return (
     <div className={cn("flex w-58 shrink-0 flex-col border-r", divider)}>
@@ -109,6 +125,7 @@ export function WorkspaceRail({
             workspace={w}
             pull={w.prNumber !== null ? pulls.get(w.prNumber) : undefined}
             selected={w.id === current?.id}
+            status={statuses[w.id] ?? "idle"}
             onClick={() => onSelect(w)}
             onContextMenu={async () => {
               if ((await window.coxswain.showWorkspaceMenu()) === "remove") onRemove(w);
@@ -137,12 +154,14 @@ function WorkspaceRow({
   workspace: w,
   pull,
   selected,
+  status,
   onClick,
   onContextMenu,
 }: {
   workspace: Workspace;
   pull: PullRequestTitle | undefined;
   selected: boolean;
+  status: AgentStatus;
   onClick: () => void;
   onContextMenu: () => void;
 }) {
@@ -160,7 +179,9 @@ function WorkspaceRow({
             : [<GitPullRequestIcon />, "text-green-600 dark:text-green-500", "Open"];
   return (
     <button
-      title={[title, meta, state].join("\n")}
+      title={[title, meta, state, status !== "idle" && statusLabels[status]]
+        .filter(Boolean)
+        .join("\n")}
       aria-current={selected ? "page" : undefined}
       onClick={onClick}
       onContextMenu={onContextMenu}
@@ -169,15 +190,44 @@ function WorkspaceRow({
         selectable(selected),
       )}
     >
-      <span className={cn("mt-px flex shrink-0", color)}>{icon}</span>
+      {/* Always two lines: the git icon by the title, the agent's dot under it. */}
+      <span className="flex shrink-0 flex-col items-center gap-0.5">
+        <span className={cn("flex h-4 items-center", color)}>{icon}</span>
+        <span className="flex h-4 items-center">
+          {status !== "idle" && !(selected && status === "done") && (
+            <span
+              aria-label={statusLabels[status]}
+              className={cn("size-2 rounded-full", statusDots[status])}
+            />
+          )}
+        </span>
+      </span>
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className={cn("truncate", !selected && "text-neutral-700 dark:text-neutral-300")}>
+        <span
+          className={cn(
+            "truncate leading-4",
+            !selected && "text-neutral-700 dark:text-neutral-300",
+          )}
+        >
           {title}
         </span>
-        {meta !== title && (
-          <span className={cn("truncate font-mono text-[10.5px]", muted)}>{meta}</span>
-        )}
+        <span className={cn("truncate font-mono text-[10.5px] leading-4", muted)}>
+          {meta !== title ? meta : "\u00a0"}
+        </span>
       </span>
     </button>
   );
 }
+
+const statusLabels: Record<AgentStatus, string> = {
+  waiting: "Agent needs your approval",
+  working: "Agent working",
+  done: "Agent done",
+  idle: "Agent idle",
+};
+const statusDots: Record<AgentStatus, string> = {
+  waiting: "bg-amber-500",
+  working: "animate-pulse bg-blue-500",
+  done: "bg-green-600 dark:bg-green-500",
+  idle: "",
+};

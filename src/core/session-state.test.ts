@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { SessionStates } from "./session-state.ts";
+import { agentStatus, SessionStates } from "./session-state.ts";
 import type { ChatEntry } from "./agents";
 
 test("history replay is shared before a turn; live state survives a detached pane", async () => {
@@ -143,4 +143,24 @@ test("messages sent during a turn queue behind it, run in order, and can be take
   states.dequeue("a", undefined, null);
   assert.equal(await front, null);
   assert.equal(await steered, null);
+});
+
+test("a session is working, then waiting on a permission, then done until seen", async () => {
+  const states = new SessionStates();
+  const status = async () => agentStatus(await states.read("a", async () => []));
+  assert.equal(await status(), "idle");
+  states.start("a");
+  assert.equal(await status(), "working");
+  states.permission("a", { id: "p", title: "Run a command", options: [] });
+  assert.equal(await status(), "waiting");
+  states.permission("a", null);
+  const queued = states.queue("a", { kind: "user", text: "Next" });
+  states.finish("a", { status: "ok" });
+  assert.equal(await queued, "turn");
+  assert.equal(await status(), "working", "a queued message runs on, so not done yet");
+  states.finish("a", { status: "ok" });
+  assert.equal(await status(), "done");
+  assert.deepEqual(states.statuses(), [["a", "done"]]);
+  states.seen("a");
+  assert.equal(await status(), "idle");
 });
