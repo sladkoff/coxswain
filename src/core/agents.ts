@@ -20,7 +20,7 @@ import {
 import { type Commit, worktreePath } from "./git";
 import { snapshotOf } from "./snapshot";
 import { chat } from "./agent-chat";
-import { SessionStates } from "./session-state";
+import { agentStatuses, SessionStates, type AgentStatus } from "./session-state";
 import { turnEnded, viewTools } from "./views";
 import { getWorkspaceRepo } from "./workspaces";
 
@@ -994,6 +994,24 @@ export async function agentAttachmentCapabilities(name: Agent) {
 // The core owns the live projection, independently of any pane or IPC invocation.
 const sessionStates = new SessionStates();
 export const onSessionState = sessionStates.subscribe.bind(sessionStates);
+
+// Each workspace's agent status, from its sessions' (the first in agentStatuses' order); idle ones are left out.
+export async function listAgentStatuses(db: Db): Promise<Record<number, AgentStatus>> {
+  const result: Record<number, AgentStatus> = {};
+  for (const [id, status] of sessionStates.statuses()) {
+    if (status === "idle") continue;
+    const w = await agentSessionWorkspace(db, id);
+    if (!result[w] || agentStatuses.indexOf(status) < agentStatuses.indexOf(result[w]))
+      result[w] = status;
+  }
+  return result;
+}
+
+// The user looked at the workspace: its finished turns are no longer news.
+export async function seeAgentSessions(db: Db, workspaceId: number) {
+  for (const s of await listAgentSessions(db, workspaceId)) sessionStates.seen(s.agentSessionId);
+}
+
 export const readAgentState = (db: Db, agentSessionId: string) =>
   sessionStates.read(agentSessionId, async () => {
     const { id: workspaceId, agent } = await sessionOf(db, agentSessionId);

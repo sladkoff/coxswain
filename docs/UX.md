@@ -87,7 +87,8 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
 
   Below it, under _Workspaces_, one row per workspace of the project, in the order they were added, the current one
   filled: the PR's title (from GitHub; its number until it's loaded or when offline), then `#number · branch` in small
-  type, and an icon for an open, draft, merged or closed PR, or a branch; _+ New Workspace_ at the end, and a + next to _Workspaces_ (in reach however long the list), start one. Right-clicking a workspace offers _Remove Workspace…_, which asks
+  type, and an icon for an open, draft, merged or closed PR, or a branch, with a dot under it for its agent status
+  (amber: waiting on a permission, pulsing blue: working, green: done; none when idle; a row is always two lines, so the dot has room); _+ New Workspace_ at the end, and a + next to _Workspaces_ (in reach however long the list), start one. Right-clicking a workspace offers _Remove Workspace…_, which asks
   first: its comments, reviewed files and agent sessions go, its worktree stays on disk. A workspace is either a PR or a branch (ADR 0028), and has
   one worktree; a branch workspace's row shows its branch name. _New Workspace_ opens the _New workspace_
   dialog over the window, the project under its title, with two tabs. _Pull request_: a search field (title, number,
