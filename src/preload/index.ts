@@ -15,6 +15,7 @@ import type {
   ChangedFileList,
   CloneResult,
   Commit,
+  LoggedCommit,
   FileText,
   FileTreeResult,
   GitProblem,
@@ -89,7 +90,7 @@ const api = {
   listCommits: (
     workspaceId: number,
     mergeBase: string,
-  ): Promise<{ status: "ok"; commits: Commit[] } | GitProblem> =>
+  ): Promise<{ status: "ok"; commits: LoggedCommit[] } | GitProblem> =>
     ipcRenderer.invoke("git:commits", workspaceId, mergeBase),
   // With head: a commit diff, mergeBase being the commit's parent.
   listChangedFiles: (

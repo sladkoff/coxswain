@@ -1,10 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
-import type { Commit } from "../../core/git";
+import type { Commit, LoggedCommit } from "../../core/git";
 import { core } from "./queries";
 import { Button } from "./components/button";
 import { cn, muted, selectable } from "./components/styles";
 import { ErrorText, ProblemMessage } from "./components/text";
-import { shortDateTime } from "./format";
+import { ago, count, shortDateTime } from "./format";
 
 type Props = {
   workspaceId: number;
@@ -20,7 +20,7 @@ type Props = {
 
 // The Commits pane, left of the canvas: All Changes, then the agent turns that changed the worktree and the commits,
 // newest first; those not pushed yet are marked, with Push (and Open Pull Request… for a branch without one). Picking a
-// turn or a commit shows its diff (ADR 0028).
+// turn or a commit shows its diff (ADR 0028). A commit shows its subject over its sha, author, when and size.
 export function Commits(props: Props) {
   const { workspaceId, current, onPick } = props;
   const listed = useQuery(core("listCommits", workspaceId, props.mergeBase)).data;
@@ -79,16 +79,44 @@ export function Commits(props: Props) {
         listed.commits.map((c) => (
           <button
             key={c.sha}
-            title={local.has(c.sha) ? `${c.subject}\nNot pushed` : c.subject}
-            className={row(c.sha === current?.sha && !current.turn)}
+            title={details(c, local.has(c.sha))}
+            className={cn(row(c.sha === current?.sha && !current.turn), "flex-col gap-0")}
             onClick={() => onPick(c)}
           >
-            <span className={cn("shrink-0 font-mono", muted)}>{c.sha.slice(0, 7)}</span>
-            <span className="truncate">{c.subject}</span>
-            {local.has(c.sha) && <span className={cn("ml-auto shrink-0", muted)}>local</span>}
+            <span className="flex w-full gap-2">
+              <span className="truncate">{c.subject}</span>
+              {c.merge && <span className={cn("shrink-0", muted)}>merge</span>}
+              {local.has(c.sha) && <span className={cn("ml-auto shrink-0", muted)}>local</span>}
+            </span>
+            <span className={cn("flex w-full gap-1.5 text-[11px]", muted)}>
+              <span className="shrink-0 font-mono">{c.sha.slice(0, 7)}</span>
+              <span className="truncate">
+                {c.author}
+                {c.coAuthors.length > 0 && ` +${c.coAuthors.length}`} · {ago(c.date)}
+              </span>
+              {c.files > 0 && (
+                <span className="ml-auto shrink-0 font-mono">
+                  <span className="text-green-600 dark:text-green-500">+{c.additions}</span>{" "}
+                  <span className="text-red-600 dark:text-red-500">−{c.deletions}</span>
+                </span>
+              )}
+            </span>
           </button>
         ))
       )}
     </nav>
   );
 }
+
+// A commit's tooltip: its whole message, then who and when, and what it touched.
+const details = (c: LoggedCommit, local: boolean) =>
+  [
+    [c.subject, c.body].filter(Boolean).join("\n\n"),
+    "",
+    `${c.author} <${c.email}>, ${shortDateTime(c.date)}`,
+    ...(c.coAuthors.length ? [`With ${c.coAuthors.join(", ")}`] : []),
+    ...(c.committer !== c.author ? [`Committed by ${c.committer}`] : []),
+    c.merge ? "Merge commit" : `${count(c.files, "file")}, +${c.additions} −${c.deletions}`,
+    c.sha,
+    ...(local ? ["Not pushed"] : []),
+  ].join("\n");

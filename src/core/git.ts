@@ -429,25 +429,65 @@ export function listCommits(
   workspaceId: number,
   mergeBase: string,
   head?: string,
-): Promise<{ status: "ok"; commits: Commit[] } | GitProblem> {
+): Promise<{ status: "ok"; commits: LoggedCommit[] } | GitProblem> {
   return withGit(async () => {
     if (!isCommit(mergeBase)) throw new GitError(`Not a commit: ${mergeBase}`);
     if (head !== undefined && !isCommit(head)) throw new GitError(`Not a commit: ${head}`);
     const out = await gitText(await openedWorktree(db, workspaceId), [
       "log",
-      "-z",
-      "--format=%H%x1f%P%x1f%s",
+      "--shortstat",
+      `--format=${logFormat}`,
       `${mergeBase}..${head ?? "HEAD"}`,
     ]);
-    const commits = out
-      .split("\0")
-      .filter(Boolean)
-      .map((l) => {
-        const [sha, parents, subject] = l.split("\x1f");
-        return { sha, parent: parents.split(" ")[0], subject };
-      });
-    return { status: "ok" as const, commits };
+    return { status: "ok" as const, commits: parseLog(out) };
   });
+}
+
+// A commit as the Commits pane shows it: who wrote it and when, who committed it if someone else (a rebase, GitHub's
+// merge button), its message's body, co-authors from its trailers, and how much it changed.
+export type LoggedCommit = Commit & {
+  author: string;
+  email: string;
+  date: string; // ISO, the author's
+  committer: string;
+  body: string;
+  coAuthors: string[];
+  merge: boolean;
+  files: number;
+  additions: number;
+  deletions: number;
+};
+
+// One record per commit, fields between unit separators; --shortstat's line follows the last one.
+const logFormat = "%x1e%H%x1f%P%x1f%an%x1f%ae%x1f%aI%x1f%cn%x1f%s%x1f%b%x1f";
+
+export function parseLog(out: string): LoggedCommit[] {
+  return out
+    .split("\x1e")
+    .filter(Boolean)
+    .map((record) => {
+      const [sha, parents, author, email, date, committer, subject, body, stat = ""] =
+        record.split("\x1f");
+      const n = (word: string) => Number(stat.match(new RegExp(`(\\d+) ${word}`))?.[1] ?? 0);
+      const coAuthors = [...body.matchAll(/^Co-authored-by:\s*(.+?)\s*<[^>]*>\s*$/gim)].map(
+        (m) => m[1],
+      );
+      return {
+        sha,
+        parent: parents.split(" ")[0],
+        subject,
+        author,
+        email,
+        date,
+        committer,
+        body: body.replace(/^Co-authored-by:.*$/gim, "").trim(),
+        coAuthors,
+        merge: parents.includes(" "),
+        files: n("files? changed"),
+        additions: n("insertions?"),
+        deletions: n("deletions?"),
+      };
+    });
 }
 
 // Joins `git diff -z --name-status` and `--numstat` output by path, and adds untracked files as added.

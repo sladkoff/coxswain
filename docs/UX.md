@@ -134,7 +134,10 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
 
   _Commits_ in the pane's bar shows the commits pane in the Navigator's place (one or the other): _All Changes_,
   then, if any agent turn changed the worktree, _Agent turns_ (when, and the turn's first message) and _Commits_: the
-  PR's commits (and local ones on top, marked _local_), newest first. Picking a commit shows its commit diff on the
+  PR's commits (and local ones on top, marked _local_), newest first, each on two lines: its subject (and _merge_ for
+  a merge commit), then its short sha, author (_+N_ for co-authors), how long ago, and its lines added and removed. Its
+  tooltip has the whole message, the author's email and date, co-authors, who committed it if someone else, and how
+  many files it changed. Picking a commit shows its commit diff on the
   canvas, and picking a turn its turn diff (glossary); the _Diff_ tab's range then names the commit or _Turn: …_, with ✕
   back to all changes. At the top, how
   many commits aren't pushed, with _Push_ (confirmed; never forced) or, for a branch workspace without a PR, _Open Pull

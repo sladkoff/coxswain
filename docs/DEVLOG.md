@@ -3,7 +3,7 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
-## 2026-10-01 — Outdated follows the code (#31)
+## 2026-10-01 — Outdated follows the code (#31); more in the commits pane
 
 ### What works
 
@@ -20,6 +20,11 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
   read now and asks the agent to check it still applies. ADR 0015 is rewritten for all this.
 - Entry storage and state moved from `review.ts` to `entries.ts`, which `node --test` can load, with a test over a
   real repository.
+
+- **More in the commits pane.** Each commit shows its subject over its short sha, author (and co-authors), how long
+  ago, and its lines added and removed; merges are marked. The tooltip has the whole message, the author's email and
+  date, co-authors, who committed it if someone else (a rebase, GitHub's merge button) and how many files it changed.
+  `listCommits` returns `LoggedCommit`s, parsed from `git log --shortstat` by `parseLog` (tested).
 
 ### Tech debt
 
