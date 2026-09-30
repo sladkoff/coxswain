@@ -7,8 +7,9 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 
 ### What works
 
-- **A new app icon:** a shell seen from above on dark water, the cox a red dot at the stern (`resources/icon.svg`,
-  rendered to `icon.png` as before).
+- **A new app icon:** a shell seen from above on dark water, the cox a red dot at the stern (`resources/icon.svg`),
+  inset to macOS's 824px tile on the 1024px canvas. `icon.png` is now rendered by `scripts/render-icon.swift`:
+  `qlmanage`, used before, fills the background white, so the corners weren't transparent.
 - **Images in the viewer.** A PNG, JPEG, GIF, WebP, AVIF, BMP or ICO file shows as the image, opened from the file
   tree or in a file diff (before and after side by side), instead of _Binary file, not shown_. The core sends it as a
   `data:` URL in `FileText.image`.
@@ -1180,7 +1181,7 @@ The local development loop (#3, ADR 0028), for G5.
 
 - coxswain has an icon: a racing shell seen from above, oars out, with the cox in amber at the stern.
   The source is `resources/icon.svg`, rendered to `resources/icon.png` with
-  `qlmanage -t -s 1024 -o resources resources/icon.svg` (then rename the output to `icon.png`).
+  `swift scripts/render-icon.swift resources/icon.svg resources/icon.png`.
 - The main process sets it as the Dock icon on macOS and as the window icon on Windows and Linux.
 
 ### Tech debt
