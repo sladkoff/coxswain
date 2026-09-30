@@ -178,7 +178,10 @@ branch`, when it was updated, and _Has a workspace_ if it does. _Branch_: one fi
   the thread began as a note): the reply streams into the thread, with each tool used as one line, and is kept as an
   answer when the turn ends. A tool use auto mode would block stops the turn with a permission prompt in the thread:
   what the agent wants to run and the agent's options (_Yes_, _No_, sometimes _Always_); the turn carries on once one
-  is picked, or ends with _Stop_. Questions run one at a time, and not while the agent pane's own turn runs.
+  is picked, or ends with _Stop_. A question asked while the session's turn runs queues behind it: the thread says
+  _Queued_ instead of _Working…_, and _Don't Send_ in place of _Stop_ takes it off the queue. A question taken off,
+  there or with × in the agent pane, becomes a note again, so _Send to Agent_ can send it later. Stop on a thread
+  stops only its own turn.
 
   The thread's header has a ✓ to resolve it: the thread folds to its header (_Resolved_ and its first comment), is
   left out of _Hand off_, and the ✓, green now, reopens it. Right of it, a ⋯ button with a native menu:
@@ -244,7 +247,8 @@ branch`, when it was updated, and _Has a workspace_ if it does. _Branch_: one fi
   sending then queues the message. Queued messages sit on top of the box, one line each (_Queued_, the message,
   _Send now_ and ×), and run as the next turns, in order, when the running one ends (also after Stop). _Send now_
   steers: the message goes into the running turn, which carries on with it. Comments and reviews sent from the canvas
-  while a turn runs queue the same way. Commands the agent left running in the background sit on top of the box, one line
+  while a turn runs queue the same way; a comment has no _Send now_, since the running turn's reply is kept as its
+  own thread's answer and the comment's would never reach its thread. Commands the agent left running in the background sit on top of the box, one line
   each with a spinner, what it does and × to stop it, until they end, and so do its subagents (_Agent_ and the
   subagent's task, without ×: the turn's stop button stops them); the agent's reply when one ends shows in the chat
   like a turn. A view prompt from _New View_ sits on top of the box as a card (_View_ and its

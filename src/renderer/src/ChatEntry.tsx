@@ -114,9 +114,11 @@ function CommentCard({
   );
 }
 
-// Where a turn is, in the agent pane or a thread: a tool use waiting for approval, still working, or its error.
+// Where a turn is, in the agent pane or a thread: a tool use waiting for approval, waiting behind the running turn,
+// still working, or its error.
 export function TurnStatus(props: {
   running: boolean;
+  queued?: boolean;
   permission: Permission | null;
   error: string | null;
   onAnswer: (optionId: string) => void;
@@ -126,7 +128,11 @@ export function TurnStatus(props: {
       {props.permission ? (
         <PermissionPrompt permission={props.permission} onAnswer={props.onAnswer} />
       ) : (
-        props.running && <div className={cn("text-xs", muted)}>Working…</div>
+        props.running && (
+          <div className={cn("text-xs", muted)}>
+            {props.queued ? "Queued: the agent answers once its current turn ends." : "Working…"}
+          </div>
+        )
       )}
       {props.error && <ErrorText>{props.error}</ErrorText>}
     </>

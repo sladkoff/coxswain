@@ -318,16 +318,23 @@ export function App() {
         ...t,
         [id]: {
           running: true,
+          queued: false,
           error: null,
           live: upsert(t[id]?.live ?? [], c),
           permission: t[id]?.permission ?? null,
         },
       })),
     );
+    const offQueued = window.coxswain.onQuestionQueued((id) =>
+      setTurns((t) => ({
+        ...t,
+        [id]: { running: true, queued: true, error: null, live: [], permission: null },
+      })),
+    );
     const offPermission = window.coxswain.onQuestionPermission((id, permission) =>
       setTurns((t) => ({
         ...t,
-        [id]: { running: true, error: null, live: t[id]?.live ?? [], permission },
+        [id]: { running: true, queued: false, error: null, live: t[id]?.live ?? [], permission },
       })),
     );
     // The answer entry comes with the core's change event, just before this.
@@ -336,6 +343,7 @@ export function App() {
         ...t,
         [id]: {
           running: false,
+          queued: false,
           error: result.status === "error" ? result.message : null,
           live: [],
           permission: null,
@@ -344,6 +352,7 @@ export function App() {
     );
     return () => {
       offChat();
+      offQueued();
       offPermission();
       offEnd();
     };
@@ -364,6 +373,7 @@ export function App() {
       ...t,
       [id]: {
         running: true,
+        queued: t[id]?.queued ?? false, // review:queued can come before the question
         error: null,
         live: t[id]?.live ?? [],
         permission: t[id]?.permission ?? null,

@@ -28,6 +28,7 @@ export const openedPath = (opened: Opened) =>
 // waiting for the user's approval.
 export type Turn = {
   running: boolean;
+  queued: boolean; // waiting behind the session's running turn
   error: string | null;
   live: ChatEntry[];
   permission: Permission | null;
@@ -410,7 +411,7 @@ export const Viewer = memo(function Viewer(props: Props) {
         onReply={(body, toAgent) =>
           post({ workspaceId: workspace.id, body, parentId: entry.id }, toAgent)
         }
-        onStop={() => window.coxswain.stopQuestion(workspace.id)}
+        onStop={() => window.coxswain.stopQuestion(entry.id)}
         onAnswerPermission={(id, optionId) => props.onAnswerPermission(entry.id, id, optionId)}
         onEdit={(body) => edit(entry, body)}
         onResolve={(resolved) => resolve(entry, resolved)}

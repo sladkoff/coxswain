@@ -531,7 +531,8 @@ function BackgroundTasks(props: { agentSessionId: string; tasks: BackgroundTask[
 }
 
 // Messages sent while the turn runs, waiting for it to end, on top of the composer: each with Send now, which puts it
-// into the running turn, and × to take it off.
+// into the running turn, and × to take it off. A comment has no Send now: its answer would go to the running turn's
+// thread, not its own.
 function Queued(props: { agentSessionId: string; queued: QueuedMessage[] }) {
   return (
     <div className={cn("flex flex-col border-b px-2 py-1 text-xs", divider)}>
@@ -549,14 +550,16 @@ function Queued(props: { agentSessionId: string; queued: QueuedMessage[] }) {
             <span className="min-w-0 flex-1 truncate" title={text}>
               {text}
             </span>
-            <Button
-              variant="ghost"
-              className="shrink-0 px-1 py-0.5"
-              title="Send into the running turn now"
-              onClick={() => window.coxswain.steerQueued(props.agentSessionId, id)}
-            >
-              Send now
-            </Button>
+            {!e.comment && (
+              <Button
+                variant="ghost"
+                className="shrink-0 px-1 py-0.5"
+                title="Send into the running turn now"
+                onClick={() => window.coxswain.steerQueued(props.agentSessionId, id)}
+              >
+                Send now
+              </Button>
+            )}
             <Button
               variant="ghost"
               className="shrink-0 p-0.5 text-neutral-500"

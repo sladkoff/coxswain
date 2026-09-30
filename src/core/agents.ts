@@ -94,7 +94,11 @@ function withComment(entry: ChatEntry): ChatEntry {
   return { ...entry, comment: { threadId: Number(m[2]), where: m[1], body } };
 }
 
-export type TurnResult = { status: "ok" } | { status: "error"; message: string };
+// unsent: the message waited in the queue and was taken off, so the agent never saw it.
+export type TurnResult =
+  | { status: "ok" }
+  | { status: "unsent" }
+  | { status: "error"; message: string };
 
 // A tool use the agent asks the user to approve (ADR 0018), with the options the agent offers: allow once, always,
 // reject.
@@ -116,10 +120,12 @@ type RunOptions = {
   picks?: Picks;
   oneShot?: string;
 };
-// onPermission resolves with the option picked, or null to cancel. Without it, every request is rejected.
+// onPermission resolves with the option picked, or null to cancel. Without it, every request is rejected. onQueued:
+// runTurn's message waits behind the running turn.
 type RunHandlers = {
   onEntry?: (entry: ChatEntry) => void;
   onPermission?: (p: Permission) => Promise<string | null>;
+  onQueued?: () => void;
 };
 
 export type Agent = "claude" | "codex";
@@ -1037,8 +1043,8 @@ export const readAgentState = (db: Db, agentSessionId: string) =>
   });
 
 // Sends one message in an agent session and streams the reply as chat entries until the turn ends. While another turn
-// runs the message waits in the session's queue (#24), until that turn ends, it is taken off (a result of ok), or it is
-// sent into the running turn (steerQueued), which then answers it.
+// runs the message waits in the session's queue (#24), until that turn ends, it is taken off (a result of unsent), or it
+// is sent into the running turn (steerQueued), which then answers it.
 export async function runTurn(
   db: Db,
   agentSessionId: string,
@@ -1069,7 +1075,7 @@ export async function runTurn(
       .where("agent_session_id", "=", agentSessionId)
       .where("title", "is", null)
       .execute();
-    let go = await sessionStates.queue(agentSessionId, entry);
+    let go = await sessionStates.queue(agentSessionId, entry, false, handlers.onQueued);
     while (go === "steer") {
       const { outcome } = (await a.agent.request("_session/steering", {
         sessionId: agentSessionId,
@@ -1086,9 +1092,9 @@ export async function runTurn(
         sessionStates.entry(agentSessionId, entry);
         return result;
       }
-      go = await sessionStates.queue(agentSessionId, entry, true);
+      go = await sessionStates.queue(agentSessionId, entry, true, handlers.onQueued);
     }
-    if (!go) return result;
+    if (!go) return { status: "unsent" };
     started = true;
     const streaming: RunHandlers = {
       onEntry: (entry) => {
@@ -1147,6 +1153,11 @@ export function steerQueued(agentSessionId: string, queuedId: number) {
 // A queued message's ×: it isn't sent.
 export function unqueue(agentSessionId: string, queuedId: number) {
   sessionStates.dequeue(agentSessionId, queuedId, null);
+}
+
+// A thread's Stop: takes its comment off the queue if it waits there, or else stops the turn answering it.
+export async function stopComment(db: Db, agentSessionId: string, threadId: number) {
+  if (!sessionStates.dequeueThread(agentSessionId, threadId)) await stopTurn(db, agentSessionId);
 }
 
 // The workspace's agent turns that changed its worktree, newest first, each as a commit from its before to its after.

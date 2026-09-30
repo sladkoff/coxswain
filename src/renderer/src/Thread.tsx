@@ -210,14 +210,21 @@ export function ThreadBox({
               ))}
             <TurnStatus
               running={running}
+              queued={turn?.queued}
               permission={turn?.permission ?? null}
               error={turn?.error ?? null}
               onAnswer={(optionId) => onAnswerPermission(turn!.permission!.id, optionId)}
             />
           </div>
           {running ? (
-            <Button className="self-end text-xs" onClick={onStop}>
-              Stop
+            <Button
+              className="self-end text-xs"
+              title={
+                turn?.queued ? "Take the question off the queue; it stays as a note" : undefined
+              }
+              onClick={onStop}
+            >
+              {turn?.queued ? "Don't Send" : "Stop"}
             </Button>
           ) : (
             <div className={cn("flex flex-col gap-1.5 border-t pt-1.5", divider)}>

@@ -6,7 +6,7 @@ import {
   type Permission,
   runTurn,
   startAgentSession,
-  stopTurn,
+  stopComment,
   type TurnResult,
 } from "./agents";
 import type { Db } from "./db";
@@ -222,8 +222,9 @@ export async function askQuestion(
   e: NewEntry,
   onChat: (threadId: number, entry: ChatEntry, agentSessionId: string) => void,
   onPermission: (threadId: number, p: Permission) => Promise<string | null>,
+  onQueued: (threadId: number) => void,
 ): Promise<{ question: ReviewEntry; agentSessionId: string; turn: Promise<TurnResult> }> {
-  return ask(db, await addEntry(db, "question", e), onChat, onPermission);
+  return ask(db, await addEntry(db, "question", e), onChat, onPermission, onQueued);
 }
 
 // A thread's *Send to agent*: its latest note becomes a question and is asked, with the notes before it since the
@@ -233,6 +234,7 @@ export async function sendThread(
   threadId: number,
   onChat: (threadId: number, entry: ChatEntry, agentSessionId: string) => void,
   onPermission: (threadId: number, p: Permission) => Promise<string | null>,
+  onQueued: (threadId: number) => void,
 ): Promise<{ question: ReviewEntry; agentSessionId: string; turn: Promise<TurnResult> } | null> {
   const note = await db
     .selectFrom("entries")
@@ -243,14 +245,20 @@ export async function sendThread(
     .executeTakeFirst();
   if (note?.kind !== "note") return null;
   await db.updateTable("entries").set({ kind: "question" }).where("id", "=", note.id).execute();
-  return ask(db, { ...note, kind: "question" }, onChat, onPermission);
+  return ask(db, { ...note, kind: "question" }, onChat, onPermission, onQueued);
 }
 
+// The session each thread's question went to, while it waits or runs there: what a thread's Stop stops.
+const asking = new Map<number, string>();
+
+// A question the agent never saw, because it was taken off the queue, becomes a note again: the thread can be sent
+// once more, and the notes since the last question still go with it.
 async function ask(
   db: Db,
   question: Omit<ReviewEntry, "state">,
   onChat: (threadId: number, entry: ChatEntry, agentSessionId: string) => void,
   onPermission: (threadId: number, p: Permission) => Promise<string | null>,
+  onQueued: (threadId: number) => void,
 ): Promise<{ question: ReviewEntry; agentSessionId: string; turn: Promise<TurnResult> }> {
   const threadId = question.parentId ?? question.id;
   const thread = await db
@@ -264,27 +272,38 @@ async function ask(
   const agentSessionId = await currentSession(db, question.workspaceId);
   const comment = { threadId, where: root.path ? where(root) : "the review", body: question.body };
   const texts = new Map<number | undefined, string>(); // by entry id, as they stream
+  asking.set(threadId, agentSessionId);
   const turn = runTurn(db, agentSessionId, formatComment(comment, unseen(question, thread)), {
     onEntry: (c) => {
       if (c.kind === "text") texts.set(c.id, c.text);
       onChat(threadId, c, agentSessionId);
     },
     onPermission: (p) => onPermission(threadId, p),
-  }).then(async (result) => {
-    if (result.status === "ok" && texts.size)
-      await addEntry(db, "answer", {
-        workspaceId: question.workspaceId,
-        body: [...texts.values()].join("\n\n"),
-        parentId: threadId,
-      });
-    return result;
-  });
+    onQueued: () => onQueued(threadId),
+  })
+    .then(async (result) => {
+      if (result.status === "ok" && texts.size)
+        await addEntry(db, "answer", {
+          workspaceId: question.workspaceId,
+          body: [...texts.values()].join("\n\n"),
+          parentId: threadId,
+        });
+      if (result.status === "unsent")
+        await db
+          .updateTable("entries")
+          .set({ kind: "note" })
+          .where("id", "=", question.id)
+          .execute();
+      return result;
+    })
+    .finally(() => asking.delete(threadId));
   return { question: { ...question, state: "current" }, agentSessionId, turn };
 }
 
-export async function stopQuestion(db: Db, workspaceId: number) {
-  const last = (await listAgentSessions(db, workspaceId)).at(-1);
-  if (last) await stopTurn(db, last.agentSessionId);
+// A thread's Stop: its question comes off the queue, or the turn answering it stops. Nothing if it has none going.
+export async function stopQuestion(db: Db, threadId: number) {
+  const agentSessionId = asking.get(threadId);
+  if (agentSessionId) await stopComment(db, agentSessionId, threadId);
 }
 
 // Every thread of the workspace, as one message for the agent pane's session: where each points, the code, and its

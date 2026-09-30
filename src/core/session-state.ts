@@ -85,21 +85,39 @@ export class SessionStates {
     return true;
   }
 
-  // Starts a turn, or queues entry behind the running one (front: before the other queued messages). Resolves when the
-  // message leaves the queue; with "turn" the session is running it, as after start.
-  queue(id: string, entry: ChatEntry, front = false): Promise<Dequeued> {
+  // Starts a turn, or queues entry behind the running one (front: before the other queued messages), then calls
+  // onQueued. Resolves when the message leaves the queue; with "turn" the session is running it, as after start.
+  queue(id: string, entry: ChatEntry, front = false, onQueued?: () => void): Promise<Dequeued> {
     if (this.start(id)) return Promise.resolve("turn");
     const message = { id: this.nextQueued++, entry };
     const queued = this.states.get(id)!.queued;
     this.update(id, { queued: front ? [message, ...queued] : [...queued, message] });
+    onQueued?.();
     return new Promise((resolve) => this.waiting.set(message.id, resolve));
   }
 
-  // Takes a queued message off, or with no queuedId all of them, to go into the running turn (steer) or nowhere.
+  // Takes a queued message off, or with no queuedId all of them, to go into the running turn (steer) or nowhere. A
+  // comment isn't steered: the running turn's reply is its own thread's answer, so the comment's would never reach it.
   dequeue(id: string, queuedId: number | undefined, go: "steer" | null) {
     const queued = this.states.get(id)?.queued ?? [];
-    const leaving = queued.filter((m) => queuedId === undefined || m.id === queuedId);
+    const leaving = queued.filter(
+      (m) => (queuedId === undefined || m.id === queuedId) && !(go === "steer" && m.entry.comment),
+    );
+    this.leave(id, leaving, go);
+  }
+
+  // Takes a thread's comment off the queue, not sent. False if it isn't queued.
+  dequeueThread(id: string, threadId: number): boolean {
+    const leaving = (this.states.get(id)?.queued ?? []).filter(
+      (m) => m.entry.comment?.threadId === threadId,
+    );
+    this.leave(id, leaving, null);
+    return leaving.length > 0;
+  }
+
+  private leave(id: string, leaving: QueuedMessage[], go: "steer" | null) {
     if (!leaving.length) return;
+    const queued = this.states.get(id)!.queued;
     this.update(id, { queued: queued.filter((m) => !leaving.includes(m)) });
     for (const m of leaving) this.resolve(m.id, go);
   }

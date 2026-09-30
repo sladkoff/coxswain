@@ -3,7 +3,7 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
-## 2026-09-30 — Reviewed in views: whole sections, collapsed file diffs
+## 2026-09-30 — Reviewed in views; queued questions in threads
 
 ### What works
 
@@ -12,6 +12,14 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 - In a view, a reviewed file diff or file collapses to its header instead of hiding, so the prose leading into it
   still reads (#14). _Show Reviewed Files_ expands them; ticking one keeps its header where it was on screen. Sections
   no longer drop out of a view when all their files are reviewed.
+- **Queued questions in threads.** A question asked while the session's turn runs shows _Queued_ in its thread, not
+  _Working…_, and _Don't Send_ in place of _Stop_ (`review:queued`, `SessionStates.queue`'s `onQueued`).
+  - A thread's Stop now stops its own question: off the queue if it waits there, or the turn answering it. Before, it
+    stopped whatever the workspace's last session was running, often another thread's turn.
+  - Taken off the queue (there or with × in the agent pane), a question becomes a note again (`TurnResult` `unsent`),
+    so _Send to Agent_ can send it later. Before, it stayed a question with no answer and couldn't be sent again.
+  - Queued comments have no _Send now_: steering one put its answer into the running turn's thread and left its own
+    thread with none. The core refuses to steer them too.
 
 ## 2026-09-29 — Queueing and steering in the agent pane
 
