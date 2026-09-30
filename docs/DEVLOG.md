@@ -7,6 +7,8 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 
 ### What works
 
+- **A new app icon:** a shell seen from above on dark water, the cox a red dot at the stern (`resources/icon.svg`,
+  rendered to `icon.png` as before).
 - **Images in the viewer.** A PNG, JPEG, GIF, WebP, AVIF, BMP or ICO file shows as the image, opened from the file
   tree or in a file diff (before and after side by side), instead of _Binary file, not shown_. The core sends it as a
   `data:` URL in `FileText.image`.
