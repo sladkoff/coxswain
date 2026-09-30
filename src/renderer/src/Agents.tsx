@@ -25,16 +25,15 @@ import {
 import { TextArea } from "./components/field";
 import { cn, divider, muted, noDrag, titleBar } from "./components/styles";
 import { shortDateTime } from "./format";
-import { core, queryClient } from "./queries";
+import { changed, core, queryClient } from "./queries";
 import { setAgentPane, useAgentPane } from "./agent-pane";
 
 const agentNames: Record<Agent, string> = { claude: "Claude Code", codex: "Codex" };
 
-// L4: a chat with one of the workspace's agent sessions, the latest unless another is picked in the header. A new
-// session starts with its first message, on the agent picked in New session's menu. The composer picks the model and
-// effort, which every session of that agent runs on.
-// ponytail: comments still go to the latest session, not the one shown; pass the shown one to ask and sendReview if that
-// confuses.
+// L4: a chat with one of the workspace's agent sessions: the current one (last used), or another picked in the header,
+// which then becomes current, so comments go to the session shown. A new session starts with its first message, on the
+// agent picked in New session's menu. The composer picks the model and effort, which every session of that agent runs
+// on.
 type Props = {
   workspace: Workspace;
   onViewThread: (threadId: number) => void;
@@ -50,7 +49,9 @@ export function Agents({ workspace, onViewThread, composerPrompt, onShowSidebar 
   const [dragging, setDragging] = useState(false);
   const sessionsQuery = useQuery(core("listAgentSessions", workspace.id));
   const sessions = sessionsQuery.data ?? [];
-  const session = picked ? sessions.find((s) => s.agentSessionId === picked) : sessions.at(-1);
+  const session = picked
+    ? sessions.find((s) => s.agentSessionId === picked)
+    : (sessions.find((s) => s.current) ?? sessions.at(-1));
   const state = useQuery({
     ...core("readAgentState", session?.agentSessionId ?? ""),
     enabled: !!session,
@@ -207,7 +208,12 @@ export function Agents({ workspace, onViewThread, composerPrompt, onShowSidebar 
           sessions={sessions}
           current={session ?? null}
           agent={agent}
-          onPick={(picked) => patch({ picked, error: null })}
+          onPick={(picked) => {
+            patch({ picked, error: null });
+            void window.coxswain
+              .pickAgentSession(picked)
+              .then(() => changed({ workspaceId: workspace.id, what: "transcript" }));
+          }}
         />
         <div className="flex-1" />
         <div className={cn("flex shrink-0 items-center text-neutral-500", noDrag)}>

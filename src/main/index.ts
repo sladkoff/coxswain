@@ -34,6 +34,7 @@ import {
   runTurn,
   formatView,
   startAgentSession,
+  pickAgentSession,
   setAgentPick,
   closeWorkspaceSessions,
   stopAgents,
@@ -453,6 +454,9 @@ app.whenReady().then(() => {
   ipcMain.handle("agents:turns", (_, workspaceId: number) => listTurns(db, workspaceId));
   ipcMain.handle("agents:start", (_, workspaceId: number, agent?: Agent) =>
     startAgentSession(db, workspaceId, agent),
+  );
+  ipcMain.handle("agents:pick", (_, agentSessionId: string) =>
+    pickAgentSession(db, agentSessionId),
   );
   ipcMain.handle("agents:new-session-agent", () => newSessionAgent(db));
   ipcMain.handle("agents:picks", (_, workspaceId: number, agent: Agent) =>

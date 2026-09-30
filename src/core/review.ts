@@ -165,11 +165,12 @@ export async function deleteEntry(db: Db, id: number) {
   await db.deleteFrom("entries").where("id", "=", id).execute();
 }
 
-// The workspace's current agent session, the agent pane's: the latest, or a new one if it has none. Questions are
+// The workspace's current agent session, the agent pane's: the one last used, or a new one if it has none. Questions are
 // turns in it, so the agent pane shows them and the agent keeps one context.
 async function currentSession(db: Db, workspaceId: number): Promise<string> {
   const last =
-    (await listAgentSessions(db, workspaceId)).at(-1) ?? (await startAgentSession(db, workspaceId));
+    (await listAgentSessions(db, workspaceId)).find((s) => s.current) ??
+    (await startAgentSession(db, workspaceId));
   return last.agentSessionId;
 }
 

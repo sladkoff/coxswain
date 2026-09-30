@@ -238,7 +238,8 @@ branch`, when it was updated, and _Has a workspace_ if it does. _Branch_: one fi
   commit), and its _Reviewed_ ticks stay; once the worktree has moved on (new commits or edits), an amber bar says so. Picking a commit hides the view, and the other way round.
 
 - **L4 — Agent pane**, left of the canvas, always shown; its border can be dragged. A chat with one of the
-  workspace's agent sessions, the latest unless another is picked in the header. The header starts with the session's
+  workspace's agent sessions: the current one, the one last used (made, picked in the header or sent a message),
+  also after a restart. Picking one makes it current, so comments from the canvas go to the session shown. The header starts with the session's
   title (_Session N_ before its first message) and a chevron, whose native menu lists them all with their dates, then
   the session's agent, muted. At its right, a pencil button starts another agent session on the agent picked last; the
   chevron next to it picks another (_Claude Code_, _Codex_), which the session keeps. The chat shows its turns, with
@@ -293,8 +294,7 @@ A prose-only view has no reviewable files. An empty view says _Nothing in this v
 3. **The review as a whole:** where do you write a comment that isn't on lines? _Post_ is still open. Should the PR's
    GitHub comments and reviews show in coxswain, and where?
 4. **Agents in L4:** tabs, a list, or split panes, and how running and finished agent sessions look.
-   Earlier agent sessions are reachable from the header's picker, one at a time. Comments still go to the latest
-   session, not the one shown.
+   Earlier agent sessions are reachable from the header's picker, one at a time.
 5. **The local loop:** coxswain pushes and opens PRs, but doesn't commit; agents do, or the user in a terminal.
    Should it commit (with a message to write) too? Turn diffs pile up under _Agent turns_; should older ones fold away,
    and should the canvas say which turn a local change came from?

@@ -166,6 +166,10 @@ export const migrations = [
   // A question: the agent session it went to, so a follow-up to another session sends the thread along (#11). Not a
   // foreign key: the question stays when its session goes.
   `alter table entries add column agent_session_id text`,
+  // When an agent session was last used: made, picked in the agent pane, or sent a message. The one last used is the
+  // workspace's current session, which the pane opens and questions go to.
+  `alter table agent_sessions add column used_at text not null default '';
+  update agent_sessions set used_at = created_at`,
 ];
 
 // ADR 0016: the tables as the migrations above leave them. Change this with every migration that changes a table.
@@ -196,6 +200,7 @@ type Tables = {
     agent_session_id: string;
     created_at: string;
     title: string | null;
+    used_at: Generated<string>;
   };
   reviewed_files: { workspace_id: number; path: string; fingerprint: string };
   summary_jobs: {

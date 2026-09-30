@@ -3,7 +3,7 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
-## 2026-09-30 — Reviewed in views; queued questions and follow-ups in threads
+## 2026-09-30 — Reviewed in views; threads: queued questions, follow-ups, resolving; current agent session
 
 ### What works
 
@@ -30,6 +30,11 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
     threads.
 - **Resolve from the bottom bar.** Each thread in the bar's list ends in a ✓ that resolves it, or reopens it under
   _Resolved_, as the thread's own ✓ does.
+- **The current agent session is the one last used.** `agent_sessions.used_at` (migration) is set when a session is
+  made, picked in the agent pane's header, or sent a message; `listAgentSessions` marks the latest `current`. The
+  pane opens it, also after a restart (it used to open the newest), and questions and _Hand off_ go to it, so a
+  comment goes to the session shown. Pays off the `ponytail:` in `Agents.tsx` that comments went to the latest
+  session, not the one shown.
 
 ## 2026-09-29 — Queueing and steering in the agent pane
 

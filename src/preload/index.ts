@@ -137,6 +137,9 @@ const api = {
   // agent: the one picked for it; without it, the one picked last.
   startAgentSession: (workspaceId: number, agent?: Agent): Promise<AgentSession> =>
     ipcRenderer.invoke("agents:start", workspaceId, agent),
+  // A session picked in the agent pane's header: the workspace's current one from now on, also after a restart.
+  pickAgentSession: (agentSessionId: string): Promise<void> =>
+    ipcRenderer.invoke("agents:pick", agentSessionId),
   newSessionAgent: (): Promise<Agent> => ipcRenderer.invoke("agents:new-session-agent"),
   // The composer's model and effort for an agent's sessions, with the choices; kept for every session of the agent.
   listAgentPicks: (workspaceId: number, agent: Agent): Promise<AgentPicks> =>

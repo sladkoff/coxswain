@@ -32,6 +32,7 @@ export type AgentSession = {
   agentSessionId: string;
   createdAt: string;
   title: string | null;
+  current: boolean; // the workspace's current session: the one last used (made, picked or sent a message)
 };
 
 // One line of the chat: something the user said, text the agent wrote, or a tool the agent used. comment: the user's
@@ -864,15 +865,24 @@ export const firstMessageTitle = (prompt: string): string => {
     .slice(0, 80);
 };
 
-// The workspace's agent sessions in the agent pane, oldest first; the last one is the current one, which questions go
-// to too (ADR 0021).
-export function listAgentSessions(db: Db, workspaceId: number): Promise<AgentSession[]> {
-  return db
-    .selectFrom("agent_sessions")
-    .select(columns)
-    .where("workspace_id", "=", workspaceId)
-    .orderBy("id")
-    .execute() as Promise<AgentSession[]>;
+// The workspace's agent sessions in the agent pane, oldest first. The one last used is current: the pane opens it, and
+// questions go to it (ADR 0021).
+export async function listAgentSessions(db: Db, workspaceId: number): Promise<AgentSession[]> {
+  const sessions = db.selectFrom("agent_sessions").where("workspace_id", "=", workspaceId);
+  const [rows, current] = await Promise.all([
+    sessions.select(columns).orderBy("id").execute(),
+    sessions.select("id").orderBy("used_at", "desc").orderBy("id", "desc").executeTakeFirst(),
+  ]);
+  return rows.map((s) => ({ ...s, current: s.id === current?.id }) as AgentSession);
+}
+
+// The session was used: picked in the agent pane or sent a message, so it's the workspace's current one.
+export async function pickAgentSession(db: Db, agentSessionId: string) {
+  await db
+    .updateTable("agent_sessions")
+    .set({ used_at: new Date().toISOString() })
+    .where("agent_session_id", "=", agentSessionId)
+    .execute();
 }
 
 // The agent picks the session ID (ADR 0018, 6). agent: the one picked for it, kept for the next new session; without
@@ -893,16 +903,19 @@ export async function startAgentSession(
     picks: await agentPicks(db, agent),
   });
   await sessionStates.read(id, async () => []);
-  return db
+  const now = new Date().toISOString();
+  const row = await db
     .insertInto("agent_sessions")
     .values({
       workspace_id: workspaceId,
       agent,
       agent_session_id: id,
-      created_at: new Date().toISOString(),
+      created_at: now,
+      used_at: now,
     })
     .returning(columns)
-    .executeTakeFirstOrThrow() as Promise<AgentSession>;
+    .executeTakeFirstOrThrow();
+  return { ...row, current: true } as AgentSession;
 }
 
 // The agent a new session gets unless another is picked: the one picked last.
@@ -1063,6 +1076,7 @@ export async function runTurn(
     const attachmentId = attachments.length
       ? await saveAttachments(db, agentSessionId, attachments)
       : null;
+    await pickAgentSession(db, agentSessionId);
     const entry = withComment({
       kind: "user",
       text: prompt,
