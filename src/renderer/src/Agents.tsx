@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { match, P } from "ts-pattern";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Agent, AgentSession, Pick } from "../../core/agents";
 import type { Attachment } from "../../core/attachments";
@@ -24,7 +25,7 @@ import {
 } from "./components/icons";
 import { TextArea } from "./components/field";
 import { cn, divider, muted, noDrag, titleBar } from "./components/styles";
-import { shortDateTime } from "./format";
+import { count, shortDateTime } from "./format";
 import { changed, core, queryClient } from "./queries";
 import { setAgentPane, useAgentPane } from "./agent-pane";
 
@@ -543,13 +544,14 @@ function Queued(props: { agentSessionId: string; queued: QueuedMessage[] }) {
   return (
     <div className={cn("flex flex-col border-b px-2 py-1 text-xs", divider)}>
       {props.queued.map(({ id, entry: e }) => {
-        const text = e.comment
-          ? `Comment on ${e.comment.where}: ${e.comment.body}`
-          : e.review
-            ? `Review · ${e.review.threads} thread${e.review.threads === 1 ? "" : "s"}`
-            : e.view
-              ? `View · ${e.view.title}${e.view.note ? `: ${e.view.note}` : ""}`
-              : e.text || (e.attachments ?? []).map((a) => a.name).join(", ");
+        const text = match(e)
+          .with({ comment: P.nonNullable.select() }, (c) => `Comment on ${c.where}: ${c.body}`)
+          .with({ review: P.nonNullable.select() }, (r) => `Review · ${count(r.threads, "thread")}`)
+          .with(
+            { view: P.nonNullable.select() },
+            (v) => `View · ${v.title}${v.note ? `: ${v.note}` : ""}`,
+          )
+          .otherwise(() => e.text || (e.attachments ?? []).map((a) => a.name).join(", "));
         return (
           <div key={id} className="flex min-w-0 items-center gap-1.5">
             <span className={cn("shrink-0", muted)}>Queued</span>

@@ -1,4 +1,5 @@
 import { Virtualizer } from "@pierre/diffs/react";
+import { match, P } from "ts-pattern";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation, useNavigate, useRouter, useSearch } from "@tanstack/react-router";
 import { type UIEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -220,42 +221,42 @@ export function App() {
     enabled: !!currentWorkspace && !!pr.commits,
   }).data;
   const committed = uncommitted?.status === "ok" ? uncommitted.head : null;
-  const range: { base: string; head?: string } | null = commit
-    ? { base: commit.parent, head: commit.sha }
-    : canvasView
-      ? { base: canvasView.base, head: canvasView.head }
-      : pr.commits && scope === "pushed"
-        ? { base: pr.commits.mergeBase, head: pr.commits.head }
-        : pr.commits && committed && scope === "unpushed"
-          ? { base: pr.commits.head, head: committed }
-          : committed && scope === "uncommitted"
-            ? { base: committed }
-            : null;
-
-  // What a new view is asked for: the commit, turn or scope the diff shows, or null for all of the workspace's changes
-  // (also while a view shows).
-  const viewRange: ViewRange | null = commit
-    ? commit.turn
-      ? { what: `the agent turn "${commit.subject}"`, base: commit.parent, head: commit.sha }
-      : {
-          what: `commit ${commit.sha.slice(0, 7)} ("${commit.subject}")`,
-          base: commit.parent,
-          head: commit.sha,
-        }
-    : !canvasView && pr.commits && scope === "pushed"
-      ? {
-          what:
-            currentWorkspace?.prNumber != null
-              ? "the PR's changes on GitHub"
-              : "the changes on GitHub",
-          base: pr.commits.mergeBase,
-          head: pr.commits.head,
-        }
-      : !canvasView && pr.commits && committed && scope === "unpushed"
-        ? { what: "the commits not pushed yet", base: pr.commits.head, head: committed }
-        : !canvasView && committed && scope === "uncommitted"
-          ? { what: "the uncommitted changes", base: committed, head: null }
-          : null;
+  // The range the diff shows (null: all of it, live), and what a new view is asked to cover: the commit, turn or scope
+  // (null for all of the workspace's changes, also while a view shows). head null: the live worktree.
+  const shownRange = match({ commit, canvasView, scope, commits: pr.commits, committed })
+    .returnType<{ what: string | null; base: string; head: string | null } | null>()
+    .with({ commit: P.nonNullable.select() }, (c) => ({
+      what: c.turn
+        ? `the agent turn "${c.subject}"`
+        : `commit ${c.sha.slice(0, 7)} ("${c.subject}")`,
+      base: c.parent,
+      head: c.sha,
+    }))
+    .with({ canvasView: P.nonNullable.select() }, (v) => ({
+      what: null,
+      base: v.base,
+      head: v.head,
+    }))
+    .with({ scope: "pushed", commits: P.nonNullable.select() }, (c) => ({
+      what:
+        currentWorkspace?.prNumber != null ? "the PR's changes on GitHub" : "the changes on GitHub",
+      base: c.mergeBase,
+      head: c.head,
+    }))
+    .with({ scope: "unpushed", commits: P.nonNullable, committed: P.string }, (r) => ({
+      what: "the commits not pushed yet",
+      base: r.commits.head,
+      head: r.committed,
+    }))
+    .with({ scope: "uncommitted", committed: P.string.select() }, (head) => ({
+      what: "the uncommitted changes",
+      base: head,
+      head: null,
+    }))
+    .otherwise(() => null);
+  const range = shownRange && { base: shownRange.base, head: shownRange.head ?? undefined };
+  const viewRange: ViewRange | null =
+    shownRange?.what != null ? { ...shownRange, what: shownRange.what } : null;
 
   // How much each layer has, for the range menu: commits on GitHub and not pushed, files not committed.
   const allCommits = useQuery({

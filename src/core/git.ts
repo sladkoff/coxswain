@@ -1,4 +1,5 @@
 import { execFile, spawn } from "node:child_process";
+import { match } from "ts-pattern";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
@@ -556,13 +557,12 @@ function parseChanges(
     const previousPath = renamed ? n[i + 1] : null;
     const path = renamed ? n[i + 2] : n[i + 1];
     i += renamed ? 3 : 2;
-    const status = renamed
-      ? "renamed"
-      : code === "A"
-        ? "added"
-        : code === "D"
-          ? "deleted"
-          : "modified";
+    const status = match(code)
+      .returnType<ChangedFile["status"]>()
+      .with("R", "C", () => "renamed")
+      .with("A", () => "added")
+      .with("D", () => "deleted")
+      .otherwise(() => "modified");
     const [additions, deletions] = lines.get(path) ?? [0, 0];
     files.push({
       path,

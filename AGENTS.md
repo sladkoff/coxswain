@@ -48,6 +48,8 @@ Keeping the docs current is part of every change, not a follow-up.
   ([ADR 0006](docs/adr/0006-github-integration.md)).
 - **What the canvas shows is the router's location** ([ADR 0025](docs/adr/0025-canvas-history-with-tanstack-router.md)):
   a field of `CanvasSearch` in `src/renderer/src/router.ts`, changed with `navigate()`, so Back and Forward cover it.
+- **Branching on more than two outcomes is a ts-pattern `match`**, not chained ternaries
+  ([ADR 0035](docs/adr/0035-ts-pattern-for-branching.md)).
 - **Diffs, files and trees use the Pierre libraries**
   ([ADR 0003](docs/adr/0003-diff-view-and-file-tree.md)), pinned to exact versions.
 - **Desktop conventions** from [ADR 0004](docs/adr/0004-styling-and-native-feel.md): native menus

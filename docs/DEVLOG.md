@@ -39,6 +39,10 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
   and greyed out when empty: _In the PR_ / _On GitHub_ (merge base → GitHub's head), _Not Pushed_ (GitHub's head →
   HEAD, pinned) and _Uncommitted_ (HEAD → worktree). _Local_ (GitHub's head → worktree) is gone: it held the other two
   at once. Unpushed commits are marked _not pushed_, not _local_.
+- **ts-pattern for branching** (ADR 0035): chained ternaries of three or more outcomes are `match`es now: the diff's
+  range and what a new view covers (one match, `shownRange`, where two chains had drifted), a thread's state in the
+  bottom bar, a workspace's PR icon, a queued message's text, a git status code, and the empty texts of the command
+  palette, Activity and the find bar. AGENTS.md says so for new code.
 - **Coming back to the window rereads the worktree** (ADR 0030), so edits made in an editor or a terminal show in the
   diff, _Uncommitted changes_ and the comments' states. Pays off the debt that uncommitted edits outside an agent turn
   didn't refresh the diff; edits while coxswain has focus still wait for the next refresh.
