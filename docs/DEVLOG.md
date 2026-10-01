@@ -26,6 +26,9 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
   `github_resolved`. `TextArea` gets `long` (Enter adds a line, ⌘Enter submits).
 - `COXSWAIN_USER_DATA` points a run at a database of its own. macOS ignores `$HOME` for userData, so a dev build
   otherwise migrates the installed coxswain's database.
+- ADR 0035 tightened: `if … return` ladders and nested JSX conditionals count too, a match over a union ends with
+  `.exhaustive()`, and outside enums are typed and matched with `.exhaustive(fallback)`. GitHub's check states, `who`
+  and the PR panel's branches follow it.
 - Tests: mirroring, re-reading, GitHub's edits, deletes and reopens, what's postable (in the diff, on the file, not
   pushed), hunk ranges and check states (`pull-requests.test.ts`). Checked in the running app on a scratch database:
   the PR chip, the panel, and a local note listed under _Post to GitHub_. Posting, threads from GitHub, checks and

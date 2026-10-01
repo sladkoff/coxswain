@@ -1,3 +1,4 @@
+import { match, P } from "ts-pattern";
 import type { ReviewEntry } from "./review";
 
 // What a comment sent to the agent says about where it is and what came before it: pure, so it can be tested without an
@@ -47,7 +48,11 @@ export const byAgent = (e: Pick<ReviewEntry, "kind">) =>
 // Who wrote an entry, as a prompt names them: "Me" (the user), "You" (the agent), or a reviewer on GitHub by login
 // (ADR 0037).
 export const who = (e: Pick<ReviewEntry, "kind" | "author">) =>
-  e.kind === "comment" ? `@${e.author} on GitHub` : byAgent(e) ? "You" : "Me";
+  match(e.kind)
+    .with("comment", () => `@${e.author} on GitHub`)
+    .with(P.union("answer", "explanation", "finding"), () => "You")
+    .with(P.union("note", "question"), () => "Me")
+    .exhaustive();
 
 // What the agent session hasn't seen of the question's thread, to go after it. A session its last question went to has
 // seen the thread up to it: only the notes written since, and comments on GitHub since. Any other session (the first question, a new session since,

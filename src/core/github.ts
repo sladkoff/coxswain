@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { Octokit } from "@octokit/core";
+import { match, P } from "ts-pattern";
 
 export type GitHubProblem =
   | { status: "signed-out" }
@@ -339,13 +340,27 @@ const pullRequestQuery = `query($owner: String!, $name: String!, $number: Int!) 
 }`;
 
 type Login = { login: string } | null;
+// GitHub's enums for checks, as its GraphQL schema has them: a commit's or rollup's state (StatusState), and a check
+// run's status (CheckStatusState) and conclusion (CheckConclusionState).
+type StatusState = "SUCCESS" | "FAILURE" | "ERROR" | "PENDING" | "EXPECTED";
+type CheckStatus = "QUEUED" | "IN_PROGRESS" | "COMPLETED" | "WAITING" | "PENDING" | "REQUESTED";
+type CheckConclusion =
+  | "SUCCESS"
+  | "FAILURE"
+  | "NEUTRAL"
+  | "CANCELLED"
+  | "SKIPPED"
+  | "TIMED_OUT"
+  | "ACTION_REQUIRED"
+  | "STARTUP_FAILURE"
+  | "STALE";
 type RawComment = { id: string; author: Login; body: string; createdAt: string; url: string };
 type RawContext =
   | {
       __typename: "CheckRun";
       name: string;
-      status: string;
-      conclusion: string | null;
+      status: CheckStatus;
+      conclusion: CheckConclusion | null;
       detailsUrl: string | null;
       databaseId: number;
       title: string | null;
@@ -354,7 +369,7 @@ type RawContext =
   | {
       __typename: "StatusContext";
       context: string;
-      state: string;
+      state: StatusState;
       targetUrl: string | null;
       description: string | null;
     };
@@ -406,12 +421,12 @@ type RawPullRequest = {
         }[];
       };
       commits: {
-        nodes: { commit: { oid: string; statusCheckRollup: { state: string } | null } }[];
+        nodes: { commit: { oid: string; statusCheckRollup: { state: StatusState } | null } }[];
       };
       headCommit: {
         nodes: {
           commit: {
-            statusCheckRollup: { state: string; contexts: { nodes: RawContext[] } } | null;
+            statusCheckRollup: { state: StatusState; contexts: { nodes: RawContext[] } } | null;
           };
         }[];
       };
@@ -427,27 +442,34 @@ const comment = (c: RawComment): GitHubComment => ({
   url: c.url,
 });
 
-// A rollup's or a commit status's state (StatusState), as the panel colours it.
-export function statusState(state: string): CheckState {
-  if (state === "SUCCESS") return "success";
-  if (state === "FAILURE" || state === "ERROR") return "failure";
-  if (state === "PENDING" || state === "EXPECTED") return "pending";
-  return "neutral";
-}
+// A rollup's or a commit status's state, as the panel colours it. Exhaustive over GitHub's enum, so a case it adds to
+// the type is a type error here; at runtime an unknown one is neutral.
+export const statusState = (state: StatusState): CheckState =>
+  match(state)
+    .returnType<CheckState>()
+    .with("SUCCESS", () => "success")
+    .with(P.union("FAILURE", "ERROR"), () => "failure")
+    .with(P.union("PENDING", "EXPECTED"), () => "pending")
+    .exhaustive(() => "neutral");
 
 // A check run's state: running until completed, then by its conclusion.
-export function checkRunState(status: string, conclusion: string | null): CheckState {
-  if (status !== "COMPLETED") return "pending";
-  if (conclusion === "SUCCESS") return "success";
-  if (
-    conclusion === "FAILURE" ||
-    conclusion === "TIMED_OUT" ||
-    conclusion === "STARTUP_FAILURE" ||
-    conclusion === "ACTION_REQUIRED"
-  )
-    return "failure";
-  return "neutral"; // neutral, skipped, cancelled, stale
-}
+export const checkRunState = (
+  status: CheckStatus,
+  conclusion: CheckConclusion | null,
+): CheckState =>
+  match({ status, conclusion })
+    .returnType<CheckState>()
+    .with({ status: P.not("COMPLETED") }, () => "pending")
+    .with({ conclusion: "SUCCESS" }, () => "success")
+    .with(
+      { conclusion: P.union("FAILURE", "TIMED_OUT", "STARTUP_FAILURE", "ACTION_REQUIRED") },
+      () => "failure",
+    )
+    .with(
+      { conclusion: P.union("NEUTRAL", "CANCELLED", "SKIPPED", "STALE", null) },
+      () => "neutral",
+    )
+    .exhaustive(() => "neutral");
 
 const words = (s: string) => s.toLowerCase().replaceAll("_", " ");
 

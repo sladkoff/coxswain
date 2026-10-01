@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
-import { match } from "ts-pattern";
+import { match, P } from "ts-pattern";
 import type {
   Check,
   CheckState,
@@ -113,10 +113,13 @@ const methodLabels: Record<MergeMethod, string> = {
 
 // Its title and state, where it goes, and what can be done with it next: Ready for Review for a draft, else Merge.
 function Header({ pr, change }: { pr: PullRequestDetails; change: Change }) {
-  const state =
-    pr.draft && pr.state === "open"
-      ? "Draft"
-      : { open: "Open", merged: "Merged", closed: "Closed" }[pr.state];
+  const [state, colour] = match(pr)
+    .returnType<[string, string]>()
+    .with({ state: "open", draft: true }, () => ["Draft", "bg-neutral-500"])
+    .with({ state: "open" }, () => ["Open", "bg-green-600"])
+    .with({ state: "merged" }, () => ["Merged", "bg-purple-600"])
+    .with({ state: "closed" }, () => ["Closed", "bg-red-600"])
+    .exhaustive();
   const merge = async () => {
     const i =
       pr.mergeMethods.length > 1
@@ -148,18 +151,7 @@ function Header({ pr, change }: { pr: PullRequestDetails; change: Change }) {
         <span className={cn("font-normal", muted)}>#{pr.number}</span>
       </h1>
       <div className={cn("flex flex-wrap items-center gap-2 text-xs", muted)}>
-        <span
-          className={cn(
-            "rounded-full px-2 py-0.5 text-white",
-            match(state)
-              .with("Open", () => "bg-green-600")
-              .with("Merged", () => "bg-purple-600")
-              .with("Closed", () => "bg-red-600")
-              .otherwise(() => "bg-neutral-500"),
-          )}
-        >
-          {state}
-        </span>
+        <span className={cn("rounded-full px-2 py-0.5 text-white", colour)}>{state}</span>
         <span>
           {pr.author ?? "ghost"} wants to merge <code>{pr.headRef}</code> into{" "}
           <code>{pr.baseRef}</code>
@@ -273,30 +265,31 @@ function Description({ pr, change }: { pr: PullRequestDetails; change: Change })
         )
       }
     >
-      {editing !== null ? (
-        <>
-          <TextArea
-            long
-            autoFocus
-            rows={12}
-            value={editing}
-            onChange={(e) => setEditing(e.target.value)}
-            onSubmit={save}
-            onCancel={() => setEditing(null)}
-            placeholder="Markdown (⌘Enter to save)"
-          />
-          <div className="flex justify-end gap-1.5 text-xs">
-            <Button onClick={() => setEditing(null)}>Cancel</Button>
-            <Button variant="primary" onClick={save}>
-              Save to GitHub
-            </Button>
-          </div>
-        </>
-      ) : pr.body.trim() ? (
-        <Prose>{pr.body}</Prose>
-      ) : (
-        <div className={cn("text-xs", muted)}>No description.</div>
-      )}
+      {match({ editing, body: pr.body.trim() })
+        .with({ editing: P.string.select() }, (text) => (
+          <>
+            <TextArea
+              long
+              autoFocus
+              rows={12}
+              value={text}
+              onChange={(e) => setEditing(e.target.value)}
+              onSubmit={save}
+              onCancel={() => setEditing(null)}
+              placeholder="Markdown (⌘Enter to save)"
+            />
+            <div className="flex justify-end gap-1.5 text-xs">
+              <Button onClick={() => setEditing(null)}>Cancel</Button>
+              <Button variant="primary" onClick={save}>
+                Save to GitHub
+              </Button>
+            </div>
+          </>
+        ))
+        .with({ body: "" }, () => <div className={cn("text-xs", muted)}>No description.</div>)
+        .otherwise(() => (
+          <Prose>{pr.body}</Prose>
+        ))}
     </Section>
   );
 }
@@ -440,7 +433,10 @@ function PostReview(props: {
           <span className={cn("shrink-0", muted)}>
             {t.problem ??
               [
-                t.github ? "reply" : t.onFile ? "new, on the file" : "new",
+                match(t)
+                  .with({ github: true }, () => "reply")
+                  .with({ onFile: true }, () => "new, on the file")
+                  .otherwise(() => "new"),
                 t.yours && count(t.yours, "comment"),
                 t.agents && `${count(t.agents, "answer")} of the agent's`,
                 t.resolve === true && "resolve",
