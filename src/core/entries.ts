@@ -25,7 +25,8 @@ export type ProseAnchor = { viewId: number; section: number; quote: string; at: 
 export type ReviewEntry = {
   id: number;
   workspaceId: number;
-  kind: "note" | "question" | "answer" | "explanation" | "finding";
+  // comment: mirrored from a review thread on GitHub (ADR 0037), by author, its GitHub login.
+  kind: "note" | "question" | "answer" | "explanation" | "finding" | "comment";
   body: string;
   parentId: number | null; // the thread's first entry, for replies, follow-ups and answers
   viewId: number | null;
@@ -42,6 +43,10 @@ export type ReviewEntry = {
   revision: string | null; // on prose: the section's version, a hash of its markdown (ADR 0036)
   section: number | null; // on prose: its section in the view; code is then the quote
   quoteAt: number | null; // on prose: where the quote starts in the section's text
+  author: string | null; // a mirrored comment's GitHub login
+  githubId: string | null; // the comment on GitHub: a mirrored one's, or an entry's once posted
+  githubThreadId: string | null; // on a thread's first entry: its review thread on GitHub
+  githubUrl: string | null;
   // ADR 0015: current while its lines are unchanged in the live diff (the worktree, or the merge base for the old
   // side), wherever they moved; outdated once they changed. The same whatever range it's listed for. A reply or
   // answer takes its thread's. Floating entries are current.
@@ -80,6 +85,10 @@ export const columns = [
   "revision",
   "section",
   "quote_at as quoteAt",
+  "author",
+  "github_id as githubId",
+  "github_thread_id as githubThreadId",
+  "github_url as githubUrl",
 ] as const;
 
 // Every entry of the workspace, in order.

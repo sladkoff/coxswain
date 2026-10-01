@@ -4,6 +4,8 @@ import { agentNames } from "./Agents";
 import { core } from "./queries";
 import { Button } from "./components/button";
 import { cn, muted, selectable } from "./components/styles";
+import type { CheckState } from "../../core/github";
+import { CheckDot } from "./PullRequest";
 import { ErrorText, ProblemMessage } from "./components/text";
 import { ago, count, shortDateTime } from "./format";
 
@@ -20,6 +22,7 @@ type Props = {
   onPickUncommitted: () => void;
   onPush: () => void;
   onOpenPullRequest: () => void;
+  checks: Record<string, CheckState>; // each pushed commit's checks on GitHub, by sha (ADR 0037)
 };
 
 // The Commits pane, left of the canvas: All Changes, Uncommitted changes if there are any, then the commits, newest first; those not pushed yet are marked,
@@ -80,6 +83,7 @@ export function Commits(props: Props) {
             by={`${c.author}${c.coAuthors.length ? ` +${c.coAuthors.length}` : ""}`}
             date={c.date}
             size={c}
+            checks={props.checks[c.sha]}
           />
         ))
       )}
@@ -144,6 +148,7 @@ function Row(props: {
   by: string;
   date?: string;
   size: Size;
+  checks?: CheckState; // its checks on GitHub, all at once
 }) {
   const marks = (props.marks ?? []).filter(Boolean);
   return (
@@ -161,6 +166,11 @@ function Row(props: {
         ))}
       </span>
       <span className={cn("flex w-full gap-1.5 text-[11px]", muted)}>
+        {props.checks && (
+          <span className="flex shrink-0 items-center">
+            <CheckDot state={props.checks} title={`Checks: ${props.checks}`} />
+          </span>
+        )}
         {props.sha && <span className="shrink-0 font-mono">{props.sha.slice(0, 7)}</span>}
         <span className="truncate">
           {props.by}

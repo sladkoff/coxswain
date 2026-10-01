@@ -44,8 +44,13 @@ export const anchored = (e: Pick<ReviewEntry, "path" | "section">) =>
 export const byAgent = (e: Pick<ReviewEntry, "kind">) =>
   e.kind === "answer" || e.kind === "explanation" || e.kind === "finding";
 
+// Who wrote an entry, as a prompt names them: "Me" (the user), "You" (the agent), or a reviewer on GitHub by login
+// (ADR 0037).
+export const who = (e: Pick<ReviewEntry, "kind" | "author">) =>
+  e.kind === "comment" ? `@${e.author} on GitHub` : byAgent(e) ? "You" : "Me";
+
 // What the agent session hasn't seen of the question's thread, to go after it. A session its last question went to has
-// seen the thread up to it: only the notes written since. Any other session (the first question, a new session since,
+// seen the thread up to it: only the notes written since, and comments on GitHub since. Any other session (the first question, a new session since,
 // or the other agent) gets where the thread is and everything in it so far (#11), also what the agent wrote if the
 // thread began as its explanation or finding in a view.
 export function unseen(
@@ -57,11 +62,15 @@ export function unseen(
   const asked = thread.findLast((e) => e.kind === "question");
   if (asked && asked.agentSessionId === agentSessionId)
     return thread
-      .filter((e) => e.kind === "note" && e.id > asked.id)
-      .map((n) => `Earlier in the thread: ${n.body}`)
+      .filter((e) => (e.kind === "note" || e.kind === "comment") && e.id > asked.id)
+      .map((n) =>
+        n.kind === "comment"
+          ? `Earlier in the thread, ${who(n)}: ${n.body}`
+          : `Earlier in the thread: ${n.body}`,
+      )
       .join("\n\n");
   const about = thread[0] && anchored(thread[0]) ? [`About ${describe(thread[0])}`] : [];
-  const lines = thread.map((e) => `${byAgent(e) ? "You" : "Me"}: ${e.body}`);
-  const so = `The thread so far, oldest first ("Me" is me, "You" is you, maybe in another session):\n${lines.join("\n")}`;
+  const lines = thread.map((e) => `${who(e)}: ${e.body}`);
+  const so = `The thread so far, oldest first ("Me" is me, "You" is you, maybe in another session, "@name" a reviewer on GitHub):\n${lines.join("\n")}`;
   return [...about, ...(lines.length ? [so] : [])].join("\n\n");
 }

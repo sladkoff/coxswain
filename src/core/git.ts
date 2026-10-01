@@ -371,6 +371,8 @@ export async function pinRevision(
 
 // The merge base the workspace was last opened on, for the core's own reads of the live diff (Hand off).
 export const currentMergeBase = (workspaceId: number) => lastOpened.get(workspaceId)?.mergeBase;
+// … and what was on GitHub then (ADR 0028): what comments are posted against (ADR 0037).
+export const currentHead = (workspaceId: number) => lastOpened.get(workspaceId)?.head;
 
 // Pushes the worktree's branch to GitHub and makes it its upstream. Never forced: if the branch moved on there, it fails
 // with git's message.

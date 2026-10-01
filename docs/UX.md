@@ -9,13 +9,13 @@ Agent-first. Opening a PR shows the project column (L1), the agent pane (L4) on 
 right. The canvas is one explorer that both the agent and the human annotate; for now it shows _Changes_, the
 workspace's file diffs, with the Navigator (L2) or the commits pane on its left. The top bar follows the columns: over
 the left pane, its own bar (hide it, and _Changes_ · _Files_ · _Commits_ · _Turns_ to switch it); over the canvas, what the canvas
-shows — _Diff_ with its range, a chip per view, a dashed _New View_ chip — then Back and Forward chevrons, a magnifier
+shows — the PR's chip (_#12_ with its checks' dot), _Diff_ with its range, a chip per view, a dashed _New View_ chip — then Back and Forward chevrons, a magnifier
 (Open Quickly), the display options (sliders) and Activity (a pulse icon; see below). A bar at its bottom sums up the
 review.
 
 ```
 ┌────┬─────────────────────────┬──────────────────────────────────────────┐
-│    │ Fix auth · Codex [New▾] │▣ Changes|Files|Comm…│Diff·All▾ Guide[+]⚌∿│
+│    │ Fix auth · Codex [New▾] │▣ Changes|Files|Comm…│#12● Diff·All▾ [+] ∿│
 │ L1 ├─────────────────────────┼─────────────────────┼────────────────────┤
 │    │ [Find…] 1/4 ↑ ↓ ×       │ L2 Navigator        │ [Find…] 3/12 ↑ ↓ × │
 │    │ L4 Agent pane           │                     │ L3 Canvas          │
@@ -217,8 +217,26 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   replied) opens a native menu: _Send to Agent_ sends them in one message to the agent pane's session: where each
   points, the code, and its comments and answers, asking the agent to make the changes and answer what's open. The
   chat shows it as a card (_Review sent to Agent · N threads_); the bar says _Agent working on N threads_ until the turn
-  ends. _Copy as Prompt_ puts the same message on the clipboard instead (the bar says _Copied_). _Send to GitHub as a
-  Review…_ is shown greyed out until it's built.
+  ends. _Copy as Prompt_ puts the same message on the clipboard instead (the bar says _Copied_). _Post to GitHub…_
+  (only with a PR) opens the PR panel at _Post to GitHub_.
+
+  **Threads from GitHub** ([ADR 0037](adr/0037-pull-request-sync-and-posting.md)). A PR's review threads show between
+  the lines like any thread, their header saying _on GitHub_, each comment under its author (_@ana on GitHub_). Replies
+  are the user's notes, sent to the agent like any; _Edit_ and _Delete_ are off, _Open on GitHub_ is in the ⋯ menu.
+  Resolving one is local until posted. An entry posted from here says _posted_.
+
+  **The PR panel.** The PR's chip in the canvas bar (_#12_, a dot for its checks: green, red, amber running, grey)
+  shows the PR in the canvas in place of the diff; any other pick leaves it. From the top: the title, its state, who
+  merges what into what, _Open on GitHub_, and _Ready for Review_ (a draft) or the merge state and _Merge…_ (a menu of
+  the repository's merge methods, then a confirmation). _Checks_: the head's, failing first, each with _Details_; a
+  failing one has _Send to Agent_, which sends it with the end of its log to the agent pane's session (a card in the
+  chat). _Description_ with _Edit_ (⌘Enter or _Save to GitHub_). _People_: assignees with _Assign yourself_,
+  reviewers with where they are, labels. _Post to GitHub_: a checkbox per thread with something to post (what goes:
+  _new_, _new, on the file_, _reply_, how many comments, _resolve_ or _reopen_; or why it can't: not pushed, changed
+  since, on a view), a click shows the thread; _Include the agent's answers_; a summary; _Comment_ · _Approve_ ·
+  _Request Changes_ (not on your own PR); _Post Review…_, which asks first. _Conversation_: comments, reviews' verdicts
+  and summaries, and comments on whole files, oldest first, then a box and _Comment on GitHub_. The Commits pane shows
+  each pushed commit's checks as a dot before its sha.
 
   **Views.** _Diff_ in the canvas's bar shows the diff without a view; it's on while no view shows. Next to it, a
   chip per view, oldest first, named by its title (_Guide_, _Data flow_; a repeated title gets a number, _Guide 2_; its
@@ -305,14 +323,14 @@ A prose-only view has no reviewable files. An empty view says _Nothing in this v
 2. **Views:** should a view embed only some lines of a file diff, not the whole of it? Should a section get its own
    _Reviewed_? Does the agent pane need to show that a view is being made? Should the agent see the view as drawn
    (a screenshot), not only whether its diagrams draw?
-3. **The review as a whole:** where do you write a comment that isn't on lines? _Post_ is still open. Should the PR's
-   GitHub comments and reviews show in coxswain, and where?
+3. **The review as a whole:** a comment that isn't on lines goes in the PR panel's conversation; should it be a
+   thread of its own, sendable to the agent? Should the PR's description be written by the agent?
 4. **Agents in L4:** tabs, a list, or split panes, and how running and finished agent sessions look.
    Earlier agent sessions are reachable from the header's picker, one at a time.
 5. **The local loop:** coxswain pushes and opens PRs, but doesn't commit; agents do, or the user in a terminal.
    Should it commit (with a message to write) too? Turn diffs pile up under _Turns_; should older ones fold away,
    and should the canvas say which turn a local change came from?
-6. **The canvas:** what else it shows (the PR's description and history), and how the agent and the human switch
+6. **The canvas:** what else it shows (the PR's history), and how the agent and the human switch
    between them. An annotation on lines is an entry (ADR 0023); the agent has tools to make views (ADR 0026), but not
    yet to navigate the app or read its context. Interactive views (Excalidraw and the like) are deferred.
 

@@ -27,6 +27,12 @@ export function Entry({
         Review sent to Agent · {count(entry.review.threads, "thread")}
       </SentCard>
     );
+  if (entry.check)
+    return (
+      <SentCard className={cn("px-2.5 py-2 text-xs", muted)}>
+        Failing check <span className="font-medium">{entry.check.name}</span> sent to Agent
+      </SentCard>
+    );
   if (entry.view)
     return (
       <SentCard className="flex flex-col">
@@ -65,7 +71,7 @@ export function Entry({
   return <Prose>{entry.text}</Prose>;
 }
 
-// What the user sent from outside the chat (a comment, a review), on the right like their messages.
+// What the user sent from outside the chat (a comment, a review, a check), on the right like their messages.
 function SentCard({ className, children }: { className?: string; children: ReactNode }) {
   return (
     <div className={cn("my-3 max-w-[85%] shrink-0 self-end rounded-lg border", divider, className)}>

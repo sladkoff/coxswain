@@ -29,9 +29,11 @@ const extra: Partial<Record<Reads, Extra>> = {
   openWorktree: { ...github, refetchInterval: 120_000, refetchIntervalInBackground: true },
   listPullRequests: github,
   listPullRequestTitles: github,
+  // ADR 0037: the PR panel's, and the review threads mirrored from it; every minute while the workspace shows.
+  readPullRequest: { ...github, refetchInterval: 60_000 },
 };
 // Offline or signed out: a GitHub read keeps what it fetched before. Throwing leaves the query's data as it was.
-const keepsOk = new Set<Reads>(["openWorktree"]);
+const keepsOk = new Set<Reads>(["openWorktree", "readPullRequest"]);
 
 // A core call as a query: its key is the call's name and arguments, so keys live here only.
 // Trailing undefined arguments are left out of the key, so an optional head given or not makes the same key.
@@ -68,7 +70,7 @@ export function core<K extends Reads>(name: K, ...args: Parameters<Api[K]>) {
 
 // The queries each kind of change makes stale, for the workspace it happened in.
 const affects: Record<Changed["what"], Reads[]> = {
-  entries: ["listEntries"],
+  entries: ["listEntries", "listPostable"],
   // Entries and Reviewed follow the code they're about (ADR 0014, 0015).
   worktree: [
     "snapshot",
@@ -80,6 +82,7 @@ const affects: Record<Changed["what"], Reads[]> = {
     "readWorktreeFile",
     "listReviewed",
     "listEntries",
+    "listPostable",
     "summaryCoverage",
   ],
   // A turn's session reports its agent's choices of model and effort afresh.

@@ -38,7 +38,7 @@ export type AgentSession = {
 // One line of the chat: something the user said, text the agent wrote, or a tool the agent used. comment: the user's
 // message was a comment sent from a thread, which the chat shows as a card.
 // review: the message was every thread of the review at once, with how many. view: a prompt from New View, with
-// what the user typed along with it. id: a streamed entry's; a later entry with
+// what the user typed along with it. check: a failed check sent from the PR panel. id: a streamed entry's; a later entry with
 // the same id is the same one grown, and replaces it.
 export type ChatEntry = {
   id?: number;
@@ -48,6 +48,7 @@ export type ChatEntry = {
   comment?: SentComment;
   review?: { threads: number };
   view?: SentView;
+  check?: { name: string };
 };
 export type SentView = { title: string; note: string };
 export type SentComment = { threadId: number; where: string; body: string };
@@ -62,6 +63,10 @@ export const formatComment = (c: SentComment, context: string) =>
 const reviewHeader = /^\[Review · (\d+) threads?\]\n/;
 export const formatReview = (threads: number, body: string) =>
   `[Review · ${threads} thread${threads === 1 ? "" : "s"}]\n${body}`;
+
+// A failed check sent from the PR panel (ADR 0037), likewise.
+const checkHeader = /^\[Check · (.+) failed\]\n/;
+export const formatCheck = (name: string, body: string) => `[Check · ${name} failed]\n${body}`;
 
 // A prompt attached from New View, likewise: the header with its title, what the user typed, then the prompt itself.
 const viewHeader = /^\[View · (.+)\]\n/;
@@ -83,6 +88,8 @@ function withComment(entry: ChatEntry): ChatEntry {
     };
   const r = reviewHeader.exec(entry.text);
   if (r) return { ...entry, review: { threads: Number(r[1]) } };
+  const c = checkHeader.exec(entry.text);
+  if (c) return { ...entry, check: { name: c[1] } };
   const v = viewHeader.exec(entry.text);
   if (v)
     return {
@@ -858,6 +865,7 @@ export const firstMessageTitle = (prompt: string): string => {
     prompt
       .replace(commentHeader, "")
       .replace(reviewHeader, "")
+      .replace(checkHeader, "Fix the failing check $1\n")
       .split("\n")
       .find((l) => l.trim()) ?? ""
   )

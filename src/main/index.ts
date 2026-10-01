@@ -81,7 +81,22 @@ import {
   savePrompt,
   type ViewRange,
 } from "../core/views";
-import { getCurrentUser, listPullRequestTitles, listPullRequests, listRepos } from "../core/github";
+import {
+  type Check,
+  getCurrentUser,
+  listPullRequestTitles,
+  listPullRequests,
+  listRepos,
+} from "../core/github";
+import {
+  changePullRequest,
+  listPostable,
+  postReview,
+  type PullRequestChange,
+  type PullRequestRef,
+  readPullRequest,
+  type ReviewPost,
+} from "../core/pull-requests";
 import { listProjects, openProject } from "../core/projects";
 import {
   addNote,
@@ -95,6 +110,7 @@ import {
   listEntries,
   type NewEntry,
   reviewPromptText,
+  sendCheck,
   sendReview,
   stopQuestion,
 } from "../core/review";
@@ -120,6 +136,10 @@ import {
   openWorkspace,
   removeWorkspace,
 } from "../core/workspaces";
+
+// A run with a database of its own, e.g. a dev build checked against a scratch database: macOS ignores $HOME for
+// userData, so without this a dev build migrates the installed coxswain's database ahead of it.
+if (process.env.COXSWAIN_USER_DATA) app.setPath("userData", process.env.COXSWAIN_USER_DATA);
 
 // Started from the Dock, Finder or a desktop launcher, the app gets a bare PATH without gh, claude or codex, so it takes
 // the login shell's. The markers skip whatever the shell prints on start.
@@ -551,6 +571,38 @@ app.whenReady().then(() => {
     void summariseAhead(db, workspaceId);
     return result;
   });
+  // ADR 0037: the workspace's PR for its panel, its review threads mirrored into entries on the way.
+  ipcMain.handle("github:pull-request", async (e, workspaceId: number) => {
+    const { pr, changed: synced } = await readPullRequest(db, workspaceId);
+    if (synced) changed(e.sender, { workspaceId, what: "entries" });
+    return pr;
+  });
+  ipcMain.handle("github:postable", (_, workspaceId: number) => listPostable(db, workspaceId));
+  ipcMain.handle("github:post-review", async (e, workspaceId: number, post: ReviewPost) => {
+    const result = await postReview(db, workspaceId, post);
+    changed(e.sender, { workspaceId, what: "entries" }); // what got posted, also halfway
+    return result;
+  });
+  ipcMain.handle("github:change-pr", (_, pr: PullRequestRef, change: PullRequestChange) =>
+    changePullRequest(pr, change),
+  );
+  // A failed check to the agent pane's session; the reply streams as agents:entry, like Send to Agent's.
+  ipcMain.handle("github:send-check", async (e, workspaceId: number, check: Check) => {
+    const send = (channel: string, ...args: unknown[]) =>
+      !e.sender.isDestroyed() && e.sender.send(channel, ...args);
+    const result = await sendCheck(db, workspaceId, check, (agentSessionId) => {
+      changed(e.sender, { workspaceId, what: "transcript" }); // the session may be new
+      return {
+        onEntry: (entry) => send("agents:entry", agentSessionId, entry),
+        onPermission: (p) =>
+          permission(e.sender, () => send("agents:permission", agentSessionId, p)),
+      };
+    });
+    changed(e.sender, { workspaceId, what: "worktree" });
+    changed(e.sender, { workspaceId, what: "transcript" });
+    void summariseAhead(db, workspaceId);
+    return result;
+  });
   ipcMain.handle("review:copy-prompt", async (_, workspaceId: number) => {
     const prompt = await reviewPromptText(db, workspaceId);
     if (prompt) clipboard.writeText(prompt);
@@ -610,11 +662,14 @@ app.whenReady().then(() => {
   // a dismissal from a pick. A dismissed menu leaves the promise pending; nothing else waits on it.
   ipcMain.handle(
     "menus:thread",
-    (e, can: { edit: boolean; send: boolean }) =>
+    (e, can: { edit: boolean; send: boolean; delete: boolean; url: string | null }) =>
       new Promise<"edit" | "delete" | "send">((resolve) =>
         Menu.buildFromTemplate([
           { label: "Edit", enabled: can.edit, click: () => resolve("edit") },
-          { label: "Delete", click: () => resolve("delete") },
+          { label: "Delete", enabled: can.delete, click: () => resolve("delete") },
+          ...(can.url
+            ? [{ label: "Open on GitHub", click: () => void shell.openExternal(can.url!) }]
+            : []),
           { type: "separator" },
           { label: "Send to Agent", enabled: can.send, click: () => resolve("send") },
         ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
@@ -663,13 +718,13 @@ app.whenReady().then(() => {
   // The bottom bar's Hand off: where the open threads go. Send to GitHub isn't built yet, so it's shown greyed out.
   ipcMain.handle(
     "menus:hand-off",
-    (e) =>
-      new Promise<"agent" | "copy">((resolve) =>
+    (e, hasPr: boolean) =>
+      new Promise<"agent" | "copy" | "post">((resolve) =>
         Menu.buildFromTemplate([
           { label: "Send to Agent", click: () => resolve("agent") },
           { label: "Copy as Prompt", click: () => resolve("copy") },
           { type: "separator" },
-          { label: "Send to GitHub as a Review…", enabled: false },
+          { label: "Post to GitHub…", enabled: hasPr, click: () => resolve("post") },
         ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
       ),
   );

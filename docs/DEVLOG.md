@@ -3,6 +3,42 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-10-01 — The PR on GitHub: threads, PR panel, checks, posting (#3)
+
+### What works
+
+- **Review threads from GitHub show between the lines** (ADR 0037). Reading the PR (`getPullRequest`, one GraphQL
+  query, polled every minute) mirrors its review threads into entries of kind `comment` (`syncThreads`), anchored at
+  the lines and commit they were written on, so following, outdated, the threads list, _Hand off_ and the agent's
+  prompts take them as they are. Prompts name GitHub's authors (`@ana on GitHub`). Edits, deletes, resolves and
+  reopens on GitHub are taken over on the next read.
+- **Post to GitHub.** _Hand off › Post to GitHub…_ opens the PR panel's list of threads with something to post (new
+  threads, replies to GitHub's, resolves); the picked ones go as one review (GraphQL pending review, then submit) with
+  a verdict and summary. Lines outside the PR's diff go as a comment on the file, quoting them; lines not pushed can't
+  go. The agent's answers go only when picked, marked `🤖 Claude, via coxswain`. Each entry records its comment as
+  posted (`github_id`), so nothing is posted twice.
+- **The PR panel**, a canvas location (`pr`) opened by the PR's chip in the canvas bar: state, _Merge…_ (asks; the
+  repository's merge methods), _Ready for Review_, checks, description edited in place, assign yourself, reviewers,
+  labels, conversation and a comment box.
+- **Checks**: a dot on the PR chip and per commit in the Commits pane; a failing check's _Send to Agent_ sends it
+  with the end of its GitHub Actions log to the agent pane's session (`[Check · name failed]`, a card in the chat).
+- Migration: `entries` rebuilt for the `comment` kind, with `author`, `github_id`, `github_thread_id`, `github_url`,
+  `github_resolved`. `TextArea` gets `long` (Enter adds a line, ⌘Enter submits).
+- `COXSWAIN_USER_DATA` points a run at a database of its own. macOS ignores `$HOME` for userData, so a dev build
+  otherwise migrates the installed coxswain's database.
+- Tests: mirroring, re-reading, GitHub's edits, deletes and reopens, what's postable (in the diff, on the file, not
+  pushed), hunk ranges and check states (`pull-requests.test.ts`). Checked in the running app on a scratch database:
+  the PR chip, the panel, and a local note listed under _Post to GitHub_. Posting, threads from GitHub, checks and
+  merging were not tried against GitHub.
+
+### Tech debt
+
+- `ponytail:` the first 100 threads, comments per thread, commits and checks (`core/github.ts`).
+- `ponytail:` a thread deleted on GitHub stays here with its local replies (`syncThreads`).
+- GraphQL has no ETags, so each minute's poll counts against the rate limit.
+- A posted entry edited here isn't updated on GitHub. A comment whose commit the clone lacks reads as outdated.
+- Splitting a workspace's commits into a new branch workspace (several PRs from one piece of work) isn't built.
+
 ## 2026-10-01 — Threads on a view's prose (#28)
 
 ### What works

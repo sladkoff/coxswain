@@ -182,6 +182,42 @@ export const migrations = [
   // section's text. Its revision is then the section's version, a hash of its markdown.
   `alter table entries add column section integer;
   alter table entries add column quote_at integer`,
+  // ADR 0037: a PR's review threads on GitHub, mirrored as entries of kind 'comment' (author: the GitHub login), and
+  // what was posted there. github_id: the comment's node id, on a mirrored comment or an entry once posted;
+  // github_thread_id: on a thread's first entry, its review thread's; github_resolved: whether GitHub had it resolved at
+  // the last sync or post, so a resolve here can be told from one there. The kind check widens, so the table is rebuilt.
+  `create table entries_new (
+    id integer primary key,
+    workspace_id integer not null references workspaces (id) on delete cascade,
+    kind text not null check (kind in ('note', 'question', 'answer', 'explanation', 'finding', 'comment')),
+    body text not null,
+    parent_id integer references entries_new (id) on delete cascade,
+    view_id integer references views (id) on delete cascade,
+    path text,
+    side text check (side in ('old', 'new')),
+    start_line integer,
+    end_line integer,
+    code text,
+    base text,
+    head text,
+    created_at text not null,
+    resolved_at text,
+    agent_session_id text,
+    revision text,
+    section integer,
+    quote_at integer,
+    author text,
+    github_id text unique,
+    github_thread_id text,
+    github_url text,
+    github_resolved integer
+  );
+  insert into entries_new (id, workspace_id, kind, body, parent_id, view_id, path, side, start_line, end_line, code,
+    base, head, created_at, resolved_at, agent_session_id, revision, section, quote_at)
+    select id, workspace_id, kind, body, parent_id, view_id, path, side, start_line, end_line, code, base, head,
+      created_at, resolved_at, agent_session_id, revision, section, quote_at from entries;
+  drop table entries;
+  alter table entries_new rename to entries`,
 ];
 
 // ADR 0016: the tables as the migrations above leave them. Change this with every migration that changes a table.
@@ -261,7 +297,7 @@ type Tables = {
   entries: {
     id: Generated<number>;
     workspace_id: number;
-    kind: "note" | "question" | "answer" | "explanation" | "finding";
+    kind: "note" | "question" | "answer" | "explanation" | "finding" | "comment";
     body: string;
     parent_id: number | null;
     view_id: number | null;
@@ -278,6 +314,11 @@ type Tables = {
     revision: string | null;
     section: Generated<number | null>;
     quote_at: Generated<number | null>;
+    author: Generated<string | null>;
+    github_id: Generated<string | null>;
+    github_thread_id: Generated<string | null>;
+    github_url: Generated<string | null>;
+    github_resolved: Generated<number | null>;
   };
 };
 

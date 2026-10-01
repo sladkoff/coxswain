@@ -24,12 +24,21 @@ import type {
 } from "../core/git";
 import type { CodeAt, CodeLineList } from "../core/lsp";
 import type {
+  Check,
   CreatedPullRequest,
   CurrentUser,
+  GitHubProblem,
   PullRequestList,
+  PullRequestResult,
   PullRequestTitles,
   RepoPage,
 } from "../core/github";
+import type {
+  PostableThread,
+  PullRequestChange,
+  PullRequestRef,
+  ReviewPost,
+} from "../core/pull-requests";
 import type { AttachedPrompt, Prompt, View, ViewRange } from "../core/views";
 import type { Project } from "../core/projects";
 import type { NewEntry, ReviewEntry } from "../core/review";
@@ -220,6 +229,23 @@ const api = {
   // Every thread to the agent pane's session in one message; resolves when the agent's turn ends.
   sendReview: (workspaceId: number): Promise<TurnResult> =>
     ipcRenderer.invoke("review:send-all", workspaceId),
+  // ADR 0037: the workspace's PR for its panel; reading it mirrors its review threads into the entries.
+  readPullRequest: (workspaceId: number): Promise<PullRequestResult> =>
+    ipcRenderer.invoke("github:pull-request", workspaceId),
+  // The threads with something to post, and posting the picked ones as one review.
+  listPostable: (workspaceId: number): Promise<PostableThread[]> =>
+    ipcRenderer.invoke("github:postable", workspaceId),
+  postReview: (workspaceId: number, post: ReviewPost): Promise<{ status: "ok" } | GitHubProblem> =>
+    ipcRenderer.invoke("github:post-review", workspaceId, post),
+  // The PR panel's changes on GitHub: description, a comment, assigning yourself, ready for review, merge.
+  changePullRequest: (
+    pr: PullRequestRef,
+    change: PullRequestChange,
+  ): Promise<{ status: "ok" } | GitHubProblem> =>
+    ipcRenderer.invoke("github:change-pr", pr, change),
+  // A failed check to the agent pane's session; resolves when the agent's turn ends.
+  sendCheck: (workspaceId: number, check: Check): Promise<TurnResult> =>
+    ipcRenderer.invoke("github:send-check", workspaceId, check),
   // The same message, put on the clipboard instead; false if there are no threads.
   copyReviewPrompt: (workspaceId: number): Promise<boolean> =>
     ipcRenderer.invoke("review:copy-prompt", workspaceId),
@@ -312,17 +338,23 @@ const api = {
   // Native menu (ADR 0004). Resolves with the new settings when an item is picked; stays pending if dismissed.
   showViewMenu: (settings: ViewSettings): Promise<ViewSettings> =>
     ipcRenderer.invoke("menus:view", settings),
-  // The bottom bar's Hand off menu: send the open threads to the agent, or copy them as a prompt. Pending if dismissed.
-  showHandOffMenu: (): Promise<"agent" | "copy"> => ipcRenderer.invoke("menus:hand-off"),
+  // The bottom bar's Hand off menu: send the open threads to the agent, copy them as a prompt, or post them to the PR
+  // (hasPr). Pending if dismissed.
+  showHandOffMenu: (hasPr: boolean): Promise<"agent" | "copy" | "post"> =>
+    ipcRenderer.invoke("menus:hand-off", hasPr),
   // The Diff tab's range menu: a scope, or "commits". `scope` is null while a commit or turn shows. Pending if dismissed.
   showRangeMenu: (
     scope: "all" | "pushed" | "unpushed" | "uncommitted" | null,
     hasPr: boolean,
     layers: Layers,
   ): Promise<RangePick> => ipcRenderer.invoke("menus:range", scope, hasPr, layers),
-  // A thread's ⋯ menu; stays pending if dismissed.
-  showThreadMenu: (can: { edit: boolean; send: boolean }): Promise<"edit" | "delete" | "send"> =>
-    ipcRenderer.invoke("menus:thread", can),
+  // A thread's ⋯ menu; stays pending if dismissed. url: its comment on GitHub, opened in the browser from the menu.
+  showThreadMenu: (can: {
+    edit: boolean;
+    send: boolean;
+    delete: boolean;
+    url: string | null;
+  }): Promise<"edit" | "delete" | "send"> => ipcRenderer.invoke("menus:thread", can),
   // A pick from a list (the agent pane's session, agent, model, effort): the index of the picked label. Pending if
   // dismissed.
   showPickMenu: (labels: string[], checked: number): Promise<number> =>

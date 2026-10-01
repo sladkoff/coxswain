@@ -1,5 +1,6 @@
 import {
   type ChatEntry,
+  formatCheck,
   formatComment,
   formatReview,
   listAgentSessions,
@@ -19,8 +20,10 @@ import {
   type ReviewEntry,
   type Row,
 } from "./entries.ts";
-import { anchored, byAgent, describe, fence, unseen } from "./thread-context.ts";
+import { anchored, byAgent, describe, fence, unseen, who } from "./thread-context.ts";
 import { currentMergeBase } from "./git";
+import { type Check, readJobLog } from "./github";
+import { prOf } from "./pull-requests.ts";
 
 export { addNote, listEntries, type NewEntry, type ReviewEntry } from "./entries.ts";
 
@@ -43,7 +46,7 @@ export async function deleteEntry(db: Db, id: number) {
 
 // The workspace's current agent session, the agent pane's: the one last used, or a new one if it has none. Questions are
 // turns in it, so the agent pane shows them and the agent keeps one context.
-async function currentSession(db: Db, workspaceId: number): Promise<string> {
+export async function currentSession(db: Db, workspaceId: number): Promise<string> {
   const last =
     (await listAgentSessions(db, workspaceId)).find((s) => s.current) ??
     (await startAgentSession(db, workspaceId));
@@ -167,12 +170,12 @@ function reviewPrompt(entries: ReviewEntry[]): { threads: number; prompt: string
   );
   const parts = roots.map((root, i) => {
     const thread = [root, ...entries.filter((e) => e.parentId === root.id)];
-    const lines = thread.map((e) => `${byAgent(e) ? "You" : "Me"}: ${e.body}`);
+    const lines = thread.map((e) => `${who(e)}: ${e.body}`);
     const changed = root.state === "outdated" ? `\n${since(root)}` : "";
     return `${i + 1}. On ${describe(root)}${changed}\n${lines.join("\n")}`;
   });
   const prompt = `Here's my review of this worktree's changes so far: every thread, with where it points and the code as it was
-then, in order. "Me" is me, "You" is your earlier answers. Work through them: make the changes my comments ask for,
+then, in order. "Me" is me, "You" is your earlier answers, "@name" a reviewer on GitHub. Work through them: make the changes my comments ask for,
 answer what's still open, and tell me briefly what you did for each and what you left.\n\n${parts.join("\n\n")}`;
   return { threads: roots.length, prompt };
 }
@@ -228,4 +231,27 @@ export async function setCommentToAgent(db: Db, toAgent: boolean) {
     .values({ key: "comment.to-agent", value })
     .onConflict((oc) => oc.column("key").doUpdateSet({ value }))
     .execute();
+}
+
+// A failed check, to the workspace's current agent session: its name and what it says, and for a GitHub Actions job
+// the end of its log, to find out why and fix it. handlers: made for the session it goes to, as sendReview's.
+export async function sendCheck(
+  db: Db,
+  workspaceId: number,
+  check: Check,
+  handlers: (agentSessionId: string) => Parameters<typeof runTurn>[3],
+): Promise<TurnResult> {
+  const w = await prOf(db, workspaceId);
+  const log = check.jobId !== null ? await readJobLog(w.owner, w.name, check.jobId) : null;
+  const ending =
+    log?.status === "ok"
+      ? `The end of its log:\n${fence(log.log)}`
+      : `Its log couldn't be read here${check.url ? `; it's at ${check.url}` : ""}.`;
+  const prompt = `The check "${check.name}" fails on this PR's head on GitHub${check.detail ? `: ${check.detail}` : "."}
+
+${ending}
+
+Find out why it fails, and fix it if the cause is in this branch's changes. Tell me briefly what you found and did.`;
+  const agentSessionId = await currentSession(db, workspaceId);
+  return runTurn(db, agentSessionId, formatCheck(check.name, prompt), handlers(agentSessionId));
 }

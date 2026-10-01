@@ -17,6 +17,7 @@ export type CanvasSearch = {
   // all of it.
   scope?: "pushed" | "unpushed" | "uncommitted";
   viewId?: number | null; // the view shown (ADR 0026); null: none, chosen by the user; left out: the newest if not stale
+  pr?: true; // the PR panel in place of the diff and views (ADR 0037); any other pick on the canvas leaves it
 };
 
 // One route: the canvas has no pages, only this state. Memory history: an Electron window has no address bar.

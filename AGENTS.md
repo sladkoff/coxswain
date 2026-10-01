@@ -82,5 +82,8 @@ pnpm format      # oxfmt, formats in place
 
 GitHub features need the GitHub CLI signed in: `gh auth login`.
 
+A dev run uses the installed app's database (`~/Library/Application Support/coxswain`), and a new migration
+locks the installed release out of it. Check migrations against a scratch one: `COXSWAIN_USER_DATA=/tmp/cx pnpm dev`.
+
 Before calling a change done, run `pnpm typecheck`, `pnpm test`, `pnpm lint`, `pnpm format` and `pnpm build`, and check the change in the
 running app.

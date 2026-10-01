@@ -18,6 +18,8 @@ type Props = {
   turns: Record<number, Turn>;
   onViewThread: (threadId: number) => void;
   viewTitle?: string; // the view on the canvas, whose prose threads are listed under it (ADR 0036)
+  hasPr: boolean; // the workspace has a PR to post to (ADR 0037)
+  onPost: () => void; // Post to GitHub: the PR panel, where the threads to post are picked
 };
 
 // The canvas's bottom bar: the review at a glance on the left (threads, with how many wait on the agent, how many of
@@ -50,8 +52,9 @@ export function StatusBar(props: Props) {
     (t) => t.path ?? "",
   );
   const handOffTo = async () => {
-    const to = await window.coxswain.showHandOffMenu();
+    const to = await window.coxswain.showHandOffMenu(props.hasPr);
     setError(null);
+    if (to === "post") return props.onPost();
     if (to === "copy") {
       setCopied(await window.coxswain.copyReviewPrompt(props.workspaceId));
       setTimeout(() => setCopied(false), 1500);
@@ -164,7 +167,7 @@ export function StatusBar(props: Props) {
           variant="primary"
           title={
             handOff.length
-              ? "Send the open threads to the agent, or copy them as a prompt"
+              ? "Send the open threads to the agent, copy them as a prompt, or post them to GitHub"
               : "Nothing to hand off: no open threads of yours (the agent's explanations count once you reply)"
           }
           className="flex shrink-0 items-center gap-1.5 py-0.5 pr-1.5"
@@ -219,6 +222,7 @@ function ThreadRow(props: {
     .with({ t: { shown: false } }, () => [null, writtenIn(t)])
     .with({ answers: P.number.gt(0) }, () => ["bg-green-600", count(answers, "answer")])
     .with({ t: { kind: "question" } }, () => ["bg-blue-500", "sent to agent"])
+    .with({ t: { kind: "comment" } }, () => [null, `@${t.author} on GitHub`])
     .otherwise(() => [null, null]);
   return (
     <div className="flex items-center pr-1 hover:bg-neutral-100 dark:hover:bg-neutral-800">

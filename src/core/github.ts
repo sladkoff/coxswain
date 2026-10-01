@@ -243,3 +243,353 @@ export function createPullRequest(
     return { status: "ok", number: data.number, url: data.html_url };
   });
 }
+
+// ADR 0037: a PR as its panel shows it, with its review threads (mirrored into entries) and its checks, in one GraphQL
+// request. Polled while its workspace shows; GraphQL has no ETags, so each poll counts against the rate limit.
+export type CheckState = "success" | "failure" | "pending" | "neutral";
+// A check on a commit: a check run (GitHub Actions and other apps) or a commit status. jobId: an Actions job, whose
+// log can be read.
+export type Check = {
+  name: string;
+  state: CheckState;
+  detail: string | null;
+  url: string | null;
+  jobId: number | null;
+};
+export type GitHubComment = {
+  id: string;
+  author: string;
+  body: string;
+  createdAt: string;
+  url: string;
+};
+// A review thread on lines: side and lines as they were where its first comment was written (commit). file: a thread
+// on a whole file, which has no lines.
+export type ReviewThread = {
+  id: string;
+  resolved: boolean;
+  path: string;
+  side: "old" | "new";
+  startLine: number | null;
+  endLine: number | null;
+  commit: string | null;
+  comments: GitHubComment[];
+};
+// One item of the PR's conversation: a comment on the PR, a review's summary (review: its verdict), or a comment on a
+// whole file (path).
+export type ConversationItem = GitHubComment & { review?: string; path?: string };
+export type MergeMethod = "merge" | "squash" | "rebase";
+export type PullRequestDetails = {
+  status: "ok";
+  id: string;
+  number: number;
+  title: string;
+  body: string;
+  url: string;
+  state: "open" | "merged" | "closed";
+  draft: boolean;
+  // Whether it merges cleanly, and what GitHub says of merging it now (blocked by required checks or reviews, …).
+  mergeable: "mergeable" | "conflicting" | "unknown";
+  mergeState: string;
+  author: string | null;
+  baseRef: string;
+  headRef: string;
+  head: string;
+  viewer: string;
+  viewerId: string;
+  canUpdate: boolean;
+  assignees: string[];
+  reviewers: { login: string; state: string }[]; // state: requested, approved, changes requested, commented, …
+  labels: { name: string; color: string }[];
+  checks: Check[]; // the head commit's
+  checkState: CheckState | null; // all of them at once; null without any
+  commitChecks: Record<string, CheckState>; // each commit's, by sha
+  mergeMethods: MergeMethod[];
+  conversation: ConversationItem[];
+  threads: ReviewThread[];
+};
+export type PullRequestResult = PullRequestDetails | GitHubProblem;
+
+// ponytail: the first 100 threads, comments, commits and checks; page them if PRs grow past that.
+const pullRequestQuery = `query($owner: String!, $name: String!, $number: Int!) {
+  viewer { login id }
+  repository(owner: $owner, name: $name) {
+    mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed
+    pullRequest(number: $number) {
+      id number title body url state isDraft mergeable mergeStateStatus viewerCanUpdate
+      author { login } baseRefName headRefName headRefOid
+      assignees(first: 20) { nodes { login } }
+      labels(first: 20) { nodes { name color } }
+      reviewRequests(first: 20) { nodes { requestedReviewer { ... on User { login } ... on Team { name } ... on Bot { login } } } }
+      latestReviews(first: 20) { nodes { author { login } state } }
+      comments(last: 50) { nodes { id author { login } body createdAt url } }
+      reviews(last: 50) { nodes { id author { login } body state submittedAt createdAt url } }
+      reviewThreads(first: 100) { nodes {
+        id isResolved path diffSide subjectType originalLine originalStartLine
+        comments(first: 100) { nodes { id author { login } body createdAt url originalCommit { oid } } }
+      } }
+      commits(last: 100) { nodes { commit { oid statusCheckRollup { state } } } }
+      headCommit: commits(last: 1) { nodes { commit { statusCheckRollup { state contexts(first: 100) { nodes {
+        __typename
+        ... on CheckRun { name status conclusion detailsUrl databaseId title checkSuite { app { slug } } }
+        ... on StatusContext { context state targetUrl description }
+      } } } } } }
+    }
+  }
+}`;
+
+type Login = { login: string } | null;
+type RawComment = { id: string; author: Login; body: string; createdAt: string; url: string };
+type RawContext =
+  | {
+      __typename: "CheckRun";
+      name: string;
+      status: string;
+      conclusion: string | null;
+      detailsUrl: string | null;
+      databaseId: number;
+      title: string | null;
+      checkSuite: { app: { slug: string } | null } | null;
+    }
+  | {
+      __typename: "StatusContext";
+      context: string;
+      state: string;
+      targetUrl: string | null;
+      description: string | null;
+    };
+type RawPullRequest = {
+  viewer: { login: string; id: string };
+  repository: {
+    mergeCommitAllowed: boolean;
+    squashMergeAllowed: boolean;
+    rebaseMergeAllowed: boolean;
+    pullRequest: {
+      id: string;
+      number: number;
+      title: string;
+      body: string;
+      url: string;
+      state: string;
+      isDraft: boolean;
+      mergeable: string;
+      mergeStateStatus: string;
+      viewerCanUpdate: boolean;
+      author: Login;
+      baseRefName: string;
+      headRefName: string;
+      headRefOid: string;
+      assignees: { nodes: { login: string }[] };
+      labels: { nodes: { name: string; color: string }[] };
+      reviewRequests: {
+        nodes: { requestedReviewer: { login?: string; name?: string } | null }[];
+      };
+      latestReviews: { nodes: { author: Login; state: string }[] };
+      comments: { nodes: RawComment[] };
+      reviews: {
+        nodes: (Omit<RawComment, "createdAt"> & {
+          state: string;
+          submittedAt: string | null;
+          createdAt: string;
+        })[];
+      };
+      reviewThreads: {
+        nodes: {
+          id: string;
+          isResolved: boolean;
+          path: string;
+          diffSide: "LEFT" | "RIGHT";
+          subjectType: "LINE" | "FILE";
+          originalLine: number | null;
+          originalStartLine: number | null;
+          comments: { nodes: (RawComment & { originalCommit: { oid: string } | null })[] };
+        }[];
+      };
+      commits: {
+        nodes: { commit: { oid: string; statusCheckRollup: { state: string } | null } }[];
+      };
+      headCommit: {
+        nodes: {
+          commit: {
+            statusCheckRollup: { state: string; contexts: { nodes: RawContext[] } } | null;
+          };
+        }[];
+      };
+    } | null;
+  };
+};
+
+const comment = (c: RawComment): GitHubComment => ({
+  id: c.id,
+  author: c.author?.login ?? "ghost",
+  body: c.body,
+  createdAt: c.createdAt,
+  url: c.url,
+});
+
+// A rollup's or a commit status's state (StatusState), as the panel colours it.
+export function statusState(state: string): CheckState {
+  if (state === "SUCCESS") return "success";
+  if (state === "FAILURE" || state === "ERROR") return "failure";
+  if (state === "PENDING" || state === "EXPECTED") return "pending";
+  return "neutral";
+}
+
+// A check run's state: running until completed, then by its conclusion.
+export function checkRunState(status: string, conclusion: string | null): CheckState {
+  if (status !== "COMPLETED") return "pending";
+  if (conclusion === "SUCCESS") return "success";
+  if (
+    conclusion === "FAILURE" ||
+    conclusion === "TIMED_OUT" ||
+    conclusion === "STARTUP_FAILURE" ||
+    conclusion === "ACTION_REQUIRED"
+  )
+    return "failure";
+  return "neutral"; // neutral, skipped, cancelled, stale
+}
+
+const words = (s: string) => s.toLowerCase().replaceAll("_", " ");
+
+export function parsePullRequest(data: RawPullRequest): PullRequestResult {
+  const { viewer, repository: r } = data;
+  const pr = r.pullRequest;
+  if (!pr) return { status: "error", message: "No such pull request" };
+  const rollup = pr.headCommit.nodes[0]?.commit.statusCheckRollup ?? null;
+  const checks = (rollup?.contexts.nodes ?? []).map((c): Check =>
+    c.__typename === "CheckRun"
+      ? {
+          name: c.name,
+          state: checkRunState(c.status, c.conclusion),
+          detail: c.title,
+          url: c.detailsUrl,
+          jobId: c.checkSuite?.app?.slug === "github-actions" ? c.databaseId : null,
+        }
+      : {
+          name: c.context,
+          state: statusState(c.state),
+          detail: c.description,
+          url: c.targetUrl,
+          jobId: null,
+        },
+  );
+  const requested = pr.reviewRequests.nodes.flatMap((n) => {
+    const who = n.requestedReviewer?.login ?? n.requestedReviewer?.name;
+    return who ? [{ login: who, state: "requested" }] : [];
+  });
+  const reviewed = pr.latestReviews.nodes.flatMap((n) =>
+    n.author ? [{ login: n.author.login, state: words(n.state) }] : [],
+  );
+  const threads = pr.reviewThreads.nodes.map((t): ReviewThread => ({
+    id: t.id,
+    resolved: t.isResolved,
+    path: t.path,
+    side: t.diffSide === "LEFT" ? "old" : "new",
+    startLine: t.subjectType === "FILE" ? null : (t.originalStartLine ?? t.originalLine),
+    endLine: t.subjectType === "FILE" ? null : t.originalLine,
+    commit: t.comments.nodes[0]?.originalCommit?.oid ?? null,
+    comments: t.comments.nodes.map(comment),
+  }));
+  // A thread on a whole file has no lines to stand between: it's part of the conversation.
+  const onFiles = threads.flatMap((t) =>
+    t.startLine === null ? t.comments.map((c) => ({ ...c, path: t.path })) : [],
+  );
+  const reviews = pr.reviews.nodes.flatMap((v) =>
+    v.body || v.state === "APPROVED" || v.state === "CHANGES_REQUESTED"
+      ? [
+          {
+            ...comment({ ...v, createdAt: v.submittedAt ?? v.createdAt }),
+            review: words(v.state),
+          },
+        ]
+      : [],
+  );
+  return {
+    status: "ok",
+    id: pr.id,
+    number: pr.number,
+    title: pr.title,
+    body: pr.body,
+    url: pr.url,
+    state: pr.state.toLowerCase() as PullRequestDetails["state"],
+    draft: pr.isDraft,
+    mergeable: pr.mergeable.toLowerCase() as PullRequestDetails["mergeable"],
+    mergeState: words(pr.mergeStateStatus),
+    author: pr.author?.login ?? null,
+    baseRef: pr.baseRefName,
+    headRef: pr.headRefName,
+    head: pr.headRefOid,
+    viewer: viewer.login,
+    viewerId: viewer.id,
+    canUpdate: pr.viewerCanUpdate,
+    assignees: pr.assignees.nodes.map((a) => a.login),
+    reviewers: [
+      ...requested,
+      ...reviewed.filter((v) => !requested.some((q) => q.login === v.login)),
+    ],
+    labels: pr.labels.nodes,
+    checks,
+    checkState: rollup ? statusState(rollup.state) : null,
+    commitChecks: Object.fromEntries(
+      pr.commits.nodes.flatMap(({ commit: c }) =>
+        c.statusCheckRollup ? [[c.oid, statusState(c.statusCheckRollup.state)]] : [],
+      ),
+    ),
+    mergeMethods: [
+      ...(r.mergeCommitAllowed ? ["merge" as const] : []),
+      ...(r.squashMergeAllowed ? ["squash" as const] : []),
+      ...(r.rebaseMergeAllowed ? ["rebase" as const] : []),
+    ],
+    conversation: [...pr.comments.nodes.map(comment), ...reviews, ...onFiles].sort((a, b) =>
+      a.createdAt.localeCompare(b.createdAt),
+    ),
+    threads: threads.filter((t) => t.startLine !== null),
+  };
+}
+
+export function getPullRequest(
+  owner: string,
+  name: string,
+  prNumber: number,
+): Promise<PullRequestResult> {
+  return withGitHub(async (octokit) =>
+    parsePullRequest(
+      await octokit.graphql<RawPullRequest>(pullRequestQuery, { owner, name, number: prNumber }),
+    ),
+  );
+}
+
+// One GraphQL mutation (or query) as the current user; what goes wrong comes back as a problem.
+export function githubGraphql<T>(
+  query: string,
+  variables: Record<string, unknown>,
+): Promise<{ status: "ok"; data: T } | GitHubProblem> {
+  return withGitHub(async (octokit) => ({
+    status: "ok" as const,
+    data: await octokit.graphql<T>(query, variables),
+  }));
+}
+
+// The last lines of a GitHub Actions job's log, where a failure usually says why. Timestamps are cut off.
+export function readJobLog(
+  owner: string,
+  name: string,
+  jobId: number,
+  lines = 150,
+): Promise<{ status: "ok"; log: string } | GitHubProblem> {
+  return withGitHub(async (octokit) => {
+    const { data } = await octokit.request("GET /repos/{owner}/{repo}/actions/jobs/{job_id}/logs", {
+      owner,
+      repo: name,
+      job_id: jobId,
+    });
+    const text = typeof data === "string" ? data : new TextDecoder().decode(data as ArrayBuffer);
+    const log = text
+      .trimEnd()
+      .split("\n")
+      .slice(-lines)
+      .map((l) => l.replace(/^\d{4}-\d\d-\d\dT[\d:.]+Z /, ""))
+      .join("\n");
+    return { status: "ok" as const, log };
+  });
+}

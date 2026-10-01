@@ -31,6 +31,7 @@ import { StatusBar } from "./StatusBar";
 import { usePullRequest } from "./usePullRequest";
 import { SpinnerIcon } from "./components/icons";
 import { ProseThreads } from "./ProseThreads";
+import { PullRequestPanel } from "./PullRequest";
 import { viewDiff, ViewProse, ViewSectionHeader } from "./ViewSection";
 import { ViewToc } from "./ViewToc";
 import type { ViewSettings } from "../../preload";
@@ -143,7 +144,11 @@ export function App() {
   // A new entry with these changes to what the canvas shows. Stable, so the memoised Viewers don't redraw.
   const show = useCallback(
     (changes: CanvasSearch, replace = false) =>
-      navigate({ to: "/", search: { ...shown.current, thread: undefined, ...changes }, replace }),
+      navigate({
+        to: "/",
+        search: { ...shown.current, thread: undefined, pr: undefined, ...changes },
+        replace,
+      }),
     [navigate],
   );
   const canBack = location.state.__TSR_index > 0;
@@ -696,6 +701,12 @@ export function App() {
   }, [currentWorkspace?.id, viewId, showFile, range?.base, range?.head, screen]);
   const actions: Action[] = [
     {
+      id: "show-pull-request",
+      title: "Show Pull Request",
+      enabled: onMain && !!pr.details,
+      run: () => void show({ pr: true }),
+    },
+    {
       id: "find",
       title: "Find…",
       shortcut: "⌘F",
@@ -1018,6 +1029,7 @@ export function App() {
                         onPickUncommitted={() => pickScope("uncommitted")}
                         onPush={() => void push(currentWorkspace)}
                         onOpenPullRequest={() => void openPullRequest(currentWorkspace)}
+                        checks={pr.details?.commitChecks ?? {}}
                       />
                     )
                   ) : (
@@ -1051,6 +1063,9 @@ export function App() {
                 snapshot={pr.snapshot}
                 scope={scope}
                 hasPr={currentWorkspace.prNumber !== null}
+                pr={pr.details}
+                onPr={!!s.pr}
+                onShowPr={() => void show({ pr: true })}
                 onRangeMenu={async () => {
                   const picked = await window.coxswain.showRangeMenu(
                     commit ? null : scope,
@@ -1075,151 +1090,166 @@ export function App() {
                 }
               />
               <FindBar pane="canvas" />
-              <div className="flex min-h-0 flex-1">
-                {sections && !showFile && (
-                  <ViewToc
-                    sections={sections}
-                    reviewed={reviewed}
-                    reviewedFiles={reviewedFiles}
-                    entries={entries}
-                    current={currentSection}
-                    writing={!!canvasView?.writing}
-                    onPick={pickSection}
+              {s.pr ? (
+                pr.details ? (
+                  <PullRequestPanel
+                    key={currentWorkspace.id}
+                    workspaceId={currentWorkspace.id}
+                    pr={pr.details}
+                    onViewThread={viewThread}
                   />
-                )}
-                <div
-                  style={{ minWidth: viewerMin }}
-                  className="flex min-w-0 flex-1 flex-col"
-                  ref={canvas}
-                  onScrollCapture={onCanvasScroll}
-                >
-                  {!canvasReady ? (
-                    <Centered>Loading…</Centered>
-                  ) : (
-                    <>
-                      {showFile && (
-                        // One Viewer per file: a reused one would scroll to a line in the file it drew before.
-                        <Viewer
-                          key={`${currentWorkspace.id}:${openedPath(opened)}:${s.fileAt ?? "live"}`}
-                          opened={opened}
-                          reviewed={false}
-                          {...viewerProps(currentWorkspace, pr.commits!.mergeBase, s.fileAt)}
-                        />
-                      )}
-                      {canvasView?.writing && !showFile && <WritingViewNotice />}
-                      {/* Only the lines on screen are drawn. Hidden, not unmounted, under a whole file: it keeps its
-                      scroll and read files for Back. ponytail: every file is still read from disk up front. */}
-                      <Virtualizer
-                        key={`${currentWorkspace.id}:${viewId ?? "diff"}:${range?.base ?? pr.commits?.mergeBase}:${range?.head ?? "live"}`}
-                        className={cn("min-h-0 flex-1 overflow-auto", showFile && "hidden")}
-                      >
-                        {canvasView &&
-                        !canvasView.sections.length &&
-                        (!canvasView.guide || !diffDiffs.length) ? (
-                          <div className={cn("p-4 text-xs", muted)}>Nothing in this view yet.</div>
-                        ) : (
-                          !canvasView &&
-                          canvasFiles.every((file) => !isShown(file)) && (
-                            <div className={cn("p-4 text-xs", muted)}>
-                              {canvasFiles.length ? (
-                                <>
-                                  All {canvasFiles.length} files reviewed.{" "}
-                                  <Button
-                                    variant="link"
-                                    onClick={() =>
-                                      setViewSettings((s) => ({ ...s, showReviewed: true }))
-                                    }
-                                  >
-                                    Show them
-                                  </Button>
-                                </>
-                              ) : (
-                                "No changes"
-                              )}
-                            </div>
-                          )
-                        )}
-                        {canvasView?.worktree && pr.snapshot && canvasView.head !== pr.snapshot && (
-                          <StaleViewNotice />
-                        )}
-                        {(
-                          sections ?? [
-                            {
-                              title: undefined,
-                              muted: false,
-                              files: diffDiffs,
-                              parts: shownDiffs.map((d) => ({ kind: "code", d, muted: false })),
-                            },
-                          ]
-                        ).map((x, i) => (
-                          <section
-                            key={i}
-                            id={`view-section-${i}`}
-                            className={cn(
-                              x.muted && "opacity-60",
-                              // A view's sections: a line between them, room at the end.
-                              x.title !== undefined && "border-t pb-4 first:border-t-0",
-                              divider,
-                            )}
-                          >
-                            {x.title !== undefined && (
-                              <ViewSectionHeader
-                                title={x.title}
-                                files={x.files.length}
-                                reviewed={x.files.filter(isReviewed).length}
-                                writing={!!canvasView?.writing}
-                                onReviewedChange={(on) => markSection(x.files, on)}
-                              />
-                            )}
-                            <ProseThreads
-                              workspaceId={currentWorkspace.id}
-                              viewId={canvasView?.id ?? 0}
-                              section={i}
-                              entries={entries}
-                              turns={turns}
-                              onAsk={ask}
-                              onAnswerPermission={answerPermission}
-                            >
-                              {(x.parts as SectionPart[]).map((p, j) =>
-                                p.kind === "prose" ? (
-                                  <ViewProse
-                                    key={j}
-                                    part={j}
-                                    after={(x.parts as SectionPart[])[j - 1]?.kind === "code"}
-                                  >
-                                    {p.text}
-                                  </ViewProse>
-                                ) : (
-                                  <div
-                                    key={openedPath(p.d)}
-                                    id={`diff:${openedPath(p.d)}`}
-                                    className={cn(
-                                      p.muted && !x.muted && "opacity-60",
-                                      x.title !== undefined && viewDiff,
-                                    )}
-                                  >
-                                    <Viewer
-                                      stacked
-                                      opened={p.d}
-                                      reviewed={isReviewed(p.d)}
-                                      collapsed={!isShown(p.d)}
-                                      {...viewerProps(
-                                        currentWorkspace,
-                                        range?.base ?? pr.commits!.mergeBase,
-                                        range?.head,
-                                      )}
-                                    />
-                                  </div>
-                                ),
-                              )}
-                            </ProseThreads>
-                          </section>
-                        ))}
-                      </Virtualizer>
-                    </>
+                ) : (
+                  <Centered>Loading the pull request…</Centered>
+                )
+              ) : (
+                <div className="flex min-h-0 flex-1">
+                  {sections && !showFile && (
+                    <ViewToc
+                      sections={sections}
+                      reviewed={reviewed}
+                      reviewedFiles={reviewedFiles}
+                      entries={entries}
+                      current={currentSection}
+                      writing={!!canvasView?.writing}
+                      onPick={pickSection}
+                    />
                   )}
+                  <div
+                    style={{ minWidth: viewerMin }}
+                    className="flex min-w-0 flex-1 flex-col"
+                    ref={canvas}
+                    onScrollCapture={onCanvasScroll}
+                  >
+                    {!canvasReady ? (
+                      <Centered>Loading…</Centered>
+                    ) : (
+                      <>
+                        {showFile && (
+                          // One Viewer per file: a reused one would scroll to a line in the file it drew before.
+                          <Viewer
+                            key={`${currentWorkspace.id}:${openedPath(opened)}:${s.fileAt ?? "live"}`}
+                            opened={opened}
+                            reviewed={false}
+                            {...viewerProps(currentWorkspace, pr.commits!.mergeBase, s.fileAt)}
+                          />
+                        )}
+                        {canvasView?.writing && !showFile && <WritingViewNotice />}
+                        {/* Only the lines on screen are drawn. Hidden, not unmounted, under a whole file: it keeps its
+                      scroll and read files for Back. ponytail: every file is still read from disk up front. */}
+                        <Virtualizer
+                          key={`${currentWorkspace.id}:${viewId ?? "diff"}:${range?.base ?? pr.commits?.mergeBase}:${range?.head ?? "live"}`}
+                          className={cn("min-h-0 flex-1 overflow-auto", showFile && "hidden")}
+                        >
+                          {canvasView &&
+                          !canvasView.sections.length &&
+                          (!canvasView.guide || !diffDiffs.length) ? (
+                            <div className={cn("p-4 text-xs", muted)}>
+                              Nothing in this view yet.
+                            </div>
+                          ) : (
+                            !canvasView &&
+                            canvasFiles.every((file) => !isShown(file)) && (
+                              <div className={cn("p-4 text-xs", muted)}>
+                                {canvasFiles.length ? (
+                                  <>
+                                    All {canvasFiles.length} files reviewed.{" "}
+                                    <Button
+                                      variant="link"
+                                      onClick={() =>
+                                        setViewSettings((s) => ({ ...s, showReviewed: true }))
+                                      }
+                                    >
+                                      Show them
+                                    </Button>
+                                  </>
+                                ) : (
+                                  "No changes"
+                                )}
+                              </div>
+                            )
+                          )}
+                          {canvasView?.worktree &&
+                            pr.snapshot &&
+                            canvasView.head !== pr.snapshot && <StaleViewNotice />}
+                          {(
+                            sections ?? [
+                              {
+                                title: undefined,
+                                muted: false,
+                                files: diffDiffs,
+                                parts: shownDiffs.map((d) => ({ kind: "code", d, muted: false })),
+                              },
+                            ]
+                          ).map((x, i) => (
+                            <section
+                              key={i}
+                              id={`view-section-${i}`}
+                              className={cn(
+                                x.muted && "opacity-60",
+                                // A view's sections: a line between them, room at the end.
+                                x.title !== undefined && "border-t pb-4 first:border-t-0",
+                                divider,
+                              )}
+                            >
+                              {x.title !== undefined && (
+                                <ViewSectionHeader
+                                  title={x.title}
+                                  files={x.files.length}
+                                  reviewed={x.files.filter(isReviewed).length}
+                                  writing={!!canvasView?.writing}
+                                  onReviewedChange={(on) => markSection(x.files, on)}
+                                />
+                              )}
+                              <ProseThreads
+                                workspaceId={currentWorkspace.id}
+                                viewId={canvasView?.id ?? 0}
+                                section={i}
+                                entries={entries}
+                                turns={turns}
+                                onAsk={ask}
+                                onAnswerPermission={answerPermission}
+                              >
+                                {(x.parts as SectionPart[]).map((p, j) =>
+                                  p.kind === "prose" ? (
+                                    <ViewProse
+                                      key={j}
+                                      part={j}
+                                      after={(x.parts as SectionPart[])[j - 1]?.kind === "code"}
+                                    >
+                                      {p.text}
+                                    </ViewProse>
+                                  ) : (
+                                    <div
+                                      key={openedPath(p.d)}
+                                      id={`diff:${openedPath(p.d)}`}
+                                      className={cn(
+                                        p.muted && !x.muted && "opacity-60",
+                                        x.title !== undefined && viewDiff,
+                                      )}
+                                    >
+                                      <Viewer
+                                        stacked
+                                        opened={p.d}
+                                        reviewed={isReviewed(p.d)}
+                                        collapsed={!isShown(p.d)}
+                                        {...viewerProps(
+                                          currentWorkspace,
+                                          range?.base ?? pr.commits!.mergeBase,
+                                          range?.head,
+                                        )}
+                                      />
+                                    </div>
+                                  ),
+                                )}
+                              </ProseThreads>
+                            </section>
+                          ))}
+                        </Virtualizer>
+                      </>
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           </div>
         )}
@@ -1236,6 +1266,8 @@ export function App() {
             turns={turns}
             onViewThread={viewThread}
             viewTitle={canvasView?.title}
+            hasPr={!!pr.details}
+            onPost={() => void show({ pr: true })}
           />
         )}
       </div>
