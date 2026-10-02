@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";
 import type { ChangedFile, GitProblem } from "../../core/git";
-import type { GitHubProblem } from "../../core/github";
+import type { GitHubProblem, PullRequestDetails } from "../../core/github";
 import type { Workspace } from "../../core/workspaces";
 import { core, queryClient } from "./queries";
 
@@ -16,6 +16,8 @@ export type PullRequestData = {
   snapshotReady: boolean; // settled, including an error: a failed snapshot must not block the live diff
   notice: string | null;
   problem: GitHubProblem | GitProblem | null;
+  // ADR 0037: the PR on GitHub, for its panel, CI and the review threads mirrored into entries; null without one.
+  details: PullRequestDetails | null;
 };
 
 // What the Navigator and Viewer share about the current workspace: its worktree (cloned and created on first
@@ -55,6 +57,11 @@ export function usePullRequest(workspace: Workspace | undefined): PullRequestDat
     enabled: ready,
   }).data;
   const snapshotQuery = useQuery({ ...core("snapshot", id), enabled: ready });
+  // Read once the worktree is open: the threads it mirrors are anchored there.
+  const details = useQuery({
+    ...core("readPullRequest", id),
+    enabled: ready && (prNumber ?? workspace?.prNumber ?? null) !== null,
+  }).data;
   const snapshot = snapshotQuery.data;
   // Offline or signed out: keep showing the worktree, and say it may be out of date.
   const unchecked = opened.isError || (w && w.status !== "ok" && before?.status === "ok");
@@ -71,5 +78,6 @@ export function usePullRequest(workspace: Workspace | undefined): PullRequestDat
         : null,
     problem:
       w && w.status !== "ok" && !commits ? w : changed && changed.status !== "ok" ? changed : null,
+    details: details?.status === "ok" ? details : null,
   };
 }

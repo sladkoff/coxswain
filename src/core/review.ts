@@ -1,5 +1,6 @@
 import {
   type ChatEntry,
+  formatCheck,
   formatComment,
   formatReview,
   listAgentSessions,
@@ -14,13 +15,14 @@ import {
   addEntry,
   columns,
   fresh,
-  listEntries,
+  liveEntries,
   type NewEntry,
   type ReviewEntry,
   type Row,
 } from "./entries.ts";
-import { anchored, byAgent, describe, fence, unseen } from "./thread-context.ts";
-import { currentMergeBase } from "./git";
+import { anchored, describe, fence, reviewRoots, unseen, who } from "./thread-context.ts";
+import { type Check, readJobLog } from "./github";
+import { prOf } from "./pull-requests.ts";
 
 export { addNote, listEntries, type NewEntry, type ReviewEntry } from "./entries.ts";
 
@@ -43,7 +45,7 @@ export async function deleteEntry(db: Db, id: number) {
 
 // The workspace's current agent session, the agent pane's: the one last used, or a new one if it has none. Questions are
 // turns in it, so the agent pane shows them and the agent keeps one context.
-async function currentSession(db: Db, workspaceId: number): Promise<string> {
+export async function currentSession(db: Db, workspaceId: number): Promise<string> {
   const last =
     (await listAgentSessions(db, workspaceId)).find((s) => s.current) ??
     (await startAgentSession(db, workspaceId));
@@ -91,6 +93,7 @@ export async function sendThread(
 
 // The session each thread's question went to, while it waits or runs there: what a thread's Stop stops.
 const asking = new Map<number, string>();
+export const isAsking = (threadId: number) => asking.has(threadId);
 
 // A question the agent never saw, because it was taken off the queue, becomes a note again: the thread can be sent
 // once more, and the notes since the last question still go with it.
@@ -159,20 +162,29 @@ export async function stopQuestion(db: Db, threadId: number) {
 
 // Every thread of the workspace, as one message for the agent pane's session: where each points, the code, and its
 // comments and answers in order, then what to do with them. An explanation or finding the user didn't reply to isn't
-// part of their review, nor is a resolved thread. An outdated one goes with what its lines read now.
-function reviewPrompt(entries: ReviewEntry[]): { threads: number; prompt: string } {
-  const replied = new Set(entries.filter((e) => e.parentId && !byAgent(e)).map((e) => e.parentId));
-  const roots = entries.filter(
-    (e) => anchored(e) && !e.parentId && !e.resolvedAt && (!byAgent(e) || replied.has(e.id)),
-  );
+// part of their review, nor is a resolved thread. An outdated one goes with what its lines read now. conclusions: from
+// Submit Review, only the threads picked there, each with its conclusion (glossary) after it.
+export type Conclusion = { threadId: number; body: string };
+function reviewPrompt(
+  entries: ReviewEntry[],
+  conclusions?: Conclusion[],
+): { threads: number; prompt: string } {
+  const concluded = conclusions && new Map(conclusions.map((c) => [c.threadId, c.body.trim()]));
+  const roots = reviewRoots(entries).filter((e) => !concluded || concluded.has(e.id));
   const parts = roots.map((root, i) => {
     const thread = [root, ...entries.filter((e) => e.parentId === root.id)];
-    const lines = thread.map((e) => `${byAgent(e) ? "You" : "Me"}: ${e.body}`);
+    const lines = thread.map((e) => `${who(e)}: ${e.body}`);
     const changed = root.state === "outdated" ? `\n${since(root)}` : "";
-    return `${i + 1}. On ${describe(root)}${changed}\n${lines.join("\n")}`;
+    const conclusion = concluded?.get(root.id);
+    // A thread that is one comment of mine is its own conclusion.
+    const ended =
+      conclusion && !(thread.length === 1 && conclusion === root.body.trim())
+        ? `\nWhere it ended up: ${conclusion}`
+        : "";
+    return `${i + 1}. On ${describe(root)}${changed}\n${lines.join("\n")}${ended}`;
   });
   const prompt = `Here's my review of this worktree's changes so far: every thread, with where it points and the code as it was
-then, in order. "Me" is me, "You" is your earlier answers. Work through them: make the changes my comments ask for,
+then, in order. "Me" is me, "You" is your earlier answers, "@name" a reviewer on GitHub. "Where it ended up" is my conclusion of a thread, the comment I'd post on the pull request: it is what counts where the thread says otherwise. Work through them: make the changes my comments ask for,
 answer what's still open, and tell me briefly what you did for each and what you left.\n\n${parts.join("\n\n")}`;
   return { threads: roots.length, prompt };
 }
@@ -185,16 +197,13 @@ const since = (e: ReviewEntry) =>
       ? "These lines have changed since. Check whether the comment still applies before acting on it."
       : `These lines have changed since${e.now ? `; they now read:\n${fence(e.now)}` : " and are gone."} Check whether the comment still applies before acting on it.`;
 
-// The workspace's entries in the live diff, as the review prompt describes them.
-async function liveEntries(db: Db, workspaceId: number): Promise<ReviewEntry[]> {
-  const mergeBase = currentMergeBase(workspaceId);
-  if (!mergeBase) throw new Error("Open the workspace first");
-  return listEntries(db, workspaceId, mergeBase, mergeBase);
-}
-
 // The review message sendReview sends, to paste elsewhere. Null with no threads.
-export async function reviewPromptText(db: Db, workspaceId: number): Promise<string | null> {
-  const { threads, prompt } = reviewPrompt(await liveEntries(db, workspaceId));
+export async function reviewPromptText(
+  db: Db,
+  workspaceId: number,
+  conclusions?: Conclusion[],
+): Promise<string | null> {
+  const { threads, prompt } = reviewPrompt(await liveEntries(db, workspaceId), conclusions);
   return threads ? prompt : null;
 }
 
@@ -204,8 +213,9 @@ export async function sendReview(
   db: Db,
   workspaceId: number,
   handlers: (agentSessionId: string) => Parameters<typeof runTurn>[3],
+  conclusions?: Conclusion[],
 ): Promise<TurnResult> {
-  const { threads, prompt } = reviewPrompt(await liveEntries(db, workspaceId));
+  const { threads, prompt } = reviewPrompt(await liveEntries(db, workspaceId), conclusions);
   if (!threads) return { status: "error", message: "No threads to send" };
   const agentSessionId = await currentSession(db, workspaceId);
   return runTurn(db, agentSessionId, formatReview(threads, prompt), handlers(agentSessionId));
@@ -228,4 +238,27 @@ export async function setCommentToAgent(db: Db, toAgent: boolean) {
     .values({ key: "comment.to-agent", value })
     .onConflict((oc) => oc.column("key").doUpdateSet({ value }))
     .execute();
+}
+
+// A failed check, to the workspace's current agent session: its name and what it says, and for a GitHub Actions job
+// the end of its log, to find out why and fix it. handlers: made for the session it goes to, as sendReview's.
+export async function sendCheck(
+  db: Db,
+  workspaceId: number,
+  check: Check,
+  handlers: (agentSessionId: string) => Parameters<typeof runTurn>[3],
+): Promise<TurnResult> {
+  const w = await prOf(db, workspaceId);
+  const log = check.jobId !== null ? await readJobLog(w.owner, w.name, check.jobId) : null;
+  const ending =
+    log?.status === "ok"
+      ? `The end of its log:\n${fence(log.log)}`
+      : `Its log couldn't be read here${check.url ? `; it's at ${check.url}` : ""}.`;
+  const prompt = `The check "${check.name}" fails on this PR's head on GitHub${check.detail ? `: ${check.detail}` : "."}
+
+${ending}
+
+Find out why it fails, and fix it if the cause is in this branch's changes. Tell me briefly what you found and did.`;
+  const agentSessionId = await currentSession(db, workspaceId);
+  return runTurn(db, agentSessionId, formatCheck(check.name, prompt), handlers(agentSessionId));
 }

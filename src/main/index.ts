@@ -81,7 +81,22 @@ import {
   savePrompt,
   type ViewRange,
 } from "../core/views";
-import { getCurrentUser, listPullRequestTitles, listPullRequests, listRepos } from "../core/github";
+import {
+  type Check,
+  getCurrentUser,
+  listPullRequestTitles,
+  listPullRequests,
+  listRepos,
+} from "../core/github";
+import { draftReview, saveConclusion } from "../core/review-draft";
+import {
+  changePullRequest,
+  postReview,
+  type PullRequestChange,
+  type PullRequestRef,
+  readPullRequest,
+  type ReviewPost,
+} from "../core/pull-requests";
 import { listProjects, openProject } from "../core/projects";
 import {
   addNote,
@@ -93,26 +108,29 @@ import {
   getCommentToAgent,
   setCommentToAgent,
   listEntries,
+  type Conclusion,
   type NewEntry,
   reviewPromptText,
+  sendCheck,
   sendReview,
   stopQuestion,
 } from "../core/review";
 import { listReviewed, setReviewed } from "../core/reviewed";
+import { startBackground } from "../core/background";
+import { emit, onEvent } from "../core/events";
 import {
   getSummarySettings,
-  listSummaryJobs,
-  onSummaryJobs,
+  listJobs,
+  onJobs,
   setSummaryRunner,
   setSummarySettings,
   stopInterruptedJobs,
-  stopSummaryJob,
-  summariseAhead,
-  summaryCoverage,
+  stopJob,
   type SummarySettings,
-} from "../core/summaries";
+} from "../core/jobs";
+import { summaryCoverage } from "../core/summaries";
 import { checkSetup } from "../core/setup";
-import type { Changed, Layers, RangePick, ViewSettings } from "../preload";
+import type { Layers, RangePick, ViewSettings } from "../preload";
 import {
   listWorkspaces,
   openBranchWorkspace,
@@ -120,6 +138,10 @@ import {
   openWorkspace,
   removeWorkspace,
 } from "../core/workspaces";
+
+// A run with a database of its own, e.g. a dev build checked against a scratch database: macOS ignores $HOME for
+// userData, so without this a dev build migrates the installed coxswain's database ahead of it.
+if (process.env.COXSWAIN_USER_DATA) app.setPath("userData", process.env.COXSWAIN_USER_DATA);
 
 // Started from the Dock, Finder or a desktop launcher, the app gets a bare PATH without gh, claude or codex, so it takes
 // the login shell's. The markers skip whatever the shell prints on start.
@@ -173,10 +195,6 @@ function createWindow() {
     win.loadFile(join(__dirname, "../renderer/index.html"));
   }
 }
-
-// Tells the UI what the core changed on its own, so it refetches that (ADR 0017).
-const changed = (to: WebContents, change: Changed) =>
-  !to.isDestroyed() && to.send("changed", change);
 
 // ponytail: macOS menu layout only; add a File > Settings entry when we ship Windows/Linux.
 // ponytail: one window for now, so no focused window (e.g. the app isn't frontmost) means that one.
@@ -390,22 +408,16 @@ app.whenReady().then(() => {
   });
   ipcMain.handle("git:clone", (_, projectId: number) => cloneProject(db, projectId));
   ipcMain.handle("git:opened-before", (_, workspaceId: number) => openedBefore(db, workspaceId));
-  // ADR 0029: a workspace opened or checked again is summarised ahead, in the background.
   ipcMain.handle("git:open-worktree", async (_, workspaceId: number) => {
     const opened = await openWorktree(db, workspaceId);
-    if (opened.status === "ok") void summariseAhead(db, workspaceId);
+    if (opened.status === "ok") emit({ workspaceId, what: "opened" });
     return opened;
   });
-  // ADR 0030: the workspace on screen is watched. Its HEAD moving is a change to the worktree (commits, the diff) and
-  // is summarised ahead.
+  // ADR 0030: the workspace on screen is watched. Its HEAD moving is a change to the worktree (commits, the diff).
   ipcMain.handle("workspaces:watch", (_, workspaceId: number | null) =>
     watchWorkspace(db, workspaceId),
   );
-  onHeadMoved((workspaceId) => {
-    for (const w of BrowserWindow.getAllWindows())
-      changed(w.webContents, { workspaceId, what: "worktree" });
-    void summariseAhead(db, workspaceId);
-  });
+  onHeadMoved((workspaceId) => emit({ workspaceId, what: "worktree" }));
   ipcMain.handle("git:commits", (_, workspaceId: number, mergeBase: string) =>
     listCommits(db, workspaceId, mergeBase),
   );
@@ -512,14 +524,13 @@ app.whenReady().then(() => {
       (threadId) => send("review:queued", threadId),
     );
     if (!asked) return null;
-    changed(e.sender, { workspaceId, what: "entries" }); // the question
-    changed(e.sender, { workspaceId, what: "transcript" }); // the session may be new
+    emit({ workspaceId, what: "entries" }); // the question
+    emit({ workspaceId, what: "transcript" }); // the session may be new
     const threadId = asked.question.parentId ?? asked.question.id;
     asked.turn.then((result) => {
-      changed(e.sender, { workspaceId, what: "entries" }); // the answer
-      changed(e.sender, { workspaceId, what: "worktree" }); // the agent may have changed files
-      changed(e.sender, { workspaceId, what: "transcript" });
-      void summariseAhead(db, workspaceId);
+      emit({ workspaceId, what: "entries" }); // the answer
+      emit({ workspaceId, what: "worktree" }); // the agent may have changed files
+      emit({ workspaceId, what: "transcript" });
       send("review:turn-end", threadId, result);
     });
     return asked.question;
@@ -535,27 +546,70 @@ app.whenReady().then(() => {
   );
   ipcMain.handle("review:edit", (_, id: number, body: string) => editEntry(db, id, body));
   // Every thread to the agent pane's session at once; the reply streams as agents:entry, like a message sent there.
-  ipcMain.handle("review:send-all", async (e, workspaceId: number) => {
+  ipcMain.handle("review:draft", (_, workspaceId: number, wait: boolean) =>
+    draftReview(db, workspaceId, wait),
+  );
+  ipcMain.handle("review:save-conclusion", (_, threadId: number, conclusion: string) =>
+    saveConclusion(db, threadId, conclusion),
+  );
+  ipcMain.handle("review:send-all", async (e, workspaceId: number, conclusions?: Conclusion[]) => {
     const send = (channel: string, ...args: unknown[]) =>
       !e.sender.isDestroyed() && e.sender.send(channel, ...args);
-    const result = await sendReview(db, workspaceId, (agentSessionId) => {
-      changed(e.sender, { workspaceId, what: "transcript" }); // the session may be new
+    const result = await sendReview(
+      db,
+      workspaceId,
+      (agentSessionId) => {
+        emit({ workspaceId, what: "transcript" }); // the session may be new
+        return {
+          onEntry: (entry) => send("agents:entry", agentSessionId, entry),
+          onPermission: (p) =>
+            permission(e.sender, () => send("agents:permission", agentSessionId, p)),
+        };
+      },
+      conclusions,
+    );
+    emit({ workspaceId, what: "worktree" });
+    emit({ workspaceId, what: "transcript" });
+    return result;
+  });
+  // ADR 0037: the workspace's PR for its panel, its review threads mirrored into entries on the way.
+  ipcMain.handle("github:pull-request", async (e, workspaceId: number) => {
+    const { pr, changed: synced } = await readPullRequest(db, workspaceId);
+    if (synced) emit({ workspaceId, what: "entries" });
+    return pr;
+  });
+  ipcMain.handle("github:post-review", async (e, workspaceId: number, post: ReviewPost) => {
+    const result = await postReview(db, workspaceId, post);
+    emit({ workspaceId, what: "entries" }); // what got posted, also halfway
+    return result;
+  });
+  ipcMain.handle("github:change-pr", (_, pr: PullRequestRef, change: PullRequestChange) =>
+    changePullRequest(pr, change),
+  );
+  // A failed check to the agent pane's session; the reply streams as agents:entry, like Send to Agent's.
+  ipcMain.handle("github:send-check", async (e, workspaceId: number, check: Check) => {
+    const send = (channel: string, ...args: unknown[]) =>
+      !e.sender.isDestroyed() && e.sender.send(channel, ...args);
+    const result = await sendCheck(db, workspaceId, check, (agentSessionId) => {
+      emit({ workspaceId, what: "transcript" }); // the session may be new
       return {
         onEntry: (entry) => send("agents:entry", agentSessionId, entry),
         onPermission: (p) =>
           permission(e.sender, () => send("agents:permission", agentSessionId, p)),
       };
     });
-    changed(e.sender, { workspaceId, what: "worktree" });
-    changed(e.sender, { workspaceId, what: "transcript" });
-    void summariseAhead(db, workspaceId);
+    emit({ workspaceId, what: "worktree" });
+    emit({ workspaceId, what: "transcript" });
     return result;
   });
-  ipcMain.handle("review:copy-prompt", async (_, workspaceId: number) => {
-    const prompt = await reviewPromptText(db, workspaceId);
-    if (prompt) clipboard.writeText(prompt);
-    return !!prompt;
-  });
+  ipcMain.handle(
+    "review:copy-prompt",
+    async (_, workspaceId: number, conclusions?: Conclusion[]) => {
+      const prompt = await reviewPromptText(db, workspaceId, conclusions);
+      if (prompt) clipboard.writeText(prompt);
+      return !!prompt;
+    },
+  );
   ipcMain.handle("review:stop", (_, threadId: number) => stopQuestion(db, threadId));
   ipcMain.handle(
     "reviewed:list",
@@ -600,9 +654,8 @@ app.whenReady().then(() => {
         },
         attachments,
       );
-      changed(e.sender, { workspaceId, what: "worktree" });
-      changed(e.sender, { workspaceId, what: "transcript" });
-      void summariseAhead(db, workspaceId); // the agent may have committed
+      emit({ workspaceId, what: "worktree" });
+      emit({ workspaceId, what: "transcript" });
       return result;
     },
   );
@@ -610,11 +663,14 @@ app.whenReady().then(() => {
   // a dismissal from a pick. A dismissed menu leaves the promise pending; nothing else waits on it.
   ipcMain.handle(
     "menus:thread",
-    (e, can: { edit: boolean; send: boolean }) =>
+    (e, can: { edit: boolean; send: boolean; delete: boolean; url: string | null }) =>
       new Promise<"edit" | "delete" | "send">((resolve) =>
         Menu.buildFromTemplate([
           { label: "Edit", enabled: can.edit, click: () => resolve("edit") },
-          { label: "Delete", click: () => resolve("delete") },
+          { label: "Delete", enabled: can.delete, click: () => resolve("delete") },
+          ...(can.url
+            ? [{ label: "Open on GitHub", click: () => void shell.openExternal(can.url!) }]
+            : []),
           { type: "separator" },
           { label: "Send to Agent", enabled: can.send, click: () => resolve("send") },
         ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
@@ -657,19 +713,6 @@ app.whenReady().then(() => {
             checked: s.layout === "list",
             click: () => resolve({ ...s, layout: "list" }),
           },
-        ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
-      ),
-  );
-  // The bottom bar's Hand off: where the open threads go. Send to GitHub isn't built yet, so it's shown greyed out.
-  ipcMain.handle(
-    "menus:hand-off",
-    (e) =>
-      new Promise<"agent" | "copy">((resolve) =>
-        Menu.buildFromTemplate([
-          { label: "Send to Agent", click: () => resolve("agent") },
-          { label: "Copy as Prompt", click: () => resolve("copy") },
-          { type: "separator" },
-          { label: "Send to GitHub as a Review…", enabled: false },
         ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
       ),
   );
@@ -841,21 +884,28 @@ app.whenReady().then(() => {
       ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined });
     });
   });
-  // ADR 0029: file summaries run on the summary agent, one-shot; Activity shows their jobs as they change.
+  // ADR 0038: what the core changed goes to the UI, so it refetches that (ADR 0017), and starts the background work
+  // that follows from it. Jobs run on the summary agent, one-shot; Activity shows them as they change.
+  onEvent((change) => {
+    if (change.what === "opened") return;
+    for (const w of BrowserWindow.getAllWindows())
+      if (!w.webContents.isDestroyed()) w.webContents.send("changed", change);
+  });
+  startBackground(db);
   setSummaryRunner(({ agent, ...o }) => askOnce(agent, o));
   void stopInterruptedJobs(db);
-  ipcMain.handle("summaries:jobs", () => listSummaryJobs(db));
+  ipcMain.handle("jobs:list", () => listJobs(db));
   ipcMain.handle("summaries:coverage", (_, workspaceId: number) =>
     summaryCoverage(db, workspaceId),
   );
-  ipcMain.handle("summaries:stop", (_, id: number) => stopSummaryJob(id));
+  ipcMain.handle("jobs:stop", (_, id: number) => stopJob(id));
   ipcMain.handle("summaries:settings", () => getSummarySettings(db));
   ipcMain.handle("summaries:set-settings", (_, s: Partial<SummarySettings>) =>
     setSummarySettings(db, s),
   );
-  onSummaryJobs((jobs) => {
+  onJobs((jobs) => {
     for (const w of BrowserWindow.getAllWindows())
-      if (!w.webContents.isDestroyed()) w.webContents.send("summaries:jobs", jobs);
+      if (!w.webContents.isDestroyed()) w.webContents.send("jobs:changed", jobs);
   });
   ipcMain.handle("settings:comment-to-agent", () => getCommentToAgent(db));
   ipcMain.handle("settings:set-comment-to-agent", (_, toAgent: boolean) =>
@@ -863,15 +913,10 @@ app.whenReady().then(() => {
   );
   // The agent's view tools change views and entries mid-turn; the UI refetches them as they come.
   onViewChange((workspaceId) => {
-    for (const w of BrowserWindow.getAllWindows()) {
-      changed(w.webContents, { workspaceId, what: "view" });
-      changed(w.webContents, { workspaceId, what: "entries" });
-    }
+    emit({ workspaceId, what: "view" });
+    emit({ workspaceId, what: "entries" });
   });
-  onSessionTitle(db, (workspaceId) => {
-    for (const w of BrowserWindow.getAllWindows())
-      changed(w.webContents, { workspaceId, what: "sessions" });
-  });
+  onSessionTitle(db, (workspaceId) => emit({ workspaceId, what: "sessions" }));
   ipcMain.handle("agents:stop-turn", (_, agentSessionId: string) => stopTurn(db, agentSessionId));
   ipcMain.handle("agents:steer", (_, agentSessionId: string, queuedId: number) =>
     steerQueued(agentSessionId, queuedId),

@@ -31,18 +31,24 @@ export function ago(iso: string) {
 export const workspaceLabel = (w: Workspace) =>
   w.prNumber !== null ? `PR #${w.prNumber}` : `Branch ${w.branch}`;
 
-// The threads on each file, as the Navigator and a view's table of contents show them: yours (notes, questions) and
-// the agent's (explanations, findings; only with their view, whose entries the canvas has). Replies, follow-ups and
+// The threads on each file, as the Navigator and a view's table of contents show them: yours (notes, questions),
+// the agent's (explanations, findings; only with their view, whose entries the canvas has) and GitHub's (comments). Replies, follow-ups and
 // answers are part of their thread, so they don't count.
-type ThreadKind = "note" | "question" | "explanation" | "finding";
+type ThreadKind = "note" | "question" | "explanation" | "finding" | "comment";
 export type ItemCount = Record<ThreadKind, number>;
-const threadKinds: ThreadKind[] = ["note", "question", "explanation", "finding"];
+const threadKinds: ThreadKind[] = ["note", "question", "explanation", "finding", "comment"];
 export function countItems(entries: ReviewEntry[]): Map<string, ItemCount> {
   const counts = new Map<string, ItemCount>();
   for (const e of entries) {
     // Only what's about the code on screen (ADR 0015): entries whose lines are there.
     if (!e.path || e.parentId || !e.shown || e.kind === "answer") continue;
-    const c = counts.get(e.path) ?? { note: 0, question: 0, explanation: 0, finding: 0 };
+    const c = counts.get(e.path) ?? {
+      note: 0,
+      question: 0,
+      explanation: 0,
+      finding: 0,
+      comment: 0,
+    };
     c[e.kind]++;
     counts.set(e.path, c);
   }

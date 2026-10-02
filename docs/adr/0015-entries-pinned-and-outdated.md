@@ -33,7 +33,7 @@ range on screen is another, or because lines were added above it, misleads too.
    range's side, at the lines they moved to. The threads list says where the others were written (_in All_, _in
    abc1234_). A file diff's header says _N outdated_ for its outdated entries not between its lines, which opens them
    above it with their code then and what stands there now.
-6. **Outdated entries stay open**: only the user resolves. _Hand off_ sends them with what their lines read now and a
+6. **Outdated entries stay open**: only the user resolves. _Submit Review_ sends them with what their lines read now and a
    request to check whether each still applies.
 7. The core works it all out (`listEntries` in `core/entries.ts`, with the merge base and the range on screen),
    reading each file once per version and each file at a commit once per session.

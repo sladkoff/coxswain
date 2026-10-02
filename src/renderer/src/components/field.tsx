@@ -9,23 +9,26 @@ export function Input({ className, ...props }: ComponentProps<"input">) {
 }
 
 // Enter submits, Shift+Enter adds a line, Esc cancels. `bare`: no border of its own, inside a box that has one.
+// `long`: for longer markdown (a PR's description), Enter adds a line and ⌘Enter submits.
 export function TextArea({
   onSubmit,
   onCancel,
   bare,
+  long,
   className,
   ...props
 }: Omit<ComponentProps<"textarea">, "onSubmit"> & {
   onSubmit: () => void;
   onCancel?: () => void;
   bare?: boolean;
+  long?: boolean;
 }) {
   return (
     <textarea
       {...props}
       onKeyDown={(e) => {
         if (e.key === "Escape") onCancel?.();
-        if (e.key === "Enter" && !e.shiftKey) {
+        if (e.key === "Enter" && (long ? e.metaKey : !e.shiftKey)) {
           e.preventDefault();
           onSubmit();
         }

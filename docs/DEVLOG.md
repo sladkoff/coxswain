@@ -3,6 +3,69 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-10-01 — The PR on GitHub: threads, PR panel, checks, posting (#3)
+
+### What works
+
+- **Review threads from GitHub show between the lines** (ADR 0037). Reading the PR (`getPullRequest`, one GraphQL
+  query, polled every minute) mirrors its review threads into entries of kind `comment` (`syncThreads`), anchored at
+  the lines and commit they were written on, so following, outdated, the threads list, _Hand off_ and the agent's
+  prompts take them as they are. Prompts name GitHub's authors (`@ana on GitHub`). Edits, deletes, resolves and
+  reopens on GitHub are taken over on the next read.
+- **Submit Review**, the bottom bar's button (it was _Hand off_, a menu; the name in earlier entries below is the old
+  one), opens a dialog like GitHub's _Finish your review_: the open threads, and with a PR those with something to
+  post (replies to GitHub's, resolves), each with its **conclusion** (glossary), the one review comment that says
+  where the thread ended up. The summary model writes them ahead, in a background job, once the threads have been still for 30 seconds and not while an agent is answering one, so the dialog opens at once; a thread not written yet says _Writing its conclusion…_
+  (`draftReview`, `conclusionsPrompt`); a thread that is one comment of the user's is its own. The user picks threads
+  and edits conclusions, then _Copy as Prompt_, _Send to Agent_ (the threads with their conclusions after them) or
+  _Post to GitHub…_. The button is on with a PR even without open threads, for a review that is a verdict alone.
+- **Post to GitHub** sends the picked conclusions as one review (GraphQL pending review, then submit) with a verdict
+  and summary: on the lines if the PR's diff has them, as a reply on a thread from GitHub, else in the review's text
+  with the code quoted (lines outside the diff, not pushed or changed since, a view's prose: these couldn't be posted
+  before, or went as a comment on the file). A thread of the workspace's is resolved once posted and its comment
+  comes back as a thread from GitHub; a reply's entries record the one comment that stands for them. The agent's
+  answers are no longer posted as such.
+- **Background jobs and core events** ([ADR 0038](adr/0038-background-jobs-and-core-events.md)). The job engine
+  (batches, retries, limits, the stored history Activity shows) moved out of `summaries.ts` into `jobs.ts`, with a
+  spec per kind: `files` (file summaries, as before) and `conclusions`. The core has one event bus (`events.ts`):
+  the main process forwards its changes to the window in one place, instead of 19 `changed(…)` calls each naming a
+  window, and `background.ts` is the one place that says which event starts which job, instead of `summariseAhead`
+  called from six handlers. Adding an entry emits its own event. Activity shows both kinds; Settings' _Summarise_ is
+  now _Work_: _Ahead_ · _Only when needed_, for both. Migration: `summary_jobs` becomes `jobs`, with `kind` and
+  `items`.
+- **The PR panel**, a canvas location (`pr`) opened by the PR's chip in the canvas bar: state, _Merge…_ (asks; the
+  repository's merge methods), _Ready for Review_, checks, description edited in place, assign yourself, reviewers,
+  labels, conversation and a comment box. It is laid out like the PR's page on GitHub: description and conversation
+  as cards, then the checks with merging under them and the comment box, beside a side column of
+  reviewers, assignees and labels (flex-wrap puts it underneath in a narrow canvas). Passed and skipped checks fold
+  under a count (a native `<details>`), so only the failing and running ones take room.
+- **Checks**: a dot on the PR chip and per commit in the Commits pane; a failing check's _Send to Agent_ sends it
+  with the end of its GitHub Actions log to the agent pane's session (`[Check · name failed]`, a card in the chat).
+- Migration: `entries` rebuilt for the `comment` kind, with `author`, `github_id`, `github_thread_id`, `github_url`,
+  `github_resolved`. `TextArea` gets `long` (Enter adds a line, ⌘Enter submits).
+- `COXSWAIN_USER_DATA` points a run at a database of its own. macOS ignores `$HOME` for userData, so a dev build
+  otherwise migrates the installed coxswain's database.
+- ADR 0035 tightened: `if … return` ladders and nested JSX conditionals count too, a match over a union ends with
+  `.exhaustive()`, and outside enums are typed and matched with `.exhaustive(fallback)`. GitHub's check states, `who`
+  and the PR panel's branches follow it.
+- Tests: mirroring, re-reading, GitHub's edits, deletes and reopens, what's postable (in the diff, on the file, not
+  pushed), hunk ranges and check states (`pull-requests.test.ts`). Checked in the running app on a scratch database:
+  the PR chip, the panel, and a local note listed under _Post to GitHub_. Posting, threads from GitHub, checks and
+  merging were not tried against GitHub.
+
+### Tech debt
+
+- `ponytail:` the first 100 threads, comments per thread, commits and checks (`core/github.ts`).
+- `ponytail:` a thread deleted on GitHub stays here with its local replies (`syncThreads`).
+- Conclusions are stored in `thread_conclusions` (a migration), by the fingerprint of the thread's entries, and so
+  are the user's edits of them; a thread that changes is concluded again and its edit dropped. Every changed thread costs a summary model run, whether the review is
+  submitted or not, unless work ahead is off. Resolving, editing or deleting an entry emits no core event yet
+  (ADR 0038). An entry goes to the summary model cut to 2000 characters
+  (`thread-context.ts`).
+- GraphQL has no ETags, so each minute's poll counts against the rate limit.
+- A posted entry edited here isn't updated on GitHub. A comment whose commit the clone lacks reads as outdated.
+- Splitting a workspace's commits into a new branch workspace (several PRs from one piece of work) isn't built.
+
 ## 2026-10-01 — Threads on a view's prose (#28)
 
 ### What works

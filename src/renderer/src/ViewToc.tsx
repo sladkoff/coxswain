@@ -49,7 +49,7 @@ export function ViewToc(props: Props) {
       {sections.map((s, i) => {
         const n = s.files.filter(isReviewed).length;
         const done = n === s.files.length;
-        const c: ItemCount = { note: 0, question: 0, explanation: 0, finding: 0 };
+        const c: ItemCount = { note: 0, question: 0, explanation: 0, finding: 0, comment: 0 };
         for (const d of s.files)
           for (const [k, n] of Object.entries(items.get(openedPath(d)) ?? {}))
             c[k as keyof ItemCount] += n;

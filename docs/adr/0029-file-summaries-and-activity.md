@@ -23,7 +23,7 @@ seen: what runs, on which model, and why it failed.
    version, so it's never updated: a file diff that changes, or a new prompt, gets a new key and is summarised again,
    and the old one stays for the contents it was about. Deleted files, lockfiles, pure renames and binary files get one written by coxswain, with
    no model call.
-2. **Summary jobs do the work** (`src/core/summaries.ts`). A job takes the file diffs of one range that have no
+2. **Background jobs do the work** ([ADR 0038](0038-background-jobs-and-core-events.md): `src/core/jobs.ts`, the kind `files` in `src/core/summaries.ts`). A job takes the file diffs of one range that have no
    summary and aren't being made by another job, and summarises them in batches (diffs cut to 300 lines, at most 25
    files or 1200 lines a run), at most 6 runs at once across all jobs. Each run is one-shot (`askOnce`): a session of
    its own over ACP ([ADR 0018](0018-agents-over-acp.md)), no tools or MCP servers, Claude Code's system prompt
@@ -48,7 +48,7 @@ seen: what runs, on which model, and why it failed.
 5. **Activity shows the jobs**, at the canvas bar's right: a button that turns while one runs and gets a red dot when
    one failed, opening a list of the jobs, newest first: state, workspace, why, progress, files reused, summarised
    and failed, agent and the model it ran on, runs, range, the files being summarised now, the last error, and Stop.
-   Jobs are stored in `summary_jobs` (their progress at most every 100 ms), so Activity shows them after a restart:
+   Jobs are stored in `jobs` (their progress at most every 100 ms), so Activity shows them after a restart:
    the latest 50, of the 500 kept. One still running when coxswain quit is marked stopped at the next start. Each
    finished job is logged by the main process too.
 6. **`write_section` and `remove_section` change a view one at a time**, each on the view as the one before left it,

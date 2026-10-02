@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ReviewEntry } from "./review";
-import { unseen } from "./thread-context.ts";
+import { conclusionsPrompt, parseConclusions, unseen } from "./thread-context.ts";
 
 const entry = (
   id: number,
@@ -29,6 +29,10 @@ const entry = (
     revision: null,
     section: null,
     quoteAt: null,
+    author: null,
+    githubId: null,
+    githubThreadId: null,
+    githubUrl: null,
     ...more,
   }) satisfies Omit<ReviewEntry, "state" | "shown" | "now">;
 
@@ -72,4 +76,32 @@ test("a thread on a view's prose says where in the view and quotes the passage (
     unseen(onProse, [], "s1"),
     "About this passage of section 2 of view 7 (see list_views):\n> The cache is filled\n> lazily.",
   );
+});
+
+test("conclusions: the prompt numbers the threads and marks what's new; the reply is read by number", () => {
+  const root = { path: "a.ts", side: "new" as const, startLine: 3, endLine: 3, code: "x" };
+  const prompt = conclusionsPrompt([
+    {
+      root,
+      thread: [
+        { id: 1, kind: "comment", body: "Why?", author: "ana" },
+        { id: 2, kind: "note", body: "Because", author: null },
+      ],
+      fresh: new Set([2]),
+    },
+    { root, thread: [{ id: 3, kind: "answer", body: "Done", author: null }] },
+  ]);
+  assert.match(prompt, /### 1\. A reply\. On `a\.ts` line 3/);
+  assert.match(prompt, /@ana on GitHub: Why\?\nMe \(new\): Because/);
+  assert.match(prompt, /### 2\. On `a\.ts`[^]*Agent: Done/);
+  assert.deepEqual(
+    [
+      ...parseConclusions(
+        'Sure: {"threads":[{"thread":2,"comment":" Rename it. "},{"thread":9,"comment":"x"},{"thread":1,"comment":""}]}',
+        2,
+      ),
+    ],
+    [[2, "Rename it."]],
+  );
+  assert.throws(() => parseConclusions("no json", 1));
 });

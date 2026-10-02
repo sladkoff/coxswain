@@ -148,9 +148,12 @@ export function ThreadBox({
   const [editing, setEditing] = useState(false);
   const lastOwn = [root, ...replies].findLast((e) => e.kind === "note" || e.kind === "question");
   const menu = async () => {
+    // A comment on GitHub is edited there; a thread from GitHub comes back with its next read, so it isn't deleted.
     const picked = await window.coxswain.showThreadMenu({
-      edit: root.kind === "note" || root.kind === "question",
+      edit: (root.kind === "note" || root.kind === "question") && !root.githubId,
       send: !running && lastOwn?.kind === "note",
+      delete: !root.githubThreadId,
+      url: root.githubUrl,
     });
     if (picked === "edit") setEditing(true);
     if (
@@ -170,6 +173,7 @@ export function ThreadBox({
         <span className={root.section != null ? "min-w-0 truncate" : "shrink-0"}>
           {anchorLabel(root)}
           {root.state === "outdated" && " · outdated"}
+          {root.githubThreadId && " · on GitHub"}
         </span>
         {root.resolvedAt ? (
           <span className="min-w-0 flex-1 truncate">Resolved · {root.body}</span>
@@ -179,9 +183,10 @@ export function ThreadBox({
         <Button
           variant="ghost"
           title={
-            root.resolvedAt
+            (root.resolvedAt
               ? "Resolved: click to reopen"
-              : "Resolve: mark the thread done; it folds to one line"
+              : "Resolve: mark the thread done; it folds to one line") +
+            (root.githubThreadId ? "\nHere only, until Post to GitHub sends it" : "")
           }
           disabled={running}
           className={cn("px-1", root.resolvedAt && "text-green-600")}
@@ -323,10 +328,21 @@ const agentLabels: Partial<Record<ReviewEntry["kind"], string>> = {
   finding: "Finding",
 };
 
-// One entry of a thread: the user's (a question marked as sent to the agent), or the agent's: an answer, an
-// explanation or a finding.
+// One entry of a thread: the user's (a question marked as sent to the agent), the agent's (an answer, an explanation
+// or a finding), or a comment on GitHub by its author (ADR 0037). One posted from here says so.
 function Comment({ entry: e }: { entry: ReviewEntry }) {
-  const label = agentLabels[e.kind];
+  if (e.kind === "comment")
+    return (
+      <div>
+        <span className={cn("block text-xs", muted)}>
+          <span className="font-medium text-neutral-900 dark:text-neutral-100">@{e.author}</span> on
+          GitHub
+        </span>
+        <Prose>{e.body}</Prose>
+      </div>
+    );
+  const posted = e.githubUrl ? " · posted" : "";
+  const label = agentLabels[e.kind] && `${agentLabels[e.kind]}${posted}`;
   if (label)
     return (
       <div>
@@ -345,6 +361,7 @@ function Comment({ entry: e }: { entry: ReviewEntry }) {
     <div className="whitespace-pre-wrap select-text [overflow-wrap:anywhere]">
       <span className={cn("block text-xs", muted)}>
         {e.kind === "question" ? "You → agent" : "You"}
+        {posted}
       </span>
       {e.body}
     </div>

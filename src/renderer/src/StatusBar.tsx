@@ -1,12 +1,14 @@
 import { useState } from "react";
 import { match, P } from "ts-pattern";
-import type { ReviewEntry } from "../../core/review";
+import type { PullRequestDetails } from "../../core/github";
+import type { Conclusion, ReviewEntry } from "../../core/review";
 import { Button, SegmentedControl, ToggleButton } from "./components/button";
 import { ChevronDownIcon } from "./components/icons";
 import { ProgressBar } from "./components/layout";
 import { cn, divider, muted } from "./components/styles";
 import { ErrorText } from "./components/text";
 import { byAgent, count } from "./format";
+import { SubmitReviewDialog } from "./SubmitReview";
 import { changed } from "./queries";
 import type { Turn } from "./Viewer";
 
@@ -18,25 +20,27 @@ type Props = {
   turns: Record<number, Turn>;
   onViewThread: (threadId: number) => void;
   viewTitle?: string; // the view on the canvas, whose prose threads are listed under it (ADR 0036)
+  pr?: PullRequestDetails | null; // the workspace's PR, to post to (ADR 0037)
 };
 
 // The canvas's bottom bar: the review at a glance on the left (threads, with how many wait on the agent, how many of
-// the file diffs on screen are reviewed, and their lines), and Hand off on the right. The thread count opens the
+// the file diffs on screen are reviewed, and their lines), and Submit Review on the right. The thread count opens the
 // threads above the bar.
 export function StatusBar(props: Props) {
   const [open, setOpen] = useState(false);
   const [listed, setListed] = useState<"open" | "resolved">("open");
   // Sending the open threads to the agent pane's session; the agent's reply shows there.
-  const [sending, setSending] = useState(false);
+  const [sending, setSending] = useState(0); // how many threads
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [submitting, setSubmitting] = useState(false); // the Submit Review dialog is open
   const threads = props.entries.filter((e) => (e.path || e.section != null) && !e.parentId);
-  // What Hand off takes, as the review prompt does (core/review.ts): not resolved, and not the agent's own explanations
+  // What Submit Review takes, as the review prompt does (core/review.ts): not resolved, and not the agent's own explanations
   // or findings unless the user replied to them.
   const replied = new Set(
     props.entries.filter((e) => e.parentId && !byAgent(e)).map((e) => e.parentId),
   );
-  const handOff = threads.filter((e) => !e.resolvedAt && (!byAgent(e) || replied.has(e.id)));
+  const toSubmit = threads.filter((e) => !e.resolvedAt && (!byAgent(e) || replied.has(e.id)));
   const resolved = threads.filter((e) => e.resolvedAt);
   const openCount = threads.length - resolved.length;
   const answering = threads.filter((e) => props.turns[e.id]?.running).length;
@@ -49,21 +53,28 @@ export function StatusBar(props: Props) {
     shown.toSorted((a, b) => Number(!!a.path) - Number(!!b.path)),
     (t) => t.path ?? "",
   );
-  const handOffTo = async () => {
-    const to = await window.coxswain.showHandOffMenu();
+  const sendToAgent = async (conclusions: Conclusion[]) => {
     setError(null);
-    if (to === "copy") {
-      setCopied(await window.coxswain.copyReviewPrompt(props.workspaceId));
-      setTimeout(() => setCopied(false), 1500);
-      return;
-    }
-    setSending(true);
-    const result = await window.coxswain.sendReview(props.workspaceId);
-    setSending(false);
+    setSending(conclusions.length);
+    const result = await window.coxswain.sendReview(props.workspaceId, conclusions);
+    setSending(0);
     if (result.status === "error") setError(result.message);
   };
   return (
     <div className={cn("flex max-h-[50%] shrink-0 flex-col border-t text-xs", divider)}>
+      {submitting && (
+        <SubmitReviewDialog
+          workspaceId={props.workspaceId}
+          pr={props.pr}
+          onViewThread={props.onViewThread}
+          onSendToAgent={(conclusions) => void sendToAgent(conclusions)}
+          onCopied={() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+          }}
+          onClose={() => setSubmitting(false)}
+        />
+      )}
       {open && (
         <div className={cn("flex min-h-0 flex-col border-b", divider)}>
           <div className={cn("flex shrink-0 items-center gap-2 border-b px-2 py-1", divider)}>
@@ -153,31 +164,40 @@ export function StatusBar(props: Props) {
         )}
         <div className="flex-1" />
         {error && <ErrorText className="truncate">{error}</ErrorText>}
-        {sending && (
+        {sending > 0 && (
           <span className="flex shrink-0 items-center gap-1.5">
             <span className="size-2.5 animate-spin rounded-full border-[1.5px] border-neutral-400 border-t-transparent" />
-            Agent working on {count(handOff.length, "thread")}
+            Agent working on {count(sending, "thread")}
           </span>
         )}
         {copied && <span className="shrink-0">Copied</span>}
         <Button
           variant="primary"
-          title={
-            handOff.length
-              ? "Send the open threads to the agent, or copy them as a prompt"
-              : "Nothing to hand off: no open threads of yours (the agent's explanations count once you reply)"
-          }
-          className="flex shrink-0 items-center gap-1.5 py-0.5 pr-1.5"
-          disabled={!handOff.length || sending}
-          onClick={handOffTo}
+          title={match({ threads: toSubmit.length > 0, pr: !!props.pr })
+            .with(
+              { threads: true },
+              () =>
+                "Go through the open threads' conclusions, then send them to the agent or post them to GitHub",
+            )
+            .with(
+              { pr: true },
+              () =>
+                "No open threads of yours for the agent; a review can still be posted to GitHub",
+            )
+            .otherwise(
+              () =>
+                "Nothing to submit: no open threads of yours (the agent's explanations count once you reply)",
+            )}
+          className="flex shrink-0 items-center gap-1.5 py-0.5"
+          disabled={(!toSubmit.length && !props.pr) || sending > 0}
+          onClick={() => setSubmitting(true)}
         >
-          Hand off
-          {handOff.length > 0 && (
+          Submit Review
+          {toSubmit.length > 0 && (
             <span className="rounded-full bg-white/20 px-1.5 text-[11px] leading-4 dark:bg-black/15">
-              {handOff.length}
+              {toSubmit.length}
             </span>
           )}
-          <ChevronDownIcon />
         </Button>
       </div>
     </div>
@@ -219,6 +239,7 @@ function ThreadRow(props: {
     .with({ t: { shown: false } }, () => [null, writtenIn(t)])
     .with({ answers: P.number.gt(0) }, () => ["bg-green-600", count(answers, "answer")])
     .with({ t: { kind: "question" } }, () => ["bg-blue-500", "sent to agent"])
+    .with({ t: { kind: "comment" } }, () => [null, `@${t.author} on GitHub`])
     .otherwise(() => [null, null]);
   return (
     <div className="flex items-center pr-1 hover:bg-neutral-100 dark:hover:bg-neutral-800">

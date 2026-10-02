@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import type { Db } from "./db";
+import { emit } from "./events.ts";
 import { follow, lineMap } from "./follow.ts";
-import { pinRevision, readTexts } from "./git.ts";
+import { currentMergeBase, pinRevision, readTexts } from "./git.ts";
 
 // ADR 0015: a workspace's entries (glossary): notes, questions and answers, threaded by parent_id; and the agent's
 // explanations and findings, which belong to a view too (viewId, ADR 0023).
@@ -25,7 +26,8 @@ export type ProseAnchor = { viewId: number; section: number; quote: string; at: 
 export type ReviewEntry = {
   id: number;
   workspaceId: number;
-  kind: "note" | "question" | "answer" | "explanation" | "finding";
+  // comment: mirrored from a review thread on GitHub (ADR 0037), by author, its GitHub login.
+  kind: "note" | "question" | "answer" | "explanation" | "finding" | "comment";
   body: string;
   parentId: number | null; // the thread's first entry, for replies, follow-ups and answers
   viewId: number | null;
@@ -42,6 +44,10 @@ export type ReviewEntry = {
   revision: string | null; // on prose: the section's version, a hash of its markdown (ADR 0036)
   section: number | null; // on prose: its section in the view; code is then the quote
   quoteAt: number | null; // on prose: where the quote starts in the section's text
+  author: string | null; // a mirrored comment's GitHub login
+  githubId: string | null; // the comment on GitHub: a mirrored one's, or an entry's once posted
+  githubThreadId: string | null; // on a thread's first entry: its review thread on GitHub
+  githubUrl: string | null;
   // ADR 0015: current while its lines are unchanged in the live diff (the worktree, or the merge base for the old
   // side), wherever they moved; outdated once they changed. The same whatever range it's listed for. A reply or
   // answer takes its thread's. Floating entries are current.
@@ -80,6 +86,10 @@ export const columns = [
   "revision",
   "section",
   "quote_at as quoteAt",
+  "author",
+  "github_id as githubId",
+  "github_thread_id as githubThreadId",
+  "github_url as githubUrl",
 ] as const;
 
 // Every entry of the workspace, in order.
@@ -189,7 +199,7 @@ export async function addEntry(db: Db, kind: ReviewEntry["kind"], e: NewEntry): 
   const at =
     a &&
     ("viewId" in a ? await onProse(db, e.workspaceId, a) : await onLines(db, e.workspaceId, a));
-  return db
+  const row = await db
     .insertInto("entries")
     .values({
       workspace_id: e.workspaceId,
@@ -210,6 +220,8 @@ export async function addEntry(db: Db, kind: ReviewEntry["kind"], e: NewEntry): 
     })
     .returning(columns)
     .executeTakeFirstOrThrow();
+  emit({ workspaceId: e.workspaceId, what: "entries" });
+  return row;
 }
 
 async function onLines(db: Db, workspaceId: number, a: Anchor) {
@@ -268,4 +280,11 @@ export const fresh = (e: Row): ReviewEntry => ({ ...e, state: "current", shown: 
 
 export async function addNote(db: Db, e: NewEntry): Promise<ReviewEntry> {
   return fresh(await addEntry(db, "note", e));
+}
+
+// The workspace's entries in the live diff, as the review prompt describes them.
+export async function liveEntries(db: Db, workspaceId: number): Promise<ReviewEntry[]> {
+  const mergeBase = currentMergeBase(workspaceId);
+  if (!mergeBase) throw new Error("Open the workspace first");
+  return listEntries(db, workspaceId, mergeBase, mergeBase);
 }
