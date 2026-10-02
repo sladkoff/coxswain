@@ -15,7 +15,7 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 - **Submit Review**, the bottom bar's button (it was _Hand off_, a menu; the name in earlier entries below is the old
   one), opens a dialog like GitHub's _Finish your review_: the open threads, and with a PR those with something to
   post (replies to GitHub's, resolves), each with its **conclusion** (glossary), the one review comment that says
-  where the thread ended up. The summary model writes them ahead, in a background job, once the threads have been still for 3 seconds and not while an agent is answering one, so the dialog opens at once; a thread not written yet says _Writing its conclusion…_
+  where the thread ended up. The summary model writes them ahead, in a background job, once the threads have been still for 30 seconds and not while an agent is answering one, so the dialog opens at once; a thread not written yet says _Writing its conclusion…_
   (`draftReview`, `conclusionsPrompt`); a thread that is one comment of the user's is its own. The user picks threads
   and edits conclusions, then _Copy as Prompt_, _Send to Agent_ (the threads with their conclusions after them) or
   _Post to GitHub…_. The button is on with a PR even without open threads, for a review that is a verdict alone.

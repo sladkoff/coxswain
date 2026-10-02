@@ -220,7 +220,7 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   _Submit Review N_ (N the open threads it takes: not resolved, and the agent's explanations and findings only once the
   user replied; on with open threads or a PR) opens a dialog, like GitHub's _Finish your review_, at once. Each thread
   has its conclusion (glossary): the one review comment that says where the thread ended up, a decision, something to
-  do, or a question still open. The summary model (Settings) writes them ahead, in a job (see Activity), a few seconds
+  do, or a question still open. The summary model (Settings) writes them ahead, in a job (see Activity), half a minute
   after a thread last changed and not while an agent is answering it, so they are there when the dialog opens; one not written yet says _Writing
   its conclusion…_ in its place, and the three buttons wait while a picked thread has none. A thread that is one comment
   of the user's is its own conclusion. Then the threads, compact: a checkbox, where it is and its first comment (a

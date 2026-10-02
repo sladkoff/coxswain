@@ -33,7 +33,7 @@ work is coming, and the app is young enough to settle one way of doing it.
 4. **Two things listen.** The main process forwards the changes to the window, which refetches
    ([ADR 0017](0017-data-fetching-with-tanstack-query.md)). `src/core/background.ts` starts the jobs that follow from
    an event, and is the one place that says what runs when: `opened` and `worktree` summarise the committed changes
-   ahead; `entries` concludes the threads that changed, once they've been still for 3 s, leaving out a thread an agent
+   ahead; `entries` concludes the threads that changed, once they've been still for 30 s, leaving out a thread an agent
    is answering.
 5. **Work ahead is one setting.** _Ahead_ in Settings turns both off: summaries are then made for a view, conclusions
    when Submit Review opens. After a failure retrying can't fix, work ahead waits until the settings change; work

@@ -127,7 +127,7 @@ export function conclusionsPrompt(threads: ToConclude[]): string {
       "- doesn't repeat the file or the line numbers when the thread is on lines: it is shown on them.",
       "A thread marked as a reply continues one on GitHub: write the reply that brings it up to date, from the entries marked new.",
     ].join("\n"),
-    'Answer with JSON only, one entry per thread: {"threads":[{"thread":<its number>,"comment":"<text>"}]}',
+    'Answer with JSON only, one entry per thread: {"threads":[{"thread":<its number>,"comment":"<text>"}]}. It must parse: in a comment, write code in backticks, not double quotes, and escape any double quote or line break.',
     threads
       .map(({ root, thread, fresh }, i) => {
         const lines = thread.map(

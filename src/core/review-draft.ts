@@ -233,7 +233,8 @@ export async function draftReview(
 // concluded, so Submit Review opens with them written. A thread an agent is answering waits: its answer changes it.
 // ponytail: every changed thread costs a model run, whether the review is submitted or not; work ahead can be turned
 // off in Settings.
-const stillFor = 3000;
+// Half a minute: a thread in a back-and-forth with an agent changes every few seconds, and each change would be a run.
+const stillFor = 30_000;
 const timers = new Map<number, ReturnType<typeof setTimeout>>();
 export function concludeAhead(
   db: Db,
