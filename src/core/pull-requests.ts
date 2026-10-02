@@ -10,7 +10,7 @@ import {
   type ReviewThread,
 } from "./github.ts";
 import { currentHead, currentMergeBase, pinRevision, readFileDiff, readTexts } from "./git.ts";
-import { byAgent, fence } from "./thread-context.ts";
+import { byAgent, fence, quote } from "./thread-context.ts";
 import { getWorkspaceRepo } from "./workspaces.ts";
 
 // ADR 0037: a workspace's PR on GitHub. Reading it mirrors its review threads into the workspace's entries; posting
@@ -201,29 +201,29 @@ export function hunkRanges(diff: string): { old: [number, number][]; new: [numbe
   return ranges;
 }
 
-// A thread as Post to GitHub lists it: where it is, what it starts with, what of it would be posted, and why it can't
-// be, if it can't. github: on a thread from GitHub, where only the replies since go, and a resolve or reopen made here.
-// onFile: its lines aren't in the PR's diff, so it goes on the whole file, quoting them.
+// A thread with something to post, as Submit Review lists it. github: on a thread from GitHub, where a conclusion of the
+// replies since goes as one reply, and a resolve or reopen made here. placement: how its conclusion goes. "lines": a
+// comment on its lines, which are in the PR's diff. "body": in the review's text, with what it is about quoted, since
+// GitHub has nowhere to put it (a view's text, lines outside the PR's diff, lines not pushed or changed since).
+// "reply": on its thread on GitHub. null: nothing to say, only a resolve or reopen.
 export type PostableThread = {
   threadId: number;
   path: string | null;
   lines: string;
   body: string;
   github: boolean;
-  yours: number; // entries of the user's to post
-  agents: number; // … and of the agent's, posted with a marker if picked
+  placement: "lines" | "body" | "reply" | null;
   resolve: boolean | null; // true: resolve it on GitHub, false: reopen it, null: neither
-  onFile: boolean;
-  problem: string | null;
 };
 
 const linesOf = (e: Pick<ReviewEntry, "startLine" | "endLine">) =>
   e.startLine === e.endLine ? `${e.startLine}` : `${e.startLine}–${e.endLine}`;
-const postable = (e: ReviewEntry) => !e.githubId && e.kind !== "comment";
+// An entry that isn't on GitHub yet.
+export const unposted = (e: ReviewEntry) => !e.githubId && e.kind !== "comment";
 
 // Every thread with something to post: a thread of the workspace's not on GitHub yet (open, and the user's, or the
 // agent's that the user replied to), or one from GitHub with replies or a resolve since. Its lines are taken in what's
-// on GitHub (ADR 0028), the PR's head: lines only here (not pushed, not committed) can't be posted yet.
+// on GitHub (ADR 0028), the PR's head.
 export async function listPostable(
   db: Db,
   workspaceId: number,
@@ -260,74 +260,53 @@ export async function listPostable(
   for (const root of entries.filter((e) => !e.parentId && (e.path || e.section != null))) {
     const replies = entries.filter((e) => e.parentId === root.id);
     const github = !!root.githubThreadId;
-    const unposted = (github ? replies : [root, ...replies]).filter(postable);
+    const fresh = (github ? replies : [root, ...replies]).filter(unposted);
     const resolve =
       github && !!root.resolvedAt !== resolvedThere.get(root.id) ? !!root.resolvedAt : null;
     const userReplied = replies.some((r) => !byAgent(r));
     if (!github && (root.resolvedAt || (byAgent(root) && !userReplied))) continue;
-    if (!unposted.length && resolve === null) continue;
-    const problem = match(root)
-      .when(
-        (r) => r.section != null,
-        () => "On a view's text, which isn't on GitHub",
-      )
-      .when(
-        (r) => !github && !r.shown,
-        (r) =>
-          r.state === "outdated"
-            ? "Its lines have changed since; reply on the new lines instead"
-            : "Its lines aren't on GitHub yet: push first",
-      )
-      .otherwise(() => null);
+    if (!fresh.length && resolve === null) continue;
+    const onLines = root.section == null && root.shown && (await inDiff(root));
     out.push({
       threadId: root.id,
       path: root.path,
       lines: root.section != null ? `§ ${root.section + 1}` : linesOf(root),
       body: root.body,
       github,
-      yours: unposted.filter((e) => !byAgent(e)).length,
-      agents: unposted.filter(byAgent).length,
+      placement: match({ github, fresh: fresh.length > 0, onLines })
+        .returnType<PostableThread["placement"]>()
+        .with({ github: true, fresh: true }, () => "reply")
+        .with({ github: true }, () => null)
+        .with({ onLines: true }, () => "lines")
+        .otherwise(() => "body"),
       resolve,
-      onFile: !github && !problem && !(await inDiff(root)),
-      problem,
     });
   }
   return out;
 }
 
 export type ReviewEvent = "COMMENT" | "APPROVE" | "REQUEST_CHANGES";
+// threads: the picked ones, each with its conclusion as the user left it, which is what goes to GitHub.
 export type ReviewPost = {
-  threads: number[];
-  withAgent: boolean; // post the agent's entries too, marked as the agent's
+  threads: { threadId: number; body: string }[];
   event: ReviewEvent;
   body: string;
 };
 
-const agentNames: Record<string, string> = { claude: "Claude", codex: "Codex" };
-
-// An entry as it's posted. The agent's are marked as such (ADR 0037): they go out as the user, who picked them.
-async function postedBody(db: Db, e: ReviewEntry, thread: ReviewEntry[]): Promise<string> {
-  if (!byAgent(e)) return e.body;
-  const asked = thread.findLast((q) => q.kind === "question" && q.id < e.id)?.agentSessionId;
-  const agent =
-    asked &&
-    (
-      await db
-        .selectFrom("agent_sessions")
-        .select("agent")
-        .where("agent_session_id", "=", asked)
-        .executeTakeFirst()
-    )?.agent;
-  const who = agentNames[agent ?? ""] ?? "The agent";
-  const what = e.kind === "answer" ? "" : ` (${e.kind})`;
-  return `> 🤖 ${who}${what}, via coxswain\n\n${e.body}`;
-}
-
 type Posted = { id: string; url: string };
 
-// Posts the picked threads as one review of the PR's head as last opened, then submits it with event and body:
-// each new thread with its entries, replies to threads from GitHub, and the resolves and reopens made here. What got
-// posted is recorded as it goes, so a failure halfway posts nothing twice; a review left pending is submitted next time.
+// A conclusion in the review's text: what it is about, quoted, then the conclusion.
+const aside = (root: ReviewEntry, text: string) =>
+  root.section != null
+    ? `${quote(root.code ?? "")}\n\n${text}`
+    : `\`${root.path}\`, ${root.startLine === root.endLine ? "line" : "lines"} ${linesOf(root)}${root.side === "old" ? " (removed)" : ""}:\n${fence(root.code ?? "")}\n\n${text}`;
+
+// Posts the picked threads' conclusions as one review of the PR's head as last opened, then submits it with event and
+// body: a comment on its lines for each new thread whose lines are in the PR's diff, in the review's text for the
+// other new ones, a reply for a thread from GitHub; and the resolves and reopens made here. A thread of the
+// workspace's is resolved here once its conclusion is posted: the comment on GitHub comes back as a thread of its own
+// at the next read. What got posted is recorded as it goes, so a failure halfway posts nothing twice; a review left
+// pending is submitted next time.
 export async function postReview(
   db: Db,
   workspaceId: number,
@@ -336,11 +315,12 @@ export async function postReview(
   const w = await prOf(db, workspaceId);
   const [mergeBase, head] = [currentMergeBase(workspaceId), currentHead(workspaceId)];
   if (!mergeBase || !head) return { status: "error", message: "Open the workspace first" };
-  const picked = new Set(post.threads);
-  const listed = (await listPostable(db, workspaceId)).filter(
-    (t) => picked.has(t.threadId) && !t.problem,
-  );
+  const texts = new Map(post.threads.map((t) => [t.threadId, t.body.trim()]));
+  const listed = (await listPostable(db, workspaceId)).filter((t) => texts.has(t.threadId));
+  const saying = (placement: PostableThread["placement"]) =>
+    listed.filter((t) => t.placement === placement && texts.get(t.threadId));
   const entries = await listEntries(db, workspaceId, mergeBase, mergeBase, head);
+  const rootOf = (t: PostableThread) => entries.find((e) => e.id === t.threadId)!;
   const found = await githubGraphql<{
     repository: { pullRequest: { id: string; reviews: { nodes: { id: string }[] } } };
   }>(
@@ -352,20 +332,23 @@ export async function postReview(
   const pr = found.data.repository.pullRequest;
   // Pending reviews are only seen by their author: one there is the user's, e.g. left by a post that failed.
   let reviewId = pr.reviews.nodes[0]?.id ?? null;
-  const posting = listed.some((t) => !t.github || t.yours || (post.withAgent && t.agents));
-  const reviewing = posting || !!reviewId || !!post.body.trim() || post.event !== "COMMENT";
+  const body = [
+    post.body.trim(),
+    ...saying("body").map((t) => aside(rootOf(t), texts.get(t.threadId)!)),
+  ]
+    .filter(Boolean)
+    .join("\n\n---\n\n");
+  const reviewing =
+    saying("lines").length > 0 ||
+    saying("reply").length > 0 ||
+    !!reviewId ||
+    !!body ||
+    post.event !== "COMMENT";
   if (!reviewing && listed.every((t) => t.resolve === null))
     return { status: "error", message: "Nothing to post" };
-  const record = (id: number, c: Posted, threadId?: string) =>
-    db
-      .updateTable("entries")
-      .set({
-        github_id: c.id,
-        github_url: c.url,
-        ...(threadId && { github_thread_id: threadId, github_resolved: 0 }),
-      })
-      .where("id", "=", id)
-      .execute();
+  const resolveHere = (ids: number[]) =>
+    ids.length &&
+    db.updateTable("entries").set({ resolved_at: now() }).where("id", "in", ids).execute();
   if (reviewing) {
     if (!reviewId) {
       const made = await githubGraphql<{
@@ -378,76 +361,60 @@ export async function postReview(
       if (made.status !== "ok") return made;
       reviewId = made.data.addPullRequestReview.pullRequestReview.id;
     }
-    for (const t of listed) {
-      const root = entries.find((e) => e.id === t.threadId)!;
-      const thread = [root, ...entries.filter((e) => e.parentId === root.id)];
-      const going = thread.filter(
-        (e) => postable(e) && (post.withAgent || !byAgent(e) || (e === root && !t.github)),
+    for (const t of saying("lines")) {
+      const root = rootOf(t);
+      const side = root.side === "old" ? "LEFT" : "RIGHT";
+      const made = await githubGraphql(
+        `mutation($input: AddPullRequestReviewThreadInput!) { addPullRequestReviewThread(input: $input) {
+          thread { id } } }`,
+        {
+          input: {
+            pullRequestReviewId: reviewId,
+            path: root.path,
+            body: texts.get(t.threadId),
+            subjectType: "LINE",
+            line: root.endLine,
+            side,
+            ...(root.startLine !== root.endLine && { startLine: root.startLine, startSide: side }),
+          },
+        },
       );
-      let threadId = root.githubThreadId;
-      for (const e of going) {
-        const body = await postedBody(db, e, thread);
-        if (!threadId) {
-          const side = root.side === "old" ? "LEFT" : "RIGHT";
-          const many = root.startLine !== root.endLine;
-          const made = await githubGraphql<{
-            addPullRequestReviewThread: {
-              thread: { id: string; comments: { nodes: Posted[] } };
-            };
-          }>(
-            `mutation($input: AddPullRequestReviewThreadInput!) { addPullRequestReviewThread(input: $input) {
-              thread { id comments(first: 1) { nodes { id url } } } } }`,
-            {
-              input: {
-                pullRequestReviewId: reviewId,
-                path: root.path,
-                body: t.onFile
-                  ? `On ${many ? "lines" : "line"} ${linesOf(root)}${root.side === "old" ? " (removed)" : ""}:\n${fence(root.code ?? "")}\n\n${body}`
-                  : body,
-                ...(t.onFile
-                  ? { subjectType: "FILE" }
-                  : {
-                      subjectType: "LINE",
-                      line: root.endLine,
-                      side,
-                      ...(many && { startLine: root.startLine, startSide: side }),
-                    }),
-              },
-            },
-          );
-          if (made.status !== "ok") return made;
-          const th = made.data.addPullRequestReviewThread.thread;
-          threadId = th.id;
-          await record(e.id, th.comments.nodes[0], th.id);
-          if (e.id !== root.id)
-            await db
-              .updateTable("entries")
-              .set({ github_thread_id: th.id, github_resolved: 0 })
-              .where("id", "=", root.id)
-              .execute();
-          continue;
-        }
-        const replied = await githubGraphql<{
-          addPullRequestReviewThreadReply: { comment: Posted };
-        }>(
-          `mutation($review: ID!, $thread: ID!, $body: String!) { addPullRequestReviewThreadReply(input: {
-            pullRequestReviewId: $review, pullRequestReviewThreadId: $thread, body: $body }) { comment { id url } } }`,
-          { review: reviewId, thread: threadId, body },
-        );
-        if (replied.status !== "ok") return replied;
-        await record(e.id, replied.data.addPullRequestReviewThreadReply.comment);
-      }
+      if (made.status !== "ok") return made;
+      await resolveHere([root.id]);
+    }
+    for (const t of saying("reply")) {
+      const root = rootOf(t);
+      const replied = await githubGraphql<{
+        addPullRequestReviewThreadReply: { comment: Posted };
+      }>(
+        `mutation($review: ID!, $thread: ID!, $body: String!) { addPullRequestReviewThreadReply(input: {
+          pullRequestReviewId: $review, pullRequestReviewThreadId: $thread, body: $body }) { comment { id url } } }`,
+        { review: reviewId, thread: root.githubThreadId, body: texts.get(t.threadId) },
+      );
+      if (replied.status !== "ok") return replied;
+      // The replies the conclusion stands for are on GitHub as that one comment.
+      const c = replied.data.addPullRequestReviewThreadReply.comment;
+      await db
+        .updateTable("entries")
+        .set({ github_id: c.id, github_url: c.url })
+        .where(
+          "id",
+          "in",
+          entries.filter((e) => e.parentId === root.id && unposted(e)).map((e) => e.id),
+        )
+        .execute();
     }
     const submitted = await githubGraphql(
       `mutation($review: ID!, $event: PullRequestReviewEvent!, $body: String) { submitPullRequestReview(input: {
         pullRequestReviewId: $review, event: $event, body: $body }) { pullRequestReview { id } } }`,
-      { review: reviewId, event: post.event, body: post.body.trim() || null },
+      { review: reviewId, event: post.event, body: body || null },
     );
     if (submitted.status !== "ok") return submitted;
+    await resolveHere(saying("body").map((t) => t.threadId));
   }
   for (const t of listed) {
     if (t.resolve === null) continue;
-    const root = entries.find((e) => e.id === t.threadId)!;
+    const root = rootOf(t);
     const done = await githubGraphql(
       t.resolve
         ? `mutation($id: ID!) { resolveReviewThread(input: {threadId: $id}) { thread { id } } }`

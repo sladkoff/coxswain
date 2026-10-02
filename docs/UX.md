@@ -25,7 +25,7 @@ review.
 │ #34│                         │                     │ and the human      │
 │ +  │ [attachments ×]         │                     │ annotate it)       │
 │    │ [message box] [📎] [↑]  ├─────────────────────┴────────────────────┤
-│    │                         │▾ 3 threads ●1 │ ▰▱ 1/2 │ +33 −0 Hand off▾│
+│    │                         │▾ 3 threads │ 1/2 │ +33 −0   Submit Review│
 └────┴─────────────────────────┴──────────────────────────────────────────┘
           ⌘K overlays the canvas; existing diagrams stay in place
 ```
@@ -56,16 +56,20 @@ another file do not change the search scope.
 
 ## Activity
 
-The last button in the canvas bar shows what coxswain does in the background: for now summary jobs (glossary,
-[ADR 0029](adr/0029-file-summaries-and-activity.md)). It's a pulse icon, a turning ring while a job runs, with a red
-dot when one failed since the list was last opened. Clicking it opens the list under it, the latest 50 jobs of every workspace, newest first, kept across restarts. Each shows _Summarising_, _Summarised_, _Failed_ or _Stopped_, the workspace, _ahead_ or _for a view_, how long it took
-and when; a progress bar (full and red once failed); files that had a summary, were summarised and failed; the agent,
-the model it ran on, runs and range; the files being summarised now; the last error; and Stop while it runs. Its header
-names the summary agent and model, with _Settings…_; under it, _This workspace_: how many of the workspace on screen's
-committed file diffs have a summary at its HEAD, with _Up to date_, _Summarising…_, _Not yet_ or _For views only_. Esc or a click outside closes it.
+The last button in the canvas bar shows what coxswain does in the background: its jobs (glossary,
+[ADR 0038](adr/0038-background-jobs-and-core-events.md)), which summarise files and conclude threads. It's a pulse
+icon, a turning ring while a job runs, with a red dot when one failed since the list was last opened. Clicking it opens
+the list under it, the latest 50 jobs of every workspace, newest first, kept across restarts. Each shows what it does
+(_Summarising_ or _Concluding_, then _Summarised_ or _Concluded_, _Failed_ or _Stopped_), the workspace, _ahead_,
+_for a view_ or _for Submit Review_, how long it took and when; a progress bar (full and red once failed); the files
+or threads that had one, were done and failed; the agent, the model it ran on, runs and, for files, the range; what is
+being worked on now; the last error; and Stop while it runs. Its header names the summary agent and model, with
+_Settings…_; under it, _This workspace_: how many of the workspace on screen's committed file diffs have a summary at
+its HEAD, with _Up to date_, _Summarising…_, _Not yet_ or _For views only_. Esc or a click outside closes it.
 
 Settings has _File summaries_: the agent (_Claude Code_ · _Codex_), the model (a native menu of what the agent offers,
-asked in the workspace on screen; greyed out without one) and _Summarise_: _Ahead_ or _Only for views_.
+asked in the workspace on screen; greyed out without one) and _Work_: _Ahead_ or _Only when needed_, which also
+decides whether thread conclusions are written as threads change or when Submit Review opens.
 
 ## Before the main screen
 
@@ -194,7 +198,7 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   stops only its own turn.
 
   The thread's header has a ✓ to resolve it: the thread folds to its header (_Resolved_ and its first comment), is
-  left out of _Hand off_, and the ✓, green now, reopens it. Right of it, a ⋯ button with a native menu:
+  left out of _Submit Review_, and the ✓, green now, reopens it. Right of it, a ⋯ button with a native menu:
   _Edit_ (the first comment, in place, if it's yours), _Delete_ (the thread, after a confirmation), and _Send to Agent_, which makes the
   thread's latest note a question, with the notes before it since the last question; the answer comes in the thread.
 
@@ -204,7 +208,7 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   highlighted until it's resolved. If the agent rewrites the section, the thread goes outdated and moves to the top of
   the section. The threads list shows these threads under the view's title, each with its section (_§ 2_).
 
-  **The bottom bar** has the review at a glance on the left and _Hand off_ on the right. On the left: the thread
+  **The bottom bar** has the review at a glance on the left and _Submit Review_ on the right. On the left: the thread
   toggle (a chevron, how many open threads, or _All N resolved_ once none is open, and _● N waiting_ while the agent answers one), how many of the files are
   reviewed with a progress bar (_8/29 reviewed_), and the lines added and removed. The toggle opens the threads above
   the bar: a header with _Threads_ and _Open N_ · _Resolved N_, then the threads grouped under their file, one line
@@ -213,21 +217,28 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   (_in All_, _in abc1234_, _in a view_) instead, then a ✓ that resolves it (under _Resolved_, green, reopens it; not while the agent
   answers). Clicking one scrolls the canvas to it.
 
-  _Hand off N_ (N the open threads it takes: not resolved, and the agent's explanations and findings only once the user
-  replied; on with open threads or a PR) opens a native menu: _Send to Agent_ sends them in one message to the agent pane's session: where each
-  points, the code, and its comments and answers, asking the agent to make the changes and answer what's open. The
-  chat shows it as a card (_Review sent to Agent · N threads_); the bar says _Agent working on N threads_ until the turn
-  ends. _Copy as Prompt_ puts the same message on the clipboard instead (the bar says _Copied_). _Post to GitHub…_
-  (only with a PR, also without open threads) opens a dialog like GitHub's _Finish your review_: a checkbox per thread
-  with something to post (what goes: _new_, _new, on the file_, _reply_, how many comments, _resolve_ or _reopen_; or
-  why it can't: not pushed, changed since, on a view), a click closes the dialog and shows the thread; _Include the
-  agent's answers_; a summary; _Comment_ · _Approve_ · _Request Changes_ (not on your own PR); _Post Review…_, which
-  asks first and closes the dialog once posted.
+  _Submit Review N_ (N the open threads it takes: not resolved, and the agent's explanations and findings only once the
+  user replied; on with open threads or a PR) opens a dialog, like GitHub's _Finish your review_, at once. Each thread
+  has its conclusion (glossary): the one review comment that says where the thread ended up, a decision, something to
+  do, or a question still open. The summary model (Settings) writes them ahead, in a job (see Activity), a few seconds
+  after a thread last changed and not while an agent is answering it, so they are there when the dialog opens; one not written yet says _Writing
+  its conclusion…_ in its place, and the three buttons wait while a picked thread has none. A thread that is one comment
+  of the user's is its own conclusion. Then the threads, compact: a checkbox, where it is and its first comment (a
+  click closes the dialog and shows the thread), how many entries it has and what posting does with it (_comment on
+  the lines_, _in the review's text_, _reply_, _resolve_ or _reopen_, _on GitHub already_), and under it the
+  conclusion in a box to edit. If the model fails the dialog says why and the conclusions are the user's own last
+  comments. At the bottom, with a PR, a summary for the review and _Comment_ · _Approve_ · _Request Changes_ (not on
+  your own PR), then three buttons. _Copy as Prompt_ puts the picked threads on the clipboard as the message the agent
+  would get (the bar says _Copied_). _Send to Agent_ sends them in one message to the agent pane's session: where each
+  points, the code, its comments and answers and where it ended up, asking the agent to make the changes and answer
+  what's open; the chat shows it as a card (_Review sent to Agent · N threads_) and the bar says _Agent working on N
+  threads_ until the turn ends. _Post to GitHub…_ (only with a PR) asks, then posts the picked conclusions as one
+  review and resolves the user's threads it posted; the dialog closes once posted.
 
   **Threads from GitHub** ([ADR 0037](adr/0037-pull-request-sync-and-posting.md)). A PR's review threads show between
   the lines like any thread, their header saying _on GitHub_, each comment under its author (_@ana on GitHub_). Replies
   are the user's notes, sent to the agent like any; _Edit_ and _Delete_ are off, _Open on GitHub_ is in the ⋯ menu.
-  Resolving one is local until posted. An entry posted from here says _posted_.
+  Resolving one is local until posted. A reply posted from here says _posted_; what went to GitHub is the conclusion of the replies, one comment.
 
   **The PR panel.** The PR's chip in the canvas bar (_#12_, a dot for its checks: green, red, amber running, grey)
   shows the PR in the canvas in place of the diff; any other pick leaves it. It is laid out like the PR's page on

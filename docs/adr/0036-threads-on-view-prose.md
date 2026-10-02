@@ -31,7 +31,7 @@ rendered from markdown, and changes only when the agent replaces a section with 
    leaves the DOM and the selection alone. Outdated threads, and any whose quote isn't found, show at the top of the
    section.
 5. **Started from a native context menu**: right-click on selected prose (or on a block, for all of it) offers
-   _Comment_ (and _Copy_). The same comment box, _Comment_ / _Agent_ toggle, thread and _Hand off_ as on lines.
+   _Comment_ (and _Copy_). The same comment box, _Comment_ / _Agent_ toggle, thread and _Submit Review_ as on lines.
 6. **The agent reads it as** "this passage of section N of view V (see list_views)" with the quote, numbering sections
    as its view tools do, so it can answer or `write_section` the section.
 

@@ -218,6 +218,42 @@ export const migrations = [
       created_at, resolved_at, agent_session_id, revision, section, quote_at from entries;
   drop table entries;
   alter table entries_new rename to entries`,
+  // ADR 0038: background jobs of any kind, not only file summaries. why isn't checked here: each kind has its own.
+  `create table jobs (
+    id integer primary key,
+    kind text not null,
+    workspace_id integer not null references workspaces (id) on delete cascade,
+    workspace text not null,
+    why text not null,
+    base text not null,
+    head text not null,
+    agent text not null,
+    model text not null,
+    ran_on text,
+    items integer not null,
+    reused integer not null,
+    done integer not null,
+    failed integer not null,
+    calls integer not null,
+    state text not null check (state in ('running', 'done', 'failed', 'stopped')),
+    error text,
+    started_at text not null,
+    finished_at text,
+    updated_at text not null
+  );
+  insert into jobs select id, 'files', workspace_id, workspace, why, base, head, agent, model, ran_on, files, reused,
+    done, failed, calls, state, error, started_at, finished_at, updated_at from summary_jobs;
+  drop table summary_jobs`,
+  // ADR 0037: a thread's conclusion, one per thread (its first entry). fingerprint: of the entries it was written
+  // from; a thread that changed since has none until it's written again. edited: the user's words, not the model's.
+  `create table thread_conclusions (
+    thread_id integer primary key references entries (id) on delete cascade,
+    fingerprint text not null,
+    conclusion text not null,
+    model text not null,
+    edited integer not null,
+    created_at text not null
+  )`,
 ];
 
 // ADR 0016: the tables as the migrations above leave them. Change this with every migration that changes a table.
@@ -252,17 +288,18 @@ type Tables = {
     used_at: Generated<string>;
   };
   reviewed_files: { workspace_id: number; path: string; fingerprint: string };
-  summary_jobs: {
+  jobs: {
     id: Generated<number>;
+    kind: "files" | "conclusions";
     workspace_id: number;
     workspace: string;
-    why: "ahead" | "view";
+    why: "ahead" | "view" | "submit";
     base: string;
     head: string;
     agent: "claude" | "codex";
     model: string;
     ran_on: string | null;
-    files: number;
+    items: number;
     reused: number;
     done: number;
     failed: number;
@@ -272,6 +309,14 @@ type Tables = {
     started_at: string;
     finished_at: string | null;
     updated_at: string;
+  };
+  thread_conclusions: {
+    thread_id: number;
+    fingerprint: string;
+    conclusion: string;
+    model: string;
+    edited: number;
+    created_at: string;
   };
   file_summaries: {
     workspace_id: number;

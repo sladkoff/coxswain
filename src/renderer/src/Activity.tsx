@@ -1,7 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { match } from "ts-pattern";
 import { useEffect, useRef, useState } from "react";
-import type { SummaryCoverage, SummaryJob } from "../../core/summaries";
+import type { Job } from "../../core/jobs";
+import type { SummaryCoverage } from "../../core/summaries";
 import { Button } from "./components/button";
 import { ActivityIcon, SpinnerIcon, StopIcon } from "./components/icons";
 import { ProgressBar } from "./components/layout";
@@ -10,7 +11,8 @@ import { ErrorText } from "./components/text";
 import { ago, count } from "./format";
 import { core } from "./queries";
 
-// Activity (glossary, ADR 0029): what coxswain does in the background, for now file summary jobs. The button at the
+// Activity (glossary, ADR 0038): what coxswain does in the background, its jobs: file summaries and thread
+// conclusions. The button at the
 // canvas bar's right turns while one runs and gets a red dot when one failed since the list was last looked at; it
 // opens the list below it, newest first. Jobs of every workspace show: they run whichever one is on screen.
 export function Activity({
@@ -20,7 +22,7 @@ export function Activity({
   workspaceId: number;
   onSettings: () => void;
 }) {
-  const jobs = useQuery(core("listSummaryJobs")).data ?? [];
+  const jobs = useQuery(core("listJobs")).data ?? [];
   const settings = useQuery(core("getSummarySettings")).data;
   const [open, setOpen] = useState(false);
   // ADR 0030: how far the workspace on screen is summarised, counted when the list opens.
@@ -57,7 +59,7 @@ export function Activity({
     <div ref={box} className={cn("relative flex", noDrag)}>
       <Button
         variant="ghost"
-        title={running ? "Activity: summarising files" : "Activity"}
+        title={running ? "Activity: a job is running" : "Activity"}
         aria-expanded={open}
         className={cn(
           "relative p-1 text-neutral-500",
@@ -80,7 +82,7 @@ export function Activity({
           <div className={cn("flex shrink-0 items-center gap-2 border-b px-3 py-2", divider)}>
             <span className="font-medium">Activity</span>
             <span className={cn("min-w-0 flex-1 truncate", muted)} title="The summary agent">
-              File summaries by {summariser}
+              Jobs run on {summariser}
             </span>
             <Button
               variant="link"
@@ -97,15 +99,17 @@ export function Activity({
             workspace={coverage.data}
             loading={coverage.isFetching}
             ahead={settings?.ahead ?? true}
-            running={jobs.some((j) => j.workspaceId === workspaceId && j.state === "running")}
+            running={jobs.some(
+              (j) => j.kind === "files" && j.workspaceId === workspaceId && j.state === "running",
+            )}
           />
           <div className="min-h-0 overflow-y-auto">
             {jobs.length === 0 ? (
               <div className={cn("px-3 py-3", muted)}>
                 No jobs yet. Committed changes are summarised when a workspace opens, when it's
-                checked again and when its HEAD moves
-                {settings && !settings.ahead ? " (turned off in Settings)" : ""}; uncommitted ones
-                when the agent starts a view.
+                checked again and when its HEAD moves, and threads are concluded as they change
+                {settings && !settings.ahead ? " (both turned off in Settings)" : ""}; uncommitted
+                changes are summarised when the agent starts a view.
               </div>
             ) : (
               jobs.map((j) => <JobRow key={j.id} job={j} />)
@@ -117,17 +121,24 @@ export function Activity({
   );
 }
 
-function JobRow({ job: j }: { job: SummaryJob }) {
+function JobRow({ job: j }: { job: Job }) {
   const settled = j.reused + j.done + j.failed;
   const seconds = Math.round(
     ((j.finishedAt ? Date.parse(j.finishedAt) : Date.now()) - Date.parse(j.startedAt)) / 1000,
   );
-  const state = {
-    running: "Summarising",
-    done: "Summarised",
-    failed: "Failed",
-    stopped: "Stopped",
-  }[j.state];
+  // What its items are, and what's done to them.
+  const [item, doing, did] = (
+    {
+      files: ["file", "Summarising", "summarised"],
+      conclusions: ["thread", "Concluding", "concluded"],
+    } as const
+  )[j.kind];
+  const state = match(j.state)
+    .with("running", () => doing)
+    .with("done", () => did.replace(/^./, (c) => c.toUpperCase()))
+    .with("failed", () => "Failed")
+    .with("stopped", () => "Stopped")
+    .exhaustive();
   return (
     <div className={cn("flex flex-col gap-1 border-b px-3 py-2 last:border-b-0", divider)}>
       <div className="flex items-center gap-2">
@@ -136,7 +147,15 @@ function JobRow({ job: j }: { job: SummaryJob }) {
         </span>
         <span className="min-w-0 flex-1 truncate">
           <span className="font-medium">{state}</span> {j.workspace}
-          <span className={muted}> · {j.why === "ahead" ? "ahead" : "for a view"}</span>
+          <span className={muted}>
+            {" "}
+            ·{" "}
+            {match(j.why)
+              .with("ahead", () => "ahead")
+              .with("view", () => "for a view")
+              .with("submit", () => "for Submit Review")
+              .exhaustive()}
+          </span>
         </span>
         <span className={muted} title={new Date(j.startedAt).toLocaleString()}>
           {j.finishedAt ? `${seconds} s, ${ago(j.finishedAt)}` : `${seconds} s`}
@@ -144,25 +163,26 @@ function JobRow({ job: j }: { job: SummaryJob }) {
         {j.state === "running" && (
           <Button
             variant="ghost"
-            title="Stop summarising"
-            aria-label="Stop summarising"
+            title="Stop this job"
+            aria-label="Stop this job"
             className="p-1 text-neutral-500"
-            onClick={() => window.coxswain.stopSummaryJob(j.id)}
+            onClick={() => window.coxswain.stopJob(j.id)}
           >
             <StopIcon />
           </Button>
         )}
       </div>
-      <ProgressBar value={settled} max={j.files} failed={j.state === "failed"} />
+      <ProgressBar value={settled} max={j.items} failed={j.state === "failed"} />
       <div className={muted}>
-        {settled}/{count(j.files, "file")} · {j.reused} had one · {j.done} summarised
+        {settled}/{count(j.items, item)} · {j.reused} had one · {j.done} {did}
         {j.failed > 0 && (
           <span className="text-red-600 dark:text-red-400"> · {j.failed} failed</span>
         )}
       </div>
-      <div className={cn("truncate", muted)} title={`${j.base} → ${j.head}`}>
+      <div className={cn("truncate", muted)} title={j.head && `${j.base} → ${j.head}`}>
         {j.agent === "claude" ? "Claude Code" : "Codex"} · {j.ranOn ?? (j.model || "default model")}{" "}
-        · {count(j.calls, "run")} · {j.base.slice(0, 7)} → {j.head.slice(0, 7)}
+        · {count(j.calls, "run")}
+        {j.head && ` · ${j.base.slice(0, 7)} → ${j.head.slice(0, 7)}`}
       </div>
       {j.now.length > 0 && (
         <div className={cn("truncate font-mono text-[11px]", muted)} title={j.now.join("\n")}>

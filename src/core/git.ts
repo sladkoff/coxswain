@@ -369,7 +369,7 @@ export async function pinRevision(
   return sha;
 }
 
-// The merge base the workspace was last opened on, for the core's own reads of the live diff (Hand off).
+// The merge base the workspace was last opened on, for the core's own reads of the live diff (Submit Review).
 export const currentMergeBase = (workspaceId: number) => lastOpened.get(workspaceId)?.mergeBase;
 // … and what was on GitHub then (ADR 0028): what comments are posted against (ADR 0037).
 export const currentHead = (workspaceId: number) => lastOpened.get(workspaceId)?.head;

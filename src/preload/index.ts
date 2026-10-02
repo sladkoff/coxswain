@@ -33,19 +33,17 @@ import type {
   PullRequestTitles,
   RepoPage,
 } from "../core/github";
-import type {
-  PostableThread,
-  PullRequestChange,
-  PullRequestRef,
-  ReviewPost,
-} from "../core/pull-requests";
+import type { PullRequestChange, PullRequestRef, ReviewPost } from "../core/pull-requests";
 import type { AttachedPrompt, Prompt, View, ViewRange } from "../core/views";
 import type { Project } from "../core/projects";
-import type { NewEntry, ReviewEntry } from "../core/review";
+import type { Conclusion, NewEntry, ReviewEntry } from "../core/review";
+import type { ReviewDraft } from "../core/review-draft";
 import type { SetupCheck } from "../core/setup";
 import type { Workspace } from "../core/workspaces";
 import type { AgentStatus, SessionState } from "../core/session-state";
-import type { SummaryCoverage, SummaryJob, SummarySettings } from "../core/summaries";
+import type { CoreEvent } from "../core/events";
+import type { Job, SummarySettings } from "../core/jobs";
+import type { SummaryCoverage } from "../core/summaries";
 
 // The Navigator's settings in its cog menu. layout: changed files as a tree or as a flat list.
 // The canvas bar's settings in its cog menu. showReviewed: reviewed file diffs stay in the Navigator and on the canvas.
@@ -60,10 +58,8 @@ export type RangePick = "all" | "pushed" | "unpushed" | "uncommitted" | "commits
 // How much each layer of the diff has, for the range menu: commits, and files for uncommitted.
 export type Layers = { pushed: number; unpushed: number; uncommitted: number };
 // What the core changed on its own, e.g. when an agent turn ends, so the UI refetches it (ADR 0017).
-export type Changed = {
-  workspaceId: number;
-  what: "entries" | "worktree" | "transcript" | "sessions" | "view";
-};
+// What the core changed, as it tells the UI (ADR 0038): its events, but for a worktree opening.
+export type Changed = CoreEvent & { what: Exclude<CoreEvent["what"], "opened"> };
 
 // The one interface between the UI and the core (ADR 0002).
 const api = {
@@ -226,15 +222,21 @@ const api = {
     ipcRenderer.invoke("review:ask", question),
   // A thread's Stop: its question comes off the queue, or the turn answering it stops.
   stopQuestion: (threadId: number): Promise<void> => ipcRenderer.invoke("review:stop", threadId),
-  // Every thread to the agent pane's session in one message; resolves when the agent's turn ends.
-  sendReview: (workspaceId: number): Promise<TurnResult> =>
-    ipcRenderer.invoke("review:send-all", workspaceId),
+  // Submit Review's draft: the threads a review takes, each with its conclusion, which the summary model writes.
+  // wait: until they're all written; without it the draft comes at once and the writing goes on behind.
+  draftReview: (workspaceId: number, wait: boolean): Promise<ReviewDraft> =>
+    ipcRenderer.invoke("review:draft", workspaceId, wait),
+  // The user's edit of a thread's conclusion, kept until the thread changes.
+  saveConclusion: (threadId: number, conclusion: string): Promise<void> =>
+    ipcRenderer.invoke("review:save-conclusion", threadId, conclusion),
+  // Every thread to the agent pane's session in one message, or the picked ones with their conclusions; resolves
+  // when the agent's turn ends.
+  sendReview: (workspaceId: number, conclusions?: Conclusion[]): Promise<TurnResult> =>
+    ipcRenderer.invoke("review:send-all", workspaceId, conclusions),
   // ADR 0037: the workspace's PR for its panel; reading it mirrors its review threads into the entries.
   readPullRequest: (workspaceId: number): Promise<PullRequestResult> =>
     ipcRenderer.invoke("github:pull-request", workspaceId),
-  // The threads with something to post, and posting the picked ones as one review.
-  listPostable: (workspaceId: number): Promise<PostableThread[]> =>
-    ipcRenderer.invoke("github:postable", workspaceId),
+  // Posts the picked threads' conclusions as one review.
   postReview: (workspaceId: number, post: ReviewPost): Promise<{ status: "ok" } | GitHubProblem> =>
     ipcRenderer.invoke("github:post-review", workspaceId, post),
   // The PR panel's changes on GitHub: description, a comment, assigning yourself, ready for review, merge.
@@ -247,8 +249,8 @@ const api = {
   sendCheck: (workspaceId: number, check: Check): Promise<TurnResult> =>
     ipcRenderer.invoke("github:send-check", workspaceId, check),
   // The same message, put on the clipboard instead; false if there are no threads.
-  copyReviewPrompt: (workspaceId: number): Promise<boolean> =>
-    ipcRenderer.invoke("review:copy-prompt", workspaceId),
+  copyReviewPrompt: (workspaceId: number, conclusions?: Conclusion[]): Promise<boolean> =>
+    ipcRenderer.invoke("review:copy-prompt", workspaceId, conclusions),
   onQuestionChat: (callback: (threadId: number, entry: ChatEntry) => void) => {
     const listener = (_: unknown, id: number, entry: ChatEntry) => callback(id, entry);
     ipcRenderer.on("review:chat", listener);
@@ -298,13 +300,13 @@ const api = {
   summaryCoverage: (workspaceId: number): Promise<SummaryCoverage | null> =>
     ipcRenderer.invoke("summaries:coverage", workspaceId),
   // ADR 0029: the file summary jobs Activity shows, newest first, and how they change.
-  listSummaryJobs: (): Promise<SummaryJob[]> => ipcRenderer.invoke("summaries:jobs"),
-  onSummaryJobs: (callback: (jobs: SummaryJob[]) => void) => {
-    const listener = (_: unknown, jobs: SummaryJob[]) => callback(jobs);
-    ipcRenderer.on("summaries:jobs", listener);
-    return () => void ipcRenderer.off("summaries:jobs", listener);
+  listJobs: (): Promise<Job[]> => ipcRenderer.invoke("jobs:list"),
+  onJobs: (callback: (jobs: Job[]) => void) => {
+    const listener = (_: unknown, jobs: Job[]) => callback(jobs);
+    ipcRenderer.on("jobs:changed", listener);
+    return () => void ipcRenderer.off("jobs:changed", listener);
   },
-  stopSummaryJob: (id: number): Promise<void> => ipcRenderer.invoke("summaries:stop", id),
+  stopJob: (id: number): Promise<void> => ipcRenderer.invoke("jobs:stop", id),
   getSummarySettings: (): Promise<SummarySettings> => ipcRenderer.invoke("summaries:settings"),
   setSummarySettings: (s: Partial<SummarySettings>): Promise<void> =>
     ipcRenderer.invoke("summaries:set-settings", s),
@@ -338,10 +340,6 @@ const api = {
   // Native menu (ADR 0004). Resolves with the new settings when an item is picked; stays pending if dismissed.
   showViewMenu: (settings: ViewSettings): Promise<ViewSettings> =>
     ipcRenderer.invoke("menus:view", settings),
-  // The bottom bar's Hand off menu: send the open threads to the agent or copy them as a prompt (hasThreads), or post
-  // to the PR (hasPr). Pending if dismissed.
-  showHandOffMenu: (hasThreads: boolean, hasPr: boolean): Promise<"agent" | "copy" | "post"> =>
-    ipcRenderer.invoke("menus:hand-off", hasThreads, hasPr),
   // The Diff tab's range menu: a scope, or "commits". `scope` is null while a commit or turn shows. Pending if dismissed.
   showRangeMenu: (
     scope: "all" | "pushed" | "unpushed" | "uncommitted" | null,

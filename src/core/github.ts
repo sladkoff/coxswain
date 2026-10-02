@@ -402,11 +402,7 @@ type RawPullRequest = {
       latestReviews: { nodes: { author: Login; state: string }[] };
       comments: { nodes: RawComment[] };
       reviews: {
-        nodes: (Omit<RawComment, "createdAt"> & {
-          state: string;
-          submittedAt: string | null;
-          createdAt: string;
-        })[];
+        nodes: (RawComment & { state: string; submittedAt: string | null })[];
       };
       reviewThreads: {
         nodes: {

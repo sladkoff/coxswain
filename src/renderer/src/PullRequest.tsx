@@ -1,4 +1,3 @@
-import { useQuery } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
 import { match, P } from "ts-pattern";
 import type {
@@ -8,14 +7,14 @@ import type {
   MergeMethod,
   PullRequestDetails,
 } from "../../core/github";
-import type { PullRequestChange, ReviewEvent } from "../../core/pull-requests";
-import { Button, SegmentedControl } from "./components/button";
+import type { PullRequestChange } from "../../core/pull-requests";
+import { Button } from "./components/button";
 import { TextArea } from "./components/field";
-import { Card, Dialog } from "./components/layout";
+import { Card } from "./components/layout";
 import { cn, divider, muted } from "./components/styles";
 import { ErrorText, ProblemMessage, Prose } from "./components/text";
-import { ago, count } from "./format";
-import { core, queryClient } from "./queries";
+import { ago } from "./format";
+import { queryClient } from "./queries";
 
 // The colour of a check's state, as a dot: on the PR panel, the canvas bar's PR chip and the Commits pane.
 export const checkColour: Record<CheckState, string> = {
@@ -33,7 +32,7 @@ export const CheckDot = ({ state, title }: { state: CheckState; title?: string }
 
 type Problem = GitHubProblem | null;
 // What went wrong at GitHub, in words: its own message for a refused change, else what to do about it.
-const ProblemText = ({ problem }: { problem: NonNullable<Problem> }) => (
+export const ProblemText = ({ problem }: { problem: NonNullable<Problem> }) => (
   <ErrorText>
     {problem.status === "error" ? problem.message : <ProblemMessage problem={problem} />}
   </ErrorText>
@@ -393,161 +392,6 @@ function People({ pr, change }: { pr: PullRequestDetails; change: Change }) {
         )}
       </Side>
     </aside>
-  );
-}
-
-const eventLabels: Record<ReviewEvent, string> = {
-  COMMENT: "Comment",
-  APPROVE: "Approve",
-  REQUEST_CHANGES: "Request Changes",
-};
-
-// Post to GitHub (Hand off's), a dialog like GitHub's Finish your review: the threads with something to post, picked
-// (all that can be, at first), as one review with a verdict and a summary. The agent's entries go only when asked,
-// marked as the agent's. It closes once posted, or to show a thread.
-export function PostReviewDialog(props: {
-  workspaceId: number;
-  pr: PullRequestDetails;
-  onViewThread: (threadId: number) => void;
-  onClose: () => void;
-}) {
-  const listed = useQuery(core("listPostable", props.workspaceId));
-  const threads = listed.data ?? [];
-  const [unpicked, setUnpicked] = useState<Set<number>>(new Set());
-  const [withAgent, setWithAgent] = useState(false);
-  const [event, setEvent] = useState<ReviewEvent>("COMMENT");
-  const [body, setBody] = useState("");
-  const [posting, setPosting] = useState(false);
-  const [problem, setProblem] = useState<Problem>(null);
-  const picked = threads.filter((t) => !t.problem && !unpicked.has(t.threadId));
-  const own = props.pr.author === props.pr.viewer; // GitHub won't let you approve your own PR
-  const agents = picked.reduce((n, t) => n + t.agents, 0);
-  const post = async () => {
-    const ok = await window.coxswain.confirm({
-      message: `Post ${count(picked.length, "thread")} to PR #${props.pr.number} as a review?`,
-      detail: `${eventLabels[event]}${withAgent && agents ? `, with ${count(agents, "answer")} of the agent's, marked as its` : ""}. It's posted as you, and everyone on the PR sees it.`,
-      action: "Post",
-    });
-    if (!ok) return;
-    setPosting(true);
-    setProblem(null);
-    const r = await window.coxswain.postReview(props.workspaceId, {
-      threads: picked.map((t) => t.threadId),
-      withAgent,
-      event,
-      body,
-    });
-    setPosting(false);
-    // Also after a problem: what got posted before it is on GitHub.
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ["readPullRequest", props.workspaceId] }),
-      queryClient.invalidateQueries({ queryKey: ["listPostable", props.workspaceId] }),
-    ]);
-    if (r.status === "ok") props.onClose();
-    else setProblem(r);
-  };
-  return (
-    <Dialog
-      title="Post to GitHub"
-      subtitle={`A review on PR #${props.pr.number}, posted as you`}
-      onClose={props.onClose}
-    >
-      <div className="flex min-h-0 flex-col gap-2 overflow-y-auto px-4 pb-4">
-        {listed.isError && <ErrorText>{String(listed.error)}</ErrorText>}
-        {!threads.length && (
-          <div className={cn("text-xs", muted)}>
-            Nothing new to post: your threads and replies here are on GitHub already.
-          </div>
-        )}
-        {threads.map((t) => (
-          <label
-            key={t.threadId}
-            className={cn("flex items-baseline gap-2 text-xs", t.problem && muted)}
-          >
-            <input
-              type="checkbox"
-              disabled={!!t.problem}
-              checked={!t.problem && !unpicked.has(t.threadId)}
-              onChange={(e) =>
-                setUnpicked((u) => {
-                  const next = new Set(u);
-                  if (e.target.checked) next.delete(t.threadId);
-                  else next.add(t.threadId);
-                  return next;
-                })
-              }
-            />
-            <button
-              className="min-w-0 flex-1 truncate text-left"
-              title="Show the thread"
-              onClick={(e) => {
-                e.preventDefault();
-                props.onClose();
-                props.onViewThread(t.threadId);
-              }}
-            >
-              <span className={cn("font-mono text-[11px]", muted)}>
-                {t.path ?? "View"}:{t.lines}
-              </span>{" "}
-              {t.body}
-            </button>
-            <span className={cn("shrink-0", muted)}>
-              {t.problem ??
-                [
-                  match(t)
-                    .with({ github: true }, () => "reply")
-                    .with({ onFile: true }, () => "new, on the file")
-                    .otherwise(() => "new"),
-                  t.yours && count(t.yours, "comment"),
-                  t.agents && `${count(t.agents, "answer")} of the agent's`,
-                  t.resolve === true && "resolve",
-                  t.resolve === false && "reopen",
-                ]
-                  .filter(Boolean)
-                  .join(" · ")}
-            </span>
-          </label>
-        ))}
-        {threads.some((t) => t.agents) && (
-          <label className="flex items-center gap-2 text-xs">
-            <input
-              type="checkbox"
-              checked={withAgent}
-              onChange={(e) => setWithAgent(e.target.checked)}
-            />
-            Include the agent's answers, marked as the agent's
-          </label>
-        )}
-        <TextArea
-          long
-          rows={3}
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          onSubmit={() => void post()}
-          placeholder="A summary for the review (optional)"
-        />
-        <div className="flex items-center justify-end gap-2">
-          {problem && <ProblemText problem={problem} />}
-          {!own && (
-            <SegmentedControl
-              value={event}
-              onChange={setEvent}
-              options={(["COMMENT", "APPROVE", "REQUEST_CHANGES"] as const).map((e) => ({
-                value: e,
-                label: eventLabels[e],
-              }))}
-            />
-          )}
-          <Button
-            variant="primary"
-            disabled={posting || (!picked.length && !body.trim() && event === "COMMENT")}
-            onClick={() => void post()}
-          >
-            {posting ? "Posting…" : "Post Review…"}
-          </Button>
-        </div>
-      </div>
-    </Dialog>
   );
 }
 

@@ -12,11 +12,27 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
   the lines and commit they were written on, so following, outdated, the threads list, _Hand off_ and the agent's
   prompts take them as they are. Prompts name GitHub's authors (`@ana on GitHub`). Edits, deletes, resolves and
   reopens on GitHub are taken over on the next read.
-- **Post to GitHub.** _Hand off › Post to GitHub…_ opens a dialog (like GitHub's _Finish your review_) listing the threads with something to post (new
-  threads, replies to GitHub's, resolves); the picked ones go as one review (GraphQL pending review, then submit) with
-  a verdict and summary. Lines outside the PR's diff go as a comment on the file, quoting them; lines not pushed can't
-  go. The agent's answers go only when picked, marked `🤖 Claude, via coxswain`. Each entry records its comment as
-  posted (`github_id`), so nothing is posted twice.
+- **Submit Review**, the bottom bar's button (it was _Hand off_, a menu; the name in earlier entries below is the old
+  one), opens a dialog like GitHub's _Finish your review_: the open threads, and with a PR those with something to
+  post (replies to GitHub's, resolves), each with its **conclusion** (glossary), the one review comment that says
+  where the thread ended up. The summary model writes them ahead, in a background job, once the threads have been still for 3 seconds and not while an agent is answering one, so the dialog opens at once; a thread not written yet says _Writing its conclusion…_
+  (`draftReview`, `conclusionsPrompt`); a thread that is one comment of the user's is its own. The user picks threads
+  and edits conclusions, then _Copy as Prompt_, _Send to Agent_ (the threads with their conclusions after them) or
+  _Post to GitHub…_. The button is on with a PR even without open threads, for a review that is a verdict alone.
+- **Post to GitHub** sends the picked conclusions as one review (GraphQL pending review, then submit) with a verdict
+  and summary: on the lines if the PR's diff has them, as a reply on a thread from GitHub, else in the review's text
+  with the code quoted (lines outside the diff, not pushed or changed since, a view's prose: these couldn't be posted
+  before, or went as a comment on the file). A thread of the workspace's is resolved once posted and its comment
+  comes back as a thread from GitHub; a reply's entries record the one comment that stands for them. The agent's
+  answers are no longer posted as such.
+- **Background jobs and core events** ([ADR 0038](adr/0038-background-jobs-and-core-events.md)). The job engine
+  (batches, retries, limits, the stored history Activity shows) moved out of `summaries.ts` into `jobs.ts`, with a
+  spec per kind: `files` (file summaries, as before) and `conclusions`. The core has one event bus (`events.ts`):
+  the main process forwards its changes to the window in one place, instead of 19 `changed(…)` calls each naming a
+  window, and `background.ts` is the one place that says which event starts which job, instead of `summariseAhead`
+  called from six handlers. Adding an entry emits its own event. Activity shows both kinds; Settings' _Summarise_ is
+  now _Work_: _Ahead_ · _Only when needed_, for both. Migration: `summary_jobs` becomes `jobs`, with `kind` and
+  `items`.
 - **The PR panel**, a canvas location (`pr`) opened by the PR's chip in the canvas bar: state, _Merge…_ (asks; the
   repository's merge methods), _Ready for Review_, checks, description edited in place, assign yourself, reviewers,
   labels, conversation and a comment box. It is laid out like the PR's page on GitHub: description and conversation
@@ -41,6 +57,11 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 
 - `ponytail:` the first 100 threads, comments per thread, commits and checks (`core/github.ts`).
 - `ponytail:` a thread deleted on GitHub stays here with its local replies (`syncThreads`).
+- Conclusions are stored in `thread_conclusions` (a migration), by the fingerprint of the thread's entries, and so
+  are the user's edits of them; a thread that changes is concluded again and its edit dropped. Every changed thread costs a summary model run, whether the review is
+  submitted or not, unless work ahead is off. Resolving, editing or deleting an entry emits no core event yet
+  (ADR 0038). An entry goes to the summary model cut to 2000 characters
+  (`thread-context.ts`).
 - GraphQL has no ETags, so each minute's poll counts against the rate limit.
 - A posted entry edited here isn't updated on GitHub. A comment whose commit the clone lacks reads as outdated.
 - Splitting a workspace's commits into a new branch workspace (several PRs from one piece of work) isn't built.

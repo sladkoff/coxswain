@@ -28,8 +28,8 @@ reply attached to the thread.
    stays the only record of the chat (ADR 0005).
 3. **The reply streams to both** the thread and the agent pane, and its text is kept as an answer entry in the
    thread. A tool use to approve is asked in the thread.
-4. _**Hand off › Send to Agent**_ (the bottom bar) sends every open thread in one message, the same way, under a `[Review · N threads]` header,
-   shown as a card too. Explanations and findings nobody replied to, and resolved threads, are left out.
+4. _**Submit Review › Send to Agent**_ (the bottom bar's dialog) sends the open threads picked there in one message, the same way, each with its
+   conclusion after it (ADR 0037), under a `[Review · N threads]` header, shown as a card too. Explanations and findings nobody replied to, and resolved threads, are left out.
 
 ## Alternatives considered
 

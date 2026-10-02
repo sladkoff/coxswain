@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import type { Db } from "./db";
+import { emit } from "./events.ts";
 import { follow, lineMap } from "./follow.ts";
-import { pinRevision, readTexts } from "./git.ts";
+import { currentMergeBase, pinRevision, readTexts } from "./git.ts";
 
 // ADR 0015: a workspace's entries (glossary): notes, questions and answers, threaded by parent_id; and the agent's
 // explanations and findings, which belong to a view too (viewId, ADR 0023).
@@ -198,7 +199,7 @@ export async function addEntry(db: Db, kind: ReviewEntry["kind"], e: NewEntry): 
   const at =
     a &&
     ("viewId" in a ? await onProse(db, e.workspaceId, a) : await onLines(db, e.workspaceId, a));
-  return db
+  const row = await db
     .insertInto("entries")
     .values({
       workspace_id: e.workspaceId,
@@ -219,6 +220,8 @@ export async function addEntry(db: Db, kind: ReviewEntry["kind"], e: NewEntry): 
     })
     .returning(columns)
     .executeTakeFirstOrThrow();
+  emit({ workspaceId: e.workspaceId, what: "entries" });
+  return row;
 }
 
 async function onLines(db: Db, workspaceId: number, a: Anchor) {
@@ -277,4 +280,11 @@ export const fresh = (e: Row): ReviewEntry => ({ ...e, state: "current", shown: 
 
 export async function addNote(db: Db, e: NewEntry): Promise<ReviewEntry> {
   return fresh(await addEntry(db, "note", e));
+}
+
+// The workspace's entries in the live diff, as the review prompt describes them.
+export async function liveEntries(db: Db, workspaceId: number): Promise<ReviewEntry[]> {
+  const mergeBase = currentMergeBase(workspaceId);
+  if (!mergeBase) throw new Error("Open the workspace first");
+  return listEntries(db, workspaceId, mergeBase, mergeBase);
 }

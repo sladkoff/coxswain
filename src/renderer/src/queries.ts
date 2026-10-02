@@ -23,7 +23,7 @@ type Extra = {
 const extra: Partial<Record<Reads, Extra>> = {
   readAgentState: { staleTime: Infinity },
   listAgentStatuses: { staleTime: Infinity }, // refetched when a status changes (below)
-  listSummaryJobs: { staleTime: Infinity }, // the core pushes them (below)
+  listJobs: { staleTime: Infinity }, // the core pushes them (below)
   readFileAt: { staleTime: Infinity }, // a file at a commit never changes
   // Asks GitHub for the PR's head and fetches it; again every 2 minutes while the workspace shows (ADR 0030).
   openWorktree: { ...github, refetchInterval: 120_000, refetchIntervalInBackground: true },
@@ -70,7 +70,7 @@ export function core<K extends Reads>(name: K, ...args: Parameters<Api[K]>) {
 
 // The queries each kind of change makes stale, for the workspace it happened in.
 const affects: Record<Changed["what"], Reads[]> = {
-  entries: ["listEntries", "listPostable"],
+  entries: ["listEntries"],
   // Entries and Reviewed follow the code they're about (ADR 0014, 0015).
   worktree: [
     "snapshot",
@@ -82,7 +82,6 @@ const affects: Record<Changed["what"], Reads[]> = {
     "readWorktreeFile",
     "listReviewed",
     "listEntries",
-    "listPostable",
     "summaryCoverage",
   ],
   // A turn's session reports its agent's choices of model and effort afresh.
@@ -135,8 +134,8 @@ window.coxswain.onAgentState((id, state) => {
 // ADR 0029: the core sends the file summary jobs whenever one changes.
 // Coverage is counted again when a job starts or ends, not at every step of one.
 let runningJobs = "";
-window.coxswain.onSummaryJobs((jobs) => {
-  queryClient.setQueryData(core("listSummaryJobs").queryKey, jobs);
+window.coxswain.onJobs((jobs) => {
+  queryClient.setQueryData(core("listJobs").queryKey, jobs);
   const running = jobs.flatMap((j) => (j.state === "running" ? [j.id] : [])).join();
   if (running === runningJobs) return;
   runningJobs = running;

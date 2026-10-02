@@ -7,15 +7,18 @@ import { join } from "node:path";
 import { after, mock, test } from "node:test";
 import { openDatabase } from "./db.ts";
 import type { Db } from "./db.ts";
-import type { SummaryJob, SummaryRun } from "./summaries.ts";
+import type { Job, SummaryRun } from "./jobs.ts";
 
 // A disposable coxswain directory, as in views.test.ts; the summary agent is a fake.
 const temp = mkdtempSync(join(os.tmpdir(), "coxswain-summaries-"));
 const home = mock.method(os, "homedir", () => temp);
 syncBuiltinESMExports();
 const { openWorktree } = await import("./git.ts");
+const jobs = await import("./jobs.ts");
 const summaries = await import("./summaries.ts");
 const { viewTools, listViews } = await import("./views.ts");
+const { addEntry, addNote } = await import("./entries.ts");
+const { draftReview, saveConclusion } = await import("./review-draft.ts");
 home.mock.restore();
 syncBuiltinESMExports();
 const originalPath = process.env.PATH;
@@ -27,7 +30,7 @@ after(() => {
   process.env.PATH = originalPath;
   rmSync(temp, { recursive: true, force: true });
 });
-summaries.limits.retryMs = 1;
+jobs.limits.retryMs = 1;
 
 const git = (cwd: string, ...args: string[]) =>
   execFileSync("git", args, {
@@ -43,17 +46,17 @@ const git = (cwd: string, ...args: string[]) =>
   }).trim();
 
 // Resolves with the job once it's no longer running.
-const finished = (db: Db, job: SummaryJob | null) =>
-  new Promise<SummaryJob>((resolve) => {
+const finished = (db: Db, job: Job | null) =>
+  new Promise<Job>((resolve) => {
     assert.ok(job, "a job started");
-    const check = (jobs: SummaryJob[]) => {
+    const check = (jobs: Job[]) => {
       const j = jobs.find((x) => x.id === job.id);
       if (!j || j.state === "running") return;
       off();
       resolve(j);
     };
-    const off = summaries.onSummaryJobs(check);
-    void summaries.listSummaryJobs(db).then(check);
+    const off = jobs.onJobs(check);
+    void jobs.listJobs(db).then(check);
   });
 
 // Answers every file of a run, as the prompt numbers them.
@@ -105,14 +108,14 @@ test("summary jobs summarise what's missing, retry, and feed the view tools", as
 
   // The first run fails, the retry leaves b.ts out, and b.ts is then asked for on its own.
   const runs: SummaryRun[] = [];
-  summaries.setSummaryRunner(async (r) => {
+  jobs.setSummaryRunner(async (r) => {
     runs.push(r);
     if (runs.length === 1) throw new Error("overloaded");
     return answerAll(r, runs.length === 2 ? "b.ts" : "");
   });
   const job = await finished(db, await summaries.summariseAhead(db, 1));
   assert.equal(job.state, "done");
-  assert.equal(job.files, 4);
+  assert.equal(job.items, 4);
   assert.equal(job.done, 4);
   assert.equal(job.failed, 0);
   assert.equal(job.calls, 3, "a failed run, a retry, and one for the file left out");
@@ -142,7 +145,7 @@ test("summary jobs summarise what's missing, retry, and feed the view tools", as
   // Only the file diff that changed is summarised again; the view tools list the summaries.
   writeFileSync(join(worktree, "a.ts"), "export const a = 3;\n");
   runs.length = 0;
-  summaries.setSummaryRunner(async (r) => {
+  jobs.setSummaryRunner(async (r) => {
     runs.push(r);
     return answerAll(r);
   });
@@ -228,7 +231,7 @@ test("summary jobs summarise what's missing, retry, and feed the view tools", as
   writeFileSync(join(worktree, "b.ts"), "export const b = 3;\n");
   git(worktree, "commit", "-qam", "again");
   runs.length = 0;
-  summaries.setSummaryRunner(async (r) => {
+  jobs.setSummaryRunner(async (r) => {
     runs.push(r);
     throw Object.assign(new Error('claude has no model "nope"'), { fatal: true });
   });
@@ -247,7 +250,7 @@ test("summary jobs summarise what's missing, retry, and feed the view tools", as
   );
 
   // Jobs are stored: finished ones as they ended, and one running when coxswain quit is stopped at the next start.
-  const stored = await summaries.listSummaryJobs(db);
+  const stored = await jobs.listJobs(db);
   assert.deepEqual(
     stored.map((j) => [j.id, j.state]),
     [
@@ -257,11 +260,82 @@ test("summary jobs summarise what's missing, retry, and feed the view tools", as
     ],
   );
   assert.equal(stored.at(-1)!.calls, 3);
-  await db.updateTable("summary_jobs").set({ state: "running" }).where("id", "=", job.id).execute();
-  await summaries.stopInterruptedJobs(db);
-  const interrupted = (await summaries.listSummaryJobs(db)).find((j) => j.id === job.id)!;
+  await db.updateTable("jobs").set({ state: "running" }).where("id", "=", job.id).execute();
+  await jobs.stopInterruptedJobs(db);
+  const interrupted = (await jobs.listJobs(db)).find((j) => j.id === job.id)!;
   assert.equal(interrupted.state, "stopped");
   assert.match(interrupted.error ?? "", /quit/);
+
+  // Conclusions are a job too (ADR 0038): a thread with an answer is concluded by the model, one comment of the
+  // user's is its own conclusion, and what's written isn't asked for again.
+  const anchor = { path: "a.ts", side: "new" as const, base: failed.base, head: null, code: "x" };
+  const asked = await addNote(db, {
+    workspaceId: 1,
+    body: "Rename a?",
+    anchor: { ...anchor, startLine: 1, endLine: 1 },
+  });
+  await addEntry(db, "answer", {
+    workspaceId: 1,
+    body: "It could be `count`.",
+    parentId: asked.id,
+  });
+  await addNote(db, {
+    workspaceId: 1,
+    body: "Drop this export",
+    anchor: { ...anchor, startLine: 1, endLine: 1 },
+  });
+  const prompts: string[] = [];
+  jobs.setSummaryRunner(async (r) => {
+    prompts.push(r.prompt);
+    return {
+      text: '{"threads":[{"thread":1,"comment":"Rename `a` to `count`."}]}',
+      model: "Haiku",
+    };
+  });
+  assert.deepEqual(
+    (await draftReview(db, 1, false)).threads.map((d) => [d.conclusion, d.pending]),
+    [
+      ["Rename a?", true],
+      ["Drop this export", false],
+    ],
+  );
+  const draft = await draftReview(db, 1, true);
+  assert.equal(draft.error, null);
+  assert.deepEqual(
+    draft.threads.map((d) => [d.conclusion, d.written, d.pending]),
+    [
+      ["Rename `a` to `count`.", true, false],
+      ["Drop this export", false, false],
+    ],
+  );
+  await draftReview(db, 1, true);
+  assert.equal(prompts.length, 1, "one run, for the one thread that needed it, once");
+  assert.match(prompts[0], /Me: Rename a\?\nAgent: It could be `count`\./);
+  const concluded = (await jobs.listJobs(db))[0];
+  assert.deepEqual(
+    [concluded.kind, concluded.why, concluded.items, concluded.done],
+    ["conclusions", "submit", 1, 1],
+  );
+
+  // Conclusions are stored: the user's edit replaces the model's until the thread changes, then it's written again.
+  await saveConclusion(db, asked.id, "Call it `count`.");
+  assert.deepEqual(
+    (await draftReview(db, 1, true)).threads.map((d) => [d.conclusion, d.written]),
+    [
+      ["Call it `count`.", false],
+      ["Drop this export", false],
+    ],
+  );
+  assert.equal(prompts.length, 1, "an edit isn't written over");
+  await addNote(db, { workspaceId: 1, body: "Or `total`?", parentId: asked.id });
+  assert.deepEqual(
+    (await draftReview(db, 1, true)).threads.map((d) => [d.conclusion, d.written]),
+    [
+      ["Rename `a` to `count`.", true],
+      ["Drop this export", false],
+    ],
+  );
+  assert.equal(prompts.length, 2, "the thread changed, so it's concluded again");
 });
 
 test("replies are read leniently and checked", () => {

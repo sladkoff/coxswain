@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import type { CurrentUser } from "../../core/github";
-import type { SummarySettings } from "../../core/summaries";
+import type { SummarySettings } from "../../core/jobs";
 import { Button, SegmentedControl } from "./components/button";
 import { TextArea, Input } from "./components/field";
 import { ChevronDownIcon } from "./components/icons";
@@ -126,7 +126,7 @@ function Summaries({ workspaceId }: { workspaceId?: number }) {
         {picks.isFetching && <span className={muted}>Asking the agent…</span>}
       </div>
       <div className="flex items-center gap-3">
-        <span className="w-24 shrink-0">Summarise</span>
+        <span className="w-24 shrink-0">Work</span>
         <SegmentedControl
           value={settings.ahead}
           onChange={(ahead) => save({ ahead })}
@@ -134,16 +134,20 @@ function Summaries({ workspaceId }: { workspaceId?: number }) {
             {
               value: true,
               label: "Ahead",
-              title: "When a workspace opens or its commits move on, and for views",
+              title: "When a workspace opens, its commits move on or a thread changes",
             },
-            { value: false, label: "Only for views", title: "When the agent starts a view" },
+            {
+              value: false,
+              label: "Only when needed",
+              title: "When the agent starts a view, or Submit Review opens",
+            },
           ]}
         />
       </div>
       <p className={cn("text-xs", muted)}>
         Ahead summarises a workspace's commits as soon as it opens, so views of big changes start
-        faster; uncommitted changes wait for a view. It spends model calls on workspaces that may
-        never get one.
+        faster, and writes a thread's conclusion as it changes, so Submit Review opens at once;
+        uncommitted changes wait for a view. It spends model calls on work that may never be used.
       </p>
       {picks.isError && <ErrorText>Couldn't ask the agent for its models.</ErrorText>}
       {error && <ErrorText>{error}</ErrorText>}

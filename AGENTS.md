@@ -52,6 +52,10 @@ Keeping the docs current is part of every change, not a follow-up.
   nested JSX conditionals ([ADR 0035](docs/adr/0035-ts-pattern-for-branching.md)). Over a union, end with
   `.exhaustive()`; type outside values (GitHub's enums) as their union, not `string`, and end with
   `.exhaustive(() => fallback)`. Narrow with `P.…select()` instead of `!`.
+- **Work nobody waits for is a background job, started by a core event**
+  ([ADR 0038](docs/adr/0038-background-jobs-and-core-events.md)): a `JobSpec` run by `src/core/jobs.ts`, so it is
+  retried and shows in Activity, started from `src/core/background.ts` when the core emits a change
+  (`src/core/events.ts`). No timers in the UI for the core's work, and no second runner.
 - **Diffs, files and trees use the Pierre libraries**
   ([ADR 0003](docs/adr/0003-diff-view-and-file-tree.md)), pinned to exact versions.
 - **Desktop conventions** from [ADR 0004](docs/adr/0004-styling-and-native-feel.md): native menus

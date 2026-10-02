@@ -127,12 +127,12 @@ test("review threads mirror into entries, and what's new here is postable", asyn
   });
   const postable = await listPostable(db, 1, mergeBase, head);
   assert.deepEqual(
-    postable.map((p) => [p.body, p.github, p.yours, p.resolve, p.onFile, !!p.problem]),
+    postable.map((p) => [p.body, p.github, p.resolve, p.placement]),
     [
-      ["Why two?", true, 1, true, false, false],
-      ["Near it", false, 1, null, false, false],
-      ["Far away", false, 1, null, true, false],
-      ["Not pushed", false, 1, null, false, true],
+      ["Why two?", true, true, "reply"],
+      ["Near it", false, null, "lines"],
+      ["Far away", false, null, "body"],
+      ["Not pushed", false, null, "body"],
     ],
   );
 
