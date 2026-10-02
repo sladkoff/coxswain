@@ -12,14 +12,17 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
   the lines and commit they were written on, so following, outdated, the threads list, _Hand off_ and the agent's
   prompts take them as they are. Prompts name GitHub's authors (`@ana on GitHub`). Edits, deletes, resolves and
   reopens on GitHub are taken over on the next read.
-- **Post to GitHub.** _Hand off › Post to GitHub…_ opens the PR panel's list of threads with something to post (new
+- **Post to GitHub.** _Hand off › Post to GitHub…_ opens a dialog (like GitHub's _Finish your review_) listing the threads with something to post (new
   threads, replies to GitHub's, resolves); the picked ones go as one review (GraphQL pending review, then submit) with
   a verdict and summary. Lines outside the PR's diff go as a comment on the file, quoting them; lines not pushed can't
   go. The agent's answers go only when picked, marked `🤖 Claude, via coxswain`. Each entry records its comment as
   posted (`github_id`), so nothing is posted twice.
 - **The PR panel**, a canvas location (`pr`) opened by the PR's chip in the canvas bar: state, _Merge…_ (asks; the
   repository's merge methods), _Ready for Review_, checks, description edited in place, assign yourself, reviewers,
-  labels, conversation and a comment box.
+  labels, conversation and a comment box. It is laid out like the PR's page on GitHub: description and conversation
+  as cards, then the checks with merging under them and the comment box, beside a side column of
+  reviewers, assignees and labels (flex-wrap puts it underneath in a narrow canvas). Passed and skipped checks fold
+  under a count (a native `<details>`), so only the failing and running ones take room.
 - **Checks**: a dot on the PR chip and per commit in the Commits pane; a failing check's _Send to Agent_ sends it
   with the end of its GitHub Actions log to the agent pane's session (`[Check · name failed]`, a card in the chat).
 - Migration: `entries` rebuilt for the `comment` kind, with `author`, `github_id`, `github_thread_id`, `github_url`,

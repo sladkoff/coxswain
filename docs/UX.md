@@ -214,11 +214,15 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   answers). Clicking one scrolls the canvas to it.
 
   _Hand off N_ (N the open threads it takes: not resolved, and the agent's explanations and findings only once the user
-  replied) opens a native menu: _Send to Agent_ sends them in one message to the agent pane's session: where each
+  replied; on with open threads or a PR) opens a native menu: _Send to Agent_ sends them in one message to the agent pane's session: where each
   points, the code, and its comments and answers, asking the agent to make the changes and answer what's open. The
   chat shows it as a card (_Review sent to Agent · N threads_); the bar says _Agent working on N threads_ until the turn
   ends. _Copy as Prompt_ puts the same message on the clipboard instead (the bar says _Copied_). _Post to GitHub…_
-  (only with a PR) opens the PR panel at _Post to GitHub_.
+  (only with a PR, also without open threads) opens a dialog like GitHub's _Finish your review_: a checkbox per thread
+  with something to post (what goes: _new_, _new, on the file_, _reply_, how many comments, _resolve_ or _reopen_; or
+  why it can't: not pushed, changed since, on a view), a click closes the dialog and shows the thread; _Include the
+  agent's answers_; a summary; _Comment_ · _Approve_ · _Request Changes_ (not on your own PR); _Post Review…_, which
+  asks first and closes the dialog once posted.
 
   **Threads from GitHub** ([ADR 0037](adr/0037-pull-request-sync-and-posting.md)). A PR's review threads show between
   the lines like any thread, their header saying _on GitHub_, each comment under its author (_@ana on GitHub_). Replies
@@ -226,16 +230,16 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   Resolving one is local until posted. An entry posted from here says _posted_.
 
   **The PR panel.** The PR's chip in the canvas bar (_#12_, a dot for its checks: green, red, amber running, grey)
-  shows the PR in the canvas in place of the diff; any other pick leaves it. From the top: the title, its state, who
-  merges what into what, _Open on GitHub_, and _Ready for Review_ (a draft) or the merge state and _Merge…_ (a menu of
-  the repository's merge methods, then a confirmation). _Checks_: the head's, failing first, each with _Details_; a
-  failing one has _Send to Agent_, which sends it with the end of its log to the agent pane's session (a card in the
-  chat). _Description_ with _Edit_ (⌘Enter or _Save to GitHub_). _People_: assignees with _Assign yourself_,
-  reviewers with where they are, labels. _Post to GitHub_: a checkbox per thread with something to post (what goes:
-  _new_, _new, on the file_, _reply_, how many comments, _resolve_ or _reopen_; or why it can't: not pushed, changed
-  since, on a view), a click shows the thread; _Include the agent's answers_; a summary; _Comment_ · _Approve_ ·
-  _Request Changes_ (not on your own PR); _Post Review…_, which asks first. _Conversation_: comments, reviews' verdicts
-  and summaries, and comments on whole files, oldest first, then a box and _Comment on GitHub_. The Commits pane shows
+  shows the PR in the canvas in place of the diff; any other pick leaves it. It is laid out like the PR's page on
+  GitHub. At the top: the title, its state, who merges what into what, _Open on GitHub_. Under it two columns, the
+  side one going under the main one in a narrow canvas. The main column, from the top: the description, a card with
+  _Edit_ (⌘Enter or _Save to GitHub_). _Conversation_: comments, reviews' verdicts and summaries, and comments on whole
+  files, oldest first, a card each. _Checks_: the head's failing and running
+  ones, each with _Details_, the rest folded under _12 passed, 3 skipped_; a failing one has _Send to Agent_, which
+  sends it with the end of its log to the agent pane's session (a card in the chat); under them _Ready for Review_ (a
+  draft) or the merge state and _Merge…_ (a menu of the repository's merge methods, then a confirmation). Last, _Add
+  a comment_: a box and _Comment on GitHub_. The side column: _Reviewers_ with where they are, _Assignees_ with
+  _Assign yourself_, _Labels_. The Commits pane shows
   each pushed commit's checks as a dot before its sha.
 
   **Views.** _Diff_ in the canvas's bar shows the diff without a view; it's on while no view shows. Next to it, a

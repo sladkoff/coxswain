@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { match, P } from "ts-pattern";
+import type { PullRequestDetails } from "../../core/github";
 import type { ReviewEntry } from "../../core/review";
 import { Button, SegmentedControl, ToggleButton } from "./components/button";
 import { ChevronDownIcon } from "./components/icons";
@@ -7,6 +8,7 @@ import { ProgressBar } from "./components/layout";
 import { cn, divider, muted } from "./components/styles";
 import { ErrorText } from "./components/text";
 import { byAgent, count } from "./format";
+import { PostReviewDialog } from "./PullRequest";
 import { changed } from "./queries";
 import type { Turn } from "./Viewer";
 
@@ -18,8 +20,7 @@ type Props = {
   turns: Record<number, Turn>;
   onViewThread: (threadId: number) => void;
   viewTitle?: string; // the view on the canvas, whose prose threads are listed under it (ADR 0036)
-  hasPr: boolean; // the workspace has a PR to post to (ADR 0037)
-  onPost: () => void; // Post to GitHub: the PR panel, where the threads to post are picked
+  pr?: PullRequestDetails | null; // the workspace's PR, to post to (ADR 0037)
 };
 
 // The canvas's bottom bar: the review at a glance on the left (threads, with how many wait on the agent, how many of
@@ -32,6 +33,7 @@ export function StatusBar(props: Props) {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [posting, setPosting] = useState(false); // the Post to GitHub dialog is open
   const threads = props.entries.filter((e) => (e.path || e.section != null) && !e.parentId);
   // What Hand off takes, as the review prompt does (core/review.ts): not resolved, and not the agent's own explanations
   // or findings unless the user replied to them.
@@ -52,9 +54,9 @@ export function StatusBar(props: Props) {
     (t) => t.path ?? "",
   );
   const handOffTo = async () => {
-    const to = await window.coxswain.showHandOffMenu(props.hasPr);
+    const to = await window.coxswain.showHandOffMenu(handOff.length > 0, !!props.pr);
     setError(null);
-    if (to === "post") return props.onPost();
+    if (to === "post") return setPosting(true);
     if (to === "copy") {
       setCopied(await window.coxswain.copyReviewPrompt(props.workspaceId));
       setTimeout(() => setCopied(false), 1500);
@@ -67,6 +69,14 @@ export function StatusBar(props: Props) {
   };
   return (
     <div className={cn("flex max-h-[50%] shrink-0 flex-col border-t text-xs", divider)}>
+      {posting && props.pr && (
+        <PostReviewDialog
+          workspaceId={props.workspaceId}
+          pr={props.pr}
+          onViewThread={props.onViewThread}
+          onClose={() => setPosting(false)}
+        />
+      )}
       {open && (
         <div className={cn("flex min-h-0 flex-col border-b", divider)}>
           <div className={cn("flex shrink-0 items-center gap-2 border-b px-2 py-1", divider)}>
@@ -165,13 +175,23 @@ export function StatusBar(props: Props) {
         {copied && <span className="shrink-0">Copied</span>}
         <Button
           variant="primary"
-          title={
-            handOff.length
-              ? "Send the open threads to the agent, copy them as a prompt, or post them to GitHub"
-              : "Nothing to hand off: no open threads of yours (the agent's explanations count once you reply)"
-          }
+          title={match({ threads: handOff.length > 0, pr: !!props.pr })
+            .with(
+              { threads: true },
+              () =>
+                "Send the open threads to the agent, copy them as a prompt, or post them to GitHub",
+            )
+            .with(
+              { pr: true },
+              () =>
+                "No open threads of yours for the agent; a review can still be posted to GitHub",
+            )
+            .otherwise(
+              () =>
+                "Nothing to hand off: no open threads of yours (the agent's explanations count once you reply)",
+            )}
           className="flex shrink-0 items-center gap-1.5 py-0.5 pr-1.5"
-          disabled={!handOff.length || sending}
+          disabled={(!handOff.length && !props.pr) || sending}
           onClick={handOffTo}
         >
           Hand off

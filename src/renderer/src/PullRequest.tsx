@@ -11,6 +11,7 @@ import type {
 import type { PullRequestChange, ReviewEvent } from "../../core/pull-requests";
 import { Button, SegmentedControl } from "./components/button";
 import { TextArea } from "./components/field";
+import { Card, Dialog } from "./components/layout";
 import { cn, divider, muted } from "./components/styles";
 import { ErrorText, ProblemMessage, Prose } from "./components/text";
 import { ago, count } from "./format";
@@ -56,20 +57,35 @@ const Section = ({
   </section>
 );
 
-// The PR panel (ADR 0037), the canvas's PR location: the PR as it is on GitHub (state, checks, description, people,
-// conversation) and Post to GitHub, the threads to post as a review. Everything it changes on GitHub is a click of the
-// user's: nothing is posted, merged or edited on its own.
-export function PullRequestPanel(props: {
-  workspaceId: number;
-  pr: PullRequestDetails;
-  onViewThread: (threadId: number) => void;
-}) {
+// A block of the side column: a small heading, then who or what.
+const Side = ({
+  title,
+  children,
+  end,
+}: {
+  title: string;
+  children: ReactNode;
+  end?: ReactNode;
+}) => (
+  <div className={cn("flex flex-col gap-1 border-b pb-3 text-xs", divider)}>
+    <div className={cn("flex items-center gap-2 font-semibold", muted)}>
+      <span className="flex-1">{title}</span>
+      {end}
+    </div>
+    {children}
+  </div>
+);
+
+// The PR panel (ADR 0037), the canvas's PR location, laid out like the PR's page on GitHub: its title and state, then
+// a column of the description, the conversation, the checks with merging under them and a comment box, beside a
+// column of its people and labels (under it in a narrow canvas).
+// Everything it changes on GitHub is a click of the user's: nothing is posted, merged or edited on its own.
+export function PullRequestPanel(props: { workspaceId: number; pr: PullRequestDetails }) {
   const { pr, workspaceId } = props;
   const [problem, setProblem] = useState<Problem>(null);
   const refresh = () =>
     Promise.all([
       queryClient.invalidateQueries({ queryKey: ["readPullRequest", workspaceId] }),
-      queryClient.invalidateQueries({ queryKey: ["listPostable", workspaceId] }),
       queryClient.invalidateQueries({ queryKey: ["listPullRequestTitles"] }),
     ]);
   // A change on GitHub; true once made.
@@ -85,19 +101,19 @@ export function PullRequestPanel(props: {
   };
   return (
     <div className="min-h-0 flex-1 overflow-auto select-text">
-      <div className="mx-auto flex max-w-3xl flex-col gap-4 p-4 text-sm">
-        <Header pr={pr} change={change} />
+      <div className="mx-auto flex max-w-5xl flex-col gap-4 p-4 text-sm">
+        <Header pr={pr} />
         {problem && <ProblemText problem={problem} />}
-        <Checks workspaceId={workspaceId} pr={pr} />
-        <Description pr={pr} change={change} />
-        <People pr={pr} change={change} />
-        <PostReview
-          workspaceId={workspaceId}
-          pr={pr}
-          onViewThread={props.onViewThread}
-          onPosted={refresh}
-        />
-        <Conversation pr={pr} change={change} />
+        {/* The side column wraps under the main one once that would be narrower than its basis. */}
+        <div className="flex flex-wrap items-start gap-6">
+          <div className="flex min-w-0 flex-[999_1_28rem] flex-col gap-4">
+            <Description pr={pr} change={change} />
+            <Conversation pr={pr} />
+            <Checks workspaceId={workspaceId} pr={pr} change={change} />
+            <CommentBox change={change} />
+          </div>
+          <People pr={pr} change={change} />
+        </div>
       </div>
     </div>
   );
@@ -111,8 +127,8 @@ const methodLabels: Record<MergeMethod, string> = {
   rebase: "Rebase and Merge",
 };
 
-// Its title and state, where it goes, and what can be done with it next: Ready for Review for a draft, else Merge.
-function Header({ pr, change }: { pr: PullRequestDetails; change: Change }) {
+// Its title and state, and where it goes.
+function Header({ pr }: { pr: PullRequestDetails }) {
   const [state, colour] = match(pr)
     .returnType<[string, string]>()
     .with({ state: "open", draft: true }, () => ["Draft", "bg-neutral-500"])
@@ -120,6 +136,37 @@ function Header({ pr, change }: { pr: PullRequestDetails; change: Change }) {
     .with({ state: "merged" }, () => ["Merged", "bg-purple-600"])
     .with({ state: "closed" }, () => ["Closed", "bg-red-600"])
     .exhaustive();
+  return (
+    <header className={cn("flex flex-col gap-1.5 border-b pb-3", divider)}>
+      <h1 className="text-lg font-semibold">
+        <Prose inline>{pr.title}</Prose>{" "}
+        <span className={cn("font-normal", muted)}>#{pr.number}</span>
+      </h1>
+      <div className={cn("flex flex-wrap items-center gap-2 text-xs", muted)}>
+        <span className={cn("rounded-full px-2 py-0.5 text-white", colour)}>{state}</span>
+        <span>
+          {pr.author ?? "ghost"} wants to merge <code>{pr.headRef}</code> into{" "}
+          <code>{pr.baseRef}</code>
+        </span>
+        <a href={pr.url} target="_blank" rel="noreferrer" className="underline">
+          Open on GitHub
+        </a>
+      </div>
+    </header>
+  );
+}
+
+// The head commit's checks, failing first; a failing one can go to the agent with its log. Under them, what can be
+// done with the PR next: Ready for Review for a draft, else Merge.
+function Checks({
+  workspaceId,
+  pr,
+  change,
+}: {
+  workspaceId: number;
+  pr: PullRequestDetails;
+  change: Change;
+}) {
   const merge = async () => {
     const i =
       pr.mergeMethods.length > 1
@@ -144,51 +191,6 @@ function Header({ pr, change }: { pr: PullRequestDetails; change: Change }) {
     });
     if (ok) await change({ kind: "ready" });
   };
-  return (
-    <header className="flex flex-col gap-1.5">
-      <h1 className="text-lg font-semibold">
-        <Prose inline>{pr.title}</Prose>{" "}
-        <span className={cn("font-normal", muted)}>#{pr.number}</span>
-      </h1>
-      <div className={cn("flex flex-wrap items-center gap-2 text-xs", muted)}>
-        <span className={cn("rounded-full px-2 py-0.5 text-white", colour)}>{state}</span>
-        <span>
-          {pr.author ?? "ghost"} wants to merge <code>{pr.headRef}</code> into{" "}
-          <code>{pr.baseRef}</code>
-        </span>
-        <a href={pr.url} target="_blank" rel="noreferrer" className="underline">
-          Open on GitHub
-        </a>
-        <div className="flex-1" />
-        {pr.state === "open" &&
-          (pr.draft ? (
-            <Button onClick={ready}>Ready for Review</Button>
-          ) : (
-            <>
-              <span>
-                {pr.mergeable === "conflicting" ? "Has conflicts" : `Merge state: ${pr.mergeState}`}
-              </span>
-              <Button
-                variant="primary"
-                disabled={pr.mergeable === "conflicting" || !pr.mergeMethods.length}
-                title={
-                  pr.mergeable === "conflicting"
-                    ? "Resolve the conflicts with the base branch first"
-                    : "Merge it on GitHub, after asking"
-                }
-                onClick={merge}
-              >
-                Merge…
-              </Button>
-            </>
-          ))}
-      </div>
-    </header>
-  );
-}
-
-// The head commit's checks, failing first; a failing one can go to the agent with its log.
-function Checks({ workspaceId, pr }: { workspaceId: number; pr: PullRequestDetails }) {
   const [sent, setSent] = useState<Record<string, string | null>>({}); // by name: null once sent, or what went wrong
   const order: CheckState[] = ["failure", "pending", "neutral", "success"];
   const checks = pr.checks.toSorted((a, b) => order.indexOf(a.state) - order.indexOf(b.state));
@@ -198,6 +200,37 @@ function Checks({ workspaceId, pr }: { workspaceId: number; pr: PullRequestDetai
     if (r.status === "error") setSent((s) => ({ ...s, [c.name]: r.message }));
   };
   const failing = checks.filter((c) => c.state === "failure").length;
+  // Failing and running ones show; the passed and skipped fold away, so a long list is as long as what needs a look.
+  const open = checks.filter((c) => c.state === "failure" || c.state === "pending");
+  const done = checks.filter((c) => c.state === "success" || c.state === "neutral");
+  const passed = done.filter((c) => c.state === "success").length;
+  const row = (c: Check) => (
+    <div key={c.name} className="flex items-center gap-2 text-xs">
+      <CheckDot state={c.state} title={c.state} />
+      <span className="font-medium">{c.name}</span>
+      <span className={cn("min-w-0 flex-1 truncate", muted)}>{c.detail}</span>
+      {c.name in sent && (
+        <span className={sent[c.name] ? "text-red-600" : muted}>
+          {sent[c.name] ?? "Sent to Agent"}
+        </span>
+      )}
+      {c.state === "failure" && (
+        <Button
+          className="py-0.5 text-xs"
+          title="Send the check and the end of its log to the agent pane's session, to find out why it fails and fix it"
+          disabled={c.name in sent && sent[c.name] === null}
+          onClick={() => void send(c)}
+        >
+          Send to Agent
+        </Button>
+      )}
+      {c.url && (
+        <a href={c.url} target="_blank" rel="noreferrer" className={cn("underline", muted)}>
+          Details
+        </a>
+      )}
+    </div>
+  );
   return (
     <Section
       title="Checks"
@@ -217,33 +250,48 @@ function Checks({ workspaceId, pr }: { workspaceId: number; pr: PullRequestDetai
       {!checks.length && (
         <div className={cn("text-xs", muted)}>No checks on {pr.head.slice(0, 7)}.</div>
       )}
-      {checks.map((c) => (
-        <div key={c.name} className="flex items-center gap-2 text-xs">
-          <CheckDot state={c.state} title={c.state} />
-          <span className="font-medium">{c.name}</span>
-          <span className={cn("min-w-0 flex-1 truncate", muted)}>{c.detail}</span>
-          {c.name in sent && (
-            <span className={sent[c.name] ? "text-red-600" : muted}>
-              {sent[c.name] ?? "Sent to Agent"}
-            </span>
-          )}
-          {c.state === "failure" && (
-            <Button
-              className="py-0.5 text-xs"
-              title="Send the check and the end of its log to the agent pane's session, to find out why it fails and fix it"
-              disabled={c.name in sent && sent[c.name] === null}
-              onClick={() => void send(c)}
-            >
-              Send to Agent
-            </Button>
-          )}
-          {c.url && (
-            <a href={c.url} target="_blank" rel="noreferrer" className={cn("underline", muted)}>
-              Details
-            </a>
+      {open.map(row)}
+      {done.length > 0 && (
+        <details className="flex flex-col text-xs">
+          <summary className={cn("cursor-default", muted)}>
+            {[
+              passed && `${passed} passed`,
+              done.length - passed && `${done.length - passed} skipped`,
+            ]
+              .filter(Boolean)
+              .join(", ")}
+          </summary>
+          <div className="flex flex-col gap-2 pt-2">{done.map(row)}</div>
+        </details>
+      )}
+      {pr.state === "open" && (
+        <div className={cn("flex items-center gap-2 border-t pt-2 text-xs", divider, muted)}>
+          {pr.draft ? (
+            <>
+              <span className="flex-1">This PR is a draft.</span>
+              <Button onClick={ready}>Ready for Review</Button>
+            </>
+          ) : (
+            <>
+              <span className="flex-1">
+                {pr.mergeable === "conflicting" ? "Has conflicts" : `Merge state: ${pr.mergeState}`}
+              </span>
+              <Button
+                variant="primary"
+                disabled={pr.mergeable === "conflicting" || !pr.mergeMethods.length}
+                title={
+                  pr.mergeable === "conflicting"
+                    ? "Resolve the conflicts with the base branch first"
+                    : "Merge it on GitHub, after asking"
+                }
+                onClick={merge}
+              >
+                Merge…
+              </Button>
+            </>
           )}
         </div>
-      ))}
+      )}
     </Section>
   );
 }
@@ -254,17 +302,18 @@ function Description({ pr, change }: { pr: PullRequestDetails; change: Change })
     if (editing !== null && (await change({ kind: "body", body: editing }))) setEditing(null);
   };
   return (
-    <Section
-      title="Description"
-      end={
-        pr.canUpdate &&
-        editing === null && (
+    <Card className="flex flex-col gap-2">
+      <div className={cn("flex items-center gap-1.5 text-xs", muted)}>
+        <span className="font-medium text-neutral-900 dark:text-neutral-100">
+          {pr.author ?? "ghost"}
+        </span>
+        <span className="flex-1">Description</span>
+        {pr.canUpdate && editing === null && (
           <Button variant="ghost" className="px-1.5 text-xs" onClick={() => setEditing(pr.body)}>
             Edit
           </Button>
-        )
-      }
-    >
+        )}
+      </div>
       {match({ editing, body: pr.body.trim() })
         .with({ editing: P.string.select() }, (text) => (
           <>
@@ -290,44 +339,44 @@ function Description({ pr, change }: { pr: PullRequestDetails; change: Change })
         .otherwise(() => (
           <Prose>{pr.body}</Prose>
         ))}
-    </Section>
+    </Card>
   );
 }
 
+// The side column: reviewers with where they are, assignees, labels.
 function People({ pr, change }: { pr: PullRequestDetails; change: Change }) {
   const mine = pr.assignees.includes(pr.viewer);
-  const row = (label: string, value: ReactNode) => (
-    <div className="flex items-baseline gap-2 text-xs">
-      <span className={cn("w-20 shrink-0", muted)}>{label}</span>
-      <span className="min-w-0 flex-1">{value}</span>
-    </div>
-  );
+  const none = <span className={muted}>None yet</span>;
   return (
-    <Section title="People">
-      {row(
-        "Assignees",
-        <span className="flex items-center gap-2">
-          {pr.assignees.join(", ") || <span className={muted}>No one</span>}
+    <aside className="flex flex-[1_0_14rem] flex-col gap-3">
+      <Side title="Reviewers">
+        {pr.reviewers.map((r) => (
+          <div key={r.login} className="flex items-baseline gap-2">
+            <span className="min-w-0 flex-1 truncate">{r.login}</span>
+            <span className={muted}>{r.state}</span>
+          </div>
+        ))}
+        {!pr.reviewers.length && none}
+      </Side>
+      <Side
+        title="Assignees"
+        end={
           <Button
             variant="ghost"
-            className={cn("px-1.5", muted)}
+            className="px-1.5 font-normal"
             onClick={() => void change({ kind: "assign", on: !mine })}
           >
             {mine ? "Unassign yourself" : "Assign yourself"}
           </Button>
-        </span>,
-      )}
-      {row(
-        "Reviewers",
-        pr.reviewers.length ? (
-          pr.reviewers.map((r) => `${r.login} (${r.state})`).join(", ")
-        ) : (
-          <span className={muted}>No one</span>
-        ),
-      )}
-      {pr.labels.length > 0 &&
-        row(
-          "Labels",
+        }
+      >
+        {pr.assignees.map((a) => (
+          <div key={a}>{a}</div>
+        ))}
+        {!pr.assignees.length && none}
+      </Side>
+      <Side title="Labels">
+        {pr.labels.length ? (
           <span className="flex flex-wrap gap-1">
             {pr.labels.map((l) => (
               <span
@@ -338,9 +387,12 @@ function People({ pr, change }: { pr: PullRequestDetails; change: Change }) {
                 {l.name}
               </span>
             ))}
-          </span>,
+          </span>
+        ) : (
+          none
         )}
-    </Section>
+      </Side>
+    </aside>
   );
 }
 
@@ -350,13 +402,14 @@ const eventLabels: Record<ReviewEvent, string> = {
   REQUEST_CHANGES: "Request Changes",
 };
 
-// Post to GitHub (Hand off's): the threads with something to post, picked (all that can be, at first), as one review
-// with a verdict and a summary. The agent's entries go only when asked, marked as the agent's.
-function PostReview(props: {
+// Post to GitHub (Hand off's), a dialog like GitHub's Finish your review: the threads with something to post, picked
+// (all that can be, at first), as one review with a verdict and a summary. The agent's entries go only when asked,
+// marked as the agent's. It closes once posted, or to show a thread.
+export function PostReviewDialog(props: {
   workspaceId: number;
   pr: PullRequestDetails;
   onViewThread: (threadId: number) => void;
-  onPosted: () => Promise<unknown>;
+  onClose: () => void;
 }) {
   const listed = useQuery(core("listPostable", props.workspaceId));
   const threads = listed.data ?? [];
@@ -385,121 +438,125 @@ function PostReview(props: {
       body,
     });
     setPosting(false);
-    if (r.status === "ok") {
-      setBody("");
-      setEvent("COMMENT");
-    } else setProblem(r);
-    await props.onPosted();
+    // Also after a problem: what got posted before it is on GitHub.
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["readPullRequest", props.workspaceId] }),
+      queryClient.invalidateQueries({ queryKey: ["listPostable", props.workspaceId] }),
+    ]);
+    if (r.status === "ok") props.onClose();
+    else setProblem(r);
   };
   return (
-    <Section title="Post to GitHub">
-      {listed.isError && <ErrorText>{String(listed.error)}</ErrorText>}
-      {!threads.length && (
-        <div className={cn("text-xs", muted)}>
-          Nothing new to post: your threads and replies here are on GitHub already.
-        </div>
-      )}
-      {threads.map((t) => (
-        <label
-          key={t.threadId}
-          className={cn("flex items-baseline gap-2 text-xs", t.problem && muted)}
-        >
-          <input
-            type="checkbox"
-            disabled={!!t.problem}
-            checked={!t.problem && !unpicked.has(t.threadId)}
-            onChange={(e) =>
-              setUnpicked((u) => {
-                const next = new Set(u);
-                if (e.target.checked) next.delete(t.threadId);
-                else next.add(t.threadId);
-                return next;
-              })
-            }
-          />
-          <button
-            className="min-w-0 flex-1 truncate text-left"
-            title="Show the thread"
-            onClick={(e) => {
-              e.preventDefault();
-              props.onViewThread(t.threadId);
-            }}
-          >
-            <span className={cn("font-mono text-[11px]", muted)}>
-              {t.path ?? "View"}:{t.lines}
-            </span>{" "}
-            {t.body}
-          </button>
-          <span className={cn("shrink-0", muted)}>
-            {t.problem ??
-              [
-                match(t)
-                  .with({ github: true }, () => "reply")
-                  .with({ onFile: true }, () => "new, on the file")
-                  .otherwise(() => "new"),
-                t.yours && count(t.yours, "comment"),
-                t.agents && `${count(t.agents, "answer")} of the agent's`,
-                t.resolve === true && "resolve",
-                t.resolve === false && "reopen",
-              ]
-                .filter(Boolean)
-                .join(" · ")}
-          </span>
-        </label>
-      ))}
-      {threads.some((t) => t.agents) && (
-        <label className="flex items-center gap-2 text-xs">
-          <input
-            type="checkbox"
-            checked={withAgent}
-            onChange={(e) => setWithAgent(e.target.checked)}
-          />
-          Include the agent's answers, marked as the agent's
-        </label>
-      )}
-      <TextArea
-        long
-        rows={3}
-        value={body}
-        onChange={(e) => setBody(e.target.value)}
-        onSubmit={() => void post()}
-        placeholder="A summary for the review (optional)"
-      />
-      <div className="flex items-center justify-end gap-2">
-        {problem && <ProblemText problem={problem} />}
-        {!own && (
-          <SegmentedControl
-            value={event}
-            onChange={setEvent}
-            options={(["COMMENT", "APPROVE", "REQUEST_CHANGES"] as const).map((e) => ({
-              value: e,
-              label: eventLabels[e],
-            }))}
-          />
+    <Dialog
+      title="Post to GitHub"
+      subtitle={`A review on PR #${props.pr.number}, posted as you`}
+      onClose={props.onClose}
+    >
+      <div className="flex min-h-0 flex-col gap-2 overflow-y-auto px-4 pb-4">
+        {listed.isError && <ErrorText>{String(listed.error)}</ErrorText>}
+        {!threads.length && (
+          <div className={cn("text-xs", muted)}>
+            Nothing new to post: your threads and replies here are on GitHub already.
+          </div>
         )}
-        <Button
-          variant="primary"
-          disabled={posting || (!picked.length && !body.trim() && event === "COMMENT")}
-          onClick={() => void post()}
-        >
-          {posting ? "Posting…" : "Post Review…"}
-        </Button>
+        {threads.map((t) => (
+          <label
+            key={t.threadId}
+            className={cn("flex items-baseline gap-2 text-xs", t.problem && muted)}
+          >
+            <input
+              type="checkbox"
+              disabled={!!t.problem}
+              checked={!t.problem && !unpicked.has(t.threadId)}
+              onChange={(e) =>
+                setUnpicked((u) => {
+                  const next = new Set(u);
+                  if (e.target.checked) next.delete(t.threadId);
+                  else next.add(t.threadId);
+                  return next;
+                })
+              }
+            />
+            <button
+              className="min-w-0 flex-1 truncate text-left"
+              title="Show the thread"
+              onClick={(e) => {
+                e.preventDefault();
+                props.onClose();
+                props.onViewThread(t.threadId);
+              }}
+            >
+              <span className={cn("font-mono text-[11px]", muted)}>
+                {t.path ?? "View"}:{t.lines}
+              </span>{" "}
+              {t.body}
+            </button>
+            <span className={cn("shrink-0", muted)}>
+              {t.problem ??
+                [
+                  match(t)
+                    .with({ github: true }, () => "reply")
+                    .with({ onFile: true }, () => "new, on the file")
+                    .otherwise(() => "new"),
+                  t.yours && count(t.yours, "comment"),
+                  t.agents && `${count(t.agents, "answer")} of the agent's`,
+                  t.resolve === true && "resolve",
+                  t.resolve === false && "reopen",
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+            </span>
+          </label>
+        ))}
+        {threads.some((t) => t.agents) && (
+          <label className="flex items-center gap-2 text-xs">
+            <input
+              type="checkbox"
+              checked={withAgent}
+              onChange={(e) => setWithAgent(e.target.checked)}
+            />
+            Include the agent's answers, marked as the agent's
+          </label>
+        )}
+        <TextArea
+          long
+          rows={3}
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          onSubmit={() => void post()}
+          placeholder="A summary for the review (optional)"
+        />
+        <div className="flex items-center justify-end gap-2">
+          {problem && <ProblemText problem={problem} />}
+          {!own && (
+            <SegmentedControl
+              value={event}
+              onChange={setEvent}
+              options={(["COMMENT", "APPROVE", "REQUEST_CHANGES"] as const).map((e) => ({
+                value: e,
+                label: eventLabels[e],
+              }))}
+            />
+          )}
+          <Button
+            variant="primary"
+            disabled={posting || (!picked.length && !body.trim() && event === "COMMENT")}
+            onClick={() => void post()}
+          >
+            {posting ? "Posting…" : "Post Review…"}
+          </Button>
+        </div>
       </div>
-    </Section>
+    </Dialog>
   );
 }
 
-// The PR's conversation, oldest first: comments on it, reviews' summaries and comments on whole files. A new comment
-// goes to GitHub when sent.
-function Conversation({ pr, change }: { pr: PullRequestDetails; change: Change }) {
-  const [body, setBody] = useState("");
-  const send = async () => {
-    if (body.trim() && (await change({ kind: "comment", body: body.trim() }))) setBody("");
-  };
+// The PR's conversation, oldest first: comments on it, reviews' summaries and comments on whole files.
+function Conversation({ pr }: { pr: PullRequestDetails }) {
   return (
     <Section title={`Conversation · ${pr.conversation.length}`}>
       {pr.conversation.map((c) => (
-        <div key={c.id} className="flex flex-col gap-0.5">
+        <Card key={c.id} className="flex flex-col gap-2">
           <div className={cn("flex items-center gap-1.5 text-xs", muted)}>
             <span className="font-medium text-neutral-900 dark:text-neutral-100">{c.author}</span>
             {c.review && <span>{c.review}</span>}
@@ -513,8 +570,21 @@ function Conversation({ pr, change }: { pr: PullRequestDetails; change: Change }
             </a>
           </div>
           {c.body && <Prose>{c.body}</Prose>}
-        </div>
+        </Card>
       ))}
+      {!pr.conversation.length && <div className={cn("text-xs", muted)}>No comments yet.</div>}
+    </Section>
+  );
+}
+
+// A new comment on the PR, at the end of its page; it goes to GitHub when sent.
+function CommentBox({ change }: { change: Change }) {
+  const [body, setBody] = useState("");
+  const send = async () => {
+    if (body.trim() && (await change({ kind: "comment", body: body.trim() }))) setBody("");
+  };
+  return (
+    <Section title="Add a comment">
       <TextArea
         long
         rows={2}

@@ -715,14 +715,15 @@ app.whenReady().then(() => {
         ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
       ),
   );
-  // The bottom bar's Hand off: where the open threads go. Send to GitHub isn't built yet, so it's shown greyed out.
+  // The bottom bar's Hand off: where the open threads go. Posting needs a PR, not open threads: a review can be a
+  // verdict alone.
   ipcMain.handle(
     "menus:hand-off",
-    (e, hasPr: boolean) =>
+    (e, hasThreads: boolean, hasPr: boolean) =>
       new Promise<"agent" | "copy" | "post">((resolve) =>
         Menu.buildFromTemplate([
-          { label: "Send to Agent", click: () => resolve("agent") },
-          { label: "Copy as Prompt", click: () => resolve("copy") },
+          { label: "Send to Agent", enabled: hasThreads, click: () => resolve("agent") },
+          { label: "Copy as Prompt", enabled: hasThreads, click: () => resolve("copy") },
           { type: "separator" },
           { label: "Post to GitHub…", enabled: hasPr, click: () => resolve("post") },
         ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),

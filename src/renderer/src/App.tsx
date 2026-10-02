@@ -1096,7 +1096,6 @@ export function App() {
                     key={currentWorkspace.id}
                     workspaceId={currentWorkspace.id}
                     pr={pr.details}
-                    onViewThread={viewThread}
                   />
                 ) : (
                   <Centered>Loading the pull request…</Centered>
@@ -1266,8 +1265,7 @@ export function App() {
             turns={turns}
             onViewThread={viewThread}
             viewTitle={canvasView?.title}
-            hasPr={!!pr.details}
-            onPost={() => void show({ pr: true })}
+            pr={pr.details}
           />
         )}
       </div>

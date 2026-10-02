@@ -31,8 +31,8 @@ PR; the branch, not the workspace, is what ties them. Writing to GitHub must alw
    Threads on a whole file have no lines, so they show in the PR panel's conversation instead.
 4. **Resolving is local until posted.** GitHub's resolve or reopen, seen in a read, is taken over (`github_resolved`
    records what GitHub had). A resolve here stays here until _Post to GitHub_ sends it.
-5. **Posting is one review, picked by thread** (`postReview`). _Hand off › Post to GitHub…_ opens the PR panel's _Post
-   to GitHub_, listing every thread with something to post: a thread of the workspace's not on GitHub yet, or one from
+5. **Posting is one review, picked by thread** (`postReview`). _Hand off › Post to GitHub…_ opens a dialog
+   listing every thread with something to post: a thread of the workspace's not on GitHub yet, or one from
    GitHub with replies or a resolve since. The user picks threads, whether the agent's answers go too, a verdict
    (_Comment_, _Approve_, _Request Changes_; only _Comment_ on their own PR) and a summary, and confirms. It goes out
    as one pending review on the PR's head as last opened, then submitted; resolves follow. A new thread goes on its
@@ -43,7 +43,7 @@ PR; the branch, not the workspace, is what ties them. Writing to GitHub must alw
    go out as the user, who chose them.
 7. **The PR panel** is a canvas location (`pr` in `CanvasSearch`, ADR 0025), opened by the PR's chip in the canvas bar:
    state and merge state, _Ready for Review_ or _Merge…_, checks, description (edited in place), assignees (assign
-   yourself), reviewers, labels, _Post to GitHub_ and the conversation with a box to comment. Every change it makes on
+   yourself), reviewers, labels and the conversation with a box to comment. Every change it makes on
    GitHub is a click; merging, marking ready and posting ask first.
 8. **Checks** show as a dot: the head's on the PR chip, each commit's in the Commits pane. A failing check in the panel
    has _Send to Agent_: the check, and for a GitHub Actions job the last 150 lines of its log, go to the agent pane's
