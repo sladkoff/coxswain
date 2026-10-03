@@ -122,6 +122,7 @@ import {
 } from "../core/review";
 import { listReviewed, setReviewed } from "../core/reviewed";
 import { startBackground } from "../core/background";
+import { setSkillsDir } from "../core/skills";
 import { emit, onEvent } from "../core/events";
 import {
   getSummarySettings,
@@ -922,6 +923,8 @@ app.whenReady().then(() => {
   });
   startBackground(db);
   setSummaryRunner(({ agent, ...o }) => askOnce(agent, o));
+  // ADR 0039: the skills ship in the app's resources, next to the built main process's folder.
+  setSkillsDir(join(__dirname, "../../resources/skills"));
   void stopInterruptedJobs(db);
   ipcMain.handle("jobs:list", () => listJobs(db));
   ipcMain.handle("summaries:coverage", (_, workspaceId: number) =>

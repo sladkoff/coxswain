@@ -3,6 +3,27 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-10-03 — Guides from skills
+
+### What works
+
+- **Skills for views** ([ADR 0039](adr/0039-skills-for-views.md)). `pr`, `code-review` and `writing-beats` from
+  mattpocock/skills ship whole in `resources/skills/` (MIT, with the upstream commit in its README). The agent reads
+  them with a new tool, `read_skill` (several in one call); each comes after a note (`src/core/skills.ts`) on which
+  of its parts apply in coxswain and how they map to the view tools.
+- **Guides are written as claims, with an overview that shows the change.** `start_view`'s guide instructions are
+  rewritten as numbered steps: read `pr` and `writing-beats` (and `code-review` in a review); write the overview first
+  (intent, the smallest visual of the change's shape, one-way or two-way door and blast radius); order sections by
+  grounding; make section prose claims about the code rather than "check that …" instructions; add explanations only
+  where the lines alone leave the reviewer guessing. Other views open the way `pr` opens a summary. The Review prompt
+  and `add_explanation` and `add_finding` texts follow. "Above" in `start_view`'s result now says "below", where the
+  file list is.
+- `.claude/skills/writing-for-agents`, for whoever edits what coxswain tells its agents (not shipped).
+- Tests: every skill `read_skill` offers is served whole after its note (`skills.test.ts`). Tried in the running app on
+  a copy of the database: a guide of this branch, made in a new Claude Code session in about two minutes, opened with
+  a shaped diff of the architecture and a merge-danger call, its sections made of claims; it read one skill where it
+  was told to read two, which is why `read_skill` now takes several. Not yet tried: a review with `code-review`, Codex.
+
 ## 2026-10-03 — Freshness: the core keeps the workspace on screen fresh
 
 ### What works

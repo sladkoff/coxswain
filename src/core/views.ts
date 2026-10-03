@@ -12,6 +12,7 @@ import {
   resolveCommit,
   snapshot,
 } from "./git.ts";
+import { readSkill, skillNames, type SkillName } from "./skills.ts";
 import { fileSummaries, summarise } from "./summaries.ts";
 
 // ADR 0023, 0026: a view (glossary) is made by the agent pane's session with the tools below. It's pinned to base →
@@ -177,7 +178,7 @@ export const builtInPrompts: Prompt[] = [
   {
     id: null,
     title: "Review",
-    body: "Make a guide to this workspace's changes with coxswain's tools, and review them as you go: add a finding on each line with a bug, a risk (security, data loss, concurrency, a broken edge case) or a clearly better way, saying why and what to do instead. Leave style nits out.",
+    body: "Make a guide to this workspace's changes with coxswain's tools, and review them as you go with the code-review skill: add a finding on each line with a bug, a risk (security, data loss, concurrency, a broken edge case), a gap against what the PR set out to do, or a clearly better way, saying why and what to do instead. Leave style nits out.",
   },
   {
     id: null,
@@ -258,7 +259,7 @@ Three kinds of fenced blocks do more than show code:
   or classDiagram for data models, flowchart or sequenceDiagram for data flow. Keep diagrams small enough to read in a
   column; split a big one. write_section draws each diagram before saving the section, and refuses it with mermaid's
   error if one doesn't draw.
-- A file diff: \`\`\`diff path=<a changed file, as listed above>, closed by \`\`\` right after, embeds that file's diff as the
+- A file diff: \`\`\`diff path=<a changed file, as listed below>, closed by \`\`\` right after, embeds that file's diff as the
   user reviews it, where they can comment. Add the word muted after the path for a file the reader can pass over: made
   by a tool (lockfiles, generated clients or models, snapshots, build output), or one the user said doesn't matter to
   them; it's low-lighted, and so is a section of only muted files. Each file can be embedded once in a view. A \`\`\`diff block without path= is an ordinary code block.
@@ -266,34 +267,42 @@ Three kinds of fenced blocks do more than show code:
   the view's snapshot, even if it has no changes. Quote paths containing spaces. It supports line comments,
   explanations and its own Reviewed mark, separate from the file's diff. Use this to trace existing code.
 Each path can be embedded once, as either a file or a diff. Views can contain only prose and diagrams and need no diff.
-Write a sentence or two before an embedded file or diff saying what to look at in it.`;
+Before an embedded file or diff, write a sentence or two saying what it does in this change and why that matters.`;
 
-const howToGuide = `How to make the guide:
-- Work from the file summaries above: plan the sections and write each file's sentence from its summary. Read a diff
-  only where the summary doesn't do: a file without one or with an unclear one, the few files at the heart of the
-  change, and lines you explain or (in a review) judge. Every diff read makes each later step slower, so don't read
-  them all.
-- Sort the changed files into sections, each about one theme (a feature, a refactor, tests, configuration, ...), in
-  the order a reviewer should read them: the core change first, supporting changes after, muted ones last. Give each
-  section a short heading, one to three sentences saying what the reviewer is looking at and what to check, and then,
-  for each of its files, one sentence on what to look at in it followed by its diff fence. Add a diagram where it shows
-  how pieces connect better than words.
-- Embed every changed file in exactly one section; never leave one out. Files made by a tool, and those the user says
-  they don't care about (tests, mechanical fixes, whatever they name), go in sections of their own at the end with
-  every fence muted: a heading that says what they are and one line for the section, no sentence per file.
-- Where lines need explaining (a subtle condition, why something moved, how pieces connect), add an explanation on
-  them with add_explanation. Explain; don't judge. A few good ones beat many obvious ones.
-- Only if the user asked for a review: add findings with add_finding on lines where you see a bug, a risk, a missing
-  case or a better way. Otherwise add none.
-- Write the sections in a few calls, not one each: give write_section several at once in sections, and
-  add_explanation several in explanations (add_finding: findings).
-- When you're done, say in a few lines what the changes do and how the guide is laid out. The guide shows in the app as
-  you add to it; don't repeat it in the chat.`;
+const howToGuide = `How to make the guide. A guide is read by a reviewer who knows the codebase but not this change; every
+sentence in it is a claim about the code: what it does now, why, and what follows from it, which the reviewer can
+hold against the diff. "Writes now run in a transaction, so a failed read-back rolls the insert back too" is a claim;
+"Check that writes are transactional" hands the work back to the reviewer.
+1. Read the skills in one read_skill call: pr for the overview and writing-beats for the order of the sections, plus
+   code-review when the user asked for a review.
+2. Plan from the file summaries in the list below. Read a diff where its summary falls short: a file without one or
+   with an unclear one, the few files at the heart of the change, and the lines you explain or judge. Each diff read
+   slows every later step, so read the few that matter.
+3. Write the overview first, as the pr skill says: the change's intent in a few sentences, the smallest visual that
+   shows its shape, and its danger (one-way or two-way door, and blast radius).
+4. Sort the changed files into sections, each about one theme (a feature, a refactor, tests, configuration, ...), in
+   the order writing-beats' grounding gives: each section leans only on what the overview or an earlier section
+   grounded. Give each a short heading, then one to three sentences of claims about what this part of the change does
+   and why, and then, for each of its files, one sentence on what changed in it, followed by its diff fence. Add a
+   diagram where it shows how pieces connect better than words.
+5. Embed every changed file in exactly one section. Files made by a tool, and those the user says they don't care about
+   (tests, mechanical fixes, whatever they name), go in sections of their own at the end with every fence muted: a
+   heading that says what they are and one line for the section, no sentence per file.
+6. Add explanations with add_explanation where the lines alone leave the reviewer guessing: why it's done this way,
+   the invariant it keeps, what happens at the edge, how it ties to code elsewhere. Each one tells the reviewer
+   something they can't read off those lines; a few such beat many that restate the code. Explanations describe; in a
+   review, judgements go in findings.
+7. In a review, add findings with add_finding as the code-review skill says. A guide without a review has none.
+8. Write in a few calls: give write_section several sections at once, add_explanation several explanations
+   (add_finding: findings).
+9. The guide is done when every changed file is in a section. Then say in a few lines what the changes do and how the
+   guide is laid out; the guide itself is in the app, so the chat carries only that.`;
 
-const howToOther = `This view shows only what you put in it: embed just the source files or file diffs that matter to what it's about,
-and explain the rest with prose, tables and diagrams. Don't embed files only to mute them; mute an embed only when it's
-there for context rather than the point, e.g. a generated type the data passes through. When you're done, say in a line or two what it shows; it shows in
-the app as you add to it, so don't repeat it in the chat.`;
+const howToOther = `This view shows only what you put in it: embed the source files or file diffs that matter to what it's about, and
+explain the rest with prose, tables and diagrams. Open it the way the pr skill opens a summary (read_skill pr): the
+smallest visual that makes its point, with a few sentences of claims around it. Mute an embed when it's there for
+context rather than the point, e.g. a generated type the data passes through. When you're done, say in a line or two
+what it shows; the view itself is in the app, so the chat carries only that.`;
 
 // The files of a view's range, to check the tools' paths against, and those at its head. Both are of commits, which
 // never change, so each is read once: every write_section asks, and a big range takes seconds to list.
@@ -402,7 +411,7 @@ const listRest = (files: ChangedFile[], next: number | null) =>
     : `\n… ${files.length - next} more files: call file_summaries with from: ${next} for the next ones.`;
 
 const aboutSummaries =
-  "File summaries are written ahead by a small model from each diff alone: plan from them and pick which few diffs to read. Call file_summaries only for those still being written; the rest are above.";
+  "File summaries are written ahead by a small model from each diff alone: plan from them and pick which few diffs to read. They're in the list of changed files below; call file_summaries only for those still being written.";
 
 // The view a tool writes to: the one with the id given, or the workspace's latest.
 async function toolView(db: Db, workspaceId: number, id: number | undefined) {
@@ -815,10 +824,27 @@ export function viewTools(db: Db, workspaceId: number): McpTool[] {
       },
     },
     {
+      name: "read_skill",
+      annotations: readTool,
+      description:
+        "Read skills for making views, each with how it applies in coxswain: pr (a view's overview: the change's intent, its shape as a small visual, its danger), writing-beats (the order of a view's sections), code-review (findings in a review). Give all you need in names, in one call. start_view's result says when to read each.",
+      inputSchema: {
+        type: "object",
+        properties: { names: { type: "array", items: { type: "string", enum: skillNames } } },
+        required: ["names"],
+      },
+      call: async ({ names }: { names: SkillName[] }) => {
+        const unknown = names.filter((n) => !skillNames.includes(n));
+        if (unknown.length)
+          throw new Error(`No skill ${unknown.join(", ")}: ${skillNames.join(", ")}`);
+        return (await Promise.all(names.map(readSkill))).join("\n\n");
+      },
+    },
+    {
       name: "add_explanation",
       annotations: closedTool,
       description:
-        "Explain lines of a file or file diff in the view: what they do and why, to help the user read them. Give several in explanations to add them in one call. Call start_view first.",
+        "Explain lines of a file or file diff in the view: what the lines alone don't tell the reader, such as why they're written this way, the invariant they keep, what happens at the edge, or how they tie to code elsewhere. Give several in explanations to add them in one call. Call start_view first.",
       inputSchema: anchorSchema("explanations"),
       call: (a: Partial<AnchorArgs> & { explanations?: AnchorArgs[] }) =>
         addAll(db, workspaceId, "explanation", a, a.explanations),
@@ -827,7 +853,7 @@ export function viewTools(db: Db, workspaceId: number): McpTool[] {
       name: "add_finding",
       annotations: closedTool,
       description:
-        "Add a review finding on lines of a file or file diff in the view: a bug, risk, missing case or better way. Only when the user asked for a review. Give several in findings to add them in one call. Call start_view first.",
+        "Add a review finding on lines of a file or file diff in the view: a bug, risk, missing case or better way, as the code-review skill's axes sort them. Only when the user asked for a review. Give several in findings to add them in one call. Call start_view first.",
       inputSchema: anchorSchema("findings"),
       call: (a: Partial<AnchorArgs> & { findings?: AnchorArgs[] }) =>
         addAll(db, workspaceId, "finding", a, a.findings),

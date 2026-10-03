@@ -35,6 +35,8 @@ Keeping the docs current is part of every change, not a follow-up.
    deliberate shortcuts in code with a `ponytail:` comment that names the limit and the upgrade path,
    and list them in the devlog.
 5. **Tick goals** in [GOALS.md](docs/GOALS.md) when they are met.
+6. **What coxswain tells its agents** (`paneContext`, the view tools' texts, the skills' notes in `src/core/skills.ts`)
+   is written with the `writing-for-agents` skill in `.claude/skills/`.
 
 ## Architecture rules
 
