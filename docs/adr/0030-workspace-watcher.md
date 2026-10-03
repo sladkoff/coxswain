@@ -64,5 +64,5 @@ saw fit, missed pushes made by an agent or a terminal for up to two minutes, and
 - Terminal commits, pulls and resets show within 3 s; a push from anywhere on this machine within 3 s plus a GitHub
   check; changes made on GitHub by others within a minute, or on coming back to the window.
 - One `gh` call, a fetch and a PR read every minute while a workspace shows, whether or not the app has focus.
-- What the checks found lives in memory: the first open after a restart waits for GitHub and the fetch (~2.5 s).
+- What the checks found lives in memory: the first open after a restart waits for GitHub and the fetch (~2.5 s), though not for the PR's read, which follows.
 - The diff doesn't follow uncommitted edits made outside an agent turn until the window gets focus again.

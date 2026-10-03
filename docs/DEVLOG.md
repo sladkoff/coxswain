@@ -3,6 +3,23 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-10-04 — A new workspace shows sooner
+
+### What works
+
+- **The first open of a workspace no longer waits for its PR.** The worktree's diff showed only once the first GitHub
+  check had also read the PR and mirrored its review threads; `checkedWorktree` (`src/core/watch.ts`) now answers as
+  soon as the check has the worktree open, and the PR panel and threads follow when the read is in.
+- **The canvas says "Preparing the workspace…"** while the worktree is cloned, fetched and checked out, instead of
+  "Loading…"; the Navigator already said so.
+- Tests: the existing ones pass; nothing new covers the early answer (a PR workspace needs GitHub faked). Not yet tried
+  in the running app.
+
+### Tech debt
+
+- Still slow on a new workspace: the clone is blobless, so `git worktree add` downloads every file of the tree; a
+  branch workspace asks GitHub for its PR before it fetches.
+
 ## 2026-10-03 — Guides from skills
 
 ### What works

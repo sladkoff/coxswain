@@ -1105,7 +1105,9 @@ export function App() {
                     onScrollCapture={onCanvasScroll}
                   >
                     {!canvasReady ? (
-                      <Centered>Loading…</Centered>
+                      <Centered>
+                        {pr.commits || pr.problem ? "Loading…" : "Preparing the workspace…"}
+                      </Centered>
                     ) : (
                       <>
                         {showFile && (

@@ -21,19 +21,31 @@ type Checked = {
 };
 const checked = new Map<number, Checked>();
 const checking = new Map<number, Promise<Checked>>();
+// The running check's worktree, in before its PR is read: the first open shows the diff without waiting for GitHub's
+// review threads.
+const opening = new Map<number, Promise<WorktreeResult>>();
 
 // Checks GitHub for the workspace now, or joins the check already running: fetches and fast-forwards its worktree
 // (git.ts openWorktree) and reads its PR, mirroring its review threads (ADR 0037). Emits github when either changed.
 export function checkGitHub(db: Db, workspaceId: number): Promise<Checked> {
   let running = checking.get(workspaceId);
   if (!running) {
-    running = check(db, workspaceId).finally(() => checking.delete(workspaceId));
+    let worktreeIn!: (w: WorktreeResult) => void;
+    opening.set(workspaceId, new Promise((done) => (worktreeIn = done)));
+    running = check(db, workspaceId, worktreeIn).finally(() => {
+      checking.delete(workspaceId);
+      opening.delete(workspaceId);
+    });
     checking.set(workspaceId, running);
   }
   return running;
 }
 
-async function check(db: Db, workspaceId: number): Promise<Checked> {
+async function check(
+  db: Db,
+  workspaceId: number,
+  worktreeIn: (w: WorktreeResult) => void,
+): Promise<Checked> {
   const before = checked.get(workspaceId);
   const opened = await openWorktree(db, workspaceId);
   const kept = before?.worktree.status === "ok" ? before.worktree : null;
@@ -41,6 +53,7 @@ async function check(db: Db, workspaceId: number): Promise<Checked> {
     opened.status !== "ok" && kept
       ? { ...kept, notice: "Could not check GitHub for new commits" }
       : opened;
+  worktreeIn(worktree);
   const prNumber = worktree.status === "ok" ? worktree.prNumber : null;
   let pr: PullRequestResult | null = null;
   if (prNumber !== null) {
@@ -57,9 +70,12 @@ async function check(db: Db, workspaceId: number): Promise<Checked> {
   return now;
 }
 
-// What the UI shows: the last check's, at once, or the first one's once it's in.
+// What the UI shows: the last check's, at once, or the first one's as soon as its worktree is open.
 export async function checkedWorktree(db: Db, workspaceId: number): Promise<WorktreeResult> {
-  return (checked.get(workspaceId) ?? (await checkGitHub(db, workspaceId))).worktree;
+  const last = checked.get(workspaceId);
+  if (last) return last.worktree;
+  const running = checkGitHub(db, workspaceId).then((c) => c.worktree);
+  return Promise.race([opening.get(workspaceId) ?? running, running]);
 }
 export async function checkedPullRequest(db: Db, workspaceId: number): Promise<PullRequestResult> {
   const { pr } = checked.get(workspaceId) ?? (await checkGitHub(db, workspaceId));
