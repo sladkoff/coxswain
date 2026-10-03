@@ -34,6 +34,10 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
   make the view again with the same title and range, of the code as it is now, keeping what still holds; it names
   the old range and `git diff <old head>` for what changed since. It's a new view, since a view stays pinned; the old
   one stays until removed.
+- **A view's table of contents marks a section reviewed**: right-click a section for _Reviewed_ (native menu,
+  checked when all its files are), the same as the section header's box.
+- **Home and End in text boxes** go to the start and end of the text, not of the line, as in a Mac text view; with
+  Shift they select (`TextArea`).
 - Tests: the watcher tells a commit from an edit and checks GitHub on a push (`watch.test.ts`); a change makes stale
   what it affects, scoped and unscoped (`queries.test.ts`). Checked in the running app on a copy of the database: the
   rail's titles stay while switching workspaces, focus brings a `worktree` change, switching back shows the cached

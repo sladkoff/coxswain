@@ -1095,6 +1095,7 @@ export function App() {
                       current={currentSection}
                       writing={!!canvasView?.writing}
                       onPick={pickSection}
+                      onReviewedChange={(i, on) => markSection(sections[i].files, on)}
                     />
                   )}
                   <div

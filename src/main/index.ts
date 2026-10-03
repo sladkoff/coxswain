@@ -868,6 +868,22 @@ app.whenReady().then(() => {
         }),
       ),
   );
+  // A section's context menu in a view's table of contents. Resolves with whether to mark its files reviewed, only on
+  // a click, like the menus above.
+  ipcMain.handle(
+    "menus:toc-section",
+    (e, reviewed: boolean) =>
+      new Promise<boolean>((resolve) =>
+        Menu.buildFromTemplate([
+          {
+            label: "Reviewed",
+            type: "checkbox",
+            checked: reviewed,
+            click: () => resolve(!reviewed),
+          },
+        ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
+      ),
+  );
   ipcMain.handle("prompts:list", () => listPrompts(db));
   ipcMain.handle("prompts:save", (_, title: string, body: string) => savePrompt(db, title, body));
   ipcMain.handle("prompts:delete", (_, id: number) => deletePrompt(db, id));

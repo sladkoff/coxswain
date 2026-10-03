@@ -28,6 +28,21 @@ export function TextArea({
       {...props}
       onKeyDown={(e) => {
         if (e.key === "Escape") onCancel?.();
+        // Home and End go to the start and end of the text, as in a Mac text view, not of the line; with Shift, select.
+        if ((e.key === "Home" || e.key === "End") && !e.metaKey && !e.ctrlKey && !e.altKey) {
+          e.preventDefault();
+          const t = e.currentTarget;
+          const to = e.key === "Home" ? 0 : t.value.length;
+          const from = t.selectionDirection === "backward" ? t.selectionEnd : t.selectionStart;
+          if (e.shiftKey)
+            t.setSelectionRange(
+              Math.min(from, to),
+              Math.max(from, to),
+              to < from ? "backward" : "forward",
+            );
+          else t.setSelectionRange(to, to);
+          t.scrollTop = to ? t.scrollHeight : 0;
+        }
         if (e.key === "Enter" && (long ? e.metaKey : !e.shiftKey)) {
           e.preventDefault();
           onSubmit();

@@ -18,11 +18,12 @@ type Props = {
   current: number; // the section at the top of the canvas's scroll
   writing: boolean; // the view is being written
   onPick: (i: number) => void;
+  onReviewedChange: (i: number, on: boolean) => void; // marks all of a section's files, or unmarks them
 };
 
 // A view's table of contents, left of the canvas while a view shows: how many file diffs are reviewed in all, then
 // every section with how many of its file diffs are reviewed (✓ when all are) and the threads on them. The
-// section being read is marked; a click scrolls to it.
+// section being read is marked; a click scrolls to it, a right-click offers to mark it reviewed, as its header does.
 // ponytail: fixed width, no Splitter; make it resizable like the Navigator if titles get cut.
 export function ViewToc(props: Props) {
   const { sections, reviewed, reviewedFiles, entries, current, onPick } = props;
@@ -58,6 +59,10 @@ export function ViewToc(props: Props) {
           <button
             key={i}
             onClick={() => onPick(i)}
+            onContextMenu={async () => {
+              if (s.files.length)
+                props.onReviewedChange(i, await window.coxswain.showTocSectionMenu(done));
+            }}
             className={cn(
               "flex items-baseline gap-2 rounded px-1.5 py-1 text-left",
               selectable(i === current),

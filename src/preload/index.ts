@@ -372,6 +372,9 @@ const api = {
   showWorkspaceMenu: (): Promise<"remove"> => ipcRenderer.invoke("menus:workspace"),
   // A view chip's context menu; pending if dismissed.
   showViewChipMenu: (): Promise<"remove"> => ipcRenderer.invoke("menus:view-chip"),
+  // A view section's menu in the table of contents: Reviewed, checked when all its files are; resolves with the new state.
+  showTocSectionMenu: (reviewed: boolean): Promise<boolean> =>
+    ipcRenderer.invoke("menus:toc-section", reviewed),
   // A native confirmation before a destructive action: `action` names its button. True if confirmed.
   confirm: (c: { message: string; detail: string; action: string }): Promise<boolean> =>
     ipcRenderer.invoke("dialogs:confirm", c),

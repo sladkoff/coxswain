@@ -281,7 +281,7 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   the heading says why. On the canvas's left, a table of contents: how many embedded file diffs are
   reviewed in all with a bar, then every section with how many of its file diffs are reviewed (✓ when all are) and, if
   any, how many threads are on them, yours and the agent's (a muted speech bubble and the number). The section being read is marked as you scroll; a click jumps
-  to it. Explanations (labelled _Explanation_) and, with review,
+  to it, and a right-click offers _Reviewed_, which marks all of the section's files as its header's box does. Explanations (labelled _Explanation_) and, with review,
   findings (labelled _Finding_) are threads between the lines, which can be replied to like any other; they show only
   with their view. A view shows the changes as they were, local ones included (pinned to a snapshot, like a
   commit), and its _Reviewed_ ticks stay; once the worktree has moved on (new commits or edits), an amber bar says so. Picking a commit hides the view, and the other way round.
@@ -294,7 +294,7 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   chevron next to it picks another (_Claude Code_, _Codex_), which the session keeps. The chat shows its turns, with
   each tool the agent used as one line, and comments and reviews sent from the canvas as cards.
 
-  The composer is one box at the bottom: _Ask Codex…_ (Enter sends, Shift+Enter adds a line), and along its bottom
+  The composer is one box at the bottom: _Ask Codex…_ (Enter sends, Shift+Enter adds a line; Home and End go to the start and end of the text, as in every text box), and along its bottom
   an attachment button (paperclip) on the left, the agent picks (the model ✦ and the effort, each a button with a native menu of the agent's choices, kept per agent
   for all its sessions) and a round send button, greyed out while the box and attachments are empty. While a turn runs, _Working_ and a
   round stop button take its place, and the send button comes back beside them once something is typed or attached:
