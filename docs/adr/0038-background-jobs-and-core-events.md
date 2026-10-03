@@ -27,9 +27,10 @@ work is coming, and the app is young enough to settle one way of doing it.
    how the reply is read, and where an answer is stored. Two kinds: `files`, file summaries, stored in
    `file_summaries` by fingerprint; `conclusions`, thread conclusions, stored in `thread_conclusions` by the
    fingerprint of the thread's entries. A new kind is a spec; the engine, the table and Activity stay as they are.
-3. **The core has one event bus** (`src/core/events.ts`): whoever changes something in a workspace emits what changed
-   (`entries`, `worktree`, `transcript`, `sessions`, `view`) or that its worktree was `opened`. In memory, in order,
-   nothing stored. Adding an entry emits `entries` itself, in the core.
+3. **The core has one event bus** (`src/core/events.ts`): every write emits what it changed, in the core function that
+   makes it. In a workspace: `entries`, `worktree`, `transcript`, `sessions`, `view`, `reviewed`, `github` (a check of
+   GitHub found something new, [ADR 0030](0030-workspace-watcher.md)), or that its worktree was `opened`; outside
+   one: `projects`, `workspaces`, `settings`. In memory, in order, nothing stored.
 4. **Two things listen.** The main process forwards the changes to the window, which refetches
    ([ADR 0017](0017-data-fetching-with-tanstack-query.md)). `src/core/background.ts` starts the jobs that follow from
    an event, and is the one place that says what runs when: `opened` and `worktree` summarise the committed changes
@@ -57,8 +58,6 @@ work is coming, and the app is young enough to settle one way of doing it.
 
 ## Consequences
 
-- A change to entries the UI makes itself and tells nobody (resolve, edit, delete) emits no core event; conclusions
-  of such a thread are written when Submit Review opens. Emitting from those writes too is the next step.
 - Every changed thread with more than the user's one comment costs a model run, submitted or not, unless work ahead
   is off.
 - `summary_jobs` became `jobs` (a migration); a job has a `kind`, and its count is `items`, not `files`.

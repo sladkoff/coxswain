@@ -7,6 +7,7 @@ import { delimiter, join } from "node:path";
 import { Readable, Writable } from "node:stream";
 import * as acp from "@agentclientprotocol/sdk";
 import type { Db } from "./db";
+import { emit } from "./events.ts";
 import {
   type Attachment,
   type AttachmentPreview,
@@ -886,11 +887,13 @@ export async function listAgentSessions(db: Db, workspaceId: number): Promise<Ag
 
 // The session was used: picked in the agent pane or sent a message, so it's the workspace's current one.
 export async function pickAgentSession(db: Db, agentSessionId: string) {
-  await db
+  const row = await db
     .updateTable("agent_sessions")
     .set({ used_at: new Date().toISOString() })
     .where("agent_session_id", "=", agentSessionId)
-    .execute();
+    .returning("workspace_id")
+    .executeTakeFirst();
+  if (row) emit({ workspaceId: row.workspace_id, what: "sessions" });
 }
 
 // The agent picks the session ID (ADR 0018, 6). agent: the one picked for it, kept for the next new session; without
@@ -902,6 +905,7 @@ export async function startAgentSession(
   workspaceId: number,
   agent?: Agent,
 ): Promise<AgentSession> {
+  const picked = !!agent;
   if (agent) await saveSetting(db, "agent", agent);
   agent ??= await newSessionAgent(db);
   const cwd = await readyWorktree(db, workspaceId);
@@ -923,6 +927,8 @@ export async function startAgentSession(
     })
     .returning(columns)
     .executeTakeFirstOrThrow();
+  emit({ workspaceId, what: "sessions" });
+  if (picked) emit({ what: "settings" }); // the agent a new session gets
   return { ...row, current: true } as AgentSession;
 }
 
@@ -979,8 +985,9 @@ export async function listAgentPicks(
 }
 
 // The user's pick of model or effort for an agent's sessions, from the next turn on.
-export function setAgentPick(db: Db, agent: Agent, pick: Pick, value: string) {
-  return saveSetting(db, `agent.${agent}.${pick}`, value);
+export async function setAgentPick(db: Db, agent: Agent, pick: Pick, value: string) {
+  await saveSetting(db, `agent.${agent}.${pick}`, value);
+  emit({ what: "settings" });
 }
 
 async function agentPicks(db: Db, agent: Agent): Promise<Picks> {

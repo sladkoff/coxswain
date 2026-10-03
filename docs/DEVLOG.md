@@ -3,6 +3,47 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-10-03 — Freshness: the core keeps the workspace on screen fresh
+
+### What works
+
+- **The core checks GitHub, not the UI** ([ADR 0030](adr/0030-workspace-watcher.md), revised). `watch.ts` checks the
+  workspace on screen when it shows, every minute, on window focus, right after a push, a new PR, a posted review or a
+  change in the PR panel, and on a push from anywhere on this machine: every 3 s it reads HEAD and the branch's
+  `origin/` ref, and that ref moving without a check is a push (an agent's or a terminal's too), checked at once. A
+  check fetches, fast-forwards, reads the PR and mirrors its threads, keeps what it found (the last good result
+  offline, with a notice) and emits `github` when something changed. `openWorktree` and `readPullRequest` are now
+  pure reads of that; the UI's 60 s and 120 s intervals and `openedBefore` query are gone. "Not pushed" marks, CI dots
+  and the PR panel catch up within seconds of an agent pushing, instead of up to two minutes.
+- **Window focus works.** TanStack listened only for the page being hidden, which a window behind another isn't, so
+  GitHub reads were never refetched on coming back. Focus is now the window's (`focusManager`), and the main process's
+  `focus` event rereads the worktree and checks GitHub.
+- **Every core write emits** ([ADR 0017](adr/0017-data-fetching-with-tanstack-query.md),
+  [ADR 0038](adr/0038-background-jobs-and-core-events.md)). Edit, resolve and delete an entry, remove a view, toggle
+  Reviewed, open or remove a workspace or project, a workspace finding its PR, picking or starting an agent session,
+  and settings (summary settings, prompts, agent picks, comment to agent) emit from the core function. New events:
+  `reviewed`, `github`, and outside a workspace `projects`, `workspaces`, `settings`. The UI's hand-made
+  invalidations and `changed(…)` calls are gone; `affects` in `queries.ts` is the one map of what goes stale. Thread
+  conclusions now follow resolves, edits and deletes too.
+- **The sidebar no longer flashes.** Adding or removing a workspace, or a branch workspace finding its PR, changed
+  the PR titles query's key and dropped every row back to `#N` with an "Open" icon until GitHub answered; a failed
+  refetch did the same. The rail now keeps the titles shown until the new ones are in, and keeps them when GitHub
+  fails.
+- Tests: the watcher tells a commit from an edit and checks GitHub on a push (`watch.test.ts`); a change makes stale
+  what it affects, scoped and unscoped (`queries.test.ts`). Checked in the running app on a copy of the database: the
+  rail's titles stay while switching workspaces, focus brings a `worktree` change, switching back shows the cached
+  check at once.
+
+### Tech debt
+
+- After launch the sidebar shows PR numbers until GitHub answers: titles aren't stored
+  ([ADR 0005](adr/0005-local-data-storage.md)).
+- Uncommitted edits made during an agent turn show when the turn ends or on window focus, not as they happen
+  (ADR 0030, deliberate: the diff would redraw every few seconds).
+- One more GitHub read a minute while the window is in the background: the PR read used to pause then.
+- Found while checking, not new: a merged PR whose branch was deleted on GitHub can't be opened (`couldn't find remote
+ref`); the canvas says _Loading…_ for good.
+
 ## 2026-10-01 — The PR on GitHub: threads, PR panel, checks, posting (#3)
 
 ### What works

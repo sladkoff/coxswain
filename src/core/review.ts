@@ -11,6 +11,7 @@ import {
   type TurnResult,
 } from "./agents";
 import type { Db } from "./db";
+import { emit } from "./events.ts";
 import {
   addEntry,
   columns,
@@ -26,21 +27,41 @@ import { prOf } from "./pull-requests.ts";
 
 export { addNote, listEntries, type NewEntry, type ReviewEntry } from "./entries.ts";
 
+// Each write emits entries for its workspace (ADR 0038), so whatever shows the thread refetches.
+const changedIn = (row: { workspace_id: number } | undefined) =>
+  row && emit({ workspaceId: row.workspace_id, what: "entries" });
+
 export async function editEntry(db: Db, id: number, body: string) {
-  await db.updateTable("entries").set({ body: body.trim() }).where("id", "=", id).execute();
+  changedIn(
+    await db
+      .updateTable("entries")
+      .set({ body: body.trim() })
+      .where("id", "=", id)
+      .returning("workspace_id")
+      .executeTakeFirst(),
+  );
 }
 
 // Resolves a thread (its first entry), or reopens it.
 export async function resolveThread(db: Db, id: number, resolved: boolean) {
-  await db
-    .updateTable("entries")
-    .set({ resolved_at: resolved ? new Date().toISOString() : null })
-    .where("id", "=", id)
-    .execute();
+  changedIn(
+    await db
+      .updateTable("entries")
+      .set({ resolved_at: resolved ? new Date().toISOString() : null })
+      .where("id", "=", id)
+      .returning("workspace_id")
+      .executeTakeFirst(),
+  );
 }
 
 export async function deleteEntry(db: Db, id: number) {
-  await db.deleteFrom("entries").where("id", "=", id).execute();
+  changedIn(
+    await db
+      .deleteFrom("entries")
+      .where("id", "=", id)
+      .returning("workspace_id")
+      .executeTakeFirst(),
+  );
 }
 
 // The workspace's current agent session, the agent pane's: the one last used, or a new one if it has none. Questions are
@@ -238,6 +259,7 @@ export async function setCommentToAgent(db: Db, toAgent: boolean) {
     .values({ key: "comment.to-agent", value })
     .onConflict((oc) => oc.column("key").doUpdateSet({ value }))
     .execute();
+  emit({ what: "settings" });
 }
 
 // A failed check, to the workspace's current agent session: its name and what it says, and for a GitHub Actions job

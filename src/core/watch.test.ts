@@ -12,7 +12,8 @@ const temp = mkdtempSync(join(os.tmpdir(), "coxswain-watch-"));
 const home = mock.method(os, "homedir", () => temp);
 syncBuiltinESMExports();
 const { openWorktree } = await import("./git.ts");
-const { onHeadMoved, watchLimits, watchWorkspace } = await import("./watch.ts");
+const { onEvent } = await import("./events.ts");
+const { checkGitHub, watchLimits, watchWorkspace } = await import("./watch.ts");
 home.mock.restore();
 syncBuiltinESMExports();
 const originalPath = process.env.PATH;
@@ -39,7 +40,7 @@ const git = (cwd: string, ...args: string[]) =>
     },
   }).trim();
 
-test("the watcher tells when HEAD moves, not when files change", async (t) => {
+test("the watcher tells when HEAD moves, not when files change, and checks GitHub on a push", async (t) => {
   const repo = join(temp, "coxswain/repos/test/repo");
   mkdirSync(repo, { recursive: true });
   git(repo, "init", "-q", "-b", "main");
@@ -67,18 +68,24 @@ test("the watcher tells when HEAD moves, not when files change", async (t) => {
   assert.equal((await openWorktree(db, 1)).status, "ok");
   const worktree = join(temp, "coxswain/worktrees/test/repo/branch-feature");
   const changes: string[] = [];
-  const off = onHeadMoved((id) => changes.push(`${id}`));
+  const off = onEvent((e) => "workspaceId" in e && changes.push(`${e.workspaceId} ${e.what}`));
   t.after(() => (off(), watchWorkspace(db, null)));
   watchWorkspace(db, 1);
+  await checkGitHub(db, 1); // joins the check watching starts
   const until = async (want: string) => {
     for (let i = 0; i < 100 && !changes.includes(want); i++)
       await new Promise((r) => setTimeout(r, 20));
     assert.ok(changes.includes(want), `saw ${want} (${changes.join(", ")})`);
   };
-  await new Promise((r) => setTimeout(r, 60)); // the first check only sets what's there
+  await new Promise((r) => setTimeout(r, 60)); // the first look only sets what's there
+  assert.ok(!changes.includes("1 github"), "the first check has nothing to compare with");
   writeFileSync(join(worktree, "a.ts"), "export const a = 2;\n");
   await new Promise((r) => setTimeout(r, 100));
-  assert.deepEqual(changes, [], "an uncommitted edit isn't a move");
+  assert.ok(!changes.includes("1 worktree"), "an uncommitted edit isn't a move");
   git(worktree, "commit", "-qam", "local");
-  await until("1");
+  await until("1 worktree");
+  assert.ok(!changes.includes("1 github"), "a commit isn't a push");
+  // A push moves the branch's origin/ ref; the next look checks GitHub, which finds the new head.
+  git(worktree, "update-ref", "refs/remotes/origin/feature", "HEAD");
+  await until("1 github");
 });

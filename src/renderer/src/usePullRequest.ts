@@ -3,7 +3,7 @@ import { useEffect, useMemo } from "react";
 import type { ChangedFile, GitProblem } from "../../core/git";
 import type { GitHubProblem, PullRequestDetails } from "../../core/github";
 import type { Workspace } from "../../core/workspaces";
-import { core, queryClient } from "./queries";
+import { core } from "./queries";
 
 export type PullRequestData = {
   changed: ChangedFile[] | null;
@@ -21,33 +21,27 @@ export type PullRequestData = {
 };
 
 // What the Navigator and Viewer share about the current workspace: its worktree (cloned and created on first
-// open, ADR 0008) and what differs from its merge base. The changes reload when the core says the worktree
-// changed, e.g. after an agent turn; what's on GitHub is checked again after a minute, on window focus.
+// open, ADR 0008) and what differs from its merge base. Everything reloads when the core says it changed: the
+// worktree after an agent turn or when HEAD moves, what's on GitHub when its check found something new (ADR 0030).
 export function usePullRequest(workspace: Workspace | undefined): PullRequestData {
   const id = workspace?.id ?? 0;
-  // Show a worktree opened before right away, then check GitHub and fetch in the background.
-  const before = useQuery({ ...core("openedBefore", id), enabled: !!workspace }).data;
+  // ADR 0030: the core keeps the workspace on screen fresh, and checks GitHub for it at once.
+  useEffect(() => {
+    if (!workspace) return;
+    void window.coxswain.watchWorkspace(id);
+    return () => void window.coxswain.watchWorkspace(null);
+  }, [id]);
+  // What the core's last check found, at once when it has checked before, else once the first check is in.
   const opened = useQuery({ ...core("openWorktree", id), enabled: !!workspace });
   const w = opened.data;
-  const at = w?.status === "ok" ? w : before?.status === "ok" ? before : null;
+  const at = w?.status === "ok" ? w : null;
   // Kept while head and merge base stay: a new object would reset what depends on it, e.g. the commit picked.
   const commits = useMemo(
     () => at && { head: at.head, mergeBase: at.mergeBase },
     [at?.head, at?.mergeBase],
   );
-  // A branch workspace found its PR: the sidebar names it by the PR now.
   const prNumber = w?.status === "ok" ? w.prNumber : undefined;
-  useEffect(() => {
-    if (workspace && prNumber !== undefined && prNumber !== workspace.prNumber)
-      void queryClient.invalidateQueries({ queryKey: ["listWorkspaces", workspace.projectId] });
-  }, [prNumber, workspace?.prNumber]);
   const ready = !!workspace && !!commits;
-  // ADR 0030: the core watches the workspace on screen for its HEAD moving.
-  useEffect(() => {
-    if (!ready) return;
-    void window.coxswain.watchWorkspace(id);
-    return () => void window.coxswain.watchWorkspace(null);
-  }, [ready, id]);
   const changed = useQuery({
     ...core("listChangedFiles", id, commits?.mergeBase ?? ""),
     enabled: ready,
@@ -63,19 +57,13 @@ export function usePullRequest(workspace: Workspace | undefined): PullRequestDat
     enabled: ready && (prNumber ?? workspace?.prNumber ?? null) !== null,
   }).data;
   const snapshot = snapshotQuery.data;
-  // Offline or signed out: keep showing the worktree, and say it may be out of date.
-  const unchecked = opened.isError || (w && w.status !== "ok" && before?.status === "ok");
   return {
     changed: changed?.status === "ok" ? changed.files : null,
     commits,
     local: local?.status === "ok" ? local.files : null,
     snapshot: snapshot?.status === "ok" ? snapshot.sha : null,
     snapshotReady: snapshotQuery.isSuccess || snapshotQuery.isError,
-    notice: unchecked
-      ? "Could not check GitHub for new commits"
-      : w?.status === "ok"
-        ? w.notice
-        : null,
+    notice: at?.notice ?? null, // offline, the core keeps the last check's and says so here
     problem:
       w && w.status !== "ok" && !commits ? w : changed && changed.status !== "ok" ? changed : null,
     details: details?.status === "ok" ? details : null,

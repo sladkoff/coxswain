@@ -56,9 +56,7 @@ import {
   listChangedFiles,
   listCommits,
   listWorktreeFiles,
-  openedBefore,
   openPullRequest,
-  openWorktree,
   push,
   readFileAt,
   readWorktreeFile,
@@ -66,7 +64,13 @@ import {
   uncommitted,
 } from "../core/git";
 import { type CodeAt, findDefinitions, findUsages, stopLanguageServers } from "../core/lsp";
-import { onHeadMoved, watchWorkspace } from "../core/watch";
+import {
+  checkGitHub,
+  checkedPullRequest,
+  checkedWorktree,
+  watchWorkspace,
+  windowFocused,
+} from "../core/watch";
 import {
   listViews,
   onViewChange,
@@ -94,7 +98,6 @@ import {
   postReview,
   type PullRequestChange,
   type PullRequestRef,
-  readPullRequest,
   type ReviewPost,
 } from "../core/pull-requests";
 import { listProjects, openProject } from "../core/projects";
@@ -174,6 +177,8 @@ function createWindow() {
     webPreferences: { preload: join(__dirname, "../preload/index.js") },
   });
   win.once("ready-to-show", () => win.show());
+  // ADR 0030: coming back to the window rereads the worktree and checks GitHub.
+  win.on("focus", windowFocused);
   // Back and Forward before the page sees the key: the file tree takes ⌥⌘← and ⌥⌘→ for itself, so the menu's
   // accelerators never fire while it has focus.
   win.webContents.on("before-input-event", (event, input) => {
@@ -407,27 +412,28 @@ app.whenReady().then(() => {
     await removeWorkspace(db, workspaceId);
   });
   ipcMain.handle("git:clone", (_, projectId: number) => cloneProject(db, projectId));
-  ipcMain.handle("git:opened-before", (_, workspaceId: number) => openedBefore(db, workspaceId));
-  ipcMain.handle("git:open-worktree", async (_, workspaceId: number) => {
-    const opened = await openWorktree(db, workspaceId);
-    if (opened.status === "ok") emit({ workspaceId, what: "opened" });
-    return opened;
-  });
-  // ADR 0030: the workspace on screen is watched. Its HEAD moving is a change to the worktree (commits, the diff).
+  // ADR 0030: what the last check of GitHub found, or the first one's; the core checks again on its own.
+  ipcMain.handle("git:open-worktree", (_, workspaceId: number) => checkedWorktree(db, workspaceId));
+  // The workspace on screen is watched: its HEAD, what's pushed of it, and GitHub.
   ipcMain.handle("workspaces:watch", (_, workspaceId: number | null) =>
     watchWorkspace(db, workspaceId),
   );
-  onHeadMoved((workspaceId) => emit({ workspaceId, what: "worktree" }));
   ipcMain.handle("git:commits", (_, workspaceId: number, mergeBase: string) =>
     listCommits(db, workspaceId, mergeBase),
   );
   ipcMain.handle("git:branches", (_, projectId: number) => listBranches(db, projectId));
   ipcMain.handle("git:snapshot", (_, workspaceId: number) => snapshot(db, workspaceId));
   ipcMain.handle("git:uncommitted", (_, workspaceId: number) => uncommitted(db, workspaceId));
-  ipcMain.handle("git:push", (_, workspaceId: number) => push(db, workspaceId));
+  // What went to GitHub is checked at once, not at the next look.
+  ipcMain.handle("git:push", async (_, workspaceId: number) => {
+    const pushed = await push(db, workspaceId);
+    await checkGitHub(db, workspaceId).catch(() => {});
+    return pushed;
+  });
   ipcMain.handle("git:open-pull-request", async (_, workspaceId: number) => {
     const pr = await openPullRequest(db, workspaceId);
     if (pr.status === "ok") void shell.openExternal(pr.url);
+    await checkGitHub(db, workspaceId).catch(() => {});
     return pr;
   });
   ipcMain.handle("git:changed-files", (_, workspaceId: number, mergeBase: string, head?: string) =>
@@ -572,19 +578,23 @@ app.whenReady().then(() => {
     emit({ workspaceId, what: "transcript" });
     return result;
   });
-  // ADR 0037: the workspace's PR for its panel, its review threads mirrored into entries on the way.
-  ipcMain.handle("github:pull-request", async (e, workspaceId: number) => {
-    const { pr, changed: synced } = await readPullRequest(db, workspaceId);
-    if (synced) emit({ workspaceId, what: "entries" });
-    return pr;
-  });
+  // ADR 0037: the workspace's PR for its panel, as the last check found it; checking mirrors its review threads.
+  ipcMain.handle("github:pull-request", (_, workspaceId: number) =>
+    checkedPullRequest(db, workspaceId),
+  );
   ipcMain.handle("github:post-review", async (e, workspaceId: number, post: ReviewPost) => {
     const result = await postReview(db, workspaceId, post);
     emit({ workspaceId, what: "entries" }); // what got posted, also halfway
+    await checkGitHub(db, workspaceId).catch(() => {});
     return result;
   });
-  ipcMain.handle("github:change-pr", (_, pr: PullRequestRef, change: PullRequestChange) =>
-    changePullRequest(pr, change),
+  ipcMain.handle(
+    "github:change-pr",
+    async (_, workspaceId: number, pr: PullRequestRef, change: PullRequestChange) => {
+      const changed = await changePullRequest(pr, change);
+      await checkGitHub(db, workspaceId).catch(() => {});
+      return changed;
+    },
   );
   // A failed check to the agent pane's session; the reply streams as agents:entry, like Send to Agent's.
   ipcMain.handle("github:send-check", async (e, workspaceId: number, check: Check) => {

@@ -9,7 +9,6 @@ import { cn, divider, muted } from "./components/styles";
 import { ErrorText } from "./components/text";
 import { byAgent, count } from "./format";
 import { SubmitReviewDialog } from "./SubmitReview";
-import { changed } from "./queries";
 import type { Turn } from "./Viewer";
 
 type Props = {
@@ -113,10 +112,7 @@ export function StatusBar(props: Props) {
                     replies={props.entries.filter((e) => e.parentId === t.id)}
                     answering={!!props.turns[t.id]?.running}
                     onClick={() => props.onViewThread(t.id)}
-                    onResolve={async (resolved) => {
-                      await window.coxswain.resolveThread(t.id, resolved);
-                      changed({ workspaceId: props.workspaceId, what: "entries" });
-                    }}
+                    onResolve={(resolved) => window.coxswain.resolveThread(t.id, resolved)}
                   />
                 ))}
               </div>

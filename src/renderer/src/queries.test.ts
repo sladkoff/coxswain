@@ -7,6 +7,8 @@ let read = Promise.withResolvers<SessionState>();
 Object.defineProperty(globalThis, "window", {
   configurable: true,
   value: {
+    addEventListener: () => {},
+    removeEventListener: () => {},
     coxswain: {
       onChanged: () => () => {},
       onJobs: () => () => {},
@@ -17,7 +19,7 @@ Object.defineProperty(globalThis, "window", {
     },
   },
 });
-const { core, queryClient } = await import("./queries.ts");
+const { changed, core, queryClient } = await import("./queries.ts");
 after(() => {
   queryClient.clear();
   Reflect.deleteProperty(globalThis, "window");
@@ -54,4 +56,26 @@ test("a delayed IPC read cannot erase streamed text, permission or turn completi
   onState("session", done);
   onState("session", live);
   assert.deepEqual(queryClient.getQueryData(query.queryKey), done);
+});
+
+test("a change makes stale what it affects: in its workspace, but for the unscoped; everywhere, outside one", async () => {
+  const seed = (key: unknown[]) => queryClient.setQueryData(key, {});
+  const stale = (key: unknown[]) => queryClient.getQueryState(key)?.isInvalidated ?? false;
+  const keys = {
+    here: ["openWorktree", 1],
+    there: ["openWorktree", 2],
+    titles: ["listPullRequestTitles", "owner", "name", [7]],
+    entries: ["listEntries", 1],
+    prompts: ["listPrompts"],
+    picks: ["listAgentPicks", 2, "claude"],
+  };
+  Object.values(keys).forEach(seed);
+  await changed({ workspaceId: 1, what: "github" });
+  assert.equal(stale(keys.here), true);
+  assert.equal(stale(keys.there), false);
+  assert.equal(stale(keys.titles), true);
+  assert.equal(stale(keys.entries), false);
+  await changed({ what: "settings" });
+  assert.equal(stale(keys.prompts), true);
+  assert.equal(stale(keys.picks), true);
 });

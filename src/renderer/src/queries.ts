@@ -1,11 +1,24 @@
-import { QueryClient, queryOptions } from "@tanstack/react-query";
+import { focusManager, QueryClient, queryOptions } from "@tanstack/react-query";
 import type { Changed, CoxswainApi } from "../../preload";
 import type { SessionState } from "../../core/session-state";
 
 // Every read from the core goes through TanStack Query (ADR 0017). Core data is stale at once but only refetched
-// when a pane mounts or the core says it changed; GitHub's is refetched after a minute, on window focus.
+// when a pane mounts or the core says it changed: the core keeps the workspace on screen fresh, GitHub included
+// (ADR 0030). The project's lists from GitHub are refetched after a minute, on window focus.
 export const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } },
+});
+
+// Focus is the window's: TanStack only listens for the page being hidden, which a window behind another isn't.
+focusManager.setEventListener((focused) => {
+  const on = () => focused(true);
+  const off = () => focused(false);
+  window.addEventListener("focus", on);
+  window.addEventListener("blur", off);
+  return () => {
+    window.removeEventListener("focus", on);
+    window.removeEventListener("blur", off);
+  };
 });
 
 type Api = CoxswainApi;
@@ -14,26 +27,18 @@ type Reads = {
 }[keyof Api];
 
 const github = { staleTime: 60_000, refetchOnWindowFocus: true };
-type Extra = {
-  staleTime?: number;
-  refetchOnWindowFocus?: boolean;
-  refetchInterval?: number;
-  refetchIntervalInBackground?: boolean;
-};
+type Extra = { staleTime?: number; refetchOnWindowFocus?: boolean };
 const extra: Partial<Record<Reads, Extra>> = {
   readAgentState: { staleTime: Infinity },
   listAgentStatuses: { staleTime: Infinity }, // refetched when a status changes (below)
   listJobs: { staleTime: Infinity }, // the core pushes them (below)
   readFileAt: { staleTime: Infinity }, // a file at a commit never changes
-  // Asks GitHub for the PR's head and fetches it; again every 2 minutes while the workspace shows (ADR 0030).
-  openWorktree: { ...github, refetchInterval: 120_000, refetchIntervalInBackground: true },
   listPullRequests: github,
   listPullRequestTitles: github,
-  // ADR 0037: the PR panel's, and the review threads mirrored from it; every minute while the workspace shows.
-  readPullRequest: { ...github, refetchInterval: 60_000 },
 };
 // Offline or signed out: a GitHub read keeps what it fetched before. Throwing leaves the query's data as it was.
-const keepsOk = new Set<Reads>(["openWorktree", "readPullRequest"]);
+// The workspace's own (openWorktree, readPullRequest) are kept by the core.
+const keepsOk = new Set<Reads>(["listPullRequestTitles"]);
 
 // A core call as a query: its key is the call's name and arguments, so keys live here only.
 // Trailing undefined arguments are left out of the key, so an optional head given or not makes the same key.
@@ -68,7 +73,8 @@ export function core<K extends Reads>(name: K, ...args: Parameters<Api[K]>) {
   });
 }
 
-// The queries each kind of change makes stale, for the workspace it happened in.
+// The queries each kind of change makes stale: the only place that says so (ADR 0017). For a change in a workspace,
+// those of that workspace, but for the unscoped ones (keyed by something else); for one outside, all of them.
 const affects: Record<Changed["what"], Reads[]> = {
   entries: ["listEntries"],
   // Entries and Reviewed follow the code they're about (ADR 0014, 0015).
@@ -89,14 +95,28 @@ const affects: Record<Changed["what"], Reads[]> = {
   // An agent named a session.
   sessions: ["listAgentSessions"],
   view: ["listViews"],
+  reviewed: ["listReviewed"],
+  // ADR 0030: its PR or what's pushed moved; the sidebar shows the PR's title and state too.
+  github: ["openWorktree", "readPullRequest", "listPullRequestTitles"],
+  projects: ["listProjects"],
+  workspaces: ["listWorkspaces"],
+  settings: [
+    "getSummarySettings",
+    "listPrompts",
+    "getCommentToAgent",
+    "listAgentPicks",
+    "newSessionAgent",
+  ],
 };
+const unscoped = new Set<Reads>(["listPullRequestTitles"]);
 
 // Refetches what's on screen and marks the rest stale. Resolves once what's on screen is in.
 // Live agent state arrives separately, including for sessions whose panes are absent.
-export const changed = ({ workspaceId, what }: Changed) =>
+export const changed = (change: Changed) =>
   queryClient.invalidateQueries({
     predicate: ({ queryKey: [name, id] }) =>
-      affects[what].includes(name as Reads) && id === workspaceId,
+      affects[change.what].includes(name as Reads) &&
+      (!("workspaceId" in change) || unscoped.has(name as Reads) || id === change.workspaceId),
   });
 
 window.coxswain.onChanged(changed);

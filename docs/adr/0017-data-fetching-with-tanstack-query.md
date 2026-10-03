@@ -1,6 +1,6 @@
 # 17. Data fetching with TanStack Query and change events from the core
 
-Date: 2026-09-25
+Date: 2026-09-25, revised 2026-10-03
 
 ## Status
 
@@ -25,21 +25,34 @@ apps.
 
 1. **TanStack Query in the renderer** for every read from the core. One `QueryClient` for the window. Query keys start
    with the core call's name and its arguments, e.g. `['listEntries', workspaceId, base, head]`.
-2. **Writes are mutations** that invalidate the queries they change when they succeed. Where a write is small and
-   certain (a note added, Reviewed toggled), the cache is updated right away and put back if the call fails.
-3. **The core says what changed.** When data changes outside a mutation from this window (an agent turn ends, a
-   question is answered, a guide group is described, the worktree changes), the core sends one IPC event,
-   `changed`, with the workspace and what changed, e.g. `{ workspaceId, what: 'entries' }`. The renderer maps it to
-   `invalidateQueries`. This replaces the `version` counters and reload callbacks.
+2. **Every write in the core says what it changed**, whoever made it: the UI, an agent's tool, a background job, a
+   check of GitHub. It emits a core event ([ADR 0038](0038-background-jobs-and-core-events.md)), which the main process
+   sends to the window as `changed`: what changed and, for a change in a workspace, which, e.g.
+   `{ workspaceId, what: 'entries' }`; or `{ what: 'settings' }` for one outside any. The UI never invalidates queries
+   itself. Where a write is small and certain (Reviewed toggled, a new workspace selected at once), the UI may update
+   the cache right away and put it back if the call fails; the core's event still follows.
+3. **One map says what a change makes stale** (`affects` in `queries.ts`): for each kind of change, the reads it
+   affects, in the workspace it happened in, or in all of them for a change outside one or for a read keyed by
+   something else (the sidebar's PR titles). A new read or a new write updates the map, not the screens.
 4. **Streams stay events.** The core's versioned agent-session snapshots arrive through `agents:state`, coalesced
    over 16 ms, and update the query cache for every session, even when its pane is absent. A delayed query response
    cannot overwrite a newer revision. Inline question replies keep their own events; `changed` still follows when
    a turn ends. Session state is read once on attachment if absent from the cache; it needs no transcript replay on
    pane remount ([ADR 0018](0018-agents-over-acp.md)).
-5. **Freshness per source.** Core data from SQLite and git: stale at once, but only refetched on a `changed` event or
-   when a pane mounts. GitHub: a `staleTime` of a minute, refetched when the window gains focus. This is the polling of
-   [ADR 0006](0006-github-integration.md) decision 7, done in the UI; ETags stay a core concern.
-6. **Nothing is persisted in the renderer.** The cache lives only while the window does (ADR 0005).
+5. **Freshness per source.** Every read from the core is stale at once, but refetched only on a `changed` event or
+   when a pane mounts; the UI holds no intervals. How fresh the source is, is the core's business:
+   - SQLite: at once, since every write emits.
+   - The worktree of the workspace on screen: HEAD within 3 s; uncommitted edits when an agent turn ends and when the
+     window gets focus ([ADR 0030](0030-workspace-watcher.md)).
+   - GitHub, for the workspace on screen: checked by the core every minute, on window focus, on a push from this
+     machine and after a change made from coxswain (ADR 0030).
+   - GitHub, for the project's lists (the sidebar's PR titles, New Workspace's PRs): read by the UI, with a
+     `staleTime` of a minute, refetched when the window gets focus. Focus is the window's `focus` and `blur`
+     (`focusManager`), not TanStack's default of the page being hidden.
+6. **A refetch never blanks what's shown.** A query whose key changes with what's listed keeps showing the last list
+   until the new one is in (`placeholderData`); a GitHub read that fails offline or signed out keeps what it read
+   before, whether the core keeps it (the workspace's) or the UI does (the project's lists).
+7. **Nothing is persisted in the renderer.** The cache lives only while the window does (ADR 0005).
 
 ## Alternatives considered
 
@@ -55,7 +68,9 @@ apps.
 ## Consequences
 
 - Switching back to a workspace or tab shows the cached data at once and refreshes behind it.
-- The core has to send `changed` wherever it changes data on its own. A missed one shows as stale data until the pane
-  remounts, never as wrong data after a mutation from the UI.
+- Every write in the core has to emit. A missed one shows as stale data until the pane remounts; it's fixed in the
+  core, where the write is, never with an invalidation in a screen.
+- After launch, the sidebar shows PR numbers until GitHub answers with titles: nothing from GitHub is stored
+  ([ADR 0005](0005-local-data-storage.md)).
 - Query keys are a second place where core call names live; a key helper per call keeps them in one place.
 - One more dependency in the renderer.

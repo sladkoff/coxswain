@@ -23,7 +23,7 @@ import { NewWorkspace } from "./NewWorkspace";
 import { Onboarding } from "./Onboarding";
 import { Projects } from "./Projects";
 import { defaultViewId, threadLocation, type CanvasSearch } from "./canvas-state";
-import { changed, core, markReviewed as mark, queryClient } from "./queries";
+import { core, markReviewed as mark, queryClient } from "./queries";
 import { Settings } from "./Settings";
 import { workspaceLabel } from "./format";
 import { Setup } from "./Setup";
@@ -59,7 +59,6 @@ export function App() {
   const current = projects?.[0]; // listed most recently opened first
   const selectProject = async (fullName: string) => {
     await window.coxswain.openProject(fullName);
-    await queryClient.invalidateQueries({ queryKey: ["listProjects"] });
     close();
   };
 
@@ -97,7 +96,10 @@ export function App() {
   };
   const opening = async (open: Promise<Workspace>) => {
     const workspace = await open;
-    await queryClient.invalidateQueries({ queryKey: ["listWorkspaces", current?.id] });
+    // In the list at once, so it's selected; the core's change brings the rest.
+    queryClient.setQueryData(core("listWorkspaces", workspace.projectId).queryKey, (before = []) =>
+      before.some((w) => w.id === workspace.id) ? before : [...before, workspace],
+    );
     await selectWorkspace(workspace.id);
   };
   const newPullWorkspace = (p: PullRequest) =>
@@ -116,7 +118,6 @@ export function App() {
     });
     if (!ok) return;
     await window.coxswain.removeWorkspace(w.id);
-    await queryClient.invalidateQueries({ queryKey: ["listWorkspaces", w.projectId] });
   };
 
   // ADR 0008: clone as soon as a project is current; opening a workspace waits for it.
@@ -154,13 +155,6 @@ export function App() {
   const canBack = location.state.__TSR_index > 0;
   const canForward = location.state.__TSR_index < router.history.length - 1;
   useEffect(() => window.coxswain.setNavigation(canBack, canForward), [canBack, canForward]);
-  // ADR 0030: coming back to the window rereads the worktree, for edits made in an editor or terminal meanwhile.
-  useEffect(() => {
-    if (!currentWorkspace) return;
-    const reread = () => void changed({ workspaceId: currentWorkspace.id, what: "worktree" });
-    window.addEventListener("focus", reread);
-    return () => window.removeEventListener("focus", reread);
-  }, [currentWorkspace?.id]);
   // Initial project load (or removal of the selected workspace) uses its last opened workspace.
   useEffect(() => {
     if (currentWorkspace && search.ws !== currentWorkspace.id)
@@ -176,11 +170,7 @@ export function App() {
   }, [search, currentWorkspace?.id]);
   useEffect(() => {
     if (!currentWorkspace) return;
-    void window.coxswain
-      .openWorkspace(currentWorkspace.id)
-      .then(() =>
-        queryClient.invalidateQueries({ queryKey: ["listWorkspaces", currentWorkspace.projectId] }),
-      );
+    void window.coxswain.openWorkspace(currentWorkspace.id);
   }, [currentWorkspace?.id]);
 
   const view: NavigatorView = s.view ?? "diffs";
@@ -420,7 +410,6 @@ export function App() {
         permission: t[id]?.permission ?? null,
       },
     }));
-    changed({ workspaceId: q.workspaceId, what: "entries" });
   }, []);
   // `opened` is a whole file picked in Files, shown on the canvas in place of the file diffs. Memoised: the Viewer
   // rereads when its Opened changes.
@@ -533,8 +522,6 @@ export function App() {
     });
     if (!ok) return;
     await window.coxswain.removeView(v.id);
-    await changed({ workspaceId: v.workspaceId, what: "view" });
-    await changed({ workspaceId: v.workspaceId, what: "entries" });
   };
   const newView = async () => {
     const picked = await window.coxswain.showNewViewMenu(viewRange);
@@ -571,9 +558,6 @@ export function App() {
   const [gitProblem, setGitProblem] = useState<string | null>(null);
   const pushed = async (w: Workspace, result: { status: string; message?: string }) => {
     setGitProblem(result.status === "ok" ? null : (result.message ?? `GitHub: ${result.status}`));
-    await queryClient.invalidateQueries({ queryKey: ["openWorktree", w.id] });
-    await queryClient.invalidateQueries({ queryKey: ["listWorkspaces", w.projectId] });
-    await changed({ workspaceId: w.id, what: "worktree" });
   };
   const push = async (w: Workspace) => {
     const ok = await window.coxswain.confirm({

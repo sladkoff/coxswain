@@ -13,7 +13,6 @@ import { cn, divider, muted } from "./components/styles";
 import { ErrorText } from "./components/text";
 import { count } from "./format";
 import { ProblemText } from "./PullRequest";
-import { queryClient } from "./queries";
 
 const eventLabels: Record<ReviewEvent, string> = {
   COMMENT: "Comment",
@@ -113,8 +112,6 @@ export function SubmitReviewDialog(props: {
       body,
     });
     setPosting(false);
-    // Also after a problem: what got posted before it is on GitHub.
-    await queryClient.invalidateQueries({ queryKey: ["readPullRequest", workspaceId] });
     if (r.status === "ok") props.onClose();
     else setProblem(r);
   };

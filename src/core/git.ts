@@ -619,6 +619,20 @@ export async function headCommit(db: Db, workspaceId: number): Promise<string> {
   return (await gitText(await openedWorktree(db, workspaceId), ["rev-parse", "HEAD"])).trim();
 }
 
+// Where the worktree's branch was on GitHub when last fetched or pushed (its origin/ ref, which a push moves whether
+// or not it set an upstream); null for a branch never pushed or a detached HEAD.
+export async function upstreamCommit(db: Db, workspaceId: number): Promise<string | null> {
+  const path = await openedWorktree(db, workspaceId);
+  try {
+    const branch = (await gitText(path, ["symbolic-ref", "--short", "-q", "HEAD"])).trim();
+    return (
+      await gitText(path, ["rev-parse", "--verify", "-q", `refs/remotes/origin/${branch}`])
+    ).trim();
+  } catch {
+    return null;
+  }
+}
+
 // One changed file's diff between two commits, as `git diff` prints it; a rename names both paths so it's found.
 export async function readFileDiff(
   db: Db,

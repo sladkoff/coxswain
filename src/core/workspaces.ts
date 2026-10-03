@@ -1,4 +1,5 @@
 import type { Db } from "./db";
+import { emit } from "./events.ts";
 
 // A workspace is a unit of work in a project (ADR 0028): a PR, or a branch started in coxswain, which gets a PR once
 // one is opened for it. Its worktree's path follows from its repository and its branch or PR number (git.ts
@@ -41,6 +42,7 @@ export async function openWorkspace(db: Db, workspaceId: number): Promise<void> 
     .set({ last_opened_at: now() })
     .where("id", "=", workspaceId)
     .execute();
+  emit({ what: "workspaces" });
 }
 
 // Adds the PR's workspace if it's new, and makes it the current one. A workspace on the PR's head branch becomes the
@@ -59,17 +61,20 @@ export async function openPullRequestWorkspace(
     .where("pr_number", "is", null)
     .returning(columns)
     .executeTakeFirst();
-  if (onBranch) return onBranch;
-  return db
-    .insertInto("workspaces")
-    .values({ project_id: projectId, pr_number: prNumber, last_opened_at: now() })
-    .onConflict((oc) =>
-      oc
-        .columns(["project_id", "pr_number"])
-        .doUpdateSet((eb) => ({ last_opened_at: eb.ref("excluded.last_opened_at") })),
-    )
-    .returning(columns)
-    .executeTakeFirstOrThrow();
+  const workspace =
+    onBranch ??
+    (await db
+      .insertInto("workspaces")
+      .values({ project_id: projectId, pr_number: prNumber, last_opened_at: now() })
+      .onConflict((oc) =>
+        oc
+          .columns(["project_id", "pr_number"])
+          .doUpdateSet((eb) => ({ last_opened_at: eb.ref("excluded.last_opened_at") })),
+      )
+      .returning(columns)
+      .executeTakeFirstOrThrow());
+  emit({ what: "workspaces" });
+  return workspace;
 }
 
 // Git's rules for a branch name (git check-ref-format --branch), the ones a typed name breaks; and a name git can't
@@ -84,7 +89,7 @@ export function branchNameProblem(name: string): string | null {
 
 // Adds a workspace on a branch, new or already on GitHub, and makes it the current one. Its worktree branches off
 // baseBranch when it's opened, unless the branch exists (git.ts openWorktree).
-export function openBranchWorkspace(
+export async function openBranchWorkspace(
   db: Db,
   projectId: number,
   branch: string,
@@ -95,7 +100,7 @@ export function openBranchWorkspace(
     branchNameProblem(baseBranch) ??
     (branch === baseBranch ? "The branch must differ from the one it starts from" : null);
   if (problem) throw new Error(problem);
-  return db
+  const workspace = await db
     .insertInto("workspaces")
     .values({
       project_id: projectId,
@@ -110,6 +115,8 @@ export function openBranchWorkspace(
     )
     .returning(columns)
     .executeTakeFirstOrThrow();
+  emit({ what: "workspaces" });
+  return workspace;
 }
 
 // A branch workspace's PR, once one is opened for its branch (here or on GitHub).
@@ -119,6 +126,7 @@ export async function setWorkspacePullRequest(db: Db, workspaceId: number, prNum
     .set({ pr_number: prNumber })
     .where("id", "=", workspaceId)
     .execute();
+  emit({ what: "workspaces" });
 }
 
 // The repository a workspace is about, and its PR or branch.
@@ -143,4 +151,5 @@ export async function getWorkspaceRepo(db: Db, workspaceId: number) {
 // worktree stays on disk; adding the PR or branch again adopts it (git.ts).
 export async function removeWorkspace(db: Db, workspaceId: number): Promise<void> {
   await db.deleteFrom("workspaces").where("id", "=", workspaceId).execute();
+  emit({ what: "workspaces" });
 }

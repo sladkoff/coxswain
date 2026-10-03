@@ -14,7 +14,6 @@ import { Card } from "./components/layout";
 import { cn, divider, muted } from "./components/styles";
 import { ErrorText, ProblemMessage, Prose } from "./components/text";
 import { ago } from "./format";
-import { queryClient } from "./queries";
 
 // The colour of a check's state, as a dot: on the PR panel, the canvas bar's PR chip and the Commits pane.
 export const checkColour: Record<CheckState, string> = {
@@ -82,20 +81,16 @@ const Side = ({
 export function PullRequestPanel(props: { workspaceId: number; pr: PullRequestDetails }) {
   const { pr, workspaceId } = props;
   const [problem, setProblem] = useState<Problem>(null);
-  const refresh = () =>
-    Promise.all([
-      queryClient.invalidateQueries({ queryKey: ["readPullRequest", workspaceId] }),
-      queryClient.invalidateQueries({ queryKey: ["listPullRequestTitles"] }),
-    ]);
   // A change on GitHub; true once made.
   const change = async (c: PullRequestChange) => {
     setProblem(null);
+    // The core checks GitHub after it, which refreshes the panel.
     const r = await window.coxswain.changePullRequest(
+      workspaceId,
       { id: pr.id, viewerId: pr.viewerId, head: pr.head },
       c,
     );
     if (r.status !== "ok") setProblem(r);
-    await refresh();
     return r.status === "ok";
   };
   return (

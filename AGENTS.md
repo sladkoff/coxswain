@@ -56,6 +56,11 @@ Keeping the docs current is part of every change, not a follow-up.
   ([ADR 0038](docs/adr/0038-background-jobs-and-core-events.md)): a `JobSpec` run by `src/core/jobs.ts`, so it is
   retried and shows in Activity, started from `src/core/background.ts` when the core emits a change
   (`src/core/events.ts`). No timers in the UI for the core's work, and no second runner.
+- **Every core write emits what it changed; the UI never invalidates queries itself**
+  ([ADR 0017](docs/adr/0017-data-fetching-with-tanstack-query.md)): the write calls `emit` from `src/core/events.ts`, and
+  `affects` in `src/renderer/src/queries.ts` is the one place that says which reads go stale. Data that changes outside
+  coxswain (git, GitHub) is watched by the core (`src/core/watch.ts`, [ADR 0030](docs/adr/0030-workspace-watcher.md)),
+  never polled by the UI.
 - **Diffs, files and trees use the Pierre libraries**
   ([ADR 0003](docs/adr/0003-diff-view-and-file-tree.md)), pinned to exact versions.
 - **Desktop conventions** from [ADR 0004](docs/adr/0004-styling-and-native-feel.md): native menus

@@ -15,7 +15,7 @@ import {
 } from "./components/icons";
 import { cn, divider, muted, noDrag, selectable, titleBar } from "./components/styles";
 import { workspaceLabel } from "./format";
-import { core, queryClient } from "./queries";
+import { core } from "./queries";
 
 type Props = {
   project: Project;
@@ -44,20 +44,21 @@ export function WorkspaceRail({
   onHide,
 }: Props) {
   const numbers = workspaces.flatMap((w) => (w.prNumber !== null ? [w.prNumber] : []));
+  // A new list of numbers keeps the titles shown until its own are in, so the rows don't flash back to numbers.
   const titles = useQuery({
     ...core("listPullRequestTitles", project.owner, project.name, numbers),
     enabled: numbers.length > 0,
+    placeholderData: (before, query) =>
+      query?.queryKey[1] === project.owner && query.queryKey[2] === project.name
+        ? before
+        : undefined,
   }).data;
   const statuses = useQuery(core("listAgentStatuses")).data ?? {};
   const shown = current?.id;
   useEffect(() => {
     if (shown === undefined) return;
-    const seen = () =>
-      window.coxswain
-        .seeAgentSessions(shown)
-        .then(() =>
-          queryClient.invalidateQueries({ queryKey: core("listAgentStatuses").queryKey }),
-        );
+    // Clearing "done" changes the session's state, which the core sends, and so its status (queries.ts).
+    const seen = () => window.coxswain.seeAgentSessions(shown);
     void seen();
     return () => void seen();
   }, [shown]);

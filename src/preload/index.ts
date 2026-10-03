@@ -57,9 +57,11 @@ export type ViewSettings = {
 export type RangePick = "all" | "pushed" | "unpushed" | "uncommitted" | "commits" | "turns";
 // How much each layer of the diff has, for the range menu: commits, and files for uncommitted.
 export type Layers = { pushed: number; unpushed: number; uncommitted: number };
-// What the core changed on its own, e.g. when an agent turn ends, so the UI refetches it (ADR 0017).
-// What the core changed, as it tells the UI (ADR 0038): its events, but for a worktree opening.
-export type Changed = CoreEvent & { what: Exclude<CoreEvent["what"], "opened"> };
+// What the core changed, as it tells the UI so it refetches (ADR 0017, 0038): its events, but for a worktree opening.
+type InWorkspace = Extract<CoreEvent, { workspaceId: number }>;
+export type Changed =
+  | Exclude<CoreEvent, InWorkspace>
+  | (InWorkspace & { what: Exclude<InWorkspace["what"], "opened"> });
 
 // The one interface between the UI and the core (ADR 0002).
 const api = {
@@ -78,8 +80,8 @@ const api = {
   ): Promise<PullRequestTitles> => ipcRenderer.invoke("github:pull-titles", owner, name, numbers),
   cloneProject: (projectId: number): Promise<CloneResult> =>
     ipcRenderer.invoke("git:clone", projectId),
-  openedBefore: (workspaceId: number): Promise<WorktreeResult | null> =>
-    ipcRenderer.invoke("git:opened-before", workspaceId),
+  // ADR 0030: what the workspace's worktree is on, as the core's last check of GitHub found it (the first check's
+  // the first time); the core checks again and says so with a github change.
   openWorktree: (workspaceId: number): Promise<WorktreeResult> =>
     ipcRenderer.invoke("git:open-worktree", workspaceId),
   // The branches to start a branch workspace from, and the default one.
@@ -233,7 +235,7 @@ const api = {
   // when the agent's turn ends.
   sendReview: (workspaceId: number, conclusions?: Conclusion[]): Promise<TurnResult> =>
     ipcRenderer.invoke("review:send-all", workspaceId, conclusions),
-  // ADR 0037: the workspace's PR for its panel; reading it mirrors its review threads into the entries.
+  // ADR 0037: the workspace's PR for its panel, as the core's last check found it.
   readPullRequest: (workspaceId: number): Promise<PullRequestResult> =>
     ipcRenderer.invoke("github:pull-request", workspaceId),
   // Posts the picked threads' conclusions as one review.
@@ -241,10 +243,11 @@ const api = {
     ipcRenderer.invoke("github:post-review", workspaceId, post),
   // The PR panel's changes on GitHub: description, a comment, assigning yourself, ready for review, merge.
   changePullRequest: (
+    workspaceId: number,
     pr: PullRequestRef,
     change: PullRequestChange,
   ): Promise<{ status: "ok" } | GitHubProblem> =>
-    ipcRenderer.invoke("github:change-pr", pr, change),
+    ipcRenderer.invoke("github:change-pr", workspaceId, pr, change),
   // A failed check to the agent pane's session; resolves when the agent's turn ends.
   sendCheck: (workspaceId: number, check: Check): Promise<TurnResult> =>
     ipcRenderer.invoke("github:send-check", workspaceId, check),
@@ -293,7 +296,7 @@ const api = {
     ipcRenderer.invoke("views:list", workspaceId),
   // Removes a view with its explanations and findings.
   removeView: (viewId: number): Promise<void> => ipcRenderer.invoke("views:remove", viewId),
-  // ADR 0030: watches the workspace on screen for its HEAD moving; null stops.
+  // ADR 0030: the core keeps the workspace on screen fresh (its HEAD, what's pushed, GitHub); null stops.
   watchWorkspace: (workspaceId: number | null): Promise<void> =>
     ipcRenderer.invoke("workspaces:watch", workspaceId),
   // How many of the workspace's committed file diffs have a file summary.

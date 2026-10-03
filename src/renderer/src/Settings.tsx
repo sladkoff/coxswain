@@ -8,7 +8,7 @@ import { ChevronDownIcon } from "./components/icons";
 import { Card, Screen } from "./components/layout";
 import { cn, muted } from "./components/styles";
 import { ErrorText, ProblemMessage } from "./components/text";
-import { core, queryClient } from "./queries";
+import { core } from "./queries";
 
 // workspaceId: the one on screen, whose worktree an agent is asked in for its models. newPrompt: opened from New View's
 // New Prompt…, so the new prompt's title has the focus.
@@ -80,7 +80,6 @@ function Summaries({ workspaceId }: { workspaceId?: number }) {
     } catch (e) {
       setError((e as Error).message);
     }
-    await queryClient.invalidateQueries({ queryKey: core("getSummarySettings").queryKey });
   };
   const choices = [
     { value: "", name: "The agent's default" },
@@ -162,7 +161,6 @@ function Prompts({ newPrompt }: { newPrompt?: boolean }) {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const refresh = () => queryClient.invalidateQueries({ queryKey: core("listPrompts").queryKey });
   const add = async () => {
     setError(null);
     try {
@@ -172,7 +170,6 @@ function Prompts({ newPrompt }: { newPrompt?: boolean }) {
     } catch (e) {
       setError((e as Error).message);
     }
-    await refresh();
   };
   const remove = async (id: number, name: string) => {
     const ok = await window.coxswain.confirm({
@@ -182,7 +179,6 @@ function Prompts({ newPrompt }: { newPrompt?: boolean }) {
     });
     if (!ok) return;
     await window.coxswain.deletePrompt(id);
-    await refresh();
   };
   return (
     <Card className="flex flex-col gap-3">

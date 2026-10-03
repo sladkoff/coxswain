@@ -1,4 +1,5 @@
 import type { Db } from "./db";
+import { emit } from "./events.ts";
 import { diffFingerprints } from "./git.ts";
 
 // Reviewed files and file diffs (glossary). Each is stored with the fingerprint of the file diff's contents when it was marked
@@ -55,4 +56,5 @@ export async function setReviewed(
       .where("path", "=", path)
       .where("fingerprint", "=", fingerprint)
       .execute();
+  emit({ workspaceId, what: "reviewed" });
 }

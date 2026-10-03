@@ -8,7 +8,7 @@ import { SendIcon } from "./components/icons";
 import { cn, divider, muted } from "./components/styles";
 import { Prose } from "./components/text";
 import { byAgent } from "./format";
-import { changed, core, queryClient } from "./queries";
+import { core, queryClient } from "./queries";
 import type { Ask, Turn } from "./Viewer";
 
 // The lines a new thread is on, picked in a file diff's gutter.
@@ -265,7 +265,6 @@ export function ThreadBox({
 export async function postEntry(e: NewEntry, toAgent: boolean, onAsk: Ask) {
   if (toAgent) return onAsk(e);
   await window.coxswain.addNote(e);
-  changed({ workspaceId: e.workspaceId, what: "entries" });
 }
 
 // A thread on the canvas, wired to the core: replies, the agent's turn, edit, resolve, delete and send.
@@ -278,7 +277,6 @@ export function EntryThread(props: {
 }) {
   const { root, onAsk } = props;
   const workspaceId = root.workspaceId;
-  const done = () => changed({ workspaceId, what: "entries" });
   return (
     <ThreadBox
       root={root}
@@ -289,9 +287,9 @@ export function EntryThread(props: {
       }
       onStop={() => window.coxswain.stopQuestion(root.id)}
       onAnswerPermission={(id, optionId) => props.onAnswerPermission(root.id, id, optionId)}
-      onEdit={(body) => window.coxswain.editEntry(root.id, body).then(done)}
-      onResolve={(resolved) => window.coxswain.resolveThread(root.id, resolved).then(done)}
-      onRemove={() => window.coxswain.deleteEntry(root.id).then(done)}
+      onEdit={(body) => window.coxswain.editEntry(root.id, body)}
+      onResolve={(resolved) => window.coxswain.resolveThread(root.id, resolved)}
+      onRemove={() => window.coxswain.deleteEntry(root.id)}
       onSend={() => onAsk({ workspaceId, threadId: root.id })}
     />
   );

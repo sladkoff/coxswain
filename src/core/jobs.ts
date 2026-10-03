@@ -1,4 +1,5 @@
 import type { Db } from "./db";
+import { emit } from "./events.ts";
 import { openedWorktree } from "./git.ts";
 import { getWorkspaceRepo } from "./workspaces.ts";
 
@@ -459,4 +460,5 @@ export async function setSummarySettings(db: Db, s: Partial<SummarySettings>) {
   }
   if (s.ahead !== undefined) await set("summaries.ahead", s.ahead ? "on" : "off");
   failedWith = null;
+  emit({ what: "settings" });
 }

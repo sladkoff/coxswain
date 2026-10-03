@@ -1,4 +1,5 @@
 import type { Db } from "./db";
+import { emit } from "./events.ts";
 
 // A project is a GitHub repository added to coxswain. Its clone's path follows from owner/name (git.ts), so it isn't stored.
 export type Project = { id: number; owner: string; name: string; lastOpenedAt: string };
@@ -11,10 +12,10 @@ export function listProjects(db: Db): Promise<Project[]> {
 }
 
 // Adds the project if it's new, and makes it the current one.
-export function openProject(db: Db, fullName: string): Promise<Project> {
+export async function openProject(db: Db, fullName: string): Promise<Project> {
   const [owner, name, ...rest] = fullName.split("/");
   if (!owner || !name || rest.length) throw new Error(`Not an owner/name: ${fullName}`);
-  return db
+  const project = await db
     .insertInto("projects")
     .values({ owner, name, last_opened_at: new Date().toISOString() })
     .onConflict((oc) =>
@@ -24,6 +25,8 @@ export function openProject(db: Db, fullName: string): Promise<Project> {
     )
     .returning(columns)
     .executeTakeFirstOrThrow();
+  emit({ what: "projects" });
+  return project;
 }
 
 export async function getProject(db: Db, id: number): Promise<Project> {

@@ -26,7 +26,7 @@ import {
 import { TextArea } from "./components/field";
 import { cn, divider, muted, noDrag, titleBar } from "./components/styles";
 import { count, shortDateTime } from "./format";
-import { changed, core, queryClient } from "./queries";
+import { core, queryClient } from "./queries";
 import { setAgentPane, useAgentPane } from "./agent-pane";
 
 export const agentNames: Record<Agent, string> = { claude: "Claude Code", codex: "Codex" };
@@ -211,9 +211,7 @@ export function Agents({ workspace, onViewThread, composerPrompt, onShowSidebar 
           agent={agent}
           onPick={(picked) => {
             patch({ picked, error: null });
-            void window.coxswain
-              .pickAgentSession(picked)
-              .then(() => changed({ workspaceId: workspace.id, what: "transcript" }));
+            void window.coxswain.pickAgentSession(picked);
           }}
         />
         <div className="flex-1" />
@@ -443,7 +441,6 @@ function AgentPickers({ workspaceId, agent }: { workspaceId: number; agent: Agen
       choices.findIndex((c) => c.value === current),
     );
     await window.coxswain.setAgentPick(agent, which, choices[n].value);
-    queryClient.invalidateQueries({ queryKey: query.queryKey });
   };
   const label = (which: Pick) =>
     picks[which]!.choices.find((c) => c.value === picks[which]!.current)?.name ??

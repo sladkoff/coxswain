@@ -19,9 +19,10 @@ PR; the branch, not the workspace, is what ties them. Writing to GitHub must alw
    Several PRs from one piece of work are several branches, so several workspaces; splitting a workspace's commits off
    into a new one isn't built.
 2. **One read per PR**: a GraphQL query (`getPullRequest`, `core/github.ts`) for the PR's state, description, people,
-   labels, conversation, review threads, each commit's check state and the head's checks. The renderer polls it every
-   minute while the workspace shows, and on window focus. GraphQL has no ETags (ADR 0006 decision 7), so each poll
-   counts against the rate limit.
+   labels, conversation, review threads, each commit's check state and the head's checks. The core reads it with each
+   check of GitHub for the workspace on screen ([ADR 0030](0030-workspace-watcher.md)): every minute, on window focus,
+   on a push and after a change made here; the UI shows what the last check read. GraphQL has no ETags (ADR 0006
+   decision 7), so each read counts against the rate limit.
 3. **Review threads are mirrored into entries** (`syncThreads`, `core/pull-requests.ts`), so following and outdated
    (ADR 0015), the threads list, _Submit Review_ and the agent's prompts work on them unchanged. A thread's comments become
    entries of kind `comment` with their author's login: the first one anchored on the lines it was written on (the new

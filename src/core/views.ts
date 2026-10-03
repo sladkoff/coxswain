@@ -1,5 +1,6 @@
 import type { McpTool } from "./agents";
 import type { Db } from "./db";
+import { emit } from "./events.ts";
 import {
   type ChangedFile,
   listChangedFiles,
@@ -128,8 +129,15 @@ export async function listViews(db: Db, workspaceId: number): Promise<View[]> {
 
 // Removes a view, with its explanations and findings (entries.view_id cascades).
 export async function removeView(db: Db, viewId: number): Promise<void> {
-  await db.deleteFrom("views").where("id", "=", viewId).execute();
+  const row = await db
+    .deleteFrom("views")
+    .where("id", "=", viewId)
+    .returning("workspace_id")
+    .executeTakeFirst();
   writing.delete(viewId);
+  if (!row) return;
+  emit({ workspaceId: row.workspace_id, what: "view" });
+  emit({ workspaceId: row.workspace_id, what: "entries" });
 }
 
 // Told when a tool changed a workspace's view or its entries, so the UI refetches them while the agent works.
@@ -210,9 +218,11 @@ export async function savePrompt(db: Db, title: string, body: string) {
     .insertInto("prompts")
     .values({ title, body, created_at: new Date().toISOString() })
     .execute();
+  emit({ what: "settings" });
 }
 export async function deletePrompt(db: Db, id: number) {
   await db.deleteFrom("prompts").where("id", "=", id).execute();
+  emit({ what: "settings" });
 }
 
 // What the canvas shows when a view is asked for, if not all of the workspace's changes: a commit, an agent turn, or a
