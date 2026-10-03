@@ -7,7 +7,10 @@ import {
   useSyncExternalStore,
 } from "react";
 import Markdown, { type Components } from "react-markdown";
+import rehypeRaw from "rehype-raw";
+import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
+import { match } from "ts-pattern";
 import type { GitProblem } from "../../../core/git";
 import type { GitHubProblem } from "../../../core/github";
 import { cn } from "./styles";
@@ -21,14 +24,50 @@ const components: Components = {
   a: (p) => <a {...p} target="_blank" />,
   pre: ({ node, ...p }) => {
     const code = node?.children[0];
-    const mermaid =
-      code?.type === "element" &&
-      Array.isArray(code.properties.className) &&
-      code.properties.className.includes("language-mermaid");
-    const text = mermaid && code.children[0]?.type === "text" ? code.children[0].value : "";
-    return mermaid ? <Mermaid code={text} /> : <pre {...p} />;
+    const classes = code?.type === "element" ? code.properties.className : undefined;
+    const language =
+      (["mermaid", "diff"] as const).find(
+        (l) => Array.isArray(classes) && classes.includes(`language-${l}`),
+      ) ?? null;
+    const text =
+      code?.type === "element" && code.children[0]?.type === "text" ? code.children[0].value : "";
+    return match(language)
+      .with("mermaid", () => <Mermaid code={text} />)
+      .with("diff", () => <DiffSketch text={text} />)
+      .with(null, () => <pre {...p} />)
+      .exhaustive();
   },
 };
+
+// A diff in prose, e.g. a view's sketch of how a call tree changed (the pr skill's shaped diff): lines added green,
+// removed red, hunk headers muted, as a file diff shows them.
+function DiffSketch({ text }: { text: string }) {
+  return (
+    <pre>
+      {/* As wide as the longest line, so a line's colour runs on when the block scrolls sideways. */}
+      <code className="inline-block min-w-full">
+        {text
+          .replace(/\n$/, "")
+          .split("\n")
+          .map((line, i) => (
+            <span
+              key={i}
+              className={cn(
+                "-mx-2 block px-2",
+                match(line[0])
+                  .with("+", () => "bg-green-500/15 text-green-800 dark:text-green-300")
+                  .with("-", () => "bg-red-500/15 text-red-800 dark:text-red-300")
+                  .with("@", () => "text-neutral-500")
+                  .otherwise(() => ""),
+              )}
+            >
+              {line || " "}
+            </span>
+          ))}
+      </code>
+    </pre>
+  );
+}
 const inlineComponents: Components = { ...components, p: (p) => <>{p.children}</> };
 
 // ADR 0036: with blockEnd, each top-level block (a paragraph, a list, a table, a diagram) is marked data-block with
@@ -52,6 +91,9 @@ const markBlocks = () => (tree: Hast) => {
         },
   );
 };
+// HTML in markdown (GitHub's <details>, links, comments from bots) is read as HTML, then cut down to what GitHub itself
+// allows in a comment, so it shows as it does there and nothing else gets in.
+const html = [rehypeRaw, rehypeSanitize];
 const BlockEnd = createContext<((block: number) => ReactNode) | undefined>(undefined);
 const blockComponents = {
   ...components,
@@ -63,7 +105,7 @@ const blockComponents = {
   ),
 } as Components;
 
-// Markdown from GitHub or an agent, selectable. Links get target=_blank so the main process opens them in the browser.
+// Markdown from GitHub or an agent, with the HTML GitHub allows, selectable. Links get target=_blank so the main process opens them in the browser.
 // A mermaid code block is drawn as its diagram (ADR 0026). inline: no paragraphs and no wrapper, for a title.
 export function Prose({
   children,
@@ -79,7 +121,7 @@ export function Prose({
   const md = (
     <Markdown
       remarkPlugins={[remarkGfm]}
-      rehypePlugins={blockEnd ? [markBlocks] : undefined}
+      rehypePlugins={blockEnd ? [...html, markBlocks] : html}
       components={inline ? inlineComponents : blockEnd ? blockComponents : components}
     >
       {children}

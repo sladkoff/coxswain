@@ -19,6 +19,16 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
   and `add_explanation` and `add_finding` texts follow. "Above" in `start_view`'s result now says "below", where the
   file list is.
 - `.claude/skills/writing-for-agents`, for whoever edits what coxswain tells its agents (not shipped).
+- **HTML in GitHub's markdown shows as GitHub shows it.** A bot's `<details>`, links and comments were printed as
+  tags in the PR panel and in mirrored threads. `Prose` now reads the HTML (`rehype-raw`) and keeps only what GitHub
+  allows in a comment (`rehype-sanitize`, GitHub's own schema): `<details>` folds, links work, nothing else gets in.
+  Two new dependencies.
+- **A diff in prose is coloured**: a \`\`\`diff block without `path=` (the `pr` skill's shaped diff of a call tree or
+  state) shows its + lines green and its - lines red, across the whole line when it scrolls. The `pr` note asks for
+  sketch lines of about 60 characters, explained in the sentences around them rather than in trailing comments.
+- **Threads read more easily**: a line between entries with room around it, who wrote each one as a label over it
+  ("You → agent", "Agent", "@login on GitHub"), looser line spacing, the agent's live reply under one "Agent" label,
+  and up to 60% of the window tall before it scrolls (was 384 px).
 - Tests: every skill `read_skill` offers is served whole after its note (`skills.test.ts`). Tried in the running app on
   a copy of the database: a guide of this branch, made in a new Claude Code session in about two minutes, opened with
   a shaped diff of the architecture and a merge-danger call, its sections made of claims; it read one skill where it

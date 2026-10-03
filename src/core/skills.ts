@@ -17,7 +17,9 @@ const inCoxswain: Record<SkillName, string> = {
 Summary and Merge Danger, and its Evidence where the change carries its own proof: name the test that fails without
 the change and what it checks. Give the section a heading of your own that says what the change does; the skill's
 section names may be bold labels in it. The visuals are markdown in the section: pseudocode, trees and shaped diffs as
-\`\`\`text or \`\`\`diff blocks without path=, diagrams as \`\`\`mermaid blocks. The user's domain language is the
+\`\`\`text or \`\`\`diff blocks without path=, diagrams as \`\`\`mermaid blocks. A view is a narrow column: keep a
+sketch's lines short (about 60 characters), and say what a line means in the sentences around the sketch rather than
+in a comment at its end. A shaped diff shows its + lines green and its - lines red. The user's domain language is the
 repository's glossary when it has one (GLOSSARY.md, CONTEXT.md, a glossary under docs/), and the code's own names
 otherwise. The reviewer reads the overview before any diff, so it carries what the diffs can't show: the intent, the
 shape and the danger.`,

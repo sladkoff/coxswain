@@ -205,7 +205,13 @@ export function ThreadBox({
       </div>
       {(!root.resolvedAt || editing) && (
         <>
-          <div className="flex max-h-96 flex-col gap-1.5 overflow-y-auto">
+          {/* One entry after another, a line between them, so who said what reads at a glance. */}
+          <div
+            className={cn(
+              "flex max-h-[60vh] flex-col divide-y overflow-y-auto [&>*]:py-2.5 [&>*:first-child]:pt-1 [&>*:last-child]:pb-1",
+              divide,
+            )}
+          >
             {editing ? (
               <EditBox
                 body={root.body}
@@ -221,11 +227,16 @@ export function ThreadBox({
             {replies.map((e) => (
               <Comment key={e.id} entry={e} />
             ))}
-            {turn?.live
-              .filter((c) => c.kind !== "user")
-              .map((c, i) => (
-                <Entry key={`live${i}`} entry={c} />
-              ))}
+            {!!turn?.live.some((c) => c.kind !== "user") && (
+              <div className="flex flex-col gap-1.5">
+                <span className={author}>Agent</span>
+                {turn.live
+                  .filter((c) => c.kind !== "user")
+                  .map((c, i) => (
+                    <Entry key={`live${i}`} entry={c} />
+                  ))}
+              </div>
+            )}
             <TurnStatus
               running={running}
               queued={turn?.queued}
@@ -320,6 +331,10 @@ function EditBox(props: { body: string; onSave: (body: string) => void; onCancel
 }
 
 // Who wrote an entry the agent wrote, and why (glossary).
+// Who wrote an entry, over it.
+const author = "mb-1 block text-xs font-medium text-neutral-700 dark:text-neutral-300";
+const divide = "divide-neutral-200 dark:divide-neutral-800";
+
 const agentLabels: Partial<Record<ReviewEntry["kind"], string>> = {
   answer: "Agent",
   explanation: "Explanation",
@@ -332,11 +347,10 @@ function Comment({ entry: e }: { entry: ReviewEntry }) {
   if (e.kind === "comment")
     return (
       <div>
-        <span className={cn("block text-xs", muted)}>
-          <span className="font-medium text-neutral-900 dark:text-neutral-100">@{e.author}</span> on
-          GitHub
+        <span className={author}>
+          @{e.author} <span className={cn("font-normal", muted)}>on GitHub</span>
         </span>
-        <Prose>{e.body}</Prose>
+        <Prose className="leading-relaxed">{e.body}</Prose>
       </div>
     );
   const posted = e.githubUrl ? " · posted" : "";
@@ -344,22 +358,20 @@ function Comment({ entry: e }: { entry: ReviewEntry }) {
   if (label)
     return (
       <div>
-        <span
-          className={cn(
-            "block text-xs",
-            e.kind === "finding" ? "text-amber-600 dark:text-amber-400" : muted,
-          )}
-        >
+        <span className={cn(author, e.kind === "finding" && "text-amber-600 dark:text-amber-400")}>
           {label}
         </span>
-        <Prose>{e.body}</Prose>
+        <Prose className="leading-relaxed">{e.body}</Prose>
       </div>
     );
   return (
-    <div className="whitespace-pre-wrap select-text [overflow-wrap:anywhere]">
-      <span className={cn("block text-xs", muted)}>
-        {e.kind === "question" ? "You → agent" : "You"}
-        {posted}
+    <div className="leading-relaxed whitespace-pre-wrap select-text [overflow-wrap:anywhere]">
+      <span className={author}>
+        You
+        <span className={cn("font-normal", muted)}>
+          {e.kind === "question" && " → agent"}
+          {posted}
+        </span>
       </span>
       {e.body}
     </div>
