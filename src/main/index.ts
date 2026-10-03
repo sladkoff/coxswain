@@ -78,11 +78,13 @@ import {
   setDiagramCheck,
   type AttachedPrompt,
   attachPrompt,
+  updateViewPrompt,
   customPrompt,
   deletePrompt,
   listPrompts,
   type Prompt,
   savePrompt,
+  type View,
   type ViewRange,
 } from "../core/views";
 import {
@@ -872,6 +874,7 @@ app.whenReady().then(() => {
   ipcMain.handle("prompts:attach", (_, p: Prompt | null, range: ViewRange | null) =>
     attachPrompt(p ?? customPrompt, range),
   );
+  ipcMain.handle("prompts:update-view", (_, v: View) => updateViewPrompt(v));
   // The canvas's New View menu: the built-in prompts, the user's own, New View… and New Prompt…. Resolves with the
   // prompt to attach to the agent pane's composer, or "new-prompt"; only on a click, like the menus above.
   ipcMain.handle("menus:new-view", async (e, range: ViewRange | null) => {

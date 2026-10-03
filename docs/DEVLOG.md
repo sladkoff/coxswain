@@ -29,6 +29,11 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
   the PR titles query's key and dropped every row back to `#N` with an "Open" icon until GitHub answered; a failed
   refetch did the same. The rail now keeps the titles shown until the new ones are in, and keeps them when GitHub
   fails.
+- **A stale view's notice stays in sight and offers _Update View_.** The notice sits above the view, outside its
+  scroll, like _being written_'s. _Update View_ attaches a request to the agent pane's composer (`updateViewPrompt`):
+  make the view again with the same title and range, of the code as it is now, keeping what still holds; it names
+  the old range and `git diff <old head>` for what changed since. It's a new view, since a view stays pinned; the old
+  one stays until removed.
 - Tests: the watcher tells a commit from an edit and checks GitHub on a push (`watch.test.ts`); a change makes stale
   what it affects, scoped and unscoped (`queries.test.ts`). Checked in the running app on a copy of the database: the
   rail's titles stay while switching workspaces, focus brings a `worktree` change, switching back shows the cached

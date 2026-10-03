@@ -390,6 +390,9 @@ const api = {
   // A prompt as the composer attaches it, for the command palette's New View actions; null for New View….
   attachPrompt: (p: Prompt | null, range: ViewRange | null): Promise<AttachedPrompt> =>
     ipcRenderer.invoke("prompts:attach", p, range),
+  // Update View, for a stale view: asks the agent to make it again, of the code as it is now.
+  updateViewPrompt: (view: View): Promise<AttachedPrompt> =>
+    ipcRenderer.invoke("prompts:update-view", view),
   onChanged: (callback: (change: Changed) => void) => {
     const listener = (_: unknown, change: Changed) => callback(change);
     ipcRenderer.on("changed", listener);

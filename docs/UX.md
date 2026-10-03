@@ -257,7 +257,9 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   chip per view, oldest first, named by its title (_Guide_, _Data flow_; a repeated title gets a number, _Guide 2_; its
   tooltip says when it was made, its head, and _(stale)_ once the PR moved on), to switch between them. Right-clicking a
   chip offers _Remove View…_, which asks first and deletes the view with its explanations and findings; if it was
-  showing, the canvas goes back to the diff. The dashed
+  showing, the canvas goes back to the diff. A stale view says so in a bar above it, which stays while the view
+  scrolls, with _Update View_: it attaches a request to make the view again, of the code as it is now, to the agent
+  pane's composer, like _New View_; the new view gets the same title and a chip of its own. The dashed
   _New View_ chip (a layers-plus icon) makes new views: its menu lists the view prompts (ADR 0031), the built-in
   ones (_Guide_, _Review_ (a guide with findings), _Questions for the author_, _Data model_, _Data flow_), then the
   user's own, then _New View…_ (a view of whatever the user types) and _New Prompt…_ (Settings, at a new prompt's title;

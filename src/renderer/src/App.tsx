@@ -1117,6 +1117,19 @@ export function App() {
                           />
                         )}
                         {canvasView?.writing && !showFile && <WritingViewNotice />}
+                        {canvasView?.worktree &&
+                          pr.snapshot &&
+                          canvasView.head !== pr.snapshot &&
+                          !showFile && (
+                            <StaleViewNotice
+                              onUpdate={async () =>
+                                setComposerPrompt({
+                                  prompt: await window.coxswain.updateViewPrompt(canvasView),
+                                  workspaceId: currentWorkspace.id,
+                                })
+                              }
+                            />
+                          )}
                         {/* Only the lines on screen are drawn. Hidden, not unmounted, under a whole file: it keeps its
                       scroll and read files for Back. ponytail: every file is still read from disk up front. */}
                         <Virtualizer
@@ -1151,9 +1164,6 @@ export function App() {
                               </div>
                             )
                           )}
-                          {canvasView?.worktree &&
-                            pr.snapshot &&
-                            canvasView.head !== pr.snapshot && <StaleViewNotice />}
                           {(
                             sections ?? [
                               {
@@ -1305,11 +1315,17 @@ function restoreScroll(canvas: HTMLElement, s: Scroll) {
 }
 
 // Stale (ADR 0023, 0028): the worktree moved on since the view was made, by new commits or local changes. The view
-// stays as it was.
-function StaleViewNotice() {
+// stays as it was. Above the view, not in its scroll, so it stays in sight. Update View attaches a request to make it
+// again to the agent pane's composer, as New View does.
+function StaleViewNotice({ onUpdate }: { onUpdate: () => void }) {
   return (
-    <div className="border-b border-amber-200 bg-amber-50 px-4 py-1.5 text-xs dark:border-amber-900 dark:bg-amber-950">
-      The code has changed since this view. It still shows the changes as they were.
+    <div className="flex items-center gap-3 border-b border-amber-200 bg-amber-50 px-4 py-1 text-xs dark:border-amber-900 dark:bg-amber-950">
+      <span className="flex-1">
+        The code has changed since this view. It still shows the changes as they were.
+      </span>
+      <Button className="py-0.5" onClick={onUpdate}>
+        Update View
+      </Button>
     </div>
   );
 }

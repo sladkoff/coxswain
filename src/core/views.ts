@@ -242,6 +242,15 @@ export const attachPrompt = (p: Prompt, range: ViewRange | null): AttachedPrompt
   prompt: viewRequest(p.body, range),
 });
 
+// Update View, on a stale view's notice: the same view again, of the code as it is now. A new view, since a view stays
+// pinned to the range it was made from; the old one is kept until the user removes it.
+export const updateViewPrompt = (
+  v: Pick<View, "id" | "title" | "guide" | "base" | "head">,
+): AttachedPrompt => ({
+  title: `Update · ${v.title}`,
+  prompt: `View ${v.id}, “${v.title}”${v.guide ? ", a guide," : ""} is out of date: the code has changed since it was made, pinned to ${v.base} → ${v.head}. Make it again with coxswain's tools as a new view of the code as it is now: start_view with the same title${v.guide ? ", as a guide" : ""}, over the same range (all of the workspace's changes, unless the view was of a part of them), and write it the same way, keeping what still holds and changing what the code changed. \`git diff ${v.head}\` shows what changed in the worktree since.`,
+});
+
 const howToView = `How to write the view: add its sections in reading order with write_section. Each section is markdown
 (GitHub-flavoured: tables, lists, code) and starts with a "## " heading, which lists it in the view's table of contents.
 Three kinds of fenced blocks do more than show code:
