@@ -17,6 +17,10 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
   session's state. ↑↓ picks, Tab or Enter completes, Esc hides; the message goes as typed and the agent runs it. A new
   session, which has none until its first message opens it, lists the ones its agent last sent for any session; only
   right after launch, before any session of that agent has opened, is the list empty.
+- **The README catches up**: views explained, threads with the agent, Submit Review's conclusions, GitHub both
+  ways, turn diffs, and that the agents bring the user's own skills and commands. A new dark screenshot: a Review
+  view of honojs/hono#5513 made by Claude Code in the app, its mermaid flowchart, a thread on the view's prose and an
+  answered question in the agent pane.
 - Tests: the existing ones pass; nothing new covers the early answer (a PR workspace needs GitHub faked). Not yet tried
   in the running app.
 

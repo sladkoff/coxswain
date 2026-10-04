@@ -1,7 +1,7 @@
 # AGENTS.md
 
-coxswain is a local mini IDE for reviewing and building code with local coding agents (Claude Code,
-Codex). Its main selling point: pick review comments on a PR, hand them to a local agent to
+coxswain is a local ADE, an agentic development environment, for reviewing and building code with local coding
+agents (Claude Code, Codex). Its main selling point: pick review comments on a PR, hand them to a local agent to
 implement, and see the resulting diff. It is an Electron app, currently a proof of concept.
 
 ## Docs

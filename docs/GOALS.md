@@ -1,6 +1,6 @@
 # coxswain — goals
 
-coxswain is a local mini IDE for reviewing and building code with local coding agents.
+coxswain is a local ADE, an agentic development environment, for reviewing and building code with local coding agents.
 
 **Main selling point:** turn review comments into agent work. Pick comments on a PR, hand them to
 a local coding agent (Claude Code or Codex) to implement, and see the resulting diff.
@@ -21,4 +21,4 @@ Requirements reference goals by ID (e.g. "serves G3"). Tick a goal when it is me
 
 ## Non-goals
 
-- A full general-purpose IDE. coxswain is a _mini_ IDE centred on diffs, PRs and agents.
+- A full general-purpose IDE. coxswain is an ADE centred on diffs, PRs and agents, with just enough IDE around them.

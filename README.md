@@ -5,11 +5,11 @@
 >
 > Your agents are the rowers. You are the coxswain.
 
-![coxswain reviewing a pull request with an agent](docs/screenshot.png)
+![coxswain showing an agent's guide to a pull request, with a diagram and a thread](docs/screenshot.png)
 
-coxswain is a local mini IDE for reviewing and building code with the coding agents you already run: Claude Code and
-Codex. Pick review comments on a pull request, hand them to an agent to implement, and review the diff it comes back
-with, all without leaving the PR.
+coxswain is a local ADE, an agentic development environment, for reviewing and building code with the coding agents
+you already run: Claude Code and Codex. Have an agent explain a pull request, leave review comments on it, hand them to
+the agent to implement, and review the diff it comes back with, all without leaving the PR.
 
 > [!NOTE]
 > coxswain is a proof of concept. Expect rough edges, and expect things to change.
@@ -29,25 +29,35 @@ to.
 
 - **Pull requests as workspaces.** Add a GitHub repository, open any of its PRs, and coxswain checks it out in its
   own git worktree. Code stays on your machine.
-- **Build on a branch.** Start a workspace on a new branch, let the agent work, see each turn's diff and what's only
-  local versus pushed, then open a draft PR from it.
-- **Comments become agent work.** Leave notes on lines of the diff, then _Send all to agent_: the agent implements
-  them in the PR's worktree, and its changes show up in the same diff, next to the PR's own. Or _Copy as prompt_ and
-  paste them into any other agent.
-- **Ask about the code.** Send a comment as a question and the agent answers in the thread, right between the lines
-  it's about.
-- **Views of the PR.** Ask the agent for a view and it writes one: markdown sections with tables, mermaid diagrams
-  and the file diffs they're about embedded, threads and all. A _guide_ sorts the whole diff into themed groups in a
-  sensible reading order, with a note on each file and explanations on the tricky lines; generated files go last.
-  Ask for a data model or data flow view, or anything else. Each view gets a chip in the canvas bar.
-- **Agent reviews, on request.** Ask for a review and the agent leaves findings on lines: bugs, risks and
-  suggestions, each its own thread.
-- **Claude Code and Codex.** Both run in the agent pane over the [Agent Client Protocol](https://agentclientprotocol.com),
-  using your own local installs and sign-ins. Pick the model and the effort per agent.
-- **Track what you've reviewed.** Mark file diffs as reviewed; they stay reviewed until their contents change, for
-  instance after an agent's edit.
-- **Just enough IDE.** Browse the whole file tree, Open Quickly (⌘⇧O), Go to Definition (⌘-click) and Find Usages.
-  Back and Forward (⌥⌘← ⌥⌘→) step through what the canvas showed, scroll kept.
+- **Views: the agent explains the change.** A view is a document the agent writes on the canvas, next to the code:
+  markdown sections with tables and mermaid diagrams, and the file diffs and files they're about embedded, threads
+  and all. A _guide_ walks the whole diff in reading order: it opens with the shape of the change and how risky it
+  is, then goes through the files by theme, with explanations on the tricky lines. Ask for a review, a data model, a
+  data flow, questions for the author or a prompt of your own, of a PR, one commit, one agent turn, or code with no
+  diff at all. Each view gets a chip in the canvas bar.
+- **Threads with the agent.** Comment on lines of a diff, or on a passage of a view. A comment is a note, or a
+  question the agent answers in the thread, right between the lines it's about; carry on the conversation there.
+  Ask for a review and the agent leaves its findings as threads too.
+- **Comments become agent work.** _Send all to agent_ and it implements your notes in the PR's worktree; its changes
+  show up in the same diff, next to the PR's own. Or _Copy as prompt_ and paste them into any other agent.
+- **Submit Review, summed up for you.** _Submit Review_ lists your open threads, each with a conclusion a small
+  model wrote ahead from it: the decision, the thing to do or the question still open. Edit them, then post them to
+  GitHub as one review, send them to the agent or copy them as a prompt.
+- **GitHub, both ways.** The PR's review threads show between the lines next to yours, and your review goes back as
+  replies, resolves and comments on the lines. The PR panel has the description, conversation, checks, reviewers,
+  labels and the merge button; a failing check goes to the agent with its log.
+- **Every agent turn is a diff.** Each turn that changed the worktree is listed under _Turns_, next to _Commits_, so
+  you can review what the agent did one turn at a time. Start a workspace on a new branch, let the agent build, see
+  what's not pushed or still uncommitted, then open a draft PR from it.
+- **Your agents, with your setup.** Claude Code and Codex run in the agent pane over the
+  [Agent Client Protocol](https://agentclientprotocol.com), using your own installs and sign-ins, so your skills and
+  custom commands come along: type `/` in the composer. Pick the model and the effort per agent. Guides and reviews
+  follow three skills that ship with coxswain (`pr`, `writing-beats` and `code-review`, from
+  [mattpocock/skills](https://github.com/mattpocock/skills)).
+- **Track what you've reviewed.** Mark file diffs, or a view's whole section, as reviewed; they stay reviewed until
+  their contents change, for instance after an agent's edit.
+- **Just enough IDE.** Browse the whole file tree, Open Quickly (⌘⇧O), Go to Definition (⌘-click), Find Usages and
+  Find (⌘F). Back and Forward (⌥⌘← ⌥⌘→) step through what the canvas showed, scroll kept.
 - **Command palette.** ⌘K, then `>` and a few letters, runs any action; without `>` it opens a file.
 - **Light and dark mode.** Follows your system's appearance automatically.
 
@@ -89,7 +99,7 @@ pnpm dev       # run with hot reload
 
 `pnpm start` builds and runs without hot reload, and adds _View › Rebuild and Reload_ (⇧⌘R) for working on coxswain in coxswain; `pnpm dist` packages the app into `dist/`. coxswain keeps its clones and worktrees in `~/coxswain/`, and its
 own data in a SQLite database in the app's data folder. It stores only what GitHub and git don't have: your notes, the
-agent's answers and which files you've reviewed.
+agent's answers and views, and which files you've reviewed.
 
 ## Docs
 
