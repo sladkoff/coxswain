@@ -18,6 +18,7 @@ import {
   type Agent,
   agentSessionWorkspace,
   agentAttachmentCapabilities,
+  agentCommands,
   agentsBusy,
   answerPermission,
   askOnce,
@@ -457,6 +458,7 @@ app.whenReady().then(() => {
   ipcMain.handle("lsp:usages", (_, workspaceId: number, at: CodeAt) =>
     findUsages(db, workspaceId, at),
   );
+  ipcMain.handle("agents:commands", (_, agent: Agent) => agentCommands(agent));
   ipcMain.handle("agents:attachment-capabilities", (_, agent: Agent) =>
     agentAttachmentCapabilities(agent),
   );

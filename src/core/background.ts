@@ -28,6 +28,7 @@ export function startBackground(db: Db) {
             "projects",
             "workspaces",
             "settings",
+            "commands",
           ),
         },
         () => {},

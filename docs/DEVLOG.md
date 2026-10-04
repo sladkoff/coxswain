@@ -3,7 +3,7 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
-## 2026-10-04 — A new workspace shows sooner
+## 2026-10-04 — A new workspace shows sooner; slash commands
 
 ### What works
 
@@ -12,11 +12,18 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
   soon as the check has the worktree open, and the PR panel and threads follow when the read is in.
 - **The canvas says "Preparing the workspace…"** while the worktree is cloned, fetched and checked out, instead of
   "Loading…"; the Navigator already said so.
+- **Slash commands in the composer.** Typing `/` lists the session's slash commands (its own, skills, custom prompts),
+  as the agent sends them over ACP (`available_commands_update`, after a session opens or loads); kept in memory in the
+  session's state. ↑↓ picks, Tab or Enter completes, Esc hides; the message goes as typed and the agent runs it. A new
+  session, which has none until its first message opens it, lists the ones its agent last sent for any session; only
+  right after launch, before any session of that agent has opened, is the list empty.
 - Tests: the existing ones pass; nothing new covers the early answer (a PR workspace needs GitHub faked). Not yet tried
   in the running app.
 
 ### Tech debt
 
+- A new session's slash commands are its agent's last ones from any project, so another project's skill may show
+  (`ponytail:` in `src/core/agents.ts`).
 - Still slow on a new workspace: the clone is blobless, so `git worktree add` downloads every file of the tree; a
   branch workspace asks GitHub for its PR before it fetches.
 

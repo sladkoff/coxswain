@@ -4,7 +4,7 @@
 
 // In a workspace: entries, worktree, transcript, sessions, view, reviewed, and github (its PR or what's pushed of it
 // moved on GitHub; ADR 0030): what the UI refetches. opened: the workspace's worktree was opened or checked again,
-// which changes nothing the UI shows. Not in one: projects, workspaces (the list, or a workspace's row) and settings.
+// which changes nothing the UI shows. Not in one: projects, workspaces (the list, or a workspace's row), settings and commands (an agent's slash commands).
 export type CoreEvent =
   | {
       workspaceId: number;
@@ -18,7 +18,7 @@ export type CoreEvent =
         | "github"
         | "opened";
     }
-  | { what: "projects" | "workspaces" | "settings" };
+  | { what: "projects" | "workspaces" | "settings" | "commands" };
 
 const listeners = new Set<(e: CoreEvent) => void>();
 export function onEvent(listener: (e: CoreEvent) => void) {

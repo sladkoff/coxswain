@@ -11,7 +11,12 @@ export type SessionState = {
   tasks: BackgroundTask[];
   queued: QueuedMessage[];
   done: boolean; // its last turn ended and the user hasn't looked since
+  commands: AgentCommand[];
 };
+
+// A slash command the agent offers in this session (ACP available_commands_update): its own (/compact), a skill or a
+// custom prompt. Sent as the message's text, "/name input", which the agent runs. hint: what to type after it.
+export type AgentCommand = { name: string; description: string; hint: string | null };
 
 // What a session's agent is up to, for the workspace rail: waiting on a permission, running a turn, finished one the
 // user hasn't looked at, or nothing. A workspace shows its sessions' first in this order.
@@ -35,6 +40,8 @@ export type BackgroundTask = { id: string; name: string; subagent?: boolean };
 // ponytail: projections stay until app exit; evict idle sessions if long sessions need a memory bound.
 export class SessionStates {
   private states = new Map<string, SessionState>();
+  // Kept apart from states: the agent may send them before the session's history is read.
+  private commandLists = new Map<string, AgentCommand[]>();
   private loading = new Map<string, Promise<SessionState>>();
   private listeners = new Set<(id: string, state: SessionState) => void>();
   private waiting = new Map<number, (go: Dequeued) => void>();
@@ -63,6 +70,7 @@ export class SessionStates {
           tasks: [],
           queued: [],
           done: false,
+          commands: this.commandLists.get(id) ?? [],
         };
         this.states.set(id, state);
         return state;
@@ -134,6 +142,11 @@ export class SessionStates {
     if (!entries) return;
     const at = entry.id === undefined ? -1 : entries.findLastIndex((e) => e.id === entry.id);
     this.update(id, { entries: at < 0 ? [...entries, entry] : entries.with(at, entry) });
+  }
+
+  commands(id: string, commands: AgentCommand[]) {
+    this.commandLists.set(id, commands);
+    if (this.states.has(id)) this.update(id, { commands });
   }
 
   // The user looked at the session, so a finished turn is no longer news.

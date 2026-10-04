@@ -21,7 +21,7 @@ import {
 import { type Commit, diffSize, type Size, worktreePath } from "./git";
 import { snapshotOf } from "./snapshot";
 import { chat } from "./agent-chat";
-import { agentStatuses, SessionStates, type AgentStatus } from "./session-state";
+import { type AgentCommand, agentStatuses, SessionStates, type AgentStatus } from "./session-state";
 import { turnEnded, viewTools } from "./views";
 import { getWorkspaceRepo } from "./workspaces";
 
@@ -270,6 +270,16 @@ function adapter(name: Agent): Promise<Adapter> {
         // Claude Code names a session a moment after its first turn ends, when no run listens any more.
         if (u.sessionUpdate === "session_info_update" && u.title)
           titleListeners.forEach((l) => l(sessionId, u.title!));
+        if (u.sessionUpdate === "available_commands_update") {
+          const commands = u.availableCommands.map((c) => ({
+            name: c.name,
+            description: c.description,
+            hint: c.input?.hint ?? null,
+          }));
+          lastCommands.set(name, commands);
+          emit({ what: "commands" });
+          return sessionStates.commands(sessionId, commands);
+        }
         const run = listening.get(sessionId);
         if (run) {
           idle.delete(sessionId);
@@ -1019,6 +1029,15 @@ async function readyWorktree(db: Db, workspaceId: number): Promise<string> {
   const cwd = worktreePath(w.owner, w.name, w);
   if (!existsSync(join(cwd, ".git"))) throw new Error("The worktree is not ready yet");
   return cwd;
+}
+
+// The slash commands the agent last sent for any session, for a new session's composer: it has none of its own until
+// its first message opens it.
+// ponytail: per agent, so a skill of another project may show; key by worktree if that misleads. Empty until a session
+// of the agent opens after launch; open one ahead if a fresh start needs them.
+const lastCommands = new Map<Agent, AgentCommand[]>();
+export async function agentCommands(name: Agent): Promise<AgentCommand[]> {
+  return lastCommands.get(name) ?? [];
 }
 
 export async function agentAttachmentCapabilities(name: Agent) {

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { Agent, AgentSession, Pick } from "../../core/agents";
 import type { Attachment } from "../../core/attachments";
 import { Attachments, draftAttachmentPreviews } from "./Attachments";
-import type { BackgroundTask, QueuedMessage } from "../../core/session-state";
+import type { AgentCommand, BackgroundTask, QueuedMessage } from "../../core/session-state";
 import type { AttachedPrompt } from "../../core/views";
 import type { Workspace } from "../../core/workspaces";
 import { Entry, TurnStatus } from "./ChatEntry";
@@ -24,7 +24,7 @@ import {
   XIcon,
 } from "./components/icons";
 import { TextArea } from "./components/field";
-import { cn, divider, muted, noDrag, titleBar } from "./components/styles";
+import { cn, divider, muted, noDrag, selectable, titleBar } from "./components/styles";
 import { count, shortDateTime } from "./format";
 import { core, queryClient } from "./queries";
 import { setAgentPane, useAgentPane } from "./agent-pane";
@@ -72,6 +72,8 @@ export function Agents({ workspace, onViewThread, composerPrompt, onShowSidebar 
   const lastAgent = useQuery(core("newSessionAgent")).data ?? "claude";
   const agent = session?.agent ?? newAgent ?? lastAgent;
   const capabilities = useQuery(core("agentAttachmentCapabilities", agent));
+  // A new session has no commands of its own until its first message opens it: the agent's last ones meanwhile.
+  const agentCommands = useQuery(core("agentCommands", agent)).data;
   const unsupportedImages = capabilities.isSuccess && !capabilities.data.image;
   const attachmentError =
     unsupportedImages && attachments.some((a) => a.content.type === "image")
@@ -96,6 +98,26 @@ export function Agents({ workspace, onViewThread, composerPrompt, onShowSidebar 
     }
   };
   const composer = useRef<HTMLTextAreaElement>(null);
+  // A draft of only "/" and a word offers the session's slash commands that have the word in their name, those starting
+  // with it first. Esc hides them until the draft changes.
+  const [commandAt, setCommandAt] = useState(0);
+  const [dismissed, setDismissed] = useState<string | null>(null);
+  const typed = /^\/(\S*)$/.exec(draft)?.[1]?.toLowerCase();
+  const commands =
+    typed === undefined || draft === dismissed
+      ? []
+      : (live?.commands.length ? live.commands : (agentCommands ?? []))
+          .filter((c) => c.name.toLowerCase().includes(typed))
+          .sort(
+            (a, b) =>
+              Number(!a.name.toLowerCase().startsWith(typed)) -
+              Number(!b.name.toLowerCase().startsWith(typed)),
+          );
+  const command = commands[Math.min(commandAt, commands.length - 1)];
+  const pickCommand = (c: AgentCommand) => {
+    patch({ draft: `/${c.name} ` });
+    composer.current?.focus();
+  };
   useEffect(() => {
     if (!composerPrompt || composerPrompt === pane.composerPrompt) return;
     patch({ attached: composerPrompt.prompt, composerPrompt });
@@ -296,7 +318,7 @@ export function Agents({ workspace, onViewThread, composerPrompt, onShowSidebar 
         }}
         className={cn(
           dragging && "ring-2 ring-neutral-400",
-          "mx-2 mb-2 flex flex-col rounded-xl border bg-white focus-within:border-neutral-400 dark:bg-neutral-900 dark:focus-within:border-neutral-600",
+          "relative mx-2 mb-2 flex flex-col rounded-xl border bg-white focus-within:border-neutral-400 dark:bg-neutral-900 dark:focus-within:border-neutral-600",
           "border-neutral-300 dark:border-neutral-700",
         )}
       >
@@ -316,11 +338,30 @@ export function Agents({ workspace, onViewThread, composerPrompt, onShowSidebar 
           }
         />
         {attaching && <div className={cn("px-3 py-1 text-xs", muted)}>Adding attachments…</div>}
+        {command && <CommandMenu commands={commands} current={command} onPick={pickCommand} />}
         <TextArea
           bare
           ref={composer}
           value={draft}
-          onChange={(e) => patch({ draft: e.target.value })}
+          onChange={(e) => {
+            patch({ draft: e.target.value });
+            setCommandAt(0);
+          }}
+          onKeyDown={(e) => {
+            if (!command) return;
+            const at = commands.indexOf(command);
+            const handled = match(e.key)
+              .with("ArrowDown", () => setCommandAt((at + 1) % commands.length))
+              .with("ArrowUp", () => setCommandAt((at - 1 + commands.length) % commands.length))
+              .with("Escape", () => setDismissed(draft))
+              .with("Tab", () => pickCommand(command))
+              // Enter on a command typed out in full sends it.
+              .with("Enter", () =>
+                e.shiftKey || command.name.toLowerCase() === typed ? false : pickCommand(command),
+              )
+              .otherwise(() => false);
+            if (handled !== false) e.preventDefault();
+          }}
           onSubmit={send}
           rows={2}
           placeholder={attached ? "What to focus on (optional)…" : `Ask ${agentNames[agent]}…`}
@@ -426,6 +467,36 @@ function SessionPicker(props: {
       </Button>
       {agentName}
     </>
+  );
+}
+
+// The slash commands that match the draft, above the composer; the current one is completed by Tab or Enter.
+function CommandMenu({
+  commands,
+  current,
+  onPick,
+}: {
+  commands: AgentCommand[];
+  current: AgentCommand;
+  onPick: (c: AgentCommand) => void;
+}) {
+  return (
+    <div className="absolute right-0 bottom-full left-0 mb-1 max-h-64 overflow-y-auto rounded-lg border border-neutral-300 bg-white py-1 text-xs shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
+      {commands.map((c) => (
+        <div
+          key={c.name}
+          ref={c === current ? (el) => el?.scrollIntoView({ block: "nearest" }) : undefined}
+          className={cn("flex gap-2 px-2 py-1", selectable(c === current))}
+          // Keeps the focus in the composer.
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => onPick(c)}
+        >
+          <span className="shrink-0 font-medium">/{c.name}</span>
+          {c.hint && <span className={cn("shrink-0", muted)}>{c.hint}</span>}
+          <span className={cn("truncate", muted)}>{c.description}</span>
+        </div>
+      ))}
+    </div>
   );
 }
 

@@ -294,7 +294,7 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   chevron next to it picks another (_Claude Code_, _Codex_), which the session keeps. The chat shows its turns, with
   each tool the agent used as one line, and comments and reviews sent from the canvas as cards.
 
-  The composer is one box at the bottom: _Ask Codex…_ (Enter sends, Shift+Enter adds a line; Home and End go to the start and end of the text, as in every text box), and along its bottom
+  The composer is one box at the bottom: _Ask Codex…_ (Enter sends, Shift+Enter adds a line; Home and End go to the start and end of the text, as in every text box; `/` lists the session's slash commands above the box, ↑↓ to pick, Tab or Enter to complete, Esc to hide), and along its bottom
   an attachment button (paperclip) on the left, the agent picks (the model ✦ and the effort, each a button with a native menu of the agent's choices, kept per agent
   for all its sessions) and a round send button, greyed out while the box and attachments are empty. While a turn runs, _Working_ and a
   round stop button take its place, and the send button comes back beside them once something is typed or attached:

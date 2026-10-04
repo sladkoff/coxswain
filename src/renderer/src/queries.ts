@@ -100,6 +100,8 @@ const affects: Record<Changed["what"], Reads[]> = {
   github: ["openWorktree", "readPullRequest", "listPullRequestTitles"],
   projects: ["listProjects"],
   workspaces: ["listWorkspaces"],
+  // An agent sent its slash commands for one of its sessions.
+  commands: ["agentCommands"],
   settings: [
     "getSummarySettings",
     "listPrompts",

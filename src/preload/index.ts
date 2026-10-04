@@ -40,7 +40,7 @@ import type { Conclusion, NewEntry, ReviewEntry } from "../core/review";
 import type { ReviewDraft } from "../core/review-draft";
 import type { SetupCheck } from "../core/setup";
 import type { Workspace } from "../core/workspaces";
-import type { AgentStatus, SessionState } from "../core/session-state";
+import type { AgentCommand, AgentStatus, SessionState } from "../core/session-state";
 import type { CoreEvent } from "../core/events";
 import type { Job, SummarySettings } from "../core/jobs";
 import type { SummaryCoverage } from "../core/summaries";
@@ -192,6 +192,9 @@ const api = {
     }
     return ipcRenderer.invoke("attachments:prepare", inputs);
   },
+  // The slash commands the agent last sent, for a session that has none of its own yet.
+  agentCommands: (agent: Agent): Promise<AgentCommand[]> =>
+    ipcRenderer.invoke("agents:commands", agent),
   agentAttachmentCapabilities: (agent: Agent): Promise<PromptCapabilities> =>
     ipcRenderer.invoke("agents:attachment-capabilities", agent),
   // view: a New View prompt attached to the message.

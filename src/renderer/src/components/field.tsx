@@ -16,6 +16,7 @@ export function TextArea({
   bare,
   long,
   className,
+  onKeyDown,
   ...props
 }: Omit<ComponentProps<"textarea">, "onSubmit"> & {
   onSubmit: () => void;
@@ -27,6 +28,9 @@ export function TextArea({
     <textarea
       {...props}
       onKeyDown={(e) => {
+        // The caller's own handling (a completion menu) goes first; preventDefault keeps the key from ours.
+        onKeyDown?.(e);
+        if (e.defaultPrevented) return;
         if (e.key === "Escape") onCancel?.();
         // Home and End go to the start and end of the text, as in a Mac text view, not of the line; with Shift, select.
         if ((e.key === "Home" || e.key === "End") && !e.metaKey && !e.ctrlKey && !e.altKey) {
