@@ -74,6 +74,7 @@ type Props = {
   snapshot: string | null; // the worktree now; a view of the worktree pinned to another is stale
   scope: "all" | "pushed" | "unpushed" | "uncommitted";
   hasPr: boolean; // what's pushed is the PR's
+  onGitHub: boolean; // what's pushed is on GitHub, not another origin (ADR 0040)
   pr: PullRequestDetails | null; // the PR on GitHub, once read: its chip opens the PR panel (ADR 0037)
   onPr: boolean; // the PR panel shows
   onShowPr: () => void;
@@ -105,7 +106,7 @@ export function CanvasBar(props: Props) {
       : props.commit.sha.slice(0, 7)
     : {
         all: "All",
-        pushed: props.hasPr ? "PR" : "On GitHub",
+        pushed: props.hasPr ? "PR" : props.onGitHub ? "On GitHub" : "Pushed",
         unpushed: "Not Pushed",
         uncommitted: "Uncommitted",
       }[props.scope];

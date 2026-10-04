@@ -68,8 +68,12 @@ const api = {
   currentUser: (): Promise<CurrentUser> => ipcRenderer.invoke("github:current-user"),
   listRepos: (page: number): Promise<RepoPage> => ipcRenderer.invoke("github:list-repos", page),
   listProjects: (): Promise<Project[]> => ipcRenderer.invoke("projects:list"),
-  openProject: (fullName: string): Promise<Project> =>
-    ipcRenderer.invoke("projects:open", fullName),
+  openProject: (projectId: number): Promise<void> => ipcRenderer.invoke("projects:open", projectId),
+  addGitHubProject: (fullName: string): Promise<Project> =>
+    ipcRenderer.invoke("projects:add-github", fullName),
+  // ADR 0040: native dialogs; null if cancelled, rejects with why git won't take the folder.
+  addLocalProject: (): Promise<Project | null> => ipcRenderer.invoke("projects:add-local"),
+  createProject: (): Promise<Project | null> => ipcRenderer.invoke("projects:create"),
   listPullRequests: (owner: string, name: string): Promise<PullRequestList> =>
     ipcRenderer.invoke("github:list-pulls", owner, name),
   // The rail's titles: title and state of the workspaces' PRs, open or not.
@@ -382,8 +386,8 @@ const api = {
   confirm: (c: { message: string; detail: string; action: string }): Promise<boolean> =>
     ipcRenderer.invoke("dialogs:confirm", c),
   // L1's project menu: the project to switch to, or null for Add Project. Pending if dismissed.
-  showProjectsMenu: (fullNames: string[]): Promise<string | null> =>
-    ipcRenderer.invoke("menus:projects", fullNames),
+  showProjectsMenu: (projects: { id: number; label: string }[]): Promise<number | null> =>
+    ipcRenderer.invoke("menus:projects", projects),
   // The canvas's new view menu: the prompt to attach to the agent pane's composer, or "new-prompt" for New Prompt… (Settings).
   // Pending if dismissed. range: what the canvas shows, when it isn't all of the workspace's changes.
   showNewViewMenu: (range: ViewRange | null): Promise<AttachedPrompt | "new-prompt"> =>

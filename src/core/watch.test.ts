@@ -52,7 +52,7 @@ test("the watcher tells when HEAD moves, not when files change, and checks GitHu
   t.after(() => db.destroy());
   await db
     .insertInto("projects")
-    .values({ id: 1, owner: "test", name: "repo", last_opened_at: "" })
+    .values({ id: 1, github: "test/repo", name: "repo", last_opened_at: "" })
     .execute();
   await db
     .insertInto("workspaces")

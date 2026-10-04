@@ -25,15 +25,15 @@ export function Onboarding({
         <ol className="w-full max-w-md space-y-3">
           <Step
             n={1}
-            title="Sign in to GitHub"
-            detail="coxswain uses the GitHub CLI. Check your account in Settings."
+            title="Sign in to GitHub, for pull requests"
+            detail="coxswain uses the GitHub CLI. Check your account in Settings, or skip this for local work."
           >
             <Button onClick={onSettings}>Open Settings</Button>
           </Step>
           <Step
             n={2}
             title="Choose your first project"
-            detail="Pick one of your GitHub repositories."
+            detail="A GitHub repository, one on this Mac, or a new one."
           >
             <Button variant="primary" onClick={onChooseProject}>
               Choose project

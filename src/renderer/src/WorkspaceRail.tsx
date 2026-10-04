@@ -14,7 +14,7 @@ import {
   PanelLeftIcon,
 } from "./components/icons";
 import { cn, divider, muted, noDrag, selectable, titleBar } from "./components/styles";
-import { workspaceLabel } from "./format";
+import { gitHubOf, projectLabel, workspaceLabel } from "./format";
 import { core } from "./queries";
 
 type Props = {
@@ -44,14 +44,13 @@ export function WorkspaceRail({
   onHide,
 }: Props) {
   const numbers = workspaces.flatMap((w) => (w.prNumber !== null ? [w.prNumber] : []));
+  const repo = gitHubOf(project);
   // A new list of numbers keeps the titles shown until its own are in, so the rows don't flash back to numbers.
   const titles = useQuery({
-    ...core("listPullRequestTitles", project.owner, project.name, numbers),
-    enabled: numbers.length > 0,
+    ...core("listPullRequestTitles", repo?.owner ?? "", repo?.name ?? "", numbers),
+    enabled: !!repo && numbers.length > 0,
     placeholderData: (before, query) =>
-      query?.queryKey[1] === project.owner && query.queryKey[2] === project.name
-        ? before
-        : undefined,
+      query?.queryKey[1] === repo?.owner && query?.queryKey[2] === repo?.name ? before : undefined,
   }).data;
   const statuses = useQuery(core("listAgentStatuses")).data ?? {};
   const shown = current?.id;
@@ -80,7 +79,7 @@ export function WorkspaceRail({
       <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-1.5 text-xs">
         {/* The current project. Opens a native menu to switch or add projects. */}
         <button
-          title={`${project.owner}/${project.name}${cloning ? " (cloning…)" : ""}: switch or add project`}
+          title={`${projectLabel(project)}${cloning ? " (cloning…)" : ""}: switch or add project`}
           onClick={onProjects}
           className={cn(
             "flex items-center gap-2 rounded-md px-1.5 py-1.5 text-left",
@@ -97,7 +96,7 @@ export function WorkspaceRail({
           </span>
           <span className="flex min-w-0 flex-1 flex-col">
             <span className="truncate font-semibold">{project.name}</span>
-            <span className={cn("truncate text-[11px]", muted)}>{project.owner}</span>
+            <span className={cn("truncate text-[11px]", muted)}>{project.where}</span>
           </span>
           <span className={muted}>
             <ChevronDownIcon />

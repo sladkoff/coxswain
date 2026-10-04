@@ -1,3 +1,4 @@
+import type { Project } from "../../core/projects";
 import type { ReviewEntry } from "../../core/review";
 import type { Workspace } from "../../core/workspaces";
 
@@ -26,6 +27,15 @@ export function ago(iso: string) {
     if (Math.abs(s) >= size) return relative.format(Math.round(s / size), unit);
   return "just now";
 }
+
+// A project in a list: a clone by owner/name, a local repository by its folder and where it is (ADR 0040).
+export const projectLabel = (p: Project) => (p.path ? `${p.name} (${p.where})` : p.github!);
+
+// A project's GitHub repository for the GitHub calls, or null when it isn't on GitHub.
+export const gitHubOf = (p: Project) => {
+  const [owner, name] = p.github?.split("/") ?? [];
+  return owner ? { owner, name } : null;
+};
 
 // A workspace by its PR, or its branch until it has one (ADR 0028).
 export const workspaceLabel = (w: Workspace) =>

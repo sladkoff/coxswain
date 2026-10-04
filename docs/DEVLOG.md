@@ -3,6 +3,44 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-10-04 — Local repositories and new projects; GitHub optional
+
+### What works
+
+- **A project is a git repository, GitHub optional** ([ADR 0040](adr/0040-local-repositories-and-optional-github.md)).
+  `projects` now has `name`, `path` (the user's own repository; null for coxswain's clone) and `github`
+  (`owner/name`; null when it isn't on GitHub). The migration makes every existing project a clone on GitHub; its
+  folders don't move.
+- **Add Local Repository…** in _Open a project_ and the command palette: a native folder dialog. Any folder inside a
+  repository adds the repository's top level; one that isn't in a repository, has no commits yet or is one of
+  coxswain's own worktrees is refused with why. An `origin` on github.com makes it a GitHub project on the user's own
+  checkout. Its worktrees are added to the user's repository and live in `~/coxswain/worktrees/local/<name>-<hash>/`;
+  the user's checkout, index and branches aren't touched.
+- **New Project…**: a native save dialog for a new, empty folder, which coxswain `git init`s (on the user's
+  `init.defaultBranch`, else `main`) and gives an empty first commit. Plain folders can't be added.
+- **Without GitHub**, a project's New workspace dialog lists its local and `origin/` branches, defaulting to the one
+  the user's checkout is on; a branch starts from the user's local base branch. Opening a workspace doesn't ask GitHub
+  for its PR. With no `origin`, nothing reads _not pushed_ and Push isn't offered; with one, Push goes there. Open
+  Pull Request… is only for projects on GitHub. The scope reads _Pushed_ instead of _On GitHub_.
+- **The user's own worktrees are left alone.** Opening a workspace moved any worktree holding its branch into
+  `~/coxswain/worktrees/`, and ran `git worktree prune`; in a local repository both could reach the user's worktrees
+  (moving their folder away, or dropping the registration of one on a drive not mounted). Now only worktrees under
+  `~/coxswain` are moved, a branch checked out elsewhere is refused with where, and stale registrations are dropped
+  one by one, only coxswain's (`pruneOurs` in `src/core/git.ts`).
+- **`gh` is no longer required at startup**; where GitHub is used (the repository list, a PR) it says what's missing.
+- Tests: `src/core/local-repositories.test.ts` (adding, refusing, a branch workspace on a repository without a remote,
+  a new project, the user's worktrees neither moved nor pruned) and `gitHubOf` in `git.test.ts`. Checked in the running app on a scratch database: Add Local
+  Repository… (refused for `/tmp`, then added), a branch workspace with a commit and uncommitted change, its Commits
+  pane, New Project… and its refusal of a folder that exists; and a copy of the real database, whose GitHub projects
+  open as before.
+
+### Tech debt
+
+- Only `origin` is read, for GitHub and for Push; a fork setup with GitHub as `upstream` isn't detected.
+- Projects still can't be removed; a local repository's worktrees will need `git worktree remove` then.
+- A branch checked out in the user's own checkout or worktrees can't be a workspace's; the error says where.
+- GitLab and other hosts work as local repositories, with Push but no merge requests.
+
 ## 2026-10-04 — A new workspace shows sooner; slash commands
 
 ### What works

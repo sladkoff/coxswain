@@ -1,14 +1,13 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { claudeOnPath } from "./agents";
-import { ghToken } from "./github";
 
 // A tool coxswain needs that is missing or not set up, with how to fix it.
-export type SetupProblem = { tool: "git" | "gh" | "claude"; problem: string; fix: string };
+export type SetupProblem = { tool: "git" | "claude"; problem: string; fix: string };
 export type SetupCheck = { problems: SetupProblem[]; path: string };
 
-// The startup check: git, the GitHub CLI signed in, and Claude Code, all on the PATH the app was started with.
-// Local only, so it passes offline. ponytail: doesn't check that `claude` is signed in; its first turn says so.
+// The startup check: git and Claude Code, on the PATH the app was started with. Local only, so it passes offline. The
+// GitHub CLI isn't checked: a project needn't be on GitHub (ADR 0040), and where GitHub is used it says what's wrong. ponytail: doesn't check that `claude` is signed in; its first turn says so.
 export async function checkSetup(): Promise<SetupCheck> {
   const problems: SetupProblem[] = [];
   try {
@@ -18,20 +17,6 @@ export async function checkSetup(): Promise<SetupCheck> {
       tool: "git",
       problem: "git is not installed or not on PATH.",
       fix: "xcode-select --install",
-    });
-  }
-  try {
-    if (!(await ghToken()))
-      problems.push({
-        tool: "gh",
-        problem: "The GitHub CLI is not signed in.",
-        fix: "gh auth login",
-      });
-  } catch {
-    problems.push({
-      tool: "gh",
-      problem: "The GitHub CLI (gh) is not installed or not on PATH.",
-      fix: "brew install gh && gh auth login",
     });
   }
   try {

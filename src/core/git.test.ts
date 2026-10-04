@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { asText, parseLog } from "./git.ts";
+import { asText, gitHubOf, parseLog } from "./git.ts";
 
 test("images become data URLs, other binary files don't, text stays text", () => {
   const png = asText(Buffer.from([0x89, 0x50, 0, 1]), "logo.PNG");
@@ -39,4 +39,19 @@ test("the log gives each commit's author, co-authors, body and size", () => {
     [merge.parent, merge.merge, merge.body, merge.coAuthors, merge.files],
     ["a1", true, "Body line", ["Bob B"], 0],
   );
+});
+
+test("gitHubOf reads owner/name from github.com remotes only", () => {
+  for (const url of [
+    "git@github.com:acme/widgets.git",
+    "https://github.com/acme/widgets",
+    "https://github.com/acme/widgets.git",
+    "https://user@github.com/acme/widgets/",
+    "ssh://git@github.com/acme/widgets.git",
+  ])
+    assert.equal(gitHubOf(url), "acme/widgets", url);
+  assert.equal(gitHubOf("git@github.com:acme/my.repo.git"), "acme/my.repo");
+  assert.equal(gitHubOf("git@gitlab.com:acme/widgets.git"), null);
+  assert.equal(gitHubOf("https://github.com.evil.example/acme/widgets"), null);
+  assert.equal(gitHubOf(""), null);
 });

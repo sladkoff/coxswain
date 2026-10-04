@@ -2,7 +2,7 @@ import type { Db } from "./db";
 import { emit } from "./events.ts";
 
 // A workspace is a unit of work in a project (ADR 0028): a PR, or a branch started in coxswain, which gets a PR once
-// one is opened for it. Its worktree's path follows from its repository and its branch or PR number (git.ts
+// one is opened for it. Its worktree's path follows from its project and its branch or PR number (git.ts
 // worktreePath), so it isn't stored.
 // branch, baseBranch: set for a workspace started on a branch, kept once it has a PR. A PR's branch comes from GitHub.
 export type Workspace = {
@@ -135,8 +135,10 @@ export async function getWorkspaceRepo(db: Db, workspaceId: number) {
     .selectFrom("workspaces as w")
     .innerJoin("projects as p", "p.id", "w.project_id")
     .select([
-      "p.owner",
+      "p.id as projectId",
       "p.name",
+      "p.path",
+      "p.github",
       "w.pr_number as prNumber",
       "w.branch",
       "w.base_branch as baseBranch",

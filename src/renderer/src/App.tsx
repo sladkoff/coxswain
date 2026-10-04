@@ -25,7 +25,7 @@ import { Projects } from "./Projects";
 import { defaultViewId, threadLocation, type CanvasSearch } from "./canvas-state";
 import { core, markReviewed as mark, queryClient } from "./queries";
 import { Settings } from "./Settings";
-import { workspaceLabel } from "./format";
+import { projectLabel, workspaceLabel } from "./format";
 import { Setup } from "./Setup";
 import { StatusBar } from "./StatusBar";
 import { usePullRequest } from "./usePullRequest";
@@ -50,15 +50,21 @@ export function App() {
   const search = useSearch({ from: "__root__" });
   const workspaceLocations = useRef(new Map<number, CanvasSearch>());
   const [screen, setScreen] = useState<
-    "main" | "settings" | "new-prompt" | "projects" | "new-workspace"
+    | "main"
+    | "settings"
+    | "new-prompt"
+    | "projects"
+    | "projects-add-local"
+    | "projects-create"
+    | "new-workspace"
   >("main");
   const close = () => setScreen("main");
 
   const setup = useQuery(core("checkSetup"));
   const projects = useQuery(core("listProjects")).data;
   const current = projects?.[0]; // listed most recently opened first
-  const selectProject = async (fullName: string) => {
-    await window.coxswain.openProject(fullName);
+  const selectProject = async (id: number) => {
+    await window.coxswain.openProject(id);
     close();
   };
 
@@ -235,7 +241,11 @@ export function App() {
     }))
     .with({ scope: "pushed", commits: P.nonNullable.select() }, (c) => ({
       what:
-        currentWorkspace?.prNumber != null ? "the PR's changes on GitHub" : "the changes on GitHub",
+        currentWorkspace?.prNumber != null
+          ? "the PR's changes on GitHub"
+          : current?.github
+            ? "the changes on GitHub"
+            : "the changes pushed",
       base: c.mergeBase,
       head: c.head,
     }))
@@ -559,10 +569,12 @@ export function App() {
   const pushed = async (w: Workspace, result: { status: string; message?: string }) => {
     setGitProblem(result.status === "ok" ? null : (result.message ?? `GitHub: ${result.status}`));
   };
+  // ADR 0040: a project not on GitHub pushes to its origin, whatever that is.
+  const pushedTo = current?.github ? "GitHub" : "origin";
   const push = async (w: Workspace) => {
     const ok = await window.coxswain.confirm({
-      message: `Push ${w.branch ? `“${w.branch}”` : "the PR's branch"} to GitHub?`,
-      detail: "Its commits that aren't pushed yet go to GitHub. Uncommitted changes stay here.",
+      message: `Push ${w.branch ? `“${w.branch}”` : "the PR's branch"} to ${pushedTo}?`,
+      detail: `Its commits that aren't pushed yet go to ${pushedTo}. Uncommitted changes stay here.`,
       action: "Push",
     });
     if (ok) await pushed(w, await window.coxswain.push(w.id));
@@ -783,7 +795,9 @@ export function App() {
           "pushed",
           currentWorkspace?.prNumber !== null
             ? "Show Only the PR's Changes"
-            : "Show Only What's on GitHub",
+            : current?.github
+              ? "Show Only What's on GitHub"
+              : "Show Only What's Pushed",
         ],
         ["unpushed", "Show Only the Commits Not Pushed"],
         ["uncommitted", "Show Only Uncommitted Changes"],
@@ -797,13 +811,13 @@ export function App() {
     {
       id: "push",
       title: "Push",
-      enabled: ready && currentWorkspace.prNumber !== null,
+      enabled: ready && (currentWorkspace.prNumber !== null || (!current?.github && pr.remote)),
       run: () => void push(currentWorkspace!),
     },
     {
       id: "open-pull-request",
       title: "Open Pull Request…",
-      enabled: ready && currentWorkspace.prNumber === null,
+      enabled: ready && currentWorkspace.prNumber === null && !!current?.github,
       run: () => void openPullRequest(currentWorkspace!),
     },
     ...prompts.map((p) =>
@@ -841,11 +855,18 @@ export function App() {
     },
     ...(projects ?? []).map((p) => ({
       id: `project:${p.id}`,
-      title: `Switch to Project: ${p.owner}/${p.name}`,
+      title: `Switch to Project: ${projectLabel(p)}`,
       enabled: p.id !== current?.id,
-      run: () => void selectProject(`${p.owner}/${p.name}`),
+      run: () => void selectProject(p.id),
     })),
     { id: "add-project", title: "Add Project…", run: () => setScreen("projects") },
+    // ADR 0040: straight to the native dialog; what git refuses shows in Open a project.
+    {
+      id: "add-local-repository",
+      title: "Add Local Repository…",
+      run: () => setScreen("projects-add-local"),
+    },
+    { id: "new-project", title: "New Project…", run: () => setScreen("projects-create") },
     { id: "settings", title: "Settings…", shortcut: "⌘,", run: () => setScreen("settings") },
   ];
   const latestActions = useRef(actions);
@@ -883,11 +904,16 @@ export function App() {
     );
   // Projects and New workspace are dialogs over the screen below them.
   const dialog =
-    screen === "projects" ? (
+    screen === "projects" || screen === "projects-add-local" || screen === "projects-create" ? (
       <Projects
         projects={projects ?? []}
         current={current}
+        start={match(screen)
+          .with("projects-add-local", () => "add-local" as const)
+          .with("projects-create", () => "create" as const)
+          .otherwise(() => null)}
         onSelect={selectProject}
+        onAdded={close}
         onClose={close}
       />
     ) : screen === "new-workspace" && current ? (
@@ -925,10 +951,10 @@ export function App() {
           current={currentWorkspace}
           onProjects={async () => {
             const picked = await window.coxswain.showProjectsMenu(
-              projects.map((p) => `${p.owner}/${p.name}`),
+              projects.map((p) => ({ id: p.id, label: projectLabel(p) })),
             );
             if (picked === null) setScreen("projects");
-            else if (picked !== `${current.owner}/${current.name}`) await selectProject(picked);
+            else if (picked !== current.id) await selectProject(picked);
           }}
           onSelect={(w) => void selectWorkspace(w.id)}
           onRemove={removeWorkspace}
@@ -1004,7 +1030,8 @@ export function App() {
                         workspaceId={currentWorkspace.id}
                         mergeBase={pr.commits.mergeBase}
                         head={pr.commits.head}
-                        canOpenPr={currentWorkspace.prNumber === null}
+                        canOpenPr={currentWorkspace.prNumber === null && !!current.github}
+                        remote={pr.remote}
                         problem={gitProblem}
                         current={commit}
                         onPick={pickCommit}
@@ -1047,6 +1074,7 @@ export function App() {
                 snapshot={pr.snapshot}
                 scope={scope}
                 hasPr={currentWorkspace.prNumber !== null}
+                onGitHub={!!current.github}
                 pr={pr.details}
                 onPr={!!s.pr}
                 onShowPr={() => void show({ pr: true })}

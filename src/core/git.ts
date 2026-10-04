@@ -3,7 +3,7 @@ import { match } from "ts-pattern";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, extname, join, relative, resolve } from "node:path";
+import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import type { Db } from "./db";
 import {
   createPullRequest,
@@ -12,12 +12,12 @@ import {
   getPullRequestHead,
   type GitHubProblem,
 } from "./github.ts";
-import { getProject } from "./projects.ts";
+import { addLocalProject, getProject, gitHubRepo, type Project } from "./projects.ts";
 import { snapshotOf } from "./snapshot.ts";
 import { getWorkspaceRepo, setWorkspacePullRequest } from "./workspaces.ts";
 
-// ADR 0008: coxswain's own blobless clone per project, and one worktree per workspace on the PR's head branch, or on
-// the workspace's own branch (ADR 0028).
+// ADR 0008: coxswain's own blobless clone per GitHub project, or the user's own repository for a local one (ADR 0040),
+// and one worktree per workspace on the PR's head branch, or on the workspace's own branch (ADR 0028).
 export type GitProblem = { status: "git-error"; message: string };
 
 export type ChangedFile = {
@@ -38,37 +38,47 @@ export type FileText =
   | { status: "ok"; text: string | null; binary: boolean; image?: string }
   | GitProblem;
 export type CloneResult = { status: "ok" } | GitProblem | GitHubProblem;
-// head: what's on GitHub (ADR 0028), the PR's head or the branch's; the merge base while a branch isn't pushed. Local
-// changes are what the worktree has on top of it. prNumber: the workspace's PR, which a branch workspace gets once one
-// is opened for its branch. notice: something the user should know, e.g. the PR moved on but local changes kept the
-// worktree back.
+// head: what's on GitHub (ADR 0028), the PR's head or the branch's (on origin, for a project not on GitHub); the merge
+// base while a branch isn't pushed. Local changes are what the worktree has on top of it. prNumber: the workspace's PR,
+// which a branch workspace gets once one is opened for its branch. remote: whether there's an origin to push to (ADR
+// 0040). notice: something the user should know, e.g. the PR moved on but local changes kept the worktree back.
 export type WorktreeResult =
   | {
       status: "ok";
       head: string;
       mergeBase: string;
       prNumber: number | null;
+      remote: boolean;
       notice: string | null;
     }
   | GitProblem
   | GitHubProblem;
 
 const root = join(homedir(), "coxswain");
-const repoPath = (owner: string, name: string) => join(root, "repos", owner, name);
+type ProjectRepo = Pick<Project, "path" | "github">;
+// ADR 0040: a local repository is the user's own; a GitHub one is coxswain's clone.
+const repoPath = (p: ProjectRepo) => p.path ?? join(root, "repos", p.github!);
+// The project's folder under worktrees/ and checkouts/: owner/name for a clone, local/<folder>-<hash of its path> for a
+// local repository, so two repositories in folders of the same name don't share one.
+const projectDir = (p: ProjectRepo) =>
+  p.path
+    ? join(
+        "local",
+        `${basename(p.path)}-${createHash("sha256").update(p.path).digest("hex").slice(0, 8)}`,
+      )
+    : p.github!;
 // ADR 0005: worktrees go in ~/coxswain/worktrees/<owner>/<name>/pr-<number>/, or branch-<branch>/ for a workspace
 // started on a branch, kept once it has a PR (agents' sessions are tied to the folder). Named by the PR or branch, not
 // the workspace's row ID, so a database made afresh finds the same folder and never another's.
 // ponytail: a branch's slashes become "+", so a/b and a+b share a folder; the second then moves the first's away.
 export const worktreePath = (
-  owner: string,
-  name: string,
+  p: ProjectRepo,
   w: { prNumber: number | null; branch: string | null },
 ) =>
   join(
     root,
     "worktrees",
-    owner,
-    name,
+    projectDir(p),
     w.branch ? `branch-${w.branch.replaceAll("/", "+")}` : `pr-${w.prNumber}`,
   );
 
@@ -111,14 +121,19 @@ const clones = new Map<string, Promise<CloneResult>>();
 
 // Clones the project if it isn't yet; safe to call again while a clone runs.
 export async function cloneProject(db: Db, projectId: number): Promise<CloneResult> {
-  const { owner, name } = await getProject(db, projectId);
-  return clone(owner, name);
+  return clone(await getProject(db, projectId));
 }
 
-function clone(owner: string, name: string): Promise<CloneResult> {
-  const path = repoPath(owner, name);
+// A local repository isn't cloned; it only has to be there still.
+function clone(p: ProjectRepo): Promise<CloneResult> {
+  const path = repoPath(p);
   if (existsSync(join(path, ".git"))) return Promise.resolve({ status: "ok" });
-  const key = `${owner}/${name}`;
+  if (p.path)
+    return Promise.resolve({
+      status: "git-error",
+      message: `The repository at ${p.path} is gone; put it back, or add it again from where it is now`,
+    });
+  const key = p.github!;
   let cloning = clones.get(key);
   if (!cloning) {
     cloning = withGit(async () => {
@@ -138,6 +153,49 @@ function clone(owner: string, name: string): Promise<CloneResult> {
   return cloning;
 }
 
+// ADR 0040: the local repository folder is in, as a project: its top level, on GitHub if its origin is. Refuses a folder
+// that isn't in a repository or one with no commit yet (worktrees need one), and coxswain's own worktrees.
+export async function addLocalRepository(db: Db, folder: string): Promise<Project> {
+  const top = (
+    await gitText(folder, ["rev-parse", "--show-toplevel"]).catch(() => {
+      throw new Error(`${folder} isn't in a git repository`);
+    })
+  ).trim();
+  if (top === root || top.startsWith(`${root}/`))
+    throw new Error(`${top} is coxswain's own; add the repository it was made from`);
+  if (!(await hasRef(top, "HEAD")))
+    throw new Error(`${top} has no commits yet; commit something first, then add it`);
+  const origin = await gitText(top, ["remote", "get-url", "origin"]).catch(() => "");
+  return addLocalProject(db, top, basename(top), gitHubOf(origin.trim()));
+}
+
+// ADR 0040: a new project in a new, empty folder at path: git init, on the user's default branch (else main), and an
+// empty first commit with their git identity, so workspaces have something to start from.
+export async function createRepository(db: Db, path: string): Promise<Project> {
+  if (existsSync(path) && readdirSync(path).length)
+    throw new Error(`${path} already exists and isn't empty; pick a new folder`);
+  const made = !existsSync(path);
+  mkdirSync(path, { recursive: true });
+  try {
+    const branch = await gitText(path, ["config", "--get", "init.defaultBranch"]).catch(() => "");
+    await git(path, ["init", "--initial-branch", branch.trim() || "main"]);
+    await git(path, ["commit", "--allow-empty", "--message", "Initial commit"]);
+  } catch (e) {
+    // Gone again, so trying once more (e.g. after setting git's user.name) starts afresh.
+    rmSync(made ? path : join(path, ".git"), { recursive: true, force: true });
+    throw new Error((e as Error).message);
+  }
+  return addLocalRepository(db, path);
+}
+
+// A remote's owner/name if it's on github.com (HTTPS, SSH or git: URLs), else null.
+export function gitHubOf(url: string): string | null {
+  const m = url.match(
+    /^(?:(?:https?|ssh|git):\/\/(?:[^@/]+@)?|[^@/:]+@)github\.com[:/]([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/,
+  );
+  return m ? `${m[1]}/${m[2]}` : null;
+}
+
 function ghProtocol(): Promise<string> {
   return new Promise((done) =>
     execFile("gh", ["config", "get", "git_protocol"], (e, out) => done(e ? "" : out.trim())),
@@ -146,13 +204,16 @@ function ghProtocol(): Promise<string> {
 
 // The last result of opening each workspace's worktree, so switching back needs no network.
 // ponytail: memory only, so the first open after a restart waits for GitHub and fetch (~2.5 s); persist if that hurts.
-const lastOpened = new Map<number, { head: string; mergeBase: string; prNumber: number | null }>();
+const lastOpened = new Map<
+  number,
+  { head: string; mergeBase: string; prNumber: number | null; remote: boolean }
+>();
 
 // What openWorktree last said, if the worktree is still there; null when it has to be opened properly.
 export async function openedBefore(db: Db, workspaceId: number): Promise<WorktreeResult | null> {
   const last = lastOpened.get(workspaceId);
   const w = await getWorkspaceRepo(db, workspaceId);
-  if (!last || !existsSync(join(worktreePath(w.owner, w.name, w), ".git"))) return null;
+  if (!last || !existsSync(join(worktreePath(w, w), ".git"))) return null;
   return { status: "ok", ...last, notice: null };
 }
 
@@ -160,12 +221,12 @@ export async function openedBefore(db: Db, workspaceId: number): Promise<Worktre
 // Talks to GitHub and fetches, so it takes a second or more; show openedBefore meanwhile.
 export async function openWorktree(db: Db, workspaceId: number): Promise<WorktreeResult> {
   const w = await getWorkspaceRepo(db, workspaceId);
-  const { owner, name } = w;
-  const cloned = clone(owner, name);
+  const cloned = clone(w);
   let prNumber = w.prNumber;
   // ADR 0028: a branch workspace gets its PR once one is opened for the branch, here or on GitHub. Offline, or the PR
-  // already has a workspace of its own: it carries on as a branch.
-  if (prNumber === null && w.branch) {
+  // already has a workspace of its own: it carries on as a branch. A project not on GitHub has none (ADR 0040).
+  if (prNumber === null && w.branch && w.github) {
+    const { owner, name } = gitHubRepo(w);
     const found = await findPullRequest(owner, name, w.branch);
     if (found.status === "ok" && found.number !== null)
       prNumber = await setWorkspacePullRequest(db, workspaceId, found.number).then(
@@ -177,6 +238,7 @@ export async function openWorktree(db: Db, workspaceId: number): Promise<Worktre
     const c = await cloned;
     return c.status === "ok" ? openBranch(workspaceId, w) : c;
   }
+  const { owner, name } = gitHubRepo(w);
   const [pr, c] = await Promise.all([getPullRequestHead(owner, name, prNumber), cloned]);
   if (pr.status !== "ok") return pr;
   if (c.status !== "ok") return c;
@@ -184,57 +246,68 @@ export async function openWorktree(db: Db, workspaceId: number): Promise<Worktre
   if (pr.fromFork) return { status: "git-error", message: "PRs from forks are not supported yet" };
 
   return withGit(async () => {
-    const repo = repoPath(owner, name);
-    const path = worktreePath(owner, name, w);
+    const repo = repoPath(w);
+    const path = worktreePath(w, w);
     const branch = pr.headRef;
     const upstream = `origin/${branch}`;
     await git(repo, ["fetch", "origin", `+refs/heads/${branch}:refs/remotes/${upstream}`]);
     await addWorktree(repo, path, branch, upstream, true);
     const notice = await catchUp(path, upstream, "The PR has new commits");
-    lastOpened.set(workspaceId, { head: pr.head, mergeBase: pr.mergeBase, prNumber });
-    return { status: "ok" as const, head: pr.head, mergeBase: pr.mergeBase, prNumber, notice };
+    const opened = { head: pr.head, mergeBase: pr.mergeBase, prNumber, remote: true };
+    lastOpened.set(workspaceId, opened);
+    return { status: "ok" as const, ...opened, notice };
   });
 }
 
 // A branch workspace without a PR (ADR 0028): its worktree on its branch, made from the base branch unless it's on
 // GitHub already. Its diff is against where it forked from the base branch, like a PR's; what's pushed is on GitHub.
-// Offline, it carries on with what was fetched before.
+// Offline, it carries on with what was fetched before. A local repository's base branch is the user's own, and what's
+// pushed is on its origin, if it has one (ADR 0040).
 function openBranch(
   workspaceId: number,
-  w: { owner: string; name: string; branch: string | null; baseBranch: string | null },
+  w: ProjectRepo & { branch: string | null; baseBranch: string | null },
 ): Promise<WorktreeResult> {
   return withGit(async () => {
-    const repo = repoPath(w.owner, w.name);
-    const path = worktreePath(w.owner, w.name, { prNumber: null, branch: w.branch });
+    const repo = repoPath(w);
+    const path = worktreePath(w, { prNumber: null, branch: w.branch });
     const [branch, base] = [w.branch!, w.baseBranch!];
+    const remote = await hasOrigin(repo);
     const fetch = (b: string) =>
       git(repo, ["fetch", "origin", `+refs/heads/${b}:refs/remotes/origin/${b}`]).then(
         () => true,
         () => false,
       );
     // Fetching a branch that was never pushed fails too, so only the base branch's failure says we're offline.
-    const [fetched] = await Promise.all([fetch(base), fetch(branch)]);
-    const pushed = await hasRef(repo, `refs/remotes/origin/${branch}`);
-    await addWorktree(repo, path, branch, `origin/${pushed ? branch : base}`, pushed);
+    const [fetched] = remote ? await Promise.all([fetch(base), fetch(branch)]) : [true];
+    const pushed = remote && (await hasRef(repo, `refs/remotes/origin/${branch}`));
+    const baseRef =
+      w.path && (await hasRef(repo, `refs/heads/${base}`))
+        ? `refs/heads/${base}`
+        : `origin/${base}`;
+    await addWorktree(repo, path, branch, pushed ? `origin/${branch}` : baseRef, pushed);
     const behind = pushed
       ? await catchUp(path, `origin/${branch}`, "The branch has new commits")
       : null;
-    const mergeBase = (await gitText(path, ["merge-base", `origin/${base}`, "HEAD"])).trim();
+    const mergeBase = (await gitText(path, ["merge-base", baseRef, "HEAD"])).trim();
     const head = pushed
       ? (await gitText(repo, ["rev-parse", `origin/${branch}`])).trim()
       : mergeBase;
-    lastOpened.set(workspaceId, { head, mergeBase, prNumber: null });
+    lastOpened.set(workspaceId, { head, mergeBase, prNumber: null, remote });
     const notice = fetched
       ? behind
-      : "Could not fetch from GitHub; showing what was fetched before";
-    return { status: "ok" as const, head, mergeBase, prNumber: null, notice };
+      : `Could not fetch from ${w.github ? "GitHub" : "origin"}; showing what was fetched before`;
+    return { status: "ok" as const, head, mergeBase, prNumber: null, remote, notice };
   });
 }
 
-// Makes sure the worktree at path has branch checked out. Without a worktree there: a worktree elsewhere may hold the
-// branch already, e.g. one named by an older coxswain or a database made since, so it's moved here, local changes and
-// all (registrations whose folder is gone are dropped first); else one is added, the branch made from start if it
-// doesn't exist yet, tracking start if track.
+const hasOrigin = async (repo: string) =>
+  (await gitText(repo, ["remote"])).split("\n").includes("origin");
+
+// Makes sure the worktree at path has branch checked out. Without a worktree there: one of coxswain's elsewhere may hold
+// the branch already, e.g. one named by an older coxswain or a database made since, so it's moved here, local changes
+// and all (coxswain's registrations whose folder is gone are dropped first); else one is added, the branch made from
+// start if it doesn't exist yet, tracking start if track. A worktree that isn't coxswain's is never moved (ADR 0040): in
+// a local repository it's the user's, so a branch checked out there can't be a workspace's.
 // ponytail: fails when the branch is the default branch, which the clone itself has checked out; make the clone bare
 // (with an explicit fetch refspec) if such PRs show up.
 async function addWorktree(
@@ -249,11 +322,14 @@ async function addWorktree(
     throw new GitError(
       `${path} exists and isn't a worktree; move it away and reopen the workspace`,
     );
-  await git(repo, ["worktree", "prune"]);
-  const holder = (await gitText(repo, ["worktree", "list", "--porcelain"]))
-    .split("\n\n")
-    .find((w) => w.split("\n").includes(`branch refs/heads/${branch}`))
-    ?.match(/^worktree (.+)$/m)?.[1];
+  await pruneOurs(repo);
+  const holder = (await worktreeList(repo)).find((w) =>
+    w.lines.includes(`branch refs/heads/${branch}`),
+  )?.path;
+  if (holder && holder !== repo && !isOurs(holder))
+    throw new GitError(
+      `“${branch}” is checked out at ${holder}; check out another branch there, or start the workspace on another one`,
+    );
   if (holder && holder !== repo) await git(repo, ["worktree", "move", holder, path]);
   if (existsSync(join(path, ".git"))) return;
   const hasBranch = await hasRef(repo, `refs/heads/${branch}`);
@@ -263,6 +339,26 @@ async function addWorktree(
       ? ["worktree", "add", path, branch]
       : ["worktree", "add", track ? "--track" : "--no-track", "-b", branch, path, start],
   );
+}
+
+// The repository's worktrees, as `git worktree list --porcelain` gives them: each one's path and its lines.
+async function worktreeList(repo: string) {
+  return (await gitText(repo, ["worktree", "list", "--porcelain"]))
+    .split("\n\n")
+    .filter(Boolean)
+    .map((w) => ({ path: w.match(/^worktree (.+)$/m)?.[1] ?? "", lines: w.split("\n") }));
+}
+
+// Under ~/coxswain: one of coxswain's worktrees or checkouts, never one of the user's.
+const isOurs = (path: string) => path.startsWith(`${root}/`);
+
+// Drops the registrations of coxswain's worktrees and checkouts whose folder is gone, one by one, rather than with
+// `git worktree prune`, which in a local repository would also drop the user's (e.g. one on a drive not mounted now)
+// (ADR 0040). `remove --force` on a missing folder only deletes git's record of it; one that's there is skipped.
+async function pruneOurs(repo: string) {
+  for (const w of await worktreeList(repo))
+    if (isOurs(w.path) && !existsSync(w.path) && w.lines.some((l) => l.startsWith("prunable")))
+      await git(repo, ["worktree", "remove", "--force", w.path]);
 }
 
 // Fast-forwards the worktree to upstream when it's behind and has no local changes. Otherwise, if it's behind, says so
@@ -284,29 +380,34 @@ async function catchUp(path: string, upstream: string, moved: string): Promise<s
 
 export async function openedWorktree(db: Db, workspaceId: number): Promise<string> {
   const w = await getWorkspaceRepo(db, workspaceId);
-  const path = worktreePath(w.owner, w.name, w);
+  const path = worktreePath(w, w);
   if (!existsSync(join(path, ".git"))) throw new GitError("The worktree is not ready yet");
   return path;
 }
 
-// The project's branches on GitHub (as last fetched), to start a branch workspace from, and its default branch.
+// The project's branches on GitHub (as last fetched), to start a branch workspace from, and its default branch. A
+// local repository's are its own and origin's, the default the one the user's checkout is on (ADR 0040).
 // ponytail: as of the clone and the fetches since; fetch them all first if a new branch is missed.
 export type BranchList =
   | { status: "ok"; branches: string[]; defaultBranch: string }
   | GitProblem
   | GitHubProblem;
 export async function listBranches(db: Db, projectId: number): Promise<BranchList> {
-  const { owner, name } = await getProject(db, projectId);
-  const cloned = await clone(owner, name);
+  const p = await getProject(db, projectId);
+  const cloned = await clone(p);
   if (cloned.status !== "ok") return cloned;
   return withGit(async () => {
-    const repo = repoPath(owner, name);
-    const [refs, head] = await Promise.all([
+    const repo = repoPath(p);
+    const [refs, head, local, current] = await Promise.all([
       gitText(repo, ["for-each-ref", "--format=%(refname:lstrip=3)", "refs/remotes/origin"]),
       gitText(repo, ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]).catch(() => ""),
+      p.path ? gitText(repo, ["for-each-ref", "--format=%(refname:lstrip=2)", "refs/heads"]) : "",
+      p.path ? gitText(repo, ["symbolic-ref", "--short", "-q", "HEAD"]).catch(() => "") : "",
     ]);
-    const branches = refs.split("\n").filter((b) => b && b !== "HEAD");
-    const defaultBranch = head.trim().replace(/^origin\//, "") || branches[0] || "main";
+    const lines = (out: string) => out.split("\n").filter((b) => b && b !== "HEAD");
+    const branches = [...new Set([...lines(local), ...lines(refs)])];
+    const defaultBranch =
+      current.trim() || head.trim().replace(/^origin\//, "") || branches[0] || "main";
     return { status: "ok" as const, branches, defaultBranch };
   });
 }
@@ -379,6 +480,8 @@ export const currentHead = (workspaceId: number) => lastOpened.get(workspaceId)?
 export function push(db: Db, workspaceId: number): Promise<{ status: "ok" } | GitProblem> {
   return withGit(async () => {
     const path = await openedWorktree(db, workspaceId);
+    if (!(await hasOrigin(path)))
+      throw new GitError("The repository has no origin remote to push to");
     const branch = (await gitText(path, ["symbolic-ref", "--short", "HEAD"])).trim();
     await git(path, ["push", "--set-upstream", "origin", branch]);
     return { status: "ok" as const };
@@ -394,6 +497,7 @@ export async function openPullRequest(
   const w = await getWorkspaceRepo(db, workspaceId);
   if (w.prNumber !== null || !w.branch || !w.baseBranch)
     return { status: "git-error", message: "The workspace has a PR already" };
+  if (!w.github) return { status: "git-error", message: "The project isn't on GitHub" };
   const pushed = await push(db, workspaceId);
   if (pushed.status !== "ok") return pushed;
   const log = await withGit(async () =>
@@ -409,7 +513,8 @@ export async function openPullRequest(
       .filter(Boolean),
   );
   if (!Array.isArray(log)) return log;
-  const pr = await createPullRequest(w.owner, w.name, {
+  const { owner, name } = gitHubRepo(w);
+  const pr = await createPullRequest(owner, name, {
     head: w.branch,
     base: w.baseBranch,
     title: log.length === 1 ? log[0] : w.branch,
@@ -804,7 +909,7 @@ export function readFileAt(
 // pruneCheckouts. Made once, however many ask at a time.
 export type Checkout = { path: string; worktree: string };
 const checkouts = new Map<string, Promise<unknown>>();
-const checkoutsPath = (owner: string, name: string) => join(root, "checkouts", owner, name);
+const checkoutsPath = (p: ProjectRepo) => join(root, "checkouts", projectDir(p));
 export async function checkoutAt(
   db: Db,
   workspaceId: number,
@@ -815,11 +920,11 @@ export async function checkoutAt(
   if (commit === null || commit === (await snapshotOf(worktree)))
     return { path: worktree, worktree };
   if (!isCommit(commit)) throw new GitError(`Not a commit: ${commit}`);
-  const path = join(checkoutsPath(w.owner, w.name), commit);
+  const path = join(checkoutsPath(w), commit);
   if (!checkouts.has(path)) {
     const made = existsSync(join(path, ".git"))
       ? Promise.resolve()
-      : git(repoPath(w.owner, w.name), ["worktree", "add", "--detach", "--force", path, commit]);
+      : git(repoPath(w), ["worktree", "add", "--detach", "--force", path, commit]);
     checkouts.set(
       path,
       made.catch((e) => {
@@ -835,7 +940,7 @@ export async function checkoutAt(
 // Removes the workspace's repository's commit checkouts but those kept, e.g. the ones a language server still reads.
 export async function pruneCheckouts(db: Db, workspaceId: number, keep: string[]): Promise<void> {
   const w = await getWorkspaceRepo(db, workspaceId);
-  const dir = checkoutsPath(w.owner, w.name);
+  const dir = checkoutsPath(w);
   if (!existsSync(dir)) return;
   const gone = readdirSync(dir)
     .map((sha) => join(dir, sha))
@@ -845,5 +950,5 @@ export async function pruneCheckouts(db: Db, workspaceId: number, keep: string[]
     // Removed by hand, then pruned: also a checkout git no longer lists, e.g. one left half-made.
     rmSync(p, { recursive: true, force: true });
   }
-  if (gone.length) await git(repoPath(w.owner, w.name), ["worktree", "prune"]);
+  if (gone.length) await pruneOurs(repoPath(w));
 }

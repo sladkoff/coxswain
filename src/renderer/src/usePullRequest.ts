@@ -9,6 +9,7 @@ export type PullRequestData = {
   changed: ChangedFile[] | null;
   // head: what's on GitHub, the PR's head or the branch's (the merge base until it's pushed; ADR 0028).
   commits: { head: string; mergeBase: string } | null;
+  remote: boolean; // there's an origin to push to (ADR 0040)
   // The local changes: what the worktree has on top of head (uncommitted, untracked, not pushed).
   local: ChangedFile[] | null;
   // The worktree as a commit now; a view pinned to another one is stale.
@@ -60,6 +61,7 @@ export function usePullRequest(workspace: Workspace | undefined): PullRequestDat
   return {
     changed: changed?.status === "ok" ? changed.files : null,
     commits,
+    remote: at?.remote ?? false,
     local: local?.status === "ok" ? local.files : null,
     snapshot: snapshot?.status === "ok" ? snapshot.sha : null,
     snapshotReady: snapshotQuery.isSuccess || snapshotQuery.isError,

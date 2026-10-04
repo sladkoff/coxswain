@@ -92,7 +92,7 @@ test("previews survive database reopen, stay scoped to their session, and cascad
   let db = openDatabase(path);
   await db
     .insertInto("projects")
-    .values({ id: 1, owner: "test", name: "repo", last_opened_at: "" })
+    .values({ id: 1, github: "test/repo", name: "repo", last_opened_at: "" })
     .execute();
   await db
     .insertInto("workspaces")

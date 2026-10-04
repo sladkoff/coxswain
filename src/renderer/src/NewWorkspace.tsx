@@ -7,7 +7,7 @@ import { ChevronDownIcon, GitBranchIcon, GitPullRequestIcon } from "./components
 import { Dialog, ListHeading, ListRow, ProblemCard, SearchField } from "./components/layout";
 import { cn, divider, muted } from "./components/styles";
 import { ErrorText } from "./components/text";
-import { ago } from "./format";
+import { ago, gitHubOf, projectLabel } from "./format";
 import { core } from "./queries";
 
 type Props = {
@@ -30,7 +30,12 @@ export function NewWorkspace({
   onBranch,
   onClose,
 }: Props) {
-  const pullsQuery = useQuery(core("listPullRequests", project.owner, project.name));
+  // ADR 0040: a project not on GitHub has branches only.
+  const repo = gitHubOf(project);
+  const pullsQuery = useQuery({
+    ...core("listPullRequests", repo?.owner ?? "", repo?.name ?? ""),
+    enabled: !!repo,
+  });
   const branchesQuery = useQuery(core("listBranches", project.id));
   const pulls = pullsQuery.data?.status === "ok" ? pullsQuery.data.pulls : null;
   const listed = branchesQuery.data;
@@ -68,12 +73,12 @@ export function NewWorkspace({
     e.preventDefault();
     if (name && !exists && !shownPulls.length && !shownBranches.length) void start(name);
   };
-  const problems = [pullsQuery, branchesQuery].flatMap((r) =>
+  const problems = [...(repo ? [pullsQuery] : []), branchesQuery].flatMap((r) =>
     r.data && r.data.status !== "ok" ? [{ problem: r.data, retry: () => void r.refetch() }] : [],
   );
-  const loading = !pullsQuery.data || !branchesQuery.data;
+  const loading = (repo && !pullsQuery.data) || !branchesQuery.data;
   return (
-    <Dialog title="New workspace" subtitle={`${project.owner}/${project.name}`} onClose={onClose}>
+    <Dialog title="New workspace" subtitle={projectLabel(project)} onClose={onClose}>
       <form onSubmit={submit} className="contents">
         <SearchField
           autoFocus
@@ -82,7 +87,11 @@ export function NewWorkspace({
             setQuery(e.target.value);
             setError(null);
           }}
-          placeholder="Search pull requests and branches, or name a new branch"
+          placeholder={
+            repo
+              ? "Search pull requests and branches, or name a new branch"
+              : "Search branches, or name a new branch"
+          }
         />
       </form>
       {name && !exists && (
@@ -150,7 +159,9 @@ export function NewWorkspace({
             </span>
           </ListRow>
         ))}
-        {shownBranches.length > 0 && <ListHeading>BRANCHES ON GITHUB</ListHeading>}
+        {shownBranches.length > 0 && (
+          <ListHeading>{repo && !project.path ? "BRANCHES ON GITHUB" : "BRANCHES"}</ListHeading>
+        )}
         {shownBranches.map((b) => (
           <ListRow key={b} className="flex items-center gap-2.5" onClick={() => void start(b)}>
             <span className={cn("shrink-0", muted)}>
@@ -163,7 +174,7 @@ export function NewWorkspace({
         ))}
         {loading && <Empty>Loading…</Empty>}
         {!loading && !q && !shownPulls.length && !shownBranches.length && (
-          <Empty>No open pull requests or branches</Empty>
+          <Empty>{repo ? "No open pull requests or branches" : "No branches"}</Empty>
         )}
       </div>
     </Dialog>

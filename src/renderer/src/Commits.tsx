@@ -13,7 +13,8 @@ type Props = {
   workspaceId: number;
   mergeBase: string;
   head: string; // what's on GitHub; the commits after it aren't pushed
-  canOpenPr: boolean; // a branch workspace without a PR yet
+  canOpenPr: boolean; // a branch workspace on GitHub without a PR yet
+  remote: boolean; // there's an origin to push to; without one no commit is "not pushed" (ADR 0040)
   problem: string | null; // why the last push failed
   current: Commit | null; // null: all changes
   onPick: (commit: Commit | null) => void;
@@ -32,7 +33,9 @@ export function Commits(props: Props) {
   const { workspaceId, current, onPick } = props;
   const listed = useQuery(core("listCommits", workspaceId, props.mergeBase)).data;
   const unpushed = useQuery(core("listCommits", workspaceId, props.head)).data;
-  const local = new Set(unpushed?.status === "ok" ? unpushed.commits.map((c) => c.sha) : []);
+  const local = new Set(
+    props.remote && unpushed?.status === "ok" ? unpushed.commits.map((c) => c.sha) : [],
+  );
   return (
     <nav className={pane}>
       {(local.size > 0 || props.canOpenPr) && (

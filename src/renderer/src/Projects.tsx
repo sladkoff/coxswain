@@ -4,18 +4,23 @@ import type { Project } from "../../core/projects";
 import { Button } from "./components/button";
 import { LockIcon } from "./components/icons";
 import { Dialog, ListHeading, ListRow, ProblemCard, SearchField } from "./components/layout";
-import { cn, muted } from "./components/styles";
+import { cn, divider, muted } from "./components/styles";
+import { ErrorText } from "./components/text";
 import { ago } from "./format";
 
 type Props = {
   projects: Project[];
   current: Project | undefined;
-  onSelect: (fullName: string) => void;
+  // A native dialog to open at once (the command palette's Add Local Repository… and New Project…).
+  start: "add-local" | "create" | null;
+  onSelect: (projectId: number) => void;
+  onAdded: () => void; // a project was added and made current
   onClose: () => void;
 };
 
-// Open a project: the user's projects, then every GitHub repository they can see, most recently pushed first.
-export function Projects({ projects, current, onSelect, onClose }: Props) {
+// Open a project: Add Local Repository… and New Project… (ADR 0040), the user's projects, then every GitHub repository
+// they can see, most recently pushed first.
+export function Projects({ projects, current, start, onSelect, onAdded, onClose }: Props) {
   const [repos, setRepos] = useState<Repo[]>([]);
   const [page, setPage] = useState(0); // last page loaded
   const [hasMore, setHasMore] = useState(true);
@@ -35,9 +40,30 @@ export function Projects({ projects, current, onSelect, onClose }: Props) {
   };
   useEffect(() => void loadMore(), []);
 
+  // What git won't take (not a repository, no commits, a folder that isn't empty) shows here.
+  const [error, setError] = useState<string | null>(null);
+  const add = async (added: Promise<Project | null>) => {
+    setError(null);
+    try {
+      if (await added) onAdded();
+    } catch (err) {
+      // An IPC rejection carries the core's message after Electron's own prefix.
+      setError(
+        (err as Error).message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ""),
+      );
+    }
+  };
+  const addLocal = () => add(window.coxswain.addLocalProject());
+  const create = () => add(window.coxswain.createProject());
+  useEffect(() => {
+    if (start) void (start === "add-local" ? addLocal() : create());
+  }, []);
+
   // ponytail: search filters the pages loaded so far; switch to GitHub's search API if people miss old repos.
   const q = query.trim().toLowerCase();
-  const shownProjects = projects.filter((p) => `${p.owner}/${p.name}`.toLowerCase().includes(q));
+  const shownProjects = projects.filter((p) =>
+    `${p.name} ${p.github ?? ""} ${p.path ?? ""}`.toLowerCase().includes(q),
+  );
   const shownRepos = q
     ? repos.filter(
         (r) => r.fullName.toLowerCase().includes(q) || r.description?.toLowerCase().includes(q),
@@ -47,7 +73,7 @@ export function Projects({ projects, current, onSelect, onClose }: Props) {
   return (
     <Dialog
       title="Open a project"
-      subtitle="One of yours, or any GitHub repository you can see"
+      subtitle="One of yours, a repository on this Mac, a new one, or any GitHub repository you can see"
       onClose={onClose}
     >
       <SearchField
@@ -56,6 +82,15 @@ export function Projects({ projects, current, onSelect, onClose }: Props) {
         onChange={(e) => setQuery(e.target.value)}
         placeholder="Search projects and repositories"
       />
+      <div className={cn("flex shrink-0 items-center gap-2 border-b px-4 py-2.5", divider)}>
+        <Button className="text-xs" onClick={() => void addLocal()}>
+          Add Local Repository…
+        </Button>
+        <Button className="text-xs" onClick={() => void create()}>
+          New Project…
+        </Button>
+      </div>
+      {error && <ErrorText className="shrink-0 px-4 pt-2">{error}</ErrorText>}
       {problem && (
         <div className="px-4 pt-3">
           <ProblemCard problem={problem} onRetry={loadMore} />
@@ -69,12 +104,12 @@ export function Projects({ projects, current, onSelect, onClose }: Props) {
               <ListRow
                 key={p.id}
                 className="flex items-center gap-2.5"
-                onClick={() => onSelect(`${p.owner}/${p.name}`)}
+                onClick={() => onSelect(p.id)}
               >
                 <Initial name={p.name} strong />
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="truncate font-medium">{p.name}</span>
-                  <span className={cn("truncate text-xs", muted)}>{p.owner}</span>
+                  <span className={cn("truncate text-xs", muted)}>{p.where}</span>
                 </span>
                 {p.id === current?.id && <Badge>Current</Badge>}
               </ListRow>
@@ -83,7 +118,11 @@ export function Projects({ projects, current, onSelect, onClose }: Props) {
         )}
         <ListHeading>GITHUB REPOSITORIES</ListHeading>
         {shownRepos.map((r) => (
-          <RepoRow key={r.id} repo={r} onClick={() => onSelect(r.fullName)} />
+          <RepoRow
+            key={r.id}
+            repo={r}
+            onClick={() => void add(window.coxswain.addGitHubProject(r.fullName))}
+          />
         ))}
         {!problem && (
           <div className={cn("py-3 text-center text-xs", muted)}>

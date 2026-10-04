@@ -66,7 +66,7 @@ test("review threads mirror into entries, and what's new here is postable", asyn
   t.after(() => db.destroy());
   await db
     .insertInto("projects")
-    .values({ id: 1, owner: "test", name: "repo", last_opened_at: "" })
+    .values({ id: 1, github: "test/repo", name: "repo", last_opened_at: "" })
     .execute();
   await db
     .insertInto("workspaces")

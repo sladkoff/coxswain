@@ -52,7 +52,9 @@ import {
   type AttachmentInput,
 } from "../core/attachments";
 import {
+  addLocalRepository,
   cloneProject,
+  createRepository,
   listBranches,
   listChangedFiles,
   listCommits,
@@ -103,7 +105,7 @@ import {
   type PullRequestRef,
   type ReviewPost,
 } from "../core/pull-requests";
-import { listProjects, openProject } from "../core/projects";
+import { addGitHubProject, listProjects, openProject } from "../core/projects";
 import {
   addNote,
   askQuestion,
@@ -392,7 +394,29 @@ app.whenReady().then(() => {
   const db = openDatabase(join(app.getPath("userData"), "coxswain.db"));
   ipcMain.handle("setup:check", () => checkSetup());
   ipcMain.handle("projects:list", () => listProjects(db));
-  ipcMain.handle("projects:open", (_, fullName: string) => openProject(db, fullName));
+  ipcMain.handle("projects:open", (_, projectId: number) => openProject(db, projectId));
+  ipcMain.handle("projects:add-github", (_, fullName: string) => addGitHubProject(db, fullName));
+  // ADR 0040: a local repository or a new project, from a native dialog; null if it's cancelled. A folder git won't
+  // take rejects with why.
+  ipcMain.handle("projects:add-local", async (e) => {
+    const picked = await dialog.showOpenDialog(BrowserWindow.fromWebContents(e.sender)!, {
+      title: "Add Local Repository",
+      buttonLabel: "Add",
+      properties: ["openDirectory"],
+    });
+    return picked.canceled ? null : addLocalRepository(db, picked.filePaths[0]);
+  });
+  ipcMain.handle("projects:create", async (e) => {
+    const picked = await dialog.showSaveDialog(BrowserWindow.fromWebContents(e.sender)!, {
+      title: "New Project",
+      buttonLabel: "Create",
+      nameFieldLabel: "Project:",
+      message: "A new folder with an empty git repository",
+      defaultPath: join(app.getPath("home"), "new-project"),
+      properties: ["createDirectory"],
+    });
+    return picked.canceled || !picked.filePath ? null : createRepository(db, picked.filePath);
+  });
   ipcMain.handle("github:current-user", () => getCurrentUser());
   ipcMain.handle("github:list-repos", (_, page: number) => listRepos(page));
   ipcMain.handle("github:list-pulls", (_, owner: string, name: string) =>
@@ -763,17 +787,17 @@ app.whenReady().then(() => {
       }),
   );
   // L1's project icon: switch to a project (the first, most recently opened, is current) or add one. Resolves only
-  // on a click, like the menus above; null means Add Project.
+  // on a click, like the menus above, with the project's id; null means Add Project.
   ipcMain.handle(
     "menus:projects",
-    (e, fullNames: string[]) =>
-      new Promise<string | null>((resolve) =>
+    (e, projects: { id: number; label: string }[]) =>
+      new Promise<number | null>((resolve) =>
         Menu.buildFromTemplate([
-          ...fullNames.map((name, i) => ({
-            label: name,
+          ...projects.map((p, i) => ({
+            label: p.label,
             type: "radio" as const,
             checked: i === 0,
-            click: () => resolve(name),
+            click: () => resolve(p.id),
           })),
           { type: "separator" },
           { label: "Add Project…", click: () => resolve(null) },

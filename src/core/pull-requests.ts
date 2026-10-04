@@ -11,6 +11,7 @@ import {
 } from "./github.ts";
 import { currentHead, currentMergeBase, pinRevision, readFileDiff, readTexts } from "./git.ts";
 import { byAgent, fence, quote } from "./thread-context.ts";
+import { gitHubRepo } from "./projects.ts";
 import { getWorkspaceRepo } from "./workspaces.ts";
 
 // ADR 0037: a workspace's PR on GitHub. Reading it mirrors its review threads into the workspace's entries; posting
@@ -19,7 +20,7 @@ import { getWorkspaceRepo } from "./workspaces.ts";
 export async function prOf(db: Db, workspaceId: number) {
   const w = await getWorkspaceRepo(db, workspaceId);
   if (w.prNumber === null) throw new Error("The workspace has no pull request");
-  return { ...w, prNumber: w.prNumber };
+  return { ...w, ...gitHubRepo(w), prNumber: w.prNumber };
 }
 
 // The PR for its panel. Its review threads are mirrored into entries first; changed says whether that changed any.

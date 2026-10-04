@@ -18,12 +18,11 @@ import {
   saveAttachments,
   sessionAttachments,
 } from "./attachments";
-import { type Commit, diffSize, type Size, worktreePath } from "./git";
+import { type Commit, diffSize, openedWorktree, type Size } from "./git";
 import { snapshotOf } from "./snapshot";
 import { chat } from "./agent-chat";
 import { type AgentCommand, agentStatuses, SessionStates, type AgentStatus } from "./session-state";
 import { turnEnded, viewTools } from "./views";
-import { getWorkspaceRepo } from "./workspaces";
 
 // ADR 0018: every agent run is a session over the Agent Client Protocol, in one adapter process per agent.
 export type AgentSession = {
@@ -918,7 +917,7 @@ export async function startAgentSession(
   const picked = !!agent;
   if (agent) await saveSetting(db, "agent", agent);
   agent ??= await newSessionAgent(db);
-  const cwd = await readyWorktree(db, workspaceId);
+  const cwd = await openedWorktree(db, workspaceId);
   const id = await newSession(agent, {
     cwd,
     mcp: await paneTools(db, workspaceId),
@@ -976,7 +975,7 @@ export async function listAgentPicks(
 ): Promise<AgentPicks> {
   const picks = await agentPicks(db, agent);
   if (!latest.has(agent)) {
-    const cwd = await readyWorktree(db, workspaceId);
+    const cwd = await openedWorktree(db, workspaceId);
     const { a, sessionId } = await openSession(agent, { cwd, prompt: "", picks });
     configs.delete(sessionId);
     a.open.delete(sessionId);
@@ -1024,13 +1023,6 @@ async function saveSetting(db: Db, key: string, value: string) {
     .execute();
 }
 
-async function readyWorktree(db: Db, workspaceId: number): Promise<string> {
-  const w = await getWorkspaceRepo(db, workspaceId);
-  const cwd = worktreePath(w.owner, w.name, w);
-  if (!existsSync(join(cwd, ".git"))) throw new Error("The worktree is not ready yet");
-  return cwd;
-}
-
 // The slash commands the agent last sent for any session, for a new session's composer: it has none of its own until
 // its first message opens it.
 // ponytail: per agent, so a skill of another project may show; key by worktree if that misleads. Empty until a session
@@ -1071,7 +1063,7 @@ export const readAgentState = (db: Db, agentSessionId: string) =>
     const entries = await history(
       agent,
       agentSessionId,
-      await readyWorktree(db, workspaceId),
+      await openedWorktree(db, workspaceId),
       await paneTools(db, workspaceId),
     );
     const attachments = await sessionAttachments(db, agentSessionId);
@@ -1104,7 +1096,7 @@ export async function runTurn(
   try {
     await readAgentState(db, agentSessionId);
     const { id: workspaceId, agent } = await sessionOf(db, agentSessionId);
-    const cwd = await readyWorktree(db, workspaceId);
+    const cwd = await openedWorktree(db, workspaceId);
     const a = await adapter(agent);
     attachmentContent(attachments, a.capabilities);
     const attachmentId = attachments.length

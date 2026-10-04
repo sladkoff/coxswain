@@ -254,12 +254,33 @@ export const migrations = [
     edited integer not null,
     created_at text not null
   )`,
+  // ADR 0040: a project is a git repository, GitHub optional. path: the user's own repository (null: coxswain's clone,
+  // whose path follows from github); github: owner/name (null: not on GitHub). Rebuilt, as owner and name were required.
+  `create table projects_new (
+    id integer primary key,
+    name text not null,
+    path text unique,
+    github text,
+    last_opened_at text not null,
+    check (path is not null or github is not null)
+  );
+  insert into projects_new (id, name, github, last_opened_at)
+    select id, name, owner || '/' || name, last_opened_at from projects;
+  drop table projects;
+  alter table projects_new rename to projects;
+  create unique index projects_clones on projects (github) where path is null`,
 ];
 
 // ADR 0016: the tables as the migrations above leave them. Change this with every migration that changes a table.
 type Side = "old" | "new";
 type Tables = {
-  projects: { id: Generated<number>; owner: string; name: string; last_opened_at: string };
+  projects: {
+    id: Generated<number>;
+    name: string;
+    path: string | null;
+    github: string | null;
+    last_opened_at: string;
+  };
   workspaces: {
     id: Generated<number>;
     project_id: number;
