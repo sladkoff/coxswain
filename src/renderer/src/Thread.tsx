@@ -227,16 +227,18 @@ export function ThreadBox({
             {replies.map((e) => (
               <Comment key={e.id} entry={e} />
             ))}
-            {!!turn?.live.some((c) => c.kind !== "user") && (
-              <div className="flex flex-col gap-1.5">
-                <span className={author}>Agent</span>
-                {turn.live
-                  .filter((c) => c.kind !== "user")
-                  .map((c, i) => (
-                    <Entry key={`live${i}`} entry={c} />
-                  ))}
-              </div>
-            )}
+            {/* After the turn, until its answer entry is read in place of it (#38). */}
+            {!!turn?.live.some((c) => c.kind !== "user") &&
+              (running || [root, ...replies].at(-1)?.kind === "question") && (
+                <div className="flex flex-col gap-1.5">
+                  <span className={author}>Agent</span>
+                  {turn.live
+                    .filter((c) => c.kind !== "user")
+                    .map((c, i) => (
+                      <Entry key={`live${i}`} entry={c} />
+                    ))}
+                </div>
+              )}
             <TurnStatus
               running={running}
               queued={turn?.queued}

@@ -3,6 +3,21 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-10-05 — Scrolling holds still while the agent answers (#38)
+
+### What works
+
+- **The agent pane follows a reply only while scrolled to its end.** Scrolling up to read while a turn streams stays
+  put; sending a message or opening another session follows the end again.
+- **A thread's answer no longer blinks out when the turn ends.** The reply streamed in was dropped as the turn ended,
+  a frame before the answer entry was read, so for a frame the thread had no answer and everything under it on the
+  canvas jumped up and back. The streamed reply now stays until the answer entry replaces it (or until the next turn).
+  A turn that ends in an error or is stopped keeps its partial reply over the error.
+
+### Tech debt
+
+- A thread taller than `max-h-[60vh]` scrolls inside itself, and that scroll doesn't follow the reply streaming in.
+
 ## 2026-10-04 — Local repositories and new projects; GitHub optional
 
 ### What works

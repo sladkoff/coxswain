@@ -351,7 +351,8 @@ export function App() {
       );
   };
   // Questions' turns by thread, kept here so they outlive the Viewer showing them. The reply streams in as chat
-  // entries; once the turn ends it's an answer entry. A tool use to approve waits in permission until answered.
+  // entries; once the turn ends it's an answer entry. The streamed reply stays until the next turn, so the thread
+  // keeps it until the answer entry is read (#38). A tool use to approve waits in permission until answered.
   const [turns, setTurns] = useState<Record<number, Turn>>({});
   useEffect(() => {
     const offChat = window.coxswain.onQuestionChat((id, c) =>
@@ -361,7 +362,7 @@ export function App() {
           running: true,
           queued: false,
           error: null,
-          live: upsert(t[id]?.live ?? [], c),
+          live: upsert(t[id]?.running ? t[id].live : [], c),
           permission: t[id]?.permission ?? null,
         },
       })),
@@ -386,7 +387,7 @@ export function App() {
           running: false,
           queued: false,
           error: result.status === "error" ? result.message : null,
-          live: [],
+          live: t[id]?.live ?? [],
           permission: null,
         },
       })),
@@ -416,7 +417,7 @@ export function App() {
         running: true,
         queued: t[id]?.queued ?? false, // review:queued can come before the question
         error: null,
-        live: t[id]?.live ?? [],
+        live: t[id]?.running ? t[id].live : [],
         permission: t[id]?.permission ?? null,
       },
     }));

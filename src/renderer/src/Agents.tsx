@@ -134,10 +134,16 @@ export function Agents({ workspace, onViewThread, composerPrompt, onShowSidebar 
     refreshFind(findTarget);
   }, [findTarget, entries]);
   const bottom = useRef<HTMLDivElement>(null);
+  // Follows the reply only while the transcript is scrolled to its end, so scrolling up to read stays put (#38).
+  // A new session, or a message sent, follows it again.
+  const pinned = useRef(true);
+  useEffect(() => {
+    pinned.current = true;
+  }, [session?.agentSessionId]);
   // Braces matter: Chromium's scrollIntoView returns a promise, which React would take for a cleanup function.
   useEffect(() => {
-    if (findSnapshot().target !== findTarget) bottom.current?.scrollIntoView();
-  }, [entries, running, permission]);
+    if (pinned.current && findSnapshot().target !== findTarget) bottom.current?.scrollIntoView();
+  }, [entries, running, permission, pendingMessage]);
 
   const send = async () => {
     const message = draft.trim();
@@ -150,6 +156,7 @@ export function Agents({ workspace, onViewThread, composerPrompt, onShowSidebar 
       attachmentError
     )
       return;
+    pinned.current = true;
     patch({
       sending: session?.agentSessionId ?? "new",
       pendingMessage: attached
@@ -269,6 +276,10 @@ export function Agents({ workspace, onViewThread, composerPrompt, onShowSidebar 
       <div
         ref={transcript}
         tabIndex={-1}
+        onScroll={(e) => {
+          const s = e.currentTarget;
+          pinned.current = s.scrollHeight - s.scrollTop - s.clientHeight < 40;
+        }}
         className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2"
       >
         {loading && !running && <div className={cn("m-auto text-xs", muted)}>Loading session…</div>}
