@@ -28,9 +28,10 @@ PR; the branch, not the workspace, is what ties them. Writing to GitHub must alw
    entries of kind `comment` with their author's login: the first one anchored on the lines it was written on (the new
    side at its comment's commit, the old side at the merge base), the rest replies. They are GitHub's: overwritten by
    each read, deleted when deleted there, never edited here. The user's own comments, wherever they wrote them, are
-   notes: posted, so editing or deleting one here does so on GitHub. A read that got every thread (fewer than 100)
-   deletes here a thread gone from GitHub, or whose first comment is (GitHub keeps a thread for its replies; the next
-   read mirrors what's left as a new thread), unless it holds a note of the user's not posted yet.
+   notes: posted, so editing or deleting one here does so on GitHub. Each read gets every thread, page by page, and
+   drops here a thread gone from GitHub, or whose first comment is (GitHub keeps a thread for its replies; the next
+   read mirrors what's left as a new thread): what was on GitHub goes, and the user's unposted notes in it stay, as a
+   local thread on the same anchor (`dropThread`).
    `entries.github_id` links an entry to its comment, `github_thread_id` a thread's first entry to its review thread.
    Threads on a whole file have no lines, so they show in the PR panel's conversation instead.
 4. **Resolving goes as comments do.** GitHub's resolve or reopen, seen in a read, is taken over (`github_resolved`

@@ -4,7 +4,7 @@ import { emit } from "./events.ts";
 import { columns, liveEntries, type ReviewEntry, type Row } from "./entries.ts";
 import { listPostable, type PostableThread, unposted } from "./pull-requests.ts";
 import { startJob } from "./jobs.ts";
-import { reviewRoots, summaryInstructions, summaryPrompt } from "./thread-context.ts";
+import { nothingToSay, reviewRoots, summaryInstructions, summaryPrompt } from "./thread-context.ts";
 import { getWorkspaceRepo } from "./workspaces.ts";
 
 // Submit Review's draft (ADR 0037): the comment threads a review takes, for the user to pick from before they go to the
@@ -84,7 +84,8 @@ export async function summarizeThread(db: Db, threadId: number): Promise<string>
       batches: (items) => [items],
       ask: async (items, ask) => {
         const text = (await ask(summaryPrompt(root, thread), summaryInstructions, items)).trim();
-        return new Map(text ? [[root, text]] : []);
+        // "" saves as nothing to say, distinct from no answer, which is asked again.
+        return new Map(text ? [[root, text === nothingToSay ? "" : text]] : []);
       },
       save: async (_, text) => void (comment = text),
       settled: () => resolve(),
@@ -92,6 +93,7 @@ export async function summarizeThread(db: Db, threadId: number): Promise<string>
   );
   await done;
   if (comment === null) throw new Error("The summary model wrote nothing; see Activity");
+  // "": the thread leaves nothing for the PR's author.
   return comment;
 }
 

@@ -304,6 +304,9 @@ test("summary jobs summarise what's missing, retry, and feed the view tools", as
     [summarized.kind, summarized.why, summarized.items, summarized.done],
     ["conclusions", "comment", 1, 1],
   );
+  // A thread that leaves nothing for the PR's author comes back as "", not as an error.
+  jobs.setSummaryRunner(async () => ({ text: "NOTHING", model: "Haiku" }));
+  assert.equal(await summarizeThread(db, asked.id), "");
   await addCommentAt(db, asked.id, comment);
   assert.deepEqual(await drafted(), [
     ["1", ["Drop this export", "And its test"]],

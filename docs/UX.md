@@ -212,7 +212,8 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   GitHub_, and in an agent thread _Send to Agent_, which makes the thread's latest note a question, with the notes
   before it since the last question (the answer comes in the thread), and _Summarize as Comment_. That one has the
   summary model write the review comment the thread comes to: _Summarizing as a comment…_ under the thread, then the
-  comment in a box to edit, under _A new comment on these lines, for the review_, with _Cancel_ and _Save_ (_Save and
+  comment in a box to edit (or _Nothing in this thread is left for the PR's author._, with _Write One_ and _Dismiss_),
+  under _A new comment on these lines, for the review_, with _Cancel_ and _Save_ (_Save and
   Post_ while _Post to GitHub_ is on); saving adds it as a comment thread on the same lines or passage.
 
   Each of the user's own comments has its own ⋯ on hover, right of _You_: _Edit_ (in place; _Save Here and on GitHub_

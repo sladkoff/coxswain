@@ -36,6 +36,9 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
   threads and conversation comments are read in full, page by page. Posting a new thread directly reads GitHub back at
   once, so it's linked before anything else goes to it. Posting directly with a review in progress on GitHub says so
   instead of failing. Summarize as Comment's Save follows Post to GitHub (_Save and Post_).
+- Summarize as Comment writes for the PR's author, who never saw the thread: the agent's questions and offers to the
+  reviewer stay out, a change the agent made is at most mentioned, and a thread with nothing left for the author says
+  so (`NOTHING`) instead of inventing a comment.
 - With _Post to GitHub_ on, ✓ resolves or reopens a thread on GitHub at once (`resolveThread`), else it waits for
   Submit Review; a failure says why under the thread and leaves it as it was.
 

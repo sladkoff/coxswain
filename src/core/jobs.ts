@@ -345,7 +345,7 @@ async function work<T>(
       }
       for (const m of items) {
         const s = answers.get(m);
-        if (s) await save(m, s, job.ranOn ?? job.model);
+        if (s !== undefined) await save(m, s, job.ranOn ?? job.model); // "" can be an answer
       }
       tell(db);
       const left = items.filter((m) => !answers.has(m));

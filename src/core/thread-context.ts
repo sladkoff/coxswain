@@ -98,7 +98,10 @@ export function unseen(
 type Entry = Pick<ReviewEntry, "kind" | "body" | "author">;
 
 export const summaryInstructions =
-  "You write the review comment a reviewer posts on a pull request. Everything you need is in the message: don't use tools. Answer with the comment's text and nothing else.";
+  "You write the review comment a reviewer posts on a pull request, for its author. Everything you need is in the message: don't use tools. Answer with the comment's text, or NOTHING, and nothing else.";
+
+// What the summary model answers when a thread leaves nothing for the PR's author.
+export const nothingToSay = "NOTHING";
 
 // ponytail: an entry goes in cut to entryChars; an agent's long answer loses its end. Summarise it first if that hurts.
 const entryChars = 2000;
@@ -111,11 +114,12 @@ const speaker = (e: Entry) =>
 
 export function summaryPrompt(root: Parameters<typeof describe>[0], thread: Entry[]): string {
   return [
-    `Below is a thread on some code of a pull request: its reviewer ("Me") exploring the code with a coding agent ("Agent"). The reviewer now posts one comment on these lines for the pull request's author. Write it.`,
+    `Below is a thread on some code of a pull request: its reviewer ("Me") working with their coding agent ("Agent"). The reviewer now posts one comment on these lines for the pull request's author: a person who has never seen this thread, and for whom the agent doesn't exist. Write it.`,
     [
-      "The comment carries the reviewer's point: what they ask the author to change, what they decided, or what they still want to know. Find it in the reviewer's own entries, the last ones first: a later entry replaces an earlier one.",
-      "The agent's answers are what the reviewer learned. Use them where they settle or sharpen the reviewer's point: the reason for a request, the concrete change, the case that breaks. The author wrote the code, so the comment asks and proposes; it leaves the explaining to the code.",
-      "Where the thread only taught the reviewer how the code works, the point is the question they would still put to the author, or a one-line remark on what they found; write that, short.",
+      "The comment carries what the reviewer, after this thread, still has for the author: something to change, a decision, or a question. Find it in the reviewer's own entries, the last ones first: a later entry replaces an earlier one.",
+      "The agent's answers are what the reviewer learned: use them where they settle or sharpen that point (the reason for a request, the concrete change, the case that breaks). The agent's questions and offers to the reviewer are between the two of them; the comment speaks only to the author.",
+      "A change the agent already made in the thread is done: the comment asks for nothing it did, and tells the author what changed only if they need to know, in one sentence.",
+      `Where nothing is left for the author (the reviewer only wanted to understand the code, or the thread settled it), answer ${nothingToSay}.`,
     ].join("\n"),
     [
       "How it reads:",

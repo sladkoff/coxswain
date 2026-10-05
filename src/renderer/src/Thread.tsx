@@ -204,8 +204,10 @@ export function ThreadBox({
   const agent = !isComment(root);
   const postNow = useQuery(core("getPostComments")).data ?? false;
   const [error, setError] = useState<string | null>(null);
-  // Summarize as Comment: being written (true), then the text to edit.
+  // Summarize as Comment: being written (true), then the text to edit; "" when the thread leaves nothing for the
+  // PR's author, which says so, with Write One to start from nothing all the same.
   const [summary, setSummary] = useState<string | boolean>(false);
+  const [writing, setWriting] = useState(false);
   const lastOwn = [root, ...replies].findLast((e) => e.kind === "note" || e.kind === "question");
   const posted = [root, ...replies].some((e) => e.kind === "note" && e.githubId);
   const others = [root, ...replies].some((e) => e.kind === "comment");
@@ -237,6 +239,7 @@ export function ThreadBox({
     if (picked === "send") onSend();
     if (picked === "summarize") {
       setSummary(true);
+      setWriting(false);
       void failing(onSummarize().then(setSummary)).then(() =>
         setSummary((s) => (s === true ? false : s)),
       );
@@ -321,7 +324,14 @@ export function ThreadBox({
               <SpinnerIcon /> Summarizing as a comment…
             </div>
           )}
-          {typeof summary === "string" && (
+          {summary === "" && !writing && (
+            <div className={cn("flex items-center gap-2 text-xs", muted)}>
+              <span className="flex-1">Nothing in this thread is left for the PR's author.</span>
+              <Button onClick={() => setWriting(true)}>Write One</Button>
+              <Button onClick={() => setSummary(false)}>Dismiss</Button>
+            </div>
+          )}
+          {typeof summary === "string" && (summary !== "" || writing) && (
             <div className={cn("flex flex-col gap-1.5 border-t pt-1.5", divider)}>
               <span className={cn("text-xs", muted)}>
                 A new comment on {root.section != null ? "this passage" : "these lines"}, for the
