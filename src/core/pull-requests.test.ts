@@ -13,7 +13,7 @@ const temp = mkdtempSync(join(os.tmpdir(), "coxswain-pr-"));
 const home = mock.method(os, "homedir", () => temp);
 syncBuiltinESMExports();
 const { hunkRanges, listPostable, syncThreads } = await import("./pull-requests.ts");
-const { addNote, listEntries } = await import("./entries.ts");
+const { addEntry, addNote, listEntries } = await import("./entries.ts");
 const { checkRunState, statusState } = await import("./github.ts");
 home.mock.restore();
 syncBuiltinESMExports();
@@ -156,5 +156,58 @@ test("review threads mirror into entries, and what's new here is postable", asyn
   assert.deepEqual(
     entries.filter((e) => e.parentId === root.id).map((e) => e.body),
     ["Yes, on purpose"],
+  );
+
+  // A comment thread posted from here, as postReview records it, is the thread on GitHub: replies by others land in
+  // it, and an edit there is taken over; a thread of the agent's isn't postable.
+  const near = entries.find((e) => e.body === "Near it")!;
+  await db
+    .updateTable("entries")
+    .set({ github_id: "C9", github_thread_id: "T2", github_resolved: 0 })
+    .where("id", "=", near.id)
+    .execute();
+  const nearThread: ReviewThread = {
+    ...thread,
+    id: "T2",
+    startLine: 3,
+    endLine: 3,
+    comments: [comment("C9", "Near it, edited", "me"), comment("C10", "Fixed", "bo")],
+  };
+  await syncThreads(db, 1, [nearThread], mergeBase);
+  entries = await listed();
+  assert.equal(entries.filter((e) => e.githubThreadId === "T2").length, 1, "no second copy");
+  assert.equal(entries.find((e) => e.id === near.id)!.body, "Near it, edited");
+  assert.deepEqual(
+    entries.filter((e) => e.parentId === near.id).map((e) => [e.author, e.body]),
+    [["bo", "Fixed"]],
+  );
+  // A comment posted at once has its GitHub comment before the next read finds its thread: a reply to it is a reply.
+  const far = entries.find((e) => e.body === "Far away")!;
+  await db.updateTable("entries").set({ github_id: "C20" }).where("id", "=", far.id).execute();
+  await addNote(db, { workspaceId: 1, body: "And here", parentId: far.id });
+  const farPost = (await listPostable(db, 1, mergeBase, head)).find((p) => p.threadId === far.id)!;
+  assert.deepEqual([farPost.github, farPost.placement, farPost.resolve], [true, "reply", null]);
+  await syncThreads(
+    db,
+    1,
+    [
+      {
+        ...thread,
+        id: "T3",
+        startLine: 18,
+        endLine: 18,
+        comments: [comment("C20", "Far away", "me")],
+      },
+    ],
+    mergeBase,
+  );
+  assert.equal((await listed()).find((e) => e.id === far.id)!.githubThreadId, "T3");
+  await addEntry(db, "question", {
+    workspaceId: 1,
+    body: "What does this do?",
+    anchor: { ...anchor, startLine: 3, endLine: 3, code: "3" },
+  });
+  assert.ok(
+    (await listPostable(db, 1, mergeBase, head)).every((p) => p.body !== "What does this do?"),
   );
 });

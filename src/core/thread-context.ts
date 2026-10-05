@@ -45,18 +45,18 @@ export const anchored = (e: Pick<ReviewEntry, "path" | "section">) =>
 export const byAgent = (e: Pick<ReviewEntry, "kind">) =>
   e.kind === "answer" || e.kind === "explanation" || e.kind === "finding";
 
-// The threads a review takes, by their first entries: open, and the user's. An explanation or finding the user didn't
-// reply to isn't part of their review, nor is a resolved thread.
+// A thread is a comment thread or an agent thread (glossary), by its first entry, and stays one: a comment thread
+// starts with the user's note or a comment from GitHub, and its replies are comments too; an agent thread starts with
+// a question, or the agent's explanation or finding.
+export const isComment = (root: Pick<ReviewEntry, "kind">) =>
+  root.kind === "note" || root.kind === "comment";
+
+// The threads a review takes, by their first entries: the open comment threads. Agent threads aren't part of it.
 export const reviewRoots = <
-  E extends Pick<ReviewEntry, "id" | "kind" | "parentId" | "resolvedAt" | "path" | "section">,
+  E extends Pick<ReviewEntry, "kind" | "parentId" | "resolvedAt" | "path" | "section">,
 >(
   entries: E[],
-) => {
-  const replied = new Set(entries.filter((e) => e.parentId && !byAgent(e)).map((e) => e.parentId));
-  return entries.filter(
-    (e) => anchored(e) && !e.parentId && !e.resolvedAt && (!byAgent(e) || replied.has(e.id)),
-  );
-};
+) => entries.filter((e) => anchored(e) && !e.parentId && !e.resolvedAt && isComment(e));
 
 // Who wrote an entry, as a prompt names them: "Me" (the user), "You" (the agent), or a reviewer on GitHub by login
 // (ADR 0037).
@@ -93,18 +93,12 @@ export function unseen(
   return [...about, ...(lines.length ? [so] : [])].join("\n\n");
 }
 
-// A thread's conclusion (glossary): the one review comment that says where the thread ended up, written by the summary
-// model from the thread. A thread to conclude: its entries, and for a reply to a thread on GitHub the ones that are new
-// (fresh), which the conclusion is for.
-type Entry = Pick<ReviewEntry, "id" | "kind" | "body" | "author">;
-export type ToConclude = {
-  root: Parameters<typeof describe>[0];
-  thread: Entry[];
-  fresh?: Set<number>;
-};
+// Summarize as Comment (glossary): the one review comment an agent thread comes to, written by the summary model from
+// the thread, for the user to edit before it is added as a comment on the same lines or passage.
+type Entry = Pick<ReviewEntry, "kind" | "body" | "author">;
 
-export const conclusionInstructions =
-  "You write code review comments for a pull request. Everything you need is in the message: don't use tools. Answer with the JSON asked for and nothing else.";
+export const summaryInstructions =
+  "You write the review comment a reviewer posts on a pull request. Everything you need is in the message: don't use tools. Answer with the comment's text and nothing else.";
 
 // ponytail: an entry goes in cut to entryChars; an agent's long answer loses its end. Summarise it first if that hurts.
 const entryChars = 2000;
@@ -115,43 +109,27 @@ const speaker = (e: Entry) =>
     .with(P.union("note", "question"), () => "Me")
     .exhaustive();
 
-export function conclusionsPrompt(threads: ToConclude[]): string {
+export function summaryPrompt(root: Parameters<typeof describe>[0], thread: Entry[]): string {
   return [
-    `Each thread below is a discussion about some code of a pull request, between its reviewer ("Me"), a coding agent the reviewer worked with ("Agent") and maybe people on GitHub ("@name"). For each, write the one review comment the reviewer posts on the pull request now: where the thread ended up, not how it got there.`,
+    `Below is a thread on some code of a pull request: its reviewer ("Me") exploring the code with a coding agent ("Agent"). The reviewer now posts one comment on these lines for the pull request's author. Write it.`,
     [
-      "A good review comment:",
-      "- says one thing. A decision: state it, with the reason in a clause. Something to do: ask for the change, concretely. Still open: ask the question.",
-      "- is about the code: names the function, variable or behaviour it means, identifiers in backticks, and a short code suggestion if the thread settled on one.",
-      "- is written by the reviewer to the author, plain and courteous, in one to three sentences.",
-      "- leaves out praise, who said what, the agent and the discussion itself, and anything the thread dropped along the way.",
-      "- doesn't repeat the file or the line numbers when the thread is on lines: it is shown on them.",
-      "A thread marked as a reply continues one on GitHub: write the reply that brings it up to date, from the entries marked new.",
+      "The comment carries the reviewer's point: what they ask the author to change, what they decided, or what they still want to know. Find it in the reviewer's own entries, the last ones first: a later entry replaces an earlier one.",
+      "The agent's answers are what the reviewer learned. Use them where they settle or sharpen the reviewer's point: the reason for a request, the concrete change, the case that breaks. The author wrote the code, so the comment asks and proposes; it leaves the explaining to the code.",
+      "Where the thread only taught the reviewer how the code works, the point is the question they would still put to the author, or a one-line remark on what they found; write that, short.",
     ].join("\n"),
-    'Answer with JSON only, one entry per thread: {"threads":[{"thread":<its number>,"comment":"<text>"}]}. It must parse: in a comment, write code in backticks, not double quotes, and escape any double quote or line break.',
-    threads
-      .map(({ root, thread, fresh }, i) => {
-        const lines = thread.map(
-          (e) =>
-            `${speaker(e)}${fresh?.has(e.id) ? " (new)" : ""}: ${e.body.length > entryChars ? `${e.body.slice(0, entryChars)} …` : e.body}`,
-        );
-        return `### ${i + 1}.${fresh ? " A reply." : ""} On ${describe(root)}\n${lines.join("\n")}`;
-      })
-      .join("\n\n"),
+    [
+      "How it reads:",
+      "- In the reviewer's voice, to the author: plain, direct and courteous. Keep the reviewer's own words where they still hold.",
+      "- One paragraph per point, each one to three sentences; most comments are one point.",
+      "- About the code: it names the function, variable or behaviour it means, identifiers in backticks, with a short code suggestion when the thread settled on one.",
+      "- Self-contained: the author sees the comment on these lines and nothing of the thread, so it stands on its own without naming the agent, the discussion, the file or the line numbers.",
+    ].join("\n"),
+    `The thread, on ${describe(root)}`,
+    thread
+      .map(
+        (e) =>
+          `${speaker(e)}: ${e.body.length > entryChars ? `${e.body.slice(0, entryChars)} …` : e.body}`,
+      )
+      .join("\n"),
   ].join("\n\n");
-}
-
-// The conclusions in a reply, by thread number; entries that don't fit are left out. Throws if there's no JSON to read.
-export function parseConclusions(text: string, count: number): Map<number, string> {
-  const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  if (start < 0 || end < start) throw new Error("The reply had no JSON in it");
-  const answer = JSON.parse(text.slice(start, end + 1)) as { threads?: unknown };
-  if (!Array.isArray(answer?.threads)) throw new Error('The reply had no "threads" list');
-  const out = new Map<number, string>();
-  for (const a of answer.threads as { thread?: unknown; comment?: unknown }[]) {
-    const n = a?.thread;
-    if (typeof n !== "number" || !Number.isInteger(n) || n < 1 || n > count || out.has(n)) continue;
-    if (typeof a.comment === "string" && a.comment.trim()) out.set(n, a.comment.trim());
-  }
-  return out;
 }

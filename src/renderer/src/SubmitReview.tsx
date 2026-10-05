@@ -3,7 +3,6 @@ import { useEffect, useRef, useState } from "react";
 import { match, P } from "ts-pattern";
 import type { GitHubProblem, PullRequestDetails } from "../../core/github";
 import type { ReviewEvent } from "../../core/pull-requests";
-import type { Conclusion } from "../../core/review";
 import type { DraftThread } from "../../core/review-draft";
 import { Button, SegmentedControl } from "./components/button";
 import { TextArea } from "./components/field";
@@ -40,74 +39,68 @@ const posts = (t: DraftThread, hasPr: boolean) =>
     )
     .otherwise(() => "on GitHub already");
 
-// Submit Review (ADR 0037), the bottom bar's dialog, like GitHub's Finish your review: the threads a review takes,
-// each with its conclusion (glossary). The summary model writes those ahead, as threads change (a background job, ADR 0038);
-// one not written yet says so in its place until it is. The user picks threads and edits conclusions, then sends them to the agent, copies them as a prompt, or posts them to
-// the PR as one review with a verdict and a summary. It closes once that's done, or to show a thread.
+// Submit Review (ADR 0037), the bottom bar's dialog, like GitHub's Finish your review: the open comment threads, each
+// with its comments not on GitHub yet, which go as written; editing one edits the comment. The user picks threads, then
+// sends them to the agent, copies them as a prompt, or posts them to the PR as one review with a verdict and a summary.
+// It closes once that's done, or to show a thread.
 export function SubmitReviewDialog(props: {
   workspaceId: number;
   pr?: PullRequestDetails | null;
   onViewThread: (threadId: number) => void;
-  onSendToAgent: (conclusions: Conclusion[]) => void;
+  onSendToAgent: (threadIds: number[]) => void;
   onCopied: () => void;
   onClose: () => void;
 }) {
   const { pr, workspaceId } = props;
-  // Read once per opening: a refetch would write over the user's edits. First what's there, at once; then, if some
-  // conclusions are still being written, the same with those in.
-  const once = { staleTime: Infinity, gcTime: 0, refetchOnWindowFocus: false, retry: false };
+  // Read once per opening: a refetch would write over the user's edits.
   const draft = useQuery({
-    queryKey: ["draftReview", workspaceId, "now"],
-    queryFn: () => window.coxswain.draftReview(workspaceId, false),
-    ...once,
+    queryKey: ["draftReview", workspaceId],
+    queryFn: () => window.coxswain.draftReview(workspaceId),
+    staleTime: Infinity,
+    gcTime: 0,
+    refetchOnWindowFocus: false,
+    retry: false,
   });
-  const full = useQuery({
-    queryKey: ["draftReview", workspaceId, "written"],
-    queryFn: () => window.coxswain.draftReview(workspaceId, true),
-    enabled: !!draft.data?.threads.some((t) => t.pending),
-    ...once,
-  });
-  const threads = (full.data ?? draft.data)?.threads ?? [];
+  const threads = draft.data ?? [];
   const [unpicked, setUnpicked] = useState<Set<number>>(new Set());
   const [edited, setEdited] = useState<Record<number, string>>({});
   const [event, setEvent] = useState<ReviewEvent>("COMMENT");
   const [body, setBody] = useState("");
   const [posting, setPosting] = useState(false);
   const [problem, setProblem] = useState<GitHubProblem | null>(null);
-  const textOf = (t: DraftThread) => edited[t.threadId] ?? t.conclusion;
-  // Edits are stored when their box is left, and those still unsaved when the dialog closes.
+  // Edits are saved to their comments when their box is left, and before anything goes, which reads them there.
   const unsaved = useRef<Record<number, string>>({});
-  const save = (threadId: number) => {
-    const text = unsaved.current[threadId];
-    if (text === undefined) return;
-    delete unsaved.current[threadId];
-    void window.coxswain.saveConclusion(threadId, text);
+  const save = () => {
+    const saving = Object.entries(unsaved.current).map(([id, text]) =>
+      window.coxswain.editEntry(Number(id), text),
+    );
+    unsaved.current = {};
+    return Promise.all(saving);
   };
-  useEffect(() => () => Object.keys(unsaved.current).forEach((id) => save(Number(id))), []);
+  useEffect(() => () => void save(), []);
   const picked = threads.filter((t) => !unpicked.has(t.threadId));
-  const conclusions = (list: DraftThread[]): Conclusion[] =>
-    list.map((t) => ({ threadId: t.threadId, body: textOf(t) }));
+  const ids = (list: DraftThread[]) => list.map((t) => t.threadId);
   const toAgent = picked.filter((t) => t.toAgent);
   const toPost = picked.filter((t) => t.post);
-  // Nothing goes while a picked thread's conclusion isn't in.
-  const blocked = picked.some((t) => t.pending) && !full.isError;
   const own = pr?.author === pr?.viewer; // GitHub won't let you approve your own PR
   const copy = async () => {
-    if (await window.coxswain.copyReviewPrompt(workspaceId, conclusions(toAgent))) props.onCopied();
+    await save();
+    if (await window.coxswain.copyReviewPrompt(workspaceId, ids(toAgent))) props.onCopied();
     props.onClose();
   };
   const post = async () => {
     if (!pr) return;
     const ok = await window.coxswain.confirm({
       message: `Post ${count(toPost.length, "thread")} to PR #${pr.number} as a review?`,
-      detail: `${eventLabels[event]}. It's posted as you, and everyone on the PR sees it. Your threads here are resolved once their conclusions are posted.`,
+      detail: `${eventLabels[event]}. Your comments are posted as you wrote them, and everyone on the PR sees them.`,
       action: "Post",
     });
     if (!ok) return;
+    await save();
     setPosting(true);
     setProblem(null);
     const r = await window.coxswain.postReview(workspaceId, {
-      threads: conclusions(toPost),
+      threads: ids(toPost),
       event,
       body,
     });
@@ -135,14 +128,10 @@ export function SubmitReviewDialog(props: {
         <>
           <div className={cn("flex min-h-0 flex-col overflow-y-auto border-t text-xs", divider)}>
             {draft.isError && <ErrorText className="px-4 py-2">{String(draft.error)}</ErrorText>}
-            {(full.data?.error || full.isError) && (
-              <ErrorText className="px-4 py-2">
-                Some conclusions are your own last comments:{" "}
-                {full.data?.error ?? String(full.error)}
-              </ErrorText>
-            )}
             {!threads.length && !draft.isError && (
-              <div className={cn("px-4 py-3", muted)}>No open threads of yours.</div>
+              <div className={cn("px-4 py-3", muted)}>
+                No open comment threads. Agent threads become one with Summarize as Comment.
+              </div>
             )}
             {threads.map((t) => {
               const on = !unpicked.has(t.threadId);
@@ -186,30 +175,23 @@ export function SubmitReviewDialog(props: {
                           .join(" · ")}
                       </span>
                     </div>
-                    {/* Nothing to say on a resolve or reopen alone. */}
-                    {t.pending && !full.isError ? (
-                      <div className={cn("flex items-center gap-1.5 py-1", muted)}>
-                        <SpinnerIcon /> Writing its conclusion…
-                      </div>
-                    ) : (
-                      (t.conclusion || t.toAgent) && (
-                        <TextArea
-                          long
-                          rows={2}
-                          className="[field-sizing:content] select-text"
-                          disabled={!on}
-                          value={textOf(t)}
-                          onChange={(e) => {
-                            unsaved.current[t.threadId] = e.target.value;
-                            setEdited((d) => ({ ...d, [t.threadId]: e.target.value }));
-                          }}
-                          onBlur={() => save(t.threadId)}
-                          onSubmit={() => {}}
-                          aria-label="Conclusion"
-                          placeholder="Where this thread ended up"
-                        />
-                      )
-                    )}
+                    {t.comments.map((c) => (
+                      <TextArea
+                        key={c.id}
+                        long
+                        rows={1}
+                        className="[field-sizing:content] select-text"
+                        disabled={!on}
+                        value={edited[c.id] ?? c.body}
+                        onChange={(e) => {
+                          unsaved.current[c.id] = e.target.value;
+                          setEdited((d) => ({ ...d, [c.id]: e.target.value }));
+                        }}
+                        onBlur={() => void save()}
+                        onSubmit={() => {}}
+                        aria-label="Comment"
+                      />
+                    ))}
                   </div>
                 </div>
               );
@@ -241,18 +223,19 @@ export function SubmitReviewDialog(props: {
               )}
               <div className="flex-1" />
               <Button
-                title="Put the picked threads and their conclusions on the clipboard, as the message the agent would get"
-                disabled={!toAgent.length || blocked}
+                title="Put the picked threads on the clipboard, as the message the agent would get"
+                disabled={!toAgent.length}
                 onClick={() => void copy()}
               >
                 Copy as Prompt
               </Button>
               <Button
                 variant={pr ? undefined : "primary"}
-                title="Send the picked threads and their conclusions to the agent pane's session"
-                disabled={!toAgent.length || blocked}
-                onClick={() => {
-                  props.onSendToAgent(conclusions(toAgent));
+                title="Send the picked threads to the agent pane's session"
+                disabled={!toAgent.length}
+                onClick={async () => {
+                  await save();
+                  props.onSendToAgent(ids(toAgent));
                   props.onClose();
                 }}
               >
@@ -261,10 +244,8 @@ export function SubmitReviewDialog(props: {
               {pr && (
                 <Button
                   variant="primary"
-                  title="Post the picked threads' conclusions to the PR as one review, after asking"
-                  disabled={
-                    posting || blocked || (!toPost.length && !body.trim() && event === "COMMENT")
-                  }
+                  title="Post the picked threads' comments to the PR as one review, after asking"
+                  disabled={posting || (!toPost.length && !body.trim() && event === "COMMENT")}
                   onClick={() => void post()}
                 >
                   {posting ? "Posting…" : "Post to GitHub…"}

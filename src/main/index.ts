@@ -97,9 +97,10 @@ import {
   listPullRequests,
   listRepos,
 } from "../core/github";
-import { draftReview, saveConclusion } from "../core/review-draft";
+import { addCommentAt, draftReview, summarizeThread } from "../core/review-draft";
 import {
   changePullRequest,
+  postComment,
   postReview,
   type PullRequestChange,
   type PullRequestRef,
@@ -114,9 +115,10 @@ import {
   resolveThread,
   sendThread,
   getCommentToAgent,
+  getPostComments,
   setCommentToAgent,
+  setPostComments,
   listEntries,
-  type Conclusion,
   type NewEntry,
   reviewPromptText,
   sendCheck,
@@ -581,13 +583,12 @@ app.whenReady().then(() => {
   );
   ipcMain.handle("review:edit", (_, id: number, body: string) => editEntry(db, id, body));
   // Every thread to the agent pane's session at once; the reply streams as agents:entry, like a message sent there.
-  ipcMain.handle("review:draft", (_, workspaceId: number, wait: boolean) =>
-    draftReview(db, workspaceId, wait),
+  ipcMain.handle("review:draft", (_, workspaceId: number) => draftReview(db, workspaceId));
+  ipcMain.handle("review:summarize", (_, threadId: number) => summarizeThread(db, threadId));
+  ipcMain.handle("review:add-comment-at", (_, threadId: number, body: string) =>
+    addCommentAt(db, threadId, body),
   );
-  ipcMain.handle("review:save-conclusion", (_, threadId: number, conclusion: string) =>
-    saveConclusion(db, threadId, conclusion),
-  );
-  ipcMain.handle("review:send-all", async (e, workspaceId: number, conclusions?: Conclusion[]) => {
+  ipcMain.handle("review:send-all", async (e, workspaceId: number, threadIds?: number[]) => {
     const send = (channel: string, ...args: unknown[]) =>
       !e.sender.isDestroyed() && e.sender.send(channel, ...args);
     const result = await sendReview(
@@ -601,7 +602,7 @@ app.whenReady().then(() => {
             permission(e.sender, () => send("agents:permission", agentSessionId, p)),
         };
       },
-      conclusions,
+      threadIds,
     );
     emit({ workspaceId, what: "worktree" });
     emit({ workspaceId, what: "transcript" });
@@ -614,6 +615,12 @@ app.whenReady().then(() => {
   ipcMain.handle("github:post-review", async (e, workspaceId: number, post: ReviewPost) => {
     const result = await postReview(db, workspaceId, post);
     emit({ workspaceId, what: "entries" }); // what got posted, also halfway
+    await checkGitHub(db, workspaceId).catch(() => {});
+    return result;
+  });
+  ipcMain.handle("github:post-comment", async (e, workspaceId: number, threadId: number) => {
+    const result = await postComment(db, workspaceId, threadId);
+    emit({ workspaceId, what: "entries" });
     await checkGitHub(db, workspaceId).catch(() => {});
     return result;
   });
@@ -641,14 +648,11 @@ app.whenReady().then(() => {
     emit({ workspaceId, what: "transcript" });
     return result;
   });
-  ipcMain.handle(
-    "review:copy-prompt",
-    async (_, workspaceId: number, conclusions?: Conclusion[]) => {
-      const prompt = await reviewPromptText(db, workspaceId, conclusions);
-      if (prompt) clipboard.writeText(prompt);
-      return !!prompt;
-    },
-  );
+  ipcMain.handle("review:copy-prompt", async (_, workspaceId: number, threadIds?: number[]) => {
+    const prompt = await reviewPromptText(db, workspaceId, threadIds);
+    if (prompt) clipboard.writeText(prompt);
+    return !!prompt;
+  });
   ipcMain.handle("review:stop", (_, threadId: number) => stopQuestion(db, threadId));
   ipcMain.handle(
     "reviewed:list",
@@ -702,8 +706,17 @@ app.whenReady().then(() => {
   // a dismissal from a pick. A dismissed menu leaves the promise pending; nothing else waits on it.
   ipcMain.handle(
     "menus:thread",
-    (e, can: { edit: boolean; send: boolean; delete: boolean; url: string | null }) =>
-      new Promise<"edit" | "delete" | "send">((resolve) =>
+    (
+      e,
+      can: {
+        edit: boolean;
+        send: boolean;
+        summarize: boolean;
+        delete: boolean;
+        url: string | null;
+      },
+    ) =>
+      new Promise<"edit" | "delete" | "send" | "summarize">((resolve) =>
         Menu.buildFromTemplate([
           { label: "Edit", enabled: can.edit, click: () => resolve("edit") },
           { label: "Delete", enabled: can.delete, click: () => resolve("delete") },
@@ -712,6 +725,11 @@ app.whenReady().then(() => {
             : []),
           { type: "separator" },
           { label: "Send to Agent", enabled: can.send, click: () => resolve("send") },
+          {
+            label: "Summarize as Comment",
+            enabled: can.summarize,
+            click: () => resolve("summarize"),
+          },
         ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
       ),
   );
@@ -883,6 +901,16 @@ app.whenReady().then(() => {
         })
       ).response === 0,
   );
+  // Something that went wrong, with nothing on screen to say it: a sheet on the window with OK.
+  ipcMain.handle(
+    "dialogs:error",
+    async (e, c: { message: string; detail: string }) =>
+      void (await dialog.showMessageBox(BrowserWindow.fromWebContents(e.sender)!, {
+        type: "warning",
+        ...c,
+        buttons: ["OK"],
+      })),
+  );
   ipcMain.handle("views:list", (_, workspaceId: number) => listViews(db, workspaceId));
   ipcMain.handle("views:remove", (_, viewId: number) => removeView(db, viewId));
   // A view chip's context menu in the canvas bar. Resolves only on a click, like the menus above.
@@ -969,6 +997,8 @@ app.whenReady().then(() => {
   ipcMain.handle("settings:set-comment-to-agent", (_, toAgent: boolean) =>
     setCommentToAgent(db, toAgent),
   );
+  ipcMain.handle("settings:post-comments", () => getPostComments(db));
+  ipcMain.handle("settings:set-post-comments", (_, post: boolean) => setPostComments(db, post));
   // The agent's view tools change views and entries mid-turn; the UI refetches them as they come.
   onViewChange((workspaceId) => {
     emit({ workspaceId, what: "view" });

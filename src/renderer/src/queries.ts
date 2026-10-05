@@ -106,6 +106,7 @@ const affects: Record<Changed["what"], Reads[]> = {
     "getSummarySettings",
     "listPrompts",
     "getCommentToAgent",
+    "getPostComments",
     "listAgentPicks",
     "newSessionAgent",
   ],

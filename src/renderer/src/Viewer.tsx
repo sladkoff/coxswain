@@ -404,8 +404,9 @@ export const Viewer = memo(function Viewer(props: Props) {
           Math.min(draft.startLine, draft.endLine),
           Math.max(draft.startLine, draft.endLine),
         )}
-        onSend={(body, toAgent) => {
-          void postEntry(anchored(draft, body), toAgent, props.onAsk);
+        canPost={workspace.prNumber !== null}
+        onSend={(body, toAgent, post) => {
+          void postEntry(anchored(draft, body), toAgent, props.onAsk, post);
           closeDraft();
         }}
         onCancel={closeDraft}
@@ -415,6 +416,7 @@ export const Viewer = memo(function Viewer(props: Props) {
         root={entry}
         entries={entries}
         turn={props.turns[entry.id]}
+        canPost={workspace.prNumber !== null}
         onAsk={props.onAsk}
         onAnswerPermission={props.onAnswerPermission}
       />

@@ -133,20 +133,20 @@ function Summaries({ workspaceId }: { workspaceId?: number }) {
             {
               value: true,
               label: "Ahead",
-              title: "When a workspace opens, its commits move on or a thread changes",
+              title: "When a workspace opens or its commits move on",
             },
             {
               value: false,
               label: "Only when needed",
-              title: "When the agent starts a view, or Submit Review opens",
+              title: "When the agent starts a view",
             },
           ]}
         />
       </div>
       <p className={cn("text-xs", muted)}>
         Ahead summarises a workspace's commits as soon as it opens, so views of big changes start
-        faster, and writes a thread's conclusion as it changes, so Submit Review opens at once;
-        uncommitted changes wait for a view. It spends model calls on work that may never be used.
+        faster; uncommitted changes wait for a view. It spends model calls on work that may never be
+        used.
       </p>
       {picks.isError && <ErrorText>Couldn't ask the agent for its models.</ErrorText>}
       {error && <ErrorText>{error}</ErrorText>}

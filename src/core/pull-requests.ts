@@ -4,13 +4,14 @@ import { listEntries, type ReviewEntry } from "./entries.ts";
 import {
   getPullRequest,
   githubGraphql,
+  githubRequest,
   type GitHubProblem,
   type MergeMethod,
   type PullRequestResult,
   type ReviewThread,
 } from "./github.ts";
 import { currentHead, currentMergeBase, pinRevision, readFileDiff, readTexts } from "./git.ts";
-import { byAgent, fence, quote } from "./thread-context.ts";
+import { fence, isComment, quote } from "./thread-context.ts";
 import { gitHubRepo } from "./projects.ts";
 import { getWorkspaceRepo } from "./workspaces.ts";
 
@@ -40,8 +41,8 @@ const now = () => new Date().toISOString();
 
 // Mirrors review threads into entries (ADR 0037): a thread's first comment becomes its first entry, on the lines it was
 // written on, and the rest replies, each of kind 'comment'. A comment posted from here is the entry it was posted
-// from. Text edited on GitHub is updated here, a reply deleted there is deleted here; a resolve or reopen on GitHub
-// is taken over. ponytail: a thread deleted on GitHub stays here, with the local replies to it.
+// from, so the replies of others land in the user's own thread. Text edited on GitHub is updated here, a reply deleted
+// there is deleted here; a resolve or reopen on GitHub is taken over. ponytail: a thread deleted on GitHub stays here, with the local replies to it.
 export async function syncThreads(
   db: Db,
   workspaceId: number,
@@ -78,7 +79,7 @@ export async function syncThreads(
       if (
         root.githubThreadId !== t.id ||
         resolved ||
-        (root.kind === "comment" && root.body !== first.body)
+        (root.githubId === first.id && root.body !== first.body)
       ) {
         await db
           .updateTable("entries")
@@ -86,7 +87,7 @@ export async function syncThreads(
             github_thread_id: t.id,
             github_resolved: Number(t.resolved),
             ...(resolved && { resolved_at: t.resolved ? now() : null }),
-            ...(root.kind === "comment" && { body: first.body }),
+            ...(root.githubId === first.id && { body: first.body }),
           })
           .where("id", "=", root.id)
           .execute();
@@ -95,7 +96,7 @@ export async function syncThreads(
     }
     for (const c of replies) {
       const row = byGitHubId.get(c.id);
-      if (row && (row.kind !== "comment" || row.body === c.body)) continue;
+      if (row && row.body === c.body) continue;
       changed = true;
       if (row)
         await db.updateTable("entries").set({ body: c.body }).where("id", "=", row.id).execute();
@@ -125,7 +126,7 @@ export async function syncThreads(
     }
     const there = new Set(t.comments.map((c) => c.id));
     const gone = known.filter(
-      (k) => k.parentId === root.id && k.kind === "comment" && !there.has(k.githubId!),
+      (k) => k.parentId === root.id && k.githubId && !there.has(k.githubId),
     );
     if (gone.length) {
       changed = true;
@@ -202,11 +203,11 @@ export function hunkRanges(diff: string): { old: [number, number][]; new: [numbe
   return ranges;
 }
 
-// A thread with something to post, as Submit Review lists it. github: on a thread from GitHub, where a conclusion of the
-// replies since goes as one reply, and a resolve or reopen made here. placement: how its conclusion goes. "lines": a
-// comment on its lines, which are in the PR's diff. "body": in the review's text, with what it is about quoted, since
-// GitHub has nowhere to put it (a view's text, lines outside the PR's diff, lines not pushed or changed since).
-// "reply": on its thread on GitHub. null: nothing to say, only a resolve or reopen.
+// A comment thread with something to post, as Submit Review lists it. github: on a thread on GitHub, where the
+// comments since go as replies, and a resolve or reopen made here. placement: how its comments go. "lines": a thread
+// on its lines, which are in the PR's diff. "body": in the review's text, with what they are about quoted, since GitHub
+// has nowhere to put them (a view's text, lines outside the PR's diff, lines not pushed or changed since). "reply": on
+// its thread on GitHub. null: nothing to say, only a resolve or reopen.
 export type PostableThread = {
   threadId: number;
   path: string | null;
@@ -222,8 +223,8 @@ const linesOf = (e: Pick<ReviewEntry, "startLine" | "endLine">) =>
 // An entry that isn't on GitHub yet.
 export const unposted = (e: ReviewEntry) => !e.githubId && e.kind !== "comment";
 
-// Every thread with something to post: a thread of the workspace's not on GitHub yet (open, and the user's, or the
-// agent's that the user replied to), or one from GitHub with replies or a resolve since. Its lines are taken in what's
+// Every comment thread with something to post: one of the workspace's not on GitHub yet (open), or one on GitHub with
+// comments or a resolve since. Agent threads aren't posted. Its lines are taken in what's
 // on GitHub (ADR 0028), the PR's head.
 export async function listPostable(
   db: Db,
@@ -260,12 +261,14 @@ export async function listPostable(
   const out: PostableThread[] = [];
   for (const root of entries.filter((e) => !e.parentId && (e.path || e.section != null))) {
     const replies = entries.filter((e) => e.parentId === root.id);
-    const github = !!root.githubThreadId;
+    // A comment posted at once is on GitHub before the next read finds its thread.
+    const github = !!root.githubThreadId || !!root.githubId;
     const fresh = (github ? replies : [root, ...replies]).filter(unposted);
     const resolve =
-      github && !!root.resolvedAt !== resolvedThere.get(root.id) ? !!root.resolvedAt : null;
-    const userReplied = replies.some((r) => !byAgent(r));
-    if (!github && (root.resolvedAt || (byAgent(root) && !userReplied))) continue;
+      root.githubThreadId && !!root.resolvedAt !== resolvedThere.get(root.id)
+        ? !!root.resolvedAt
+        : null;
+    if (!isComment(root) || (!github && root.resolvedAt)) continue;
     if (!fresh.length && resolve === null) continue;
     const onLines = root.section == null && root.shown && (await inDiff(root));
     out.push({
@@ -287,27 +290,29 @@ export async function listPostable(
 }
 
 export type ReviewEvent = "COMMENT" | "APPROVE" | "REQUEST_CHANGES";
-// threads: the picked ones, each with its conclusion as the user left it, which is what goes to GitHub.
+// threads: the picked ones, by their first entries.
 export type ReviewPost = {
-  threads: { threadId: number; body: string }[];
+  threads: number[];
   event: ReviewEvent;
   body: string;
 };
 
 type Posted = { id: string; url: string };
 
-// A conclusion in the review's text: what it is about, quoted, then the conclusion.
+// Comments in the review's text: what they are about, quoted, then the comments.
 const aside = (root: ReviewEntry, text: string) =>
   root.section != null
     ? `${quote(root.code ?? "")}\n\n${text}`
     : `\`${root.path}\`, ${root.startLine === root.endLine ? "line" : "lines"} ${linesOf(root)}${root.side === "old" ? " (removed)" : ""}:\n${fence(root.code ?? "")}\n\n${text}`;
 
-// Posts the picked threads' conclusions as one review of the PR's head as last opened, then submits it with event and
-// body: a comment on its lines for each new thread whose lines are in the PR's diff, in the review's text for the
-// other new ones, a reply for a thread from GitHub; and the resolves and reopens made here. A thread of the
-// workspace's is resolved here once its conclusion is posted: the comment on GitHub comes back as a thread of its own
-// at the next read. What got posted is recorded as it goes, so a failure halfway posts nothing twice; a review left
-// pending is submitted next time.
+// Posts the picked threads' comments as the user wrote them, in one review of the PR's head as last opened, then
+// submits it with event and body: a new thread whose lines are in the PR's diff becomes a thread there, its first
+// comment on the lines and the others replies; on a thread already on GitHub each comment is a reply; the other new
+// threads go in the review's text. Then the resolves and reopens made here. Each comment posted records its GitHub
+// comment, and a new thread its GitHub thread, so the thread here is that one: edited, deleted and replied to in both.
+// What got posted is recorded as it goes, so a failure halfway posts nothing twice; a review left pending is
+// submitted next time. ponytail: a thread in the review's text has nothing on GitHub to point at, so it's resolved
+// here once posted; a PR comment of its own each would keep the link.
 export async function postReview(
   db: Db,
   workspaceId: number,
@@ -316,12 +321,32 @@ export async function postReview(
   const w = await prOf(db, workspaceId);
   const [mergeBase, head] = [currentMergeBase(workspaceId), currentHead(workspaceId)];
   if (!mergeBase || !head) return { status: "error", message: "Open the workspace first" };
-  const texts = new Map(post.threads.map((t) => [t.threadId, t.body.trim()]));
-  const listed = (await listPostable(db, workspaceId)).filter((t) => texts.has(t.threadId));
-  const saying = (placement: PostableThread["placement"]) =>
-    listed.filter((t) => t.placement === placement && texts.get(t.threadId));
+  const picked = new Set(post.threads);
+  const listed = (await listPostable(db, workspaceId)).filter((t) => picked.has(t.threadId));
   const entries = await listEntries(db, workspaceId, mergeBase, mergeBase, head);
   const rootOf = (t: PostableThread) => entries.find((e) => e.id === t.threadId)!;
+  // A thread's comments not on GitHub yet, in order.
+  const commentsOf = (t: PostableThread) =>
+    [rootOf(t), ...entries.filter((e) => e.parentId === t.threadId)].filter(
+      (e) => e.kind === "note" && unposted(e),
+    );
+  const saying = (placement: PostableThread["placement"]) =>
+    listed.filter((t) => t.placement === placement && commentsOf(t).length);
+  if (saying("reply").some((t) => !rootOf(t).githubThreadId))
+    return {
+      status: "error",
+      message: "A thread posted a moment ago isn't read back from GitHub yet; try again",
+    };
+  const record = (id: number, c: Posted, threadId?: string) =>
+    db
+      .updateTable("entries")
+      .set({
+        github_id: c.id,
+        github_url: c.url,
+        ...(threadId && { github_thread_id: threadId, github_resolved: 0 }),
+      })
+      .where("id", "=", id)
+      .execute();
   const found = await githubGraphql<{
     repository: { pullRequest: { id: string; reviews: { nodes: { id: string }[] } } };
   }>(
@@ -335,7 +360,14 @@ export async function postReview(
   let reviewId = pr.reviews.nodes[0]?.id ?? null;
   const body = [
     post.body.trim(),
-    ...saying("body").map((t) => aside(rootOf(t), texts.get(t.threadId)!)),
+    ...saying("body").map((t) =>
+      aside(
+        rootOf(t),
+        commentsOf(t)
+          .map((e) => e.body)
+          .join("\n\n"),
+      ),
+    ),
   ]
     .filter(Boolean)
     .join("\n\n---\n\n");
@@ -362,17 +394,27 @@ export async function postReview(
       if (made.status !== "ok") return made;
       reviewId = made.data.addPullRequestReview.pullRequestReview.id;
     }
+    // A comment on a thread on GitHub, in this review.
+    const reply = (threadId: string, body: string) =>
+      githubGraphql<{ addPullRequestReviewThreadReply: { comment: Posted } }>(
+        `mutation($review: ID!, $thread: ID!, $body: String!) { addPullRequestReviewThreadReply(input: {
+          pullRequestReviewId: $review, pullRequestReviewThreadId: $thread, body: $body }) { comment { id url } } }`,
+        { review: reviewId, thread: threadId, body },
+      );
     for (const t of saying("lines")) {
       const root = rootOf(t);
       const side = root.side === "old" ? "LEFT" : "RIGHT";
-      const made = await githubGraphql(
+      const [first, ...rest] = commentsOf(t);
+      const made = await githubGraphql<{
+        addPullRequestReviewThread: { thread: { id: string; comments: { nodes: Posted[] } } };
+      }>(
         `mutation($input: AddPullRequestReviewThreadInput!) { addPullRequestReviewThread(input: $input) {
-          thread { id } } }`,
+          thread { id comments(first: 1) { nodes { id url } } } } }`,
         {
           input: {
             pullRequestReviewId: reviewId,
             path: root.path,
-            body: texts.get(t.threadId),
+            body: first.body,
             subjectType: "LINE",
             line: root.endLine,
             side,
@@ -381,30 +423,20 @@ export async function postReview(
         },
       );
       if (made.status !== "ok") return made;
-      await resolveHere([root.id]);
+      const thread = made.data.addPullRequestReviewThread.thread;
+      await record(first.id, thread.comments.nodes[0], thread.id);
+      for (const e of rest) {
+        const replied = await reply(thread.id, e.body);
+        if (replied.status !== "ok") return replied;
+        await record(e.id, replied.data.addPullRequestReviewThreadReply.comment);
+      }
     }
-    for (const t of saying("reply")) {
-      const root = rootOf(t);
-      const replied = await githubGraphql<{
-        addPullRequestReviewThreadReply: { comment: Posted };
-      }>(
-        `mutation($review: ID!, $thread: ID!, $body: String!) { addPullRequestReviewThreadReply(input: {
-          pullRequestReviewId: $review, pullRequestReviewThreadId: $thread, body: $body }) { comment { id url } } }`,
-        { review: reviewId, thread: root.githubThreadId, body: texts.get(t.threadId) },
-      );
-      if (replied.status !== "ok") return replied;
-      // The replies the conclusion stands for are on GitHub as that one comment.
-      const c = replied.data.addPullRequestReviewThreadReply.comment;
-      await db
-        .updateTable("entries")
-        .set({ github_id: c.id, github_url: c.url })
-        .where(
-          "id",
-          "in",
-          entries.filter((e) => e.parentId === root.id && unposted(e)).map((e) => e.id),
-        )
-        .execute();
-    }
+    for (const t of saying("reply"))
+      for (const e of commentsOf(t)) {
+        const replied = await reply(rootOf(t).githubThreadId!, e.body);
+        if (replied.status !== "ok") return replied;
+        await record(e.id, replied.data.addPullRequestReviewThreadReply.comment);
+      }
     const submitted = await githubGraphql(
       `mutation($review: ID!, $event: PullRequestReviewEvent!, $body: String) { submitPullRequestReview(input: {
         pullRequestReviewId: $review, event: $event, body: $body }) { pullRequestReview { id } } }`,
@@ -430,6 +462,106 @@ export async function postReview(
       .execute();
   }
   return { status: "ok" };
+}
+
+// A comment thread's comments not on GitHub yet, posted at once (the composer's Post to GitHub) as plain discussion,
+// with no review: GitHub's REST single comments, each published as it's made, never touching a pending review of the
+// user's (GitHub refuses them while one is open, and says so). A new thread on lines in the PR's diff starts a thread
+// there and its other comments reply to it, recording their comments; the next read of GitHub finds the thread by its
+// first comment. On a thread on GitHub each comment is a reply. Elsewhere (a view's text, lines outside the PR's diff)
+// they go together as a comment in the PR's conversation, with what they're about quoted, and the thread is resolved
+// here. Resolves here aren't sent: those wait for Submit Review.
+export async function postComment(
+  db: Db,
+  workspaceId: number,
+  threadId: number,
+): Promise<{ status: "ok" } | GitHubProblem> {
+  const w = await prOf(db, workspaceId);
+  const [mergeBase, head] = [currentMergeBase(workspaceId), currentHead(workspaceId)];
+  if (!mergeBase || !head) return { status: "error", message: "Open the workspace first" };
+  const t = (await listPostable(db, workspaceId)).find((p) => p.threadId === threadId);
+  const entries = await listEntries(db, workspaceId, mergeBase, mergeBase, head);
+  const root = entries.find((e) => e.id === threadId);
+  const comments = root
+    ? [root, ...entries.filter((e) => e.parentId === threadId)].filter(
+        (e) => e.kind === "note" && unposted(e),
+      )
+    : [];
+  if (!t || !root || !comments.length) return { status: "ok" };
+  type Comment = { id: number; node_id: string; html_url: string };
+  const record = (id: number, c: Comment) =>
+    db
+      .updateTable("entries")
+      .set({ github_id: c.node_id, github_url: c.html_url })
+      .where("id", "=", id)
+      .execute();
+  const pr = { owner: w.owner, repo: w.name, pull_number: w.prNumber };
+  const replies = async (top: number, list: ReviewEntry[]) => {
+    for (const e of list) {
+      const r = await githubRequest<Comment>(
+        "POST /repos/{owner}/{repo}/pulls/{pull_number}/comments/{comment_id}/replies",
+        { ...pr, comment_id: top, body: e.body },
+      );
+      if (r.status !== "ok") return r;
+      await record(e.id, r.data);
+    }
+    return { status: "ok" as const };
+  };
+  return match(t.placement)
+    .returnType<Promise<{ status: "ok" } | GitHubProblem>>()
+    .with("lines", async () => {
+      const [first, ...rest] = comments;
+      const side = root.side === "old" ? "LEFT" : "RIGHT";
+      const made = await githubRequest<Comment>(
+        "POST /repos/{owner}/{repo}/pulls/{pull_number}/comments",
+        {
+          ...pr,
+          body: first.body,
+          commit_id: head,
+          path: root.path,
+          line: root.endLine,
+          side,
+          ...(root.startLine !== root.endLine && { start_line: root.startLine, start_side: side }),
+        },
+      );
+      if (made.status !== "ok") return made;
+      await record(first.id, made.data);
+      return replies(made.data.id, rest);
+    })
+    .with("reply", async () => {
+      const top = await githubGraphql<{ node: { databaseId: number } | null }>(
+        `query($id: ID!) { node(id: $id) { ... on PullRequestReviewComment { databaseId } } }`,
+        { id: root.githubId },
+      );
+      if (top.status !== "ok") return top;
+      if (!top.data.node)
+        return { status: "error", message: "The thread's first comment is gone from GitHub" };
+      return replies(top.data.node.databaseId, comments);
+    })
+    .with("body", async () => {
+      const found = await githubGraphql<{ repository: { pullRequest: { id: string } } }>(
+        `query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) {
+          pullRequest(number: $number) { id } } }`,
+        { owner: w.owner, name: w.name, number: w.prNumber },
+      );
+      if (found.status !== "ok") return found;
+      const said = await githubGraphql(
+        `mutation($pr: ID!, $body: String!) { addComment(input: {subjectId: $pr, body: $body}) { clientMutationId } }`,
+        {
+          pr: found.data.repository.pullRequest.id,
+          body: aside(root, comments.map((e) => e.body).join("\n\n")),
+        },
+      );
+      if (said.status !== "ok") return said;
+      await db
+        .updateTable("entries")
+        .set({ resolved_at: now() })
+        .where("id", "=", root.id)
+        .execute();
+      return { status: "ok" };
+    })
+    .with(null, async () => ({ status: "ok" }))
+    .exhaustive();
 }
 
 // What the PR panel changes on GitHub, each at the user's click: the description, a comment on the PR, assigning

@@ -10,10 +10,9 @@ Accepted
 
 File summaries ([ADR 0029](0029-file-summaries-and-activity.md)) were the only work coxswain did that nobody waits
 for, and their jobs (batches, retries, a stored history, Activity) lived in `summaries.ts`, started by calls spread
-over the main process's handlers. Thread conclusions ([ADR 0037](0037-pull-request-sync-and-posting.md)) are the same
-kind of work: a small model writes something short about a part of a workspace, ahead of when it's needed. Their
-first version ran from a timer in the bottom bar, in the UI, with none of the jobs' retries or visibility. More such
-work is coming, and the app is young enough to settle one way of doing it.
+over the main process's handlers. Summarizing an agent thread as a comment ([ADR 0037](0037-pull-request-sync-and-posting.md))
+is the same kind of work: a small model writes something short about a part of a workspace. More such work is
+coming, and the app is young enough to settle one way of doing it.
 
 ## Decision
 
@@ -25,8 +24,8 @@ work is coming, and the app is young enough to settle one way of doing it.
    so Activity shows it, also after a restart.
 2. **A kind says what a job is about** (`JobSpec`): its items, which need no model, how they batch, the prompt and
    how the reply is read, and where an answer is stored. Two kinds: `files`, file summaries, stored in
-   `file_summaries` by fingerprint; `conclusions`, thread conclusions, stored in `thread_conclusions` by the
-   fingerprint of the thread's entries. A new kind is a spec; the engine, the table and Activity stay as they are.
+   `file_summaries` by fingerprint; `conclusions`, an agent thread summarized as a comment, handed to the user who
+   asked for it, who waits on it (`summarizeThread`) and stores nothing until they save the comment. A new kind is a spec; the engine, the table and Activity stay as they are.
 3. **The core has one event bus** (`src/core/events.ts`): every write emits what it changed, in the core function that
    makes it. In a workspace: `entries`, `worktree`, `transcript`, `sessions`, `view`, `reviewed`, `github` (a check of
    GitHub found something new, [ADR 0030](0030-workspace-watcher.md)), or that its worktree was `opened`; outside
@@ -34,20 +33,18 @@ work is coming, and the app is young enough to settle one way of doing it.
 4. **Two things listen.** The main process forwards the changes to the window, which refetches
    ([ADR 0017](0017-data-fetching-with-tanstack-query.md)). `src/core/background.ts` starts the jobs that follow from
    an event, and is the one place that says what runs when: `opened` and `worktree` summarise the committed changes
-   ahead; `entries` concludes the threads that changed, once they've been still for 30 s, leaving out a thread an agent
-   is answering.
-5. **Work ahead is one setting.** _Ahead_ in Settings turns both off: summaries are then made for a view, conclusions
-   when Submit Review opens. After a failure retrying can't fix, work ahead waits until the settings change; work
+   ahead.
+5. **Work ahead is one setting.** _Ahead_ in Settings turns it off: summaries are then made for a view. After a failure retrying can't fix, work ahead waits until the settings change; work
    that was asked for still tries and shows its error.
-6. **The UI starts no background work.** It asks for what it needs (`draftReview`, which starts a job for what's
-   missing and can wait for it) and shows jobs; it holds no timers for the core.
+6. **The UI starts no background work.** It asks for what it needs (`summarizeThread`, which starts a job and
+   waits for it) and shows jobs; it holds no timers for the core.
 
 ## Alternatives considered
 
-- **A timer in the UI** that asks the core for the draft a moment after the threads change. A few lines, but the UI
-  then decides when model runs happen (against ADR 0002), it stops when its component isn't there, and its runs have
-  no retries and don't show in Activity.
-- **A second job runner for conclusions**, beside the summaries'. Each would grow its own retries, limits and history;
+- **A timer in the UI** that asks the core for work a moment after something changes. A few lines, but the UI then
+  decides when model runs happen (against ADR 0002), it stops when its component isn't there, and its runs have no
+  retries and don't show in Activity.
+- **A second job runner for thread summaries**, beside the file summaries'. Each would grow its own retries, limits and history;
   the two are the same shape.
 - **A stored queue** (jobs written before they run, picked up by workers, resumed after a restart). Needed once work
   is long or must not be lost; what there is now can be worked out again from the workspace, so a job that died is
@@ -58,7 +55,6 @@ work is coming, and the app is young enough to settle one way of doing it.
 
 ## Consequences
 
-- Every changed thread with more than the user's one comment costs a model run, submitted or not, unless work ahead
-  is off.
+- A thread summary costs a model run only when the user asks for one.
 - `summary_jobs` became `jobs` (a migration); a job has a `kind`, and its count is `items`, not `files`.
 - A job is tied to one workspace and runs on the summary agent; work that fits neither needs the spec widened.

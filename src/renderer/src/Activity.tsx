@@ -11,9 +11,8 @@ import { ErrorText } from "./components/text";
 import { ago, count } from "./format";
 import { core } from "./queries";
 
-// Activity (glossary, ADR 0038): what coxswain does in the background, its jobs: file summaries and thread
-// conclusions. The button at the
-// canvas bar's right turns while one runs and gets a red dot when one failed since the list was last looked at; it
+// Activity (glossary, ADR 0038): what coxswain does in the background, its jobs: file summaries and agent
+// threads summarized as comments. The button at the canvas bar's right turns while one runs and gets a red dot when one failed since the list was last looked at; it
 // opens the list below it, newest first. Jobs of every workspace show: they run whichever one is on screen.
 export function Activity({
   workspaceId,
@@ -107,8 +106,8 @@ export function Activity({
             {jobs.length === 0 ? (
               <div className={cn("px-3 py-3", muted)}>
                 No jobs yet. Committed changes are summarised when a workspace opens, when it's
-                checked again and when its HEAD moves, and threads are concluded as they change
-                {settings && !settings.ahead ? " (both turned off in Settings)" : ""}; uncommitted
+                checked again and when its HEAD moves
+                {settings && !settings.ahead ? " (turned off in Settings)" : ""}; uncommitted
                 changes are summarised when the agent starts a view.
               </div>
             ) : (
@@ -130,7 +129,7 @@ function JobRow({ job: j }: { job: Job }) {
   const [item, doing, did] = (
     {
       files: ["file", "Summarising", "summarised"],
-      conclusions: ["thread", "Concluding", "concluded"],
+      conclusions: ["thread", "Summarizing", "summarized"],
     } as const
   )[j.kind];
   const state = match(j.state)
@@ -154,6 +153,7 @@ function JobRow({ job: j }: { job: Job }) {
               .with("ahead", () => "ahead")
               .with("view", () => "for a view")
               .with("submit", () => "for Submit Review")
+              .with("comment", () => "as a comment")
               .exhaustive()}
           </span>
         </span>

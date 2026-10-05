@@ -1227,6 +1227,7 @@ export function App() {
                               )}
                               <ProseThreads
                                 workspaceId={currentWorkspace.id}
+                                canPost={currentWorkspace.prNumber !== null}
                                 viewId={canvasView?.id ?? 0}
                                 section={i}
                                 entries={entries}

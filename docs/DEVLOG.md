@@ -3,6 +3,33 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-10-05 — Comment threads and agent threads; comments posted as written
+
+### What works
+
+- A thread is a comment thread or an agent thread, by its first entry, and stays one. A comment thread's reply box
+  has no Agent toggle, and its ⋯ menu no _Send to Agent_.
+- _Submit Review_ lists only the open comment threads and posts their comments as written: the first comment on the
+  lines, the others replies. Conclusions are gone: no summary model at Submit Review, no work ahead on threads.
+- A posted thread keeps its GitHub comment and thread ids, so the next read finds it: replies by others land in it,
+  edits there are taken over, and editing or deleting the user's comments here does so on GitHub too.
+- An agent thread's ⋯ menu has _Summarize as Comment_: a one-item job on the summary model, with a prompt rewritten
+  around the reviewer's point (the agent's answers as background); the comment opens under the thread to edit, and
+  saving adds a comment thread on the same lines or passage.
+
+- The comment box has _Post to GitHub_ (with a PR, on _Comment_; remembered): ticked, a comment is posted as it's
+  sent, as plain discussion with no review: GitHub's single comments and replies, or a comment in the PR's
+  conversation off the diff (`postComment`); unticked, it waits for _Submit Review_. A failed post keeps the comment
+  here and says why in a sheet.
+
+### Tech debt
+
+- `ponytail:` in `postReview`: a thread posted in the review's text has no GitHub comment to link, so it's resolved
+  here and can't be edited or deleted on GitHub from here.
+- `ponytail:` in `db.ts`: `thread_conclusions` is no longer used; dropped by the next migration that has to lock older
+  releases out anyway.
+- Paid off: conclusions ahead (a model run per changed thread, submitted or not) are gone.
+
 ## 2026-10-05 — Scrolling holds still while the agent answers (#38)
 
 ### What works

@@ -314,7 +314,7 @@ type Tables = {
     kind: "files" | "conclusions";
     workspace_id: number;
     workspace: string;
-    why: "ahead" | "view" | "submit";
+    why: "ahead" | "view" | "submit" | "comment";
     base: string;
     head: string;
     agent: "claude" | "codex";
@@ -331,6 +331,8 @@ type Tables = {
     finished_at: string | null;
     updated_at: string;
   };
+  // ponytail: no longer read or written since comments go to GitHub as written; dropped by the next migration that
+  // has to lock older releases out anyway.
   thread_conclusions: {
     thread_id: number;
     fingerprint: string;

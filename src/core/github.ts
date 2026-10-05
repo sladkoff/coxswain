@@ -588,6 +588,17 @@ export function githubGraphql<T>(
   }));
 }
 
+// One REST call as the current user, resolving with its response's data; what goes wrong comes back as a problem.
+export function githubRequest<T>(
+  route: string,
+  params: Record<string, unknown>,
+): Promise<{ status: "ok"; data: T } | GitHubProblem> {
+  return withGitHub(async (octokit) => ({
+    status: "ok" as const,
+    data: (await octokit.request(route, params)).data as T,
+  }));
+}
+
 // The last lines of a GitHub Actions job's log, where a failure usually says why. Timestamps are cut off.
 export function readJobLog(
   owner: string,

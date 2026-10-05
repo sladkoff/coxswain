@@ -6,6 +6,9 @@ import type { Workspace } from "../../core/workspaces";
 // renderer imports no core code; share a pure module if it ever changes.
 export const byAgent = (e: Pick<ReviewEntry, "kind">) =>
   e.kind === "answer" || e.kind === "explanation" || e.kind === "finding";
+// A thread's first entry starts a comment thread, not an agent thread (glossary); isComment in core/thread-context.ts.
+export const isComment = (root: Pick<ReviewEntry, "kind">) =>
+  root.kind === "note" || root.kind === "comment";
 
 export const count = (n: number, word: string, plural = `${word}s`) =>
   `${n} ${n === 1 ? word : plural}`;
