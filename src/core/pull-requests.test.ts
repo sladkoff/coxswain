@@ -12,7 +12,8 @@ import type { ReviewThread } from "./github.ts";
 const temp = mkdtempSync(join(os.tmpdir(), "coxswain-pr-"));
 const home = mock.method(os, "homedir", () => temp);
 syncBuiltinESMExports();
-const { hunkRanges, listPostable, syncThreads } = await import("./pull-requests.ts");
+const { hunkRanges, listPostable, oneAtATime, syncConversation, syncThreads, textOf, withHeader } =
+  await import("./pull-requests.ts");
 const { addEntry, addNote, listEntries } = await import("./entries.ts");
 const { checkRunState, statusState } = await import("./github.ts");
 home.mock.restore();
@@ -89,6 +90,7 @@ test("review threads mirror into entries, and what's new here is postable", asyn
     endLine: 2,
     commit: head,
     comments: [comment("C1", "Why two?"), comment("C2", "Spelled out?")],
+    complete: true,
   };
   assert.equal(await syncThreads(db, 1, [thread], mergeBase), true);
   assert.equal(await syncThreads(db, 1, [thread], mergeBase), false, "nothing new the second time");
@@ -131,8 +133,8 @@ test("review threads mirror into entries, and what's new here is postable", asyn
     [
       ["Why two?", true, true, "reply"],
       ["Near it", false, null, "lines"],
-      ["Far away", false, null, "body"],
-      ["Not pushed", false, null, "body"],
+      ["Far away", false, null, "conversation"],
+      ["Not pushed", false, null, "conversation"],
     ],
   );
 
@@ -210,4 +212,98 @@ test("review threads mirror into entries, and what's new here is postable", asyn
   assert.ok(
     (await listPostable(db, 1, mergeBase, head)).every((p) => p.body !== "What does this do?"),
   );
+
+  // A thread posted in the PR's conversation (off the diff) has its comment there: what's added goes there too.
+  const conv = await addNote(db, {
+    workspaceId: 1,
+    body: "Off the diff",
+    anchor: { ...anchor, startLine: 18, endLine: 18, code: "18" },
+  });
+  await db
+    .updateTable("entries")
+    .set({ github_id: "IC1", github_url: "https://github.com/test/repo/pull/7#issuecomment-1" })
+    .where("id", "=", conv.id)
+    .execute();
+  await addNote(db, { workspaceId: 1, body: "More", parentId: conv.id });
+  const convPost = (await listPostable(db, 1, mergeBase, head)).find(
+    (p) => p.threadId === conv.id,
+  )!;
+  assert.deepEqual([convPost.placement, convPost.resolve], ["conversation", null]);
+  // An edit on GitHub is taken over, the user's text after coxswain's header; a deletion only from a complete read,
+  // and not of a thread holding an unposted note.
+  assert.equal(textOf(withHeader("`f.txt`, line 18:", "Hi")), "Hi");
+  await syncConversation(
+    db,
+    1,
+    [{ id: "IC1", body: withHeader("about", "Off the diff, edited") }],
+    true,
+  );
+  const body = async () => (await listed()).find((e) => e.id === conv.id)?.body;
+  assert.equal(await body(), "Off the diff, edited");
+  await syncConversation(db, 1, [], false);
+  assert.equal(await body(), "Off the diff, edited", "an incomplete read deletes nothing");
+  await syncConversation(db, 1, [], true);
+  assert.equal(await body(), undefined, "deleted on GitHub");
+  const more = (await listed()).find((e) => e.body === "More")!;
+  assert.deepEqual(
+    [more.parentId, more.githubId, more.path, more.startLine],
+    [null, null, "f.txt", 18],
+    "the unposted note stays, a local thread on the same lines",
+  );
+
+  // A complete read: the viewer's own comments are theirs (notes, posted), a thread gone from GitHub is gone here,
+  // one whose first comment was deleted there is mirrored again from what's left, and one holding an unposted note
+  // of the user's stays.
+  const mineThread: ReviewThread = {
+    ...thread,
+    id: "T4",
+    startLine: 5,
+    endLine: 5,
+    comments: [comment("C40", "Mine", "me"), comment("C41", "Theirs", "bo")],
+  };
+  const seen = { viewer: "me", complete: true };
+  await syncThreads(db, 1, [thread, mineThread], mergeBase, seen);
+  entries = await listed();
+  const mine = entries.find((e) => e.githubThreadId === "T4")!;
+  assert.deepEqual(
+    [mine.kind, ...entries.filter((e) => e.parentId === mine.id).map((e) => e.kind)],
+    ["note", "comment"],
+  );
+  assert.ok(!entries.some((e) => e.githubThreadId === "T2"), "T2 is gone from GitHub");
+  assert.ok(!entries.some((e) => e.id === far.id), "T3 is gone from GitHub");
+  const andHere = entries.find((e) => e.body === "And here")!;
+  assert.deepEqual(
+    [andHere.parentId, andHere.startLine],
+    [null, 18],
+    "its unposted note stays, a thread",
+  );
+  await syncThreads(
+    db,
+    1,
+    [thread, { ...mineThread, comments: [comment("C41", "Theirs", "bo")] }],
+    mergeBase,
+    seen,
+  );
+  entries = await listed();
+  const left = entries.filter((e) => e.githubThreadId === "T4");
+  assert.deepEqual(
+    left.map((e) => [e.kind, e.author, e.body]),
+    [["comment", "bo", "Theirs"]],
+  );
+});
+
+test("reads and posts of a workspace take turns; a failure doesn't hold up the next", async () => {
+  const log: string[] = [];
+  const step =
+    (name: string, ms: number, fail = false) =>
+    () =>
+      new Promise<void>((done, failed) =>
+        setTimeout(() => (log.push(name), fail ? failed(new Error(name)) : done()), ms),
+      );
+  const post = oneAtATime(1, step("post", 30, true));
+  const read = oneAtATime(1, step("read", 0));
+  const other = oneAtATime(2, step("other workspace", 0));
+  await assert.rejects(post, /post/);
+  await Promise.all([read, other]);
+  assert.deepEqual(log, ["other workspace", "post", "read"]);
 });

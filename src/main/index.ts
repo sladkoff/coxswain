@@ -110,6 +110,7 @@ import { addGitHubProject, listProjects, openProject } from "../core/projects";
 import {
   addNote,
   askQuestion,
+  deleteComment,
   deleteEntry,
   editEntry,
   resolveThread,
@@ -540,6 +541,7 @@ app.whenReady().then(() => {
   );
   ipcMain.handle("review:add-note", (_, note: NewEntry) => addNote(db, note));
   ipcMain.handle("review:delete", (_, id: number) => deleteEntry(db, id));
+  ipcMain.handle("review:delete-comment", (_, id: number) => deleteComment(db, id));
   // A question (review:ask), or a thread's *Send to agent* (review:send-thread: its latest note made a question, null
   // if it has none). Returns the question once saved; the reply streams as review:chat to the thread and agents:entry
   // to the agent pane, a tool use to approve comes as review:permission, waiting behind the running turn as
@@ -706,20 +708,19 @@ app.whenReady().then(() => {
   // a dismissal from a pick. A dismissed menu leaves the promise pending; nothing else waits on it.
   ipcMain.handle(
     "menus:thread",
+    // delete: "others", not while others have replied, which GitHub keeps; their comments aren't the user's to delete.
     (
       e,
-      can: {
-        edit: boolean;
-        send: boolean;
-        summarize: boolean;
-        delete: boolean;
-        url: string | null;
-      },
+      can: { send: boolean; summarize: boolean; delete: boolean | "others"; url: string | null },
     ) =>
-      new Promise<"edit" | "delete" | "send" | "summarize">((resolve) =>
+      new Promise<"delete" | "send" | "summarize">((resolve) =>
         Menu.buildFromTemplate([
-          { label: "Edit", enabled: can.edit, click: () => resolve("edit") },
-          { label: "Delete", enabled: can.delete, click: () => resolve("delete") },
+          {
+            label:
+              can.delete === "others" ? "Delete Thread (others have replied)" : "Delete Thread",
+            enabled: can.delete === true,
+            click: () => resolve("delete"),
+          },
           ...(can.url
             ? [{ label: "Open on GitHub", click: () => void shell.openExternal(can.url!) }]
             : []),
@@ -730,6 +731,20 @@ app.whenReady().then(() => {
             enabled: can.summarize,
             click: () => resolve("summarize"),
           },
+        ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
+      ),
+  );
+  // One of the user's comments' ⋯ menu, resolving like the thread's.
+  ipcMain.handle(
+    "menus:comment",
+    (e, can: { delete: boolean; url: string | null }) =>
+      new Promise<"edit" | "delete">((resolve) =>
+        Menu.buildFromTemplate([
+          { label: "Edit", click: () => resolve("edit") },
+          { label: "Delete", enabled: can.delete, click: () => resolve("delete") },
+          ...(can.url
+            ? [{ label: "Open on GitHub", click: () => void shell.openExternal(can.url!) }]
+            : []),
         ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
       ),
   );

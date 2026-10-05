@@ -27,11 +27,16 @@ PR; the branch, not the workspace, is what ties them. Writing to GitHub must alw
    (ADR 0015), the threads list, _Submit Review_ and the agent's prompts work on them unchanged. A thread's comments become
    entries of kind `comment` with their author's login: the first one anchored on the lines it was written on (the new
    side at its comment's commit, the old side at the merge base), the rest replies. They are GitHub's: overwritten by
-   each read, deleted when deleted there, never edited here. The user's own replies are ordinary notes in the thread.
+   each read, deleted when deleted there, never edited here. The user's own comments, wherever they wrote them, are
+   notes: posted, so editing or deleting one here does so on GitHub. A read that got every thread (fewer than 100)
+   deletes here a thread gone from GitHub, or whose first comment is (GitHub keeps a thread for its replies; the next
+   read mirrors what's left as a new thread), unless it holds a note of the user's not posted yet.
    `entries.github_id` links an entry to its comment, `github_thread_id` a thread's first entry to its review thread.
    Threads on a whole file have no lines, so they show in the PR panel's conversation instead.
-4. **Resolving is local until posted.** GitHub's resolve or reopen, seen in a read, is taken over (`github_resolved`
-   records what GitHub had). A resolve here stays here until _Post to GitHub_ sends it.
+4. **Resolving goes as comments do.** GitHub's resolve or reopen, seen in a read, is taken over (`github_resolved`
+   records what GitHub had). A resolve or reopen here of a thread on GitHub goes there at once while _Post to GitHub_
+   is on in the comment box (`resolveThread`; a failure there leaves the thread as it was), else with the next
+   _Submit Review_. A thread in the PR's conversation has no resolve on GitHub: resolving it is local.
 5. **Posting is one review of comments as written, picked by thread** (`postReview`). _Submit Review_ lists every
    open comment thread (6), and with a PR every one with something to post: one of the workspace's not on GitHub yet,
    or one on GitHub with comments or a resolve since. The user picks threads, edits their comments if they like (which
@@ -39,21 +44,33 @@ PR; the branch, not the workspace, is what ties them. Writing to GitHub must alw
    summary, and confirms. It goes out as one pending review on the PR's head as last opened, then submitted; resolves
    follow. A new thread on lines the PR's diff has becomes a thread there: its first comment on the lines, the others
    replies to it. On a thread already on GitHub each comment is a reply. Otherwise (lines outside the diff, not pushed
-   or changed since, or a view's prose) the thread's comments go in the review's text, after the summary, with what
-   they are about quoted: one notification, not a comment each. Each comment posted records its GitHub comment
+   or changed since, or a view's prose) each comment goes as a comment in the PR's conversation, linked like the
+   others, the first led by what it is about: a permalink to the lines at the PR's head (the merge base for removed
+   lines), which GitHub shows as the code, highlighted and linked, where GitHub has them unchanged; else the code
+   quoted. A review of the user's in progress on GitHub (one they started there, or left by a failed post) is never
+   added to silently: posting comes back as pending, with its comment count, and _Submit Review_ asks before adding
+   to it and submitting it. Each comment posted records its GitHub comment
    (`github_id`, `github_url`), and a new thread its review thread (`github_thread_id`) on its first entry, so the thread
    here _is_ the thread on GitHub: the next read finds it by that id, replies there land in it, edits there are taken
    over, and resolving goes both ways. Editing or deleting a posted comment here does so on GitHub first
-   (`updatePullRequestReviewComment`, `deletePullRequestReviewComment`); a failure there leaves it unchanged here. A
-   thread in the review's text has nothing on GitHub to point at, so it is resolved here once posted. Since every
-   comment is recorded as it goes, nothing is posted twice after a failure halfway; the user's pending review is
-   reused. A comment can also go at once (`postComment`): with _Post to GitHub_ ticked in the comment box (a global
+   (`updatePullRequestReviewComment`, `deletePullRequestReviewComment`, or `updateIssueComment`, `deleteIssueComment`
+   for one in the PR's conversation, told by its URL); a failure there leaves it unchanged here, and one already gone
+   from GitHub is deleted here all the same. Deleting a thread's first comment drops the thread here
+   (`dropThread`), as GitHub keeps the rest for its replies; a thread can be deleted whole only while nobody else is in
+   it. Since every comment is recorded as it goes, nothing is posted twice after a failure halfway. A comment can also go at once (`postComment`): with _Post to GitHub_ ticked in the comment box (a global
    preference, `comment.post`), sending it posts its thread's new comments as plain discussion, with no review: GitHub's
    REST single comments (`pulls/comments`, and `…/replies` for the others), each published as it's made, so a pending
    review of the user's is never submitted with them (GitHub refuses a single comment while one is open, and says so).
-   Off the PR's diff they go as one comment in the PR's conversation, with what they're about quoted. Until the next
+   Off the PR's diff each goes as a comment in the PR's conversation, recorded like the others: the first with what
+   it's about (the permalink, or the code quoted), the others, and any added later, in reply to it by its link. What
+   coxswain puts before the user's text ends with a hidden marker (`<!-- coxswain -->`), so each read takes over an
+   edit made on GitHub (`syncConversation`), an edit here keeps the header, and a comment deleted there is deleted
+   here (its thread too if it was the first, unless the thread holds an unposted note) when the read got all of the
+   conversation's comments. Until the next
    read finds the new thread by its first comment, the thread counts as on GitHub already. If posting fails the
-   comment stays here for _Submit Review_.
+   comment stays here for _Submit Review_. Reads, posts, edits and deletes of a workspace's threads on GitHub take
+   turns (`oneAtATime`), a read holding its turn from asking to saving: one overlapping a post would copy the posted
+   comment in beside the entry it came from, or take that entry for one deleted on GitHub.
 6. **Comment threads and agent threads are separate** (`isComment`). A thread is one or the other by its first entry,
    and stays it: a comment thread starts with the user's note or a comment from GitHub, and its replies are comments,
    never questions; an agent thread starts with a question, explanation or finding, for exploring or changing the code
@@ -97,10 +114,11 @@ PR; the branch, not the workspace, is what ties them. Writing to GitHub must alw
 ## Consequences
 
 - A workspace's GitHub threads are in SQLite as long as the workspace is; removing the workspace removes them.
-- The first 100 threads, comments per thread, commits and checks are read (`ponytail:` in `core/github.ts`).
-- A thread deleted on GitHub stays here with any local replies (`ponytail:` in `syncThreads`).
+- Review threads and conversation comments are read in full, page by page. The first 100 comments of a thread,
+  commits and checks are read (`ponytail:` in `core/github.ts`); a longer thread's replies aren't pruned.
+- A thread gone from GitHub is dropped here (`dropThread`): what was on GitHub goes, and the user's unposted notes in it
+  stay, as a local thread on the same anchor.
 - A comment whose commit the clone doesn't have (force-pushed away) has no code and reads as outdated.
-- A thread posted in the review's text can't be edited or deleted on GitHub from here (`ponytail:` in `postReview`).
 - Threads posted before the link was kept were resolved here, and their comments came back as threads of their own;
   they stay unlinked.
 - Threads are mirrored only once the worktree is open, since they're anchored there.

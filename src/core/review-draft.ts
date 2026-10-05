@@ -95,15 +95,15 @@ export async function summarizeThread(db: Db, threadId: number): Promise<string>
   return comment;
 }
 
-// A new comment thread on the lines or passage of another thread: what Summarize as Comment adds.
-export async function addCommentAt(db: Db, threadId: number, body: string) {
+// A new comment thread on the lines or passage of another thread: what Summarize as Comment adds. Resolves with its id.
+export async function addCommentAt(db: Db, threadId: number, body: string): Promise<number> {
   if (!body.trim()) throw new Error("A comment needs text");
   const root = await db
     .selectFrom("entries")
     .selectAll()
     .where("id", "=", threadId)
     .executeTakeFirstOrThrow();
-  await db
+  const added = await db
     .insertInto("entries")
     .values({
       workspace_id: root.workspace_id,
@@ -123,6 +123,8 @@ export async function addCommentAt(db: Db, threadId: number, body: string) {
       quote_at: root.quote_at,
       created_at: new Date().toISOString(),
     })
-    .execute();
+    .returning("id")
+    .executeTakeFirstOrThrow();
   emit({ workspaceId: root.workspace_id, what: "entries" });
+  return added.id;
 }

@@ -21,11 +21,28 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
   sent, as plain discussion with no review: GitHub's single comments and replies, or a comment in the PR's
   conversation off the diff (`postComment`); unticked, it waits for _Submit Review_. A failed post keeps the comment
   here and says why in a sheet.
+- Reads of GitHub and posts, edits and deletes take turns per workspace (`oneAtATime`): a watcher check overlapping
+  a post had copied the posted reply in beside its note.
+- A thread deleted on GitHub, or whose first comment was, is deleted here at the next complete read (not while it
+  holds an unposted note). The user's own comments on GitHub are mirrored as their notes, so Edit and Delete work on
+  them, on GitHub too.
+- Comments off the PR's diff show what they're about as a permalink to the lines (GitHub renders it as the
+  highlighted code), else the code quoted. Posted at once, each is a comment in the PR's conversation that's recorded,
+  so Edit and Delete reach it (`updateIssueComment`, `deleteIssueComment`), and later comments reply to it by link.
+  Edits and deletions made on GitHub come back at the next read (`syncConversation`); a hidden marker tells the
+  user's text from coxswain's header.
+- Each of the user's comments has its own ⋯ (Edit, Delete, Open on GitHub); Delete Thread is off while others have
+  replied. A thread gone from GitHub is dropped (`dropThread`), its unposted notes kept as a local thread. Review
+  threads and conversation comments are read in full, page by page. Posting a new thread directly reads GitHub back at
+  once, so it's linked before anything else goes to it. Posting directly with a review in progress on GitHub says so
+  instead of failing. Summarize as Comment's Save follows Post to GitHub (_Save and Post_).
+- With _Post to GitHub_ on, ✓ resolves or reopens a thread on GitHub at once (`resolveThread`), else it waits for
+  Submit Review; a failure says why under the thread and leaves it as it was.
 
 ### Tech debt
 
-- `ponytail:` in `postReview`: a thread posted in the review's text has no GitHub comment to link, so it's resolved
-  here and can't be edited or deleted on GitHub from here.
+- Paid off: Submit Review no longer puts comments in the review's text, where nothing could link to them; they go as
+  linked conversation comments. It no longer adds to a review in progress on GitHub without asking.
 - `ponytail:` in `db.ts`: `thread_conclusions` is no longer used; dropped by the next migration that has to lock older
   releases out anyway.
 - Paid off: conclusions ahead (a model run per changed thread, submitted or not) are gone.

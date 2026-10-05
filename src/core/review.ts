@@ -31,7 +31,15 @@ import {
   who,
 } from "./thread-context.ts";
 import { type Check, githubGraphql, readJobLog } from "./github";
-import { prOf } from "./pull-requests.ts";
+import {
+  dropThread,
+  inConversation,
+  marker,
+  oneAtATime,
+  prOf,
+  resolveOnGitHub,
+  withHeader,
+} from "./pull-requests.ts";
 
 export { addNote, listEntries, type NewEntry, type ReviewEntry } from "./entries.ts";
 
@@ -48,19 +56,57 @@ async function onGitHub(query: string, variables: Record<string, unknown>) {
   );
 }
 
-// A comment already posted is edited on GitHub too.
+// A posted comment's mutations: on a review thread, or in the PR's conversation (inConversation).
+const mutations = (e: { github_url: string | null }) =>
+  inConversation({ githubUrl: e.github_url })
+    ? {
+        edit: `mutation($id: ID!, $body: String!) { updateIssueComment(input: {id: $id, body: $body}) { clientMutationId } }`,
+        remove: `mutation($id: ID!) { deleteIssueComment(input: {id: $id}) { clientMutationId } }`,
+      }
+    : {
+        edit: `mutation($id: ID!, $body: String!) { updatePullRequestReviewComment(input: {
+          pullRequestReviewCommentId: $id, body: $body }) { clientMutationId } }`,
+        remove: `mutation($id: ID!) { deletePullRequestReviewComment(input: {id: $id}) { clientMutationId } }`,
+      };
+
+// What a posted comment's text becomes on GitHub: in the PR's conversation, after what coxswain put before it, as it
+// is there now (withHeader).
+async function onGitHubAs(
+  e: { github_id: string | null; github_url: string | null },
+  text: string,
+) {
+  if (!inConversation({ githubUrl: e.github_url })) return text;
+  const now = await githubGraphql<{ node: { body: string } | null }>(
+    `query($id: ID!) { node(id: $id) { ... on IssueComment { body } } }`,
+    { id: e.github_id },
+  );
+  if (now.status !== "ok")
+    throw new Error(
+      now.status === "error" ? now.message : "Sign in to GitHub with gh to change it there too",
+    );
+  const body = now.data.node?.body ?? "";
+  const at = body.indexOf(marker);
+  return at < 0 ? text : withHeader(body.slice(0, at).trim(), text);
+}
+
+// A comment already posted is edited on GitHub too, in its workspace's turn with reads of GitHub (oneAtATime).
 export async function editEntry(db: Db, id: number, body: string) {
   const e = await db
     .selectFrom("entries")
-    .select(["kind", "github_id"])
+    .select(["kind", "github_id", "github_url", "workspace_id"])
     .where("id", "=", id)
     .executeTakeFirst();
   if (e?.kind === "note" && e.github_id)
-    await onGitHub(
-      `mutation($id: ID!, $body: String!) { updatePullRequestReviewComment(input: {
-        pullRequestReviewCommentId: $id, body: $body }) { clientMutationId } }`,
-      { id: e.github_id, body: body.trim() },
-    );
+    return oneAtATime(e.workspace_id, async () => {
+      await onGitHub(mutations(e).edit, {
+        id: e.github_id,
+        body: await onGitHubAs(e, body.trim()),
+      });
+      await edit(db, id, body);
+    });
+  await edit(db, id, body);
+}
+const edit = async (db: Db, id: number, body: string) =>
   changedIn(
     await db
       .updateTable("entries")
@@ -69,10 +115,38 @@ export async function editEntry(db: Db, id: number, body: string) {
       .returning("workspace_id")
       .executeTakeFirst(),
   );
-}
 
 // Resolves a thread (its first entry), or reopens it.
+// With Post to GitHub on (getPostComments), a thread on GitHub is resolved or reopened there at once, first: a failure
+// there leaves it as it was here. Otherwise that waits for Submit Review.
 export async function resolveThread(db: Db, id: number, resolved: boolean) {
+  const root = await db
+    .selectFrom("entries")
+    .select(["workspace_id", "github_thread_id", "github_resolved"])
+    .where("id", "=", id)
+    .executeTakeFirst();
+  if (
+    root?.github_thread_id &&
+    root.github_resolved !== Number(resolved) &&
+    (await getPostComments(db))
+  )
+    return oneAtATime(root.workspace_id, async () => {
+      const done = await resolveOnGitHub(
+        db,
+        { id, githubThreadId: root.github_thread_id },
+        resolved,
+      );
+      if (done.status !== "ok")
+        throw new Error(
+          done.status === "error"
+            ? done.message
+            : "Sign in to GitHub with gh to resolve it there too",
+        );
+      await resolveHere(db, id, resolved);
+    });
+  await resolveHere(db, id, resolved);
+}
+const resolveHere = async (db: Db, id: number, resolved: boolean) =>
   changedIn(
     await db
       .updateTable("entries")
@@ -81,23 +155,49 @@ export async function resolveThread(db: Db, id: number, resolved: boolean) {
       .returning("workspace_id")
       .executeTakeFirst(),
   );
+
+// One of the user's comments, deleted on GitHub too if it was posted (one already gone there is deleted here all the
+// same). The first of a thread takes what came from GitHub with it here (dropThread): GitHub keeps a thread with
+// replies, and the next read brings what's left back as a thread of its own; the user's unposted notes stay.
+export async function deleteComment(db: Db, id: number) {
+  const e = await db
+    .selectFrom("entries")
+    .select(["workspace_id", "parent_id", "github_id", "github_url"])
+    .where("id", "=", id)
+    .executeTakeFirst();
+  if (!e) return;
+  await oneAtATime(e.workspace_id, async () => {
+    if (e.github_id) await deleteOnGitHub(e);
+    if (e.parent_id === null) await dropThread(db, id);
+    else await db.deleteFrom("entries").where("id", "=", id).execute();
+  });
+  emit({ workspaceId: e.workspace_id, what: "entries" });
 }
+const deleteOnGitHub = (e: { github_id: string | null; github_url: string | null }) =>
+  onGitHub(mutations(e).remove, { id: e.github_id }).catch((err: Error) => {
+    if (!/Could not resolve to a node/.test(err.message)) throw err;
+  });
 
 // A thread's comments already posted are deleted on GitHub too, replies first; others' replies stay there.
 export async function deleteEntry(db: Db, id: number) {
+  const root = await db
+    .selectFrom("entries")
+    .select("workspace_id")
+    .where("id", "=", id)
+    .executeTakeFirst();
+  if (root) return oneAtATime(root.workspace_id, () => remove(db, id));
+}
+// One already gone from GitHub is deleted here all the same.
+async function remove(db: Db, id: number) {
   const posted = await db
     .selectFrom("entries")
-    .select("github_id")
+    .select(["github_id", "github_url"])
     .where((eb) => eb.or([eb("id", "=", id), eb("parent_id", "=", id)]))
     .where("kind", "=", "note")
     .where("github_id", "is not", null)
     .orderBy("id", "desc")
     .execute();
-  for (const p of posted)
-    await onGitHub(
-      `mutation($id: ID!) { deletePullRequestReviewComment(input: {id: $id}) { clientMutationId } }`,
-      { id: p.github_id },
-    );
+  for (const p of posted) await deleteOnGitHub(p);
   changedIn(
     await db
       .deleteFrom("entries")

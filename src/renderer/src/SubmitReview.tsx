@@ -27,8 +27,8 @@ const posts = (t: DraftThread, hasPr: boolean) =>
       [
         match(post.placement)
           .with("lines", () => "comment on the lines")
-          .with("body", () => "in the review's text")
           .with("reply", () => "reply")
+          .with("conversation", () => "in the conversation")
           .with(null, () => null)
           .exhaustive(),
         post.resolve === true && "resolve",
@@ -99,14 +99,22 @@ export function SubmitReviewDialog(props: {
     await save();
     setPosting(true);
     setProblem(null);
-    const r = await window.coxswain.postReview(workspaceId, {
-      threads: ids(toPost),
-      event,
-      body,
-    });
+    const send = (addToPending: boolean) =>
+      window.coxswain.postReview(workspaceId, { threads: ids(toPost), event, body, addToPending });
+    let r = await send(false);
+    // A review of the user's in progress on GitHub is only added to, and submitted, once they say so.
+    if (
+      r.status === "pending" &&
+      (await window.coxswain.confirm({
+        message: "You have a review in progress on this PR on GitHub",
+        detail: `It has ${count(r.comments, "comment")} you haven't submitted. Add these to it and submit it, with ${eventLabels[event]}?`,
+        action: "Add and Submit",
+      }))
+    )
+      r = await send(true);
     setPosting(false);
     if (r.status === "ok") props.onClose();
-    else setProblem(r);
+    else if (r.status !== "pending") setProblem(r);
   };
   return (
     <Dialog

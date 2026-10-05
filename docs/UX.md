@@ -207,13 +207,19 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
 
   The thread's header has a ✓ to resolve it: the thread folds to its header (_Resolved_ and its first comment), is
   left out of _Submit Review_, and the ✓, green now, reopens it. Right of it, a ⋯ button with a native menu:
-  _Edit_ (the first comment, in place, if it's yours; once posted, on GitHub too), _Delete_ (the thread, after a
-  confirmation; the user's comments posted from it are deleted on GitHub too), and in an agent thread _Send to Agent_,
-  which makes the thread's latest note a question, with the notes before it since the last question (the answer comes
-  in the thread), and _Summarize as Comment_. That one has the summary model write the review comment the thread comes
-  to: _Summarizing as a comment…_ under the thread, then the comment in a box to edit, under _A new comment on these
-  lines, for the review_, with _Cancel_ and _Save_; saving adds it as a comment thread on the same lines or passage. A
-  failed edit, delete or summary says why under the thread.
+  _Delete Thread_ (after a confirmation; the user's comments posted from it are deleted on GitHub too; off, as
+  _Delete Thread (others have replied)_, while others' comments are in it, since GitHub keeps those), _Open on
+  GitHub_, and in an agent thread _Send to Agent_, which makes the thread's latest note a question, with the notes
+  before it since the last question (the answer comes in the thread), and _Summarize as Comment_. That one has the
+  summary model write the review comment the thread comes to: _Summarizing as a comment…_ under the thread, then the
+  comment in a box to edit, under _A new comment on these lines, for the review_, with _Cancel_ and _Save_ (_Save and
+  Post_ while _Post to GitHub_ is on); saving adds it as a comment thread on the same lines or passage.
+
+  Each of the user's own comments has its own ⋯ on hover, right of _You_: _Edit_ (in place; _Save Here and on GitHub_
+  once posted), _Delete_ (after a confirmation; on GitHub too once posted), _Open on GitHub_. Deleting a thread's first
+  comment takes the thread with it here, as on GitHub, which keeps the rest for its replies: the next read brings them
+  back as a thread of their own, and the user's unposted notes stay as a thread on the same lines. A failed edit,
+  delete, resolve or summary says why under the thread.
 
   **Threads on a view's prose** ([ADR 0036](adr/0036-threads-on-view-prose.md)). Right-click on text selected in a
   view's prose (or on a paragraph, list or table, for all of it) and pick _Comment_: the same comment box opens after
@@ -233,7 +239,7 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   _Submit Review N_ (N the open comment threads; on with open comment threads or a PR) opens a dialog, like GitHub's
   _Finish your review_. Agent threads aren't in it. The comment threads, compact: a checkbox, where it is and its first
   comment (a click closes the dialog and shows the thread), how many entries it has and what posting does with it
-  (_comment on the lines_, _in the review's text_, _reply_, _resolve_ or _reopen_, _on GitHub already_), and under it
+  (_comment on the lines_, _in the conversation_, _reply_, _resolve_ or _reopen_, _on GitHub already_), and under it
   each of its comments not on GitHub yet in a box to edit, which edits the comment. With none, it says _No open comment
   threads. Agent threads become one with Summarize as Comment._ At the bottom, with a PR, a summary for the review and
   _Comment_ · _Approve_ · _Request Changes_ (not on your own PR), then three buttons. _Copy as Prompt_ puts the picked
@@ -241,14 +247,16 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   one message to the agent pane's session: where each points, the code and its comments, asking the agent to make the
   changes and answer what's open; the chat shows it as a card (_Review sent to Agent · N threads_) and the bar says
   _Agent working on N threads_ until the turn ends. _Post to GitHub…_ (only with a PR) asks, then posts the picked
-  threads' comments as written, in one review; the dialog closes once posted. A thread posted on its lines is the
-  thread on GitHub from then on: replies there show in it, and it resolves with GitHub's. One posted in the review's
-  text is resolved here.
+  threads' comments as written: those on the PR's diff in one review, the others as comments in the PR's
+  conversation, led by a permalink GitHub shows as the highlighted code. If the user has a review in progress on
+  GitHub, it asks again first: _You have a review in progress on this PR on GitHub_, with how many comments it has,
+  and _Add and Submit_; nothing is posted without it. The dialog closes once posted. Every posted comment is linked:
+  replies there show in its thread, edits and deletes go both ways, and threads on the diff resolve with GitHub's.
 
   **Threads from GitHub** ([ADR 0037](adr/0037-pull-request-sync-and-posting.md)). A PR's review threads show between
   the lines like any thread, their header saying _on GitHub_, each comment under its author (_@ana on GitHub_). Replies
-  are the user's comments, posted as written; _Edit_ and _Delete_ are off unless the thread is the user's own,
-  posted from here, and _Open on GitHub_ is in the ⋯ menu. Resolving one is local until posted. A comment posted from
+  are the user's comments, posted as written; the user's own comments there, wherever written, are theirs to edit and
+  delete, and _Open on GitHub_ is in the ⋯ menu. Resolving one goes to GitHub at once while _Post to GitHub_ is on, else with the next _Submit Review_; the ✓'s tooltip says which. A comment posted from
   here says _posted_.
 
   **The PR panel.** The PR's chip in the canvas bar (_#12_, a dot for its checks: green, red, amber running, grey)

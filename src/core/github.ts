@@ -275,6 +275,7 @@ export type ReviewThread = {
   endLine: number | null;
   commit: string | null;
   comments: GitHubComment[];
+  complete: boolean; // every comment of it was read, not only the first 100
 };
 // One item of the PR's conversation: a comment on the PR, a review's summary (review: its verdict), or a comment on a
 // whole file (path).
@@ -308,10 +309,15 @@ export type PullRequestDetails = {
   mergeMethods: MergeMethod[];
   conversation: ConversationItem[];
   threads: ReviewThread[];
+  comments: GitHubComment[]; // the conversation's comments, all of them
 };
 export type PullRequestResult = PullRequestDetails | GitHubProblem;
 
-// ponytail: the first 100 threads, comments, commits and checks; page them if PRs grow past that.
+// Review threads and the conversation's comments are read in full, page by page (morePages), since a read mirrors
+// them and takes what it doesn't find for deleted. ponytail: the first 100 comments of a thread (a longer one isn't
+// pruned, see ReviewThread.complete), commits and checks; page them if PRs grow past that.
+const threadFields = `id isResolved path diffSide subjectType originalLine originalStartLine
+  comments(first: 100) { pageInfo { hasNextPage } nodes { id author { login } body createdAt url originalCommit { oid } } }`;
 const pullRequestQuery = `query($owner: String!, $name: String!, $number: Int!) {
   viewer { login id }
   repository(owner: $owner, name: $name) {
@@ -323,12 +329,9 @@ const pullRequestQuery = `query($owner: String!, $name: String!, $number: Int!) 
       labels(first: 20) { nodes { name color } }
       reviewRequests(first: 20) { nodes { requestedReviewer { ... on User { login } ... on Team { name } ... on Bot { login } } } }
       latestReviews(first: 20) { nodes { author { login } state } }
-      comments(last: 50) { nodes { id author { login } body createdAt url } }
+      comments(first: 100) { pageInfo { hasNextPage endCursor } nodes { id author { login } body createdAt url } }
       reviews(last: 50) { nodes { id author { login } body state submittedAt createdAt url } }
-      reviewThreads(first: 100) { nodes {
-        id isResolved path diffSide subjectType originalLine originalStartLine
-        comments(first: 100) { nodes { id author { login } body createdAt url originalCommit { oid } } }
-      } }
+      reviewThreads(first: 100) { pageInfo { hasNextPage endCursor } nodes { ${threadFields} } }
       commits(last: 100) { nodes { commit { oid statusCheckRollup { state } } } }
       headCommit: commits(last: 1) { nodes { commit { statusCheckRollup { state contexts(first: 100) { nodes {
         __typename
@@ -373,6 +376,20 @@ type RawContext =
       targetUrl: string | null;
       description: string | null;
     };
+type Page<T> = { pageInfo: { hasNextPage: boolean; endCursor: string | null }; nodes: T[] };
+type RawThread = {
+  id: string;
+  isResolved: boolean;
+  path: string;
+  diffSide: "LEFT" | "RIGHT";
+  subjectType: "LINE" | "FILE";
+  originalLine: number | null;
+  originalStartLine: number | null;
+  comments: {
+    pageInfo: { hasNextPage: boolean };
+    nodes: (RawComment & { originalCommit: { oid: string } | null })[];
+  };
+};
 type RawPullRequest = {
   viewer: { login: string; id: string };
   repository: {
@@ -400,22 +417,11 @@ type RawPullRequest = {
         nodes: { requestedReviewer: { login?: string; name?: string } | null }[];
       };
       latestReviews: { nodes: { author: Login; state: string }[] };
-      comments: { nodes: RawComment[] };
+      comments: Page<RawComment>;
       reviews: {
         nodes: (RawComment & { state: string; submittedAt: string | null })[];
       };
-      reviewThreads: {
-        nodes: {
-          id: string;
-          isResolved: boolean;
-          path: string;
-          diffSide: "LEFT" | "RIGHT";
-          subjectType: "LINE" | "FILE";
-          originalLine: number | null;
-          originalStartLine: number | null;
-          comments: { nodes: (RawComment & { originalCommit: { oid: string } | null })[] };
-        }[];
-      };
+      reviewThreads: Page<RawThread>;
       commits: {
         nodes: { commit: { oid: string; statusCheckRollup: { state: StatusState } | null } }[];
       };
@@ -507,6 +513,7 @@ export function parsePullRequest(data: RawPullRequest): PullRequestResult {
     endLine: t.subjectType === "FILE" ? null : t.originalLine,
     commit: t.comments.nodes[0]?.originalCommit?.oid ?? null,
     comments: t.comments.nodes.map(comment),
+    complete: !t.comments.pageInfo.hasNextPage,
   }));
   // A thread on a whole file has no lines to stand between: it's part of the conversation.
   const onFiles = threads.flatMap((t) =>
@@ -562,6 +569,7 @@ export function parsePullRequest(data: RawPullRequest): PullRequestResult {
       a.createdAt.localeCompare(b.createdAt),
     ),
     threads: threads.filter((t) => t.startLine !== null),
+    comments: pr.comments.nodes.map(comment),
   };
 }
 
@@ -570,11 +578,47 @@ export function getPullRequest(
   name: string,
   prNumber: number,
 ): Promise<PullRequestResult> {
-  return withGitHub(async (octokit) =>
-    parsePullRequest(
-      await octokit.graphql<RawPullRequest>(pullRequestQuery, { owner, name, number: prNumber }),
-    ),
-  );
+  return withGitHub(async (octokit) => {
+    const raw = await octokit.graphql<RawPullRequest>(pullRequestQuery, {
+      owner,
+      name,
+      number: prNumber,
+    });
+    const pr = raw.repository.pullRequest;
+    if (pr) {
+      const more = <T>(field: string, fields: string, page: Page<T>) =>
+        morePages<T>(octokit, pr.id, field, fields, page);
+      pr.reviewThreads.nodes = await more("reviewThreads", threadFields, pr.reviewThreads);
+      pr.comments.nodes = await more(
+        "comments",
+        "id author { login } body createdAt url",
+        pr.comments,
+      );
+    }
+    return parsePullRequest(raw);
+  });
+}
+
+// A connection of the PR's read to its end, 100 at a time after the first page.
+async function morePages<T>(
+  octokit: Octokit,
+  prId: string,
+  field: string,
+  fields: string,
+  first: Page<T>,
+): Promise<T[]> {
+  const nodes = [...first.nodes];
+  let page = first.pageInfo;
+  while (page.hasNextPage) {
+    const { node } = await octokit.graphql<{ node: Record<string, Page<T>> }>(
+      `query($id: ID!, $after: String) { node(id: $id) { ... on PullRequest {
+        ${field}(first: 100, after: $after) { pageInfo { hasNextPage endCursor } nodes { ${fields} } } } } }`,
+      { id: prId, after: page.endCursor },
+    );
+    nodes.push(...node[field].nodes);
+    page = node[field].pageInfo;
+  }
+  return nodes;
 }
 
 // One GraphQL mutation (or query) as the current user; what goes wrong comes back as a problem.

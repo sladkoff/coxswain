@@ -172,19 +172,20 @@ type ThreadBoxProps = {
   onReply: (body: string, toAgent: boolean, post: boolean) => void;
   onStop: () => void;
   onAnswerPermission: (id: string, optionId: string) => void;
-  onEdit: (body: string) => Promise<void>; // the first comment's text
-  onResolve: (resolved: boolean) => void; // false: reopen
+  onResolve: (resolved: boolean) => Promise<void>; // false: reopen; on GitHub too with Post to GitHub on
   onRemove: () => Promise<void>;
   onSend: () => void; // the latest note, to the agent
   onSummarize: () => Promise<string>; // an agent thread's comment, for the user to edit
-  onAddComment: (body: string) => Promise<void>; // a comment thread on the same lines or passage
+  // A comment thread on the same lines or passage; post: posted at once too.
+  onAddComment: (body: string, post: boolean) => Promise<void>;
 };
 
 // A thread: its first entry, the replies and answers, the reply streaming in while a turn runs, and a box to reply.
-// A comment thread or an agent thread (glossary), and stays one. Its ⋯ menu edits the first comment (the user's own
-// only, on GitHub too once posted) and deletes the thread (the user's posted comments on GitHub too); in an agent
-// thread it also sends the latest note to the agent, or summarizes the thread as a comment, which opens below it to
-// edit before it's added. Resolved, it folds to its header and first comment until reopened.
+// A comment thread or an agent thread (glossary), and stays one. Each of the user's comments has its own ⋯ (Comment).
+// The thread's ⋯ deletes the thread (the user's posted comments on GitHub too), not while others have replied; in an
+// agent thread it also sends the latest note to the agent, or summarizes the thread as a comment, which opens below it
+// to edit before it's added (and posted, with Post to GitHub on). Resolved, it folds to its header and first comment
+// until reopened.
 export function ThreadBox({
   root,
   replies,
@@ -193,7 +194,6 @@ export function ThreadBox({
   onReply,
   onStop,
   onAnswerPermission,
-  onEdit,
   onResolve,
   onRemove,
   onSend,
@@ -202,12 +202,13 @@ export function ThreadBox({
 }: ThreadBoxProps) {
   const running = turn?.running ?? false;
   const agent = !isComment(root);
-  const [editing, setEditing] = useState(false);
+  const postNow = useQuery(core("getPostComments")).data ?? false;
   const [error, setError] = useState<string | null>(null);
   // Summarize as Comment: being written (true), then the text to edit.
   const [summary, setSummary] = useState<string | boolean>(false);
   const lastOwn = [root, ...replies].findLast((e) => e.kind === "note" || e.kind === "question");
   const posted = [root, ...replies].some((e) => e.kind === "note" && e.githubId);
+  const others = [root, ...replies].some((e) => e.kind === "comment");
   const failing = (p: Promise<unknown>) => {
     setError(null);
     return p.catch((e: Error) =>
@@ -215,16 +216,13 @@ export function ThreadBox({
     );
   };
   const menu = async () => {
-    // Someone else's comment on GitHub is theirs; a thread from GitHub that isn't the user's comes back with its next
-    // read, so it isn't deleted.
+    // Others' comments on GitHub are theirs, and GitHub keeps a thread they replied to.
     const picked = await window.coxswain.showThreadMenu({
-      edit: root.kind === "note" || root.kind === "question",
       send: agent && !running && lastOwn?.kind === "note",
       summarize: agent && !running && !root.resolvedAt && summary === false,
-      delete: !root.githubThreadId || root.kind === "note",
+      delete: others ? "others" : true,
       url: root.githubUrl,
     });
-    if (picked === "edit") setEditing(true);
     if (
       picked === "delete" &&
       (await window.coxswain.confirm({
@@ -263,24 +261,30 @@ export function ThreadBox({
             (root.resolvedAt
               ? "Resolved: click to reopen"
               : "Resolve: mark the thread done; it folds to one line") +
-            (root.githubThreadId ? "\nHere only, until Post to GitHub sends it" : "")
+            (root.githubThreadId
+              ? postNow
+                ? "\nOn GitHub too, at once (Post to GitHub is on)"
+                : "\nHere only, until Submit Review posts it"
+              : "")
           }
           disabled={running}
           className={cn("px-1", root.resolvedAt && "text-green-600")}
-          onClick={() => onResolve(!root.resolvedAt)}
+          onClick={() => void failing(onResolve(!root.resolvedAt))}
         >
           ✓
         </Button>
         <Button
           variant="ghost"
-          title="Edit, delete or send to the agent"
+          title={
+            agent ? "Delete, send to the agent or summarize as a comment" : "Delete the thread"
+          }
           className="px-1"
           onClick={menu}
         >
           ⋯
         </Button>
       </div>
-      {(!root.resolvedAt || editing) && (
+      {!root.resolvedAt && (
         <>
           {/* One entry after another, a line between them, so who said what reads at a glance. */}
           <div
@@ -289,20 +293,8 @@ export function ThreadBox({
               divide,
             )}
           >
-            {editing ? (
-              <EditBox
-                body={root.body}
-                onSave={(body) => {
-                  void failing(onEdit(body));
-                  setEditing(false);
-                }}
-                onCancel={() => setEditing(false)}
-              />
-            ) : (
-              <Comment entry={root} />
-            )}
-            {replies.map((e) => (
-              <Comment key={e.id} entry={e} />
+            {[root, ...replies].map((e) => (
+              <Comment key={e.id} entry={e} run={failing} />
             ))}
             {/* After the turn, until its answer entry is read in place of it (#38). */}
             {!!turn?.live.some((c) => c.kind !== "user") &&
@@ -324,7 +316,6 @@ export function ThreadBox({
               onAnswer={(optionId) => onAnswerPermission(turn!.permission!.id, optionId)}
             />
           </div>
-          {error && <ErrorText className="text-xs">{error}</ErrorText>}
           {summary === true && (
             <div className={cn("flex items-center gap-1.5 text-xs", muted)}>
               <SpinnerIcon /> Summarizing as a comment…
@@ -338,7 +329,10 @@ export function ThreadBox({
               </span>
               <EditBox
                 body={summary}
-                onSave={(body) => void failing(onAddComment(body)).then(() => setSummary(false))}
+                saveLabel={canPost && postNow ? "Save and Post" : "Save"}
+                onSave={(body) =>
+                  void failing(onAddComment(body, canPost && postNow)).then(() => setSummary(false))
+                }
                 onCancel={() => setSummary(false)}
               />
             </div>
@@ -368,6 +362,7 @@ export function ThreadBox({
           )}
         </>
       )}
+      {error && <ErrorText className="text-xs">{error}</ErrorText>}
     </div>
   );
 }
@@ -378,7 +373,9 @@ export async function postEntry(e: NewEntry, toAgent: boolean, onAsk: Ask, post 
   if (toAgent) return onAsk(e);
   const note = await window.coxswain.addNote(e);
   if (!post) return;
-  const r = await window.coxswain.postComment(e.workspaceId, note.parentId ?? note.id);
+  const r = await window.coxswain
+    .postComment(e.workspaceId, note.parentId ?? note.id)
+    .catch((e: Error) => ({ status: "error" as const, message: e.message }));
   if (r.status !== "ok")
     await window.coxswain.showError({
       message: "The comment wasn't posted to GitHub",
@@ -408,18 +405,30 @@ export function EntryThread(props: {
       }
       onStop={() => window.coxswain.stopQuestion(root.id)}
       onAnswerPermission={(id, optionId) => props.onAnswerPermission(root.id, id, optionId)}
-      onEdit={(body) => window.coxswain.editEntry(root.id, body)}
       onResolve={(resolved) => window.coxswain.resolveThread(root.id, resolved)}
       onRemove={() => window.coxswain.deleteEntry(root.id)}
       onSend={() => onAsk({ workspaceId, threadId: root.id })}
       onSummarize={() => window.coxswain.summarizeThread(root.id)}
-      onAddComment={(body) => window.coxswain.addCommentAt(root.id, body)}
+      onAddComment={async (body, post) => {
+        const id = await window.coxswain.addCommentAt(root.id, body);
+        if (!post) return;
+        const r = await window.coxswain.postComment(workspaceId, id);
+        if (r.status !== "ok")
+          throw new Error(
+            `Saved, but not posted: ${r.status === "error" ? r.message : "sign in to GitHub with gh"}. Submit Review can post it.`,
+          );
+      }}
     />
   );
 }
 
 // A comment's text being edited in place: Enter saves, Esc cancels, Shift+Enter adds a line.
-function EditBox(props: { body: string; onSave: (body: string) => void; onCancel: () => void }) {
+function EditBox(props: {
+  body: string;
+  saveLabel?: string;
+  onSave: (body: string) => void;
+  onCancel: () => void;
+}) {
   const [body, setBody] = useState(props.body);
   const save = () => (body.trim() ? props.onSave(body) : props.onCancel());
   return (
@@ -435,7 +444,7 @@ function EditBox(props: { body: string; onSave: (body: string) => void; onCancel
       <div className="flex justify-end gap-1.5 text-xs">
         <Button onClick={props.onCancel}>Cancel</Button>
         <Button variant="primary" onClick={save}>
-          Save
+          {props.saveLabel ?? "Save"}
         </Button>
       </div>
     </div>
@@ -454,8 +463,11 @@ const agentLabels: Partial<Record<ReviewEntry["kind"], string>> = {
 };
 
 // One entry of a thread: the user's (a question marked as sent to the agent), the agent's (an answer, an explanation
-// or a finding), or a comment on GitHub by its author (ADR 0037). One posted from here says so.
-function Comment({ entry: e }: { entry: ReviewEntry }) {
+// or a finding), or a comment on GitHub by its author (ADR 0037). One posted from here says so. The user's own have a
+// ⋯: Edit (in place), Delete (a note; on GitHub too once posted), Open on GitHub. run: the change, failing under the
+// thread.
+function Comment({ entry: e, run }: { entry: ReviewEntry; run: (p: Promise<unknown>) => unknown }) {
+  const [editing, setEditing] = useState(false);
   if (e.kind === "comment")
     return (
       <div>
@@ -476,14 +488,52 @@ function Comment({ entry: e }: { entry: ReviewEntry }) {
         <Prose className="leading-relaxed">{e.body}</Prose>
       </div>
     );
+  if (editing)
+    return (
+      <EditBox
+        body={e.body}
+        saveLabel={e.githubId ? "Save Here and on GitHub" : "Save"}
+        onSave={(body) => {
+          setEditing(false);
+          void run(window.coxswain.editEntry(e.id, body));
+        }}
+        onCancel={() => setEditing(false)}
+      />
+    );
+  const menu = async () => {
+    const picked = await window.coxswain.showCommentMenu({
+      delete: e.kind === "note",
+      url: e.githubUrl,
+    });
+    if (picked === "edit") setEditing(true);
+    if (
+      picked === "delete" &&
+      (await window.coxswain.confirm({
+        message: "Delete this comment?",
+        detail: e.githubId
+          ? "It's deleted here and on GitHub. This can't be undone."
+          : "This can't be undone.",
+        action: "Delete",
+      }))
+    )
+      void run(window.coxswain.deleteComment(e.id));
+  };
   return (
-    <div className="leading-relaxed whitespace-pre-wrap select-text [overflow-wrap:anywhere]">
-      <span className={author}>
+    <div className="group leading-relaxed whitespace-pre-wrap select-text [overflow-wrap:anywhere]">
+      <span className={cn(author, "flex items-center")}>
         You
         <span className={cn("font-normal", muted)}>
           {e.kind === "question" && " → agent"}
           {posted}
         </span>
+        <Button
+          variant="ghost"
+          title="Edit or delete this comment"
+          className="ml-auto px-1 py-0 opacity-0 group-hover:opacity-100 focus:opacity-100"
+          onClick={menu}
+        >
+          ⋯
+        </Button>
       </span>
       {e.body}
     </div>
