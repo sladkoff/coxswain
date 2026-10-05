@@ -1,6 +1,6 @@
 {
   "name": "coxswain",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "private": true,
   "description": "A local ADE (agentic development environment) for reviewing pull requests with local coding agents",
   "author": "Leonid Rousseau",
