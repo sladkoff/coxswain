@@ -33,11 +33,11 @@ import type {
   PullRequestTitles,
   RepoPage,
 } from "../core/github";
-import type { PullRequestChange, PullRequestRef, ReviewPost } from "../core/pull-requests";
+import type { Posting, PullRequestChange, PullRequestRef, ReviewPost } from "../core/pull-requests";
 import type { AttachedPrompt, Prompt, View, ViewRange } from "../core/views";
 import type { Project } from "../core/projects";
-import type { Conclusion, NewEntry, ReviewEntry } from "../core/review";
-import type { ReviewDraft } from "../core/review-draft";
+import type { NewEntry, ReviewEntry } from "../core/review";
+import type { DraftThread } from "../core/review-draft";
 import type { SetupCheck } from "../core/setup";
 import type { Workspace } from "../core/workspaces";
 import type { AgentCommand, AgentStatus, SessionState } from "../core/session-state";
@@ -219,7 +219,10 @@ const api = {
   ): Promise<ReviewEntry[]> =>
     ipcRenderer.invoke("review:list", workspaceId, mergeBase, base, head),
   addNote: (note: NewEntry): Promise<ReviewEntry> => ipcRenderer.invoke("review:add-note", note),
+  // Edit and delete reach GitHub for comments already posted there, and reject with what went wrong.
   deleteEntry: (id: number): Promise<void> => ipcRenderer.invoke("review:delete", id),
+  // One comment; the first of a thread takes the thread's GitHub side with it, keeping the unposted notes.
+  deleteComment: (id: number): Promise<void> => ipcRenderer.invoke("review:delete-comment", id),
   resolveThread: (id: number, resolved: boolean): Promise<void> =>
     ipcRenderer.invoke("review:resolve", id, resolved),
   editEntry: (id: number, body: string): Promise<void> =>
@@ -231,22 +234,28 @@ const api = {
     ipcRenderer.invoke("review:ask", question),
   // A thread's Stop: its question comes off the queue, or the turn answering it stops.
   stopQuestion: (threadId: number): Promise<void> => ipcRenderer.invoke("review:stop", threadId),
-  // Submit Review's draft: the threads a review takes, each with its conclusion, which the summary model writes.
-  // wait: until they're all written; without it the draft comes at once and the writing goes on behind.
-  draftReview: (workspaceId: number, wait: boolean): Promise<ReviewDraft> =>
-    ipcRenderer.invoke("review:draft", workspaceId, wait),
-  // The user's edit of a thread's conclusion, kept until the thread changes.
-  saveConclusion: (threadId: number, conclusion: string): Promise<void> =>
-    ipcRenderer.invoke("review:save-conclusion", threadId, conclusion),
-  // Every thread to the agent pane's session in one message, or the picked ones with their conclusions; resolves
-  // when the agent's turn ends.
-  sendReview: (workspaceId: number, conclusions?: Conclusion[]): Promise<TurnResult> =>
-    ipcRenderer.invoke("review:send-all", workspaceId, conclusions),
+  // Submit Review's draft: the open comment threads, with the comments not on GitHub yet.
+  draftReview: (workspaceId: number): Promise<DraftThread[]> =>
+    ipcRenderer.invoke("review:draft", workspaceId),
+  // An agent thread's Summarize as Comment: the comment it comes to, from the summary model, for the user to edit.
+  summarizeThread: (threadId: number): Promise<string> =>
+    ipcRenderer.invoke("review:summarize", threadId),
+  // A new comment thread on the lines or passage of the thread given.
+  addCommentAt: (threadId: number, body: string): Promise<number> =>
+    ipcRenderer.invoke("review:add-comment-at", threadId, body),
+  // Every open comment thread to the agent pane's session in one message, or the picked ones; resolves when the
+  // agent's turn ends.
+  sendReview: (workspaceId: number, threadIds?: number[]): Promise<TurnResult> =>
+    ipcRenderer.invoke("review:send-all", workspaceId, threadIds),
   // ADR 0037: the workspace's PR for its panel, as the core's last check found it.
   readPullRequest: (workspaceId: number): Promise<PullRequestResult> =>
     ipcRenderer.invoke("github:pull-request", workspaceId),
-  // Posts the picked threads' conclusions as one review.
-  postReview: (workspaceId: number, post: ReviewPost): Promise<{ status: "ok" } | GitHubProblem> =>
+  // A comment thread's comments not on GitHub yet, posted at once as a review of their own.
+  postComment: (workspaceId: number, threadId: number): Promise<{ status: "ok" } | GitHubProblem> =>
+    ipcRenderer.invoke("github:post-comment", workspaceId, threadId),
+  // Posts the picked threads' comments, as written, as one review.
+  // A review of the user's in progress on GitHub comes back as pending, to ask before adding to it.
+  postReview: (workspaceId: number, post: ReviewPost): Promise<Posting> =>
     ipcRenderer.invoke("github:post-review", workspaceId, post),
   // The PR panel's changes on GitHub: description, a comment, assigning yourself, ready for review, merge.
   changePullRequest: (
@@ -259,8 +268,8 @@ const api = {
   sendCheck: (workspaceId: number, check: Check): Promise<TurnResult> =>
     ipcRenderer.invoke("github:send-check", workspaceId, check),
   // The same message, put on the clipboard instead; false if there are no threads.
-  copyReviewPrompt: (workspaceId: number, conclusions?: Conclusion[]): Promise<boolean> =>
-    ipcRenderer.invoke("review:copy-prompt", workspaceId, conclusions),
+  copyReviewPrompt: (workspaceId: number, threadIds?: number[]): Promise<boolean> =>
+    ipcRenderer.invoke("review:copy-prompt", workspaceId, threadIds),
   onQuestionChat: (callback: (threadId: number, entry: ChatEntry) => void) => {
     const listener = (_: unknown, id: number, entry: ChatEntry) => callback(id, entry);
     ipcRenderer.on("review:chat", listener);
@@ -324,6 +333,10 @@ const api = {
   getCommentToAgent: (): Promise<boolean> => ipcRenderer.invoke("settings:comment-to-agent"),
   setCommentToAgent: (toAgent: boolean): Promise<void> =>
     ipcRenderer.invoke("settings:set-comment-to-agent", toAgent),
+  // Whether a new comment is posted to GitHub at once: the composer's Post to GitHub checkbox. Global.
+  getPostComments: (): Promise<boolean> => ipcRenderer.invoke("settings:post-comments"),
+  setPostComments: (post: boolean): Promise<void> =>
+    ipcRenderer.invoke("settings:set-post-comments", post),
   stopTurn: (agentSessionId: string): Promise<void> =>
     ipcRenderer.invoke("agents:stop-turn", agentSessionId),
   // A message queued behind the running turn: sent into it now, or taken off the queue.
@@ -358,11 +371,14 @@ const api = {
   ): Promise<RangePick> => ipcRenderer.invoke("menus:range", scope, hasPr, layers),
   // A thread's ⋯ menu; stays pending if dismissed. url: its comment on GitHub, opened in the browser from the menu.
   showThreadMenu: (can: {
-    edit: boolean;
     send: boolean;
-    delete: boolean;
+    summarize: boolean;
+    delete: boolean | "others";
     url: string | null;
-  }): Promise<"edit" | "delete" | "send"> => ipcRenderer.invoke("menus:thread", can),
+  }): Promise<"delete" | "send" | "summarize"> => ipcRenderer.invoke("menus:thread", can),
+  // One of the user's comments' ⋯ menu: Edit, Delete, Open on GitHub. Pending if dismissed.
+  showCommentMenu: (can: { delete: boolean; url: string | null }): Promise<"edit" | "delete"> =>
+    ipcRenderer.invoke("menus:comment", can),
   // A pick from a list (the agent pane's session, agent, model, effort): the index of the picked label. Pending if
   // dismissed.
   showPickMenu: (labels: string[], checked: number): Promise<number> =>
@@ -385,6 +401,9 @@ const api = {
   // A native confirmation before a destructive action: `action` names its button. True if confirmed.
   confirm: (c: { message: string; detail: string; action: string }): Promise<boolean> =>
     ipcRenderer.invoke("dialogs:confirm", c),
+  // A native sheet saying what went wrong, with OK.
+  showError: (c: { message: string; detail: string }): Promise<void> =>
+    ipcRenderer.invoke("dialogs:error", c),
   // L1's project menu: the project to switch to, or null for Add Project. Pending if dismissed.
   showProjectsMenu: (projects: { id: number; label: string }[]): Promise<number | null> =>
     ipcRenderer.invoke("menus:projects", projects),

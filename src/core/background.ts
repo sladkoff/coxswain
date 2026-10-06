@@ -1,8 +1,6 @@
 import { match, P } from "ts-pattern";
 import type { Db } from "./db";
 import { onEvent } from "./events.ts";
-import { isAsking } from "./review";
-import { concludeAhead } from "./review-draft.ts";
 import { summariseAhead } from "./summaries.ts";
 
 // ADR 0038: what coxswain does in the background, and what sets it off: the one place a core event starts a job.
@@ -15,11 +13,10 @@ export function startBackground(db: Db) {
         { what: P.union("opened", "worktree"), workspaceId: P.select() },
         (id) => void summariseAhead(db, id),
       )
-      // Threads that changed are concluded, for Submit Review.
-      .with({ what: "entries", workspaceId: P.select() }, (id) => concludeAhead(db, id, isAsking))
       .with(
         {
           what: P.union(
+            "entries",
             "transcript",
             "sessions",
             "view",

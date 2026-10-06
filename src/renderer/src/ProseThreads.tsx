@@ -94,6 +94,7 @@ type Draft = ProseAnchor & Place;
 // A view section's threads on its prose, around the section's parts (children), which render ViewProse.
 export function ProseThreads(props: {
   workspaceId: number;
+  canPost: boolean; // the workspace has a PR, for Post to GitHub
   viewId: number;
   section: number;
   entries: ReviewEntry[]; // the workspace's
@@ -174,6 +175,7 @@ export function ProseThreads(props: {
       root={e}
       entries={entries}
       turn={props.turns[e.id]}
+      canPost={props.canPost}
       onAsk={props.onAsk}
       onAnswerPermission={props.onAnswerPermission}
     />
@@ -188,12 +190,14 @@ export function ProseThreads(props: {
         {drafting && (
           <DraftBox
             label={quoted(draft.quote)}
-            onSend={(body, toAgent) => {
+            canPost={props.canPost}
+            onSend={(body, toAgent, post) => {
               const { part: _, block: __, ...anchor } = draft;
               void postEntry(
                 { workspaceId: props.workspaceId, body, anchor },
                 toAgent,
                 props.onAsk,
+                post,
               );
               setDraft(null);
             }}

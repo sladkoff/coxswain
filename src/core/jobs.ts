@@ -6,16 +6,17 @@ import { getWorkspaceRepo } from "./workspaces.ts";
 // ADR 0038: background jobs, the one way coxswain does work nobody waits for. A job is some items of one workspace
 // for the summary agent (a small model, in Settings): it runs them in batches, retries, stores each answer as it
 // comes, and is a row of `jobs`, which Activity shows. What a job is about is its kind's own business (JobSpec):
-// file summaries (summaries.ts) and thread conclusions (review-draft.ts). What starts one is in background.ts.
+// file summaries (summaries.ts) and an agent thread summarized as a comment (review-draft.ts). What starts one is in background.ts.
 
 export type SummaryAgent = "claude" | "codex";
-// model: "" is the agent's own default. ahead: do the work when things change (a workspace opened, its HEAD moved, a
-// thread changed), not only when something asks for it.
+// model: "" is the agent's own default. ahead: do the work when things change (a workspace opened, its HEAD
+// moved), not only when something asks for it.
 export type SummarySettings = { agent: SummaryAgent; model: string; ahead: boolean };
 const defaultModel: Record<SummaryAgent, string> = { claude: "haiku", codex: "" };
 
-// kind: what its items are, file diffs to summarise or threads to conclude. why: "ahead", something changed; "view", a
-// view was started; "submit", Submit Review opened. base, head: the range of a files job, "" otherwise. model: as asked
+// kind: what its items are, file diffs to summarise or "conclusions", agent threads to summarize as comments. why:
+// "ahead", something changed; "view", a view was started; "comment", Summarize as Comment; "submit", Submit Review
+// opened, from before comments went as written. base, head: the range of a files job, "" otherwise. model: as asked
 // for; ranOn: what the agent says it ran. items: all it was about; reused: had an answer already, or another job is
 // making it. done: answered by this job; failed: gave up on. calls: model runs, retries included. now: the items in
 // the runs going on. error: the last one, even if a retry then worked.
@@ -24,7 +25,7 @@ export type Job = {
   kind: "files" | "conclusions";
   workspaceId: number;
   workspace: string;
-  why: "ahead" | "view" | "submit";
+  why: "ahead" | "view" | "submit" | "comment";
   base: string;
   head: string;
   agent: SummaryAgent;
@@ -344,7 +345,7 @@ async function work<T>(
       }
       for (const m of items) {
         const s = answers.get(m);
-        if (s) await save(m, s, job.ranOn ?? job.model);
+        if (s !== undefined) await save(m, s, job.ranOn ?? job.model); // "" can be an answer
       }
       tell(db);
       const left = items.filter((m) => !answers.has(m));

@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { match, P } from "ts-pattern";
 import type { PullRequestDetails } from "../../core/github";
-import type { Conclusion, ReviewEntry } from "../../core/review";
+import type { ReviewEntry } from "../../core/review";
 import { Button, SegmentedControl, ToggleButton } from "./components/button";
 import { ChevronDownIcon } from "./components/icons";
 import { ProgressBar } from "./components/layout";
 import { cn, divider, muted } from "./components/styles";
 import { ErrorText } from "./components/text";
-import { byAgent, count } from "./format";
+import { count, isComment } from "./format";
 import { SubmitReviewDialog } from "./SubmitReview";
 import type { Turn } from "./Viewer";
 
@@ -34,12 +34,8 @@ export function StatusBar(props: Props) {
   const [copied, setCopied] = useState(false);
   const [submitting, setSubmitting] = useState(false); // the Submit Review dialog is open
   const threads = props.entries.filter((e) => (e.path || e.section != null) && !e.parentId);
-  // What Submit Review takes, as the review prompt does (core/review.ts): not resolved, and not the agent's own explanations
-  // or findings unless the user replied to them.
-  const replied = new Set(
-    props.entries.filter((e) => e.parentId && !byAgent(e)).map((e) => e.parentId),
-  );
-  const toSubmit = threads.filter((e) => !e.resolvedAt && (!byAgent(e) || replied.has(e.id)));
+  // What Submit Review takes, as the review prompt does (core/review.ts): the open comment threads.
+  const toSubmit = threads.filter((e) => !e.resolvedAt && isComment(e));
   const resolved = threads.filter((e) => e.resolvedAt);
   const openCount = threads.length - resolved.length;
   const answering = threads.filter((e) => props.turns[e.id]?.running).length;
@@ -52,10 +48,10 @@ export function StatusBar(props: Props) {
     shown.toSorted((a, b) => Number(!!a.path) - Number(!!b.path)),
     (t) => t.path ?? "",
   );
-  const sendToAgent = async (conclusions: Conclusion[]) => {
+  const sendToAgent = async (threadIds: number[]) => {
     setError(null);
-    setSending(conclusions.length);
-    const result = await window.coxswain.sendReview(props.workspaceId, conclusions);
+    setSending(threadIds.length);
+    const result = await window.coxswain.sendReview(props.workspaceId, threadIds);
     setSending(0);
     if (result.status === "error") setError(result.message);
   };
@@ -66,7 +62,7 @@ export function StatusBar(props: Props) {
           workspaceId={props.workspaceId}
           pr={props.pr}
           onViewThread={props.onViewThread}
-          onSendToAgent={(conclusions) => void sendToAgent(conclusions)}
+          onSendToAgent={(threadIds) => void sendToAgent(threadIds)}
           onCopied={() => {
             setCopied(true);
             setTimeout(() => setCopied(false), 1500);
@@ -173,16 +169,15 @@ export function StatusBar(props: Props) {
             .with(
               { threads: true },
               () =>
-                "Go through the open threads' conclusions, then send them to the agent or post them to GitHub",
+                "Go through the open comment threads, then send them to the agent or post them to GitHub",
             )
             .with(
               { pr: true },
-              () =>
-                "No open threads of yours for the agent; a review can still be posted to GitHub",
+              () => "No open comment threads for the agent; a review can still be posted to GitHub",
             )
             .otherwise(
               () =>
-                "Nothing to submit: no open threads of yours (the agent's explanations count once you reply)",
+                "Nothing to submit: no open comment threads (agent threads aren't part of the review)",
             )}
           className="flex shrink-0 items-center gap-1.5 py-0.5"
           disabled={(!toSubmit.length && !props.pr) || sending > 0}

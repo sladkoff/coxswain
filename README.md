@@ -40,9 +40,10 @@ to.
   Ask for a review and the agent leaves its findings as threads too.
 - **Comments become agent work.** _Send all to agent_ and it implements your notes in the PR's worktree; its changes
   show up in the same diff, next to the PR's own. Or _Copy as prompt_ and paste them into any other agent.
-- **Submit Review, summed up for you.** _Submit Review_ lists your open threads, each with a conclusion a small
-  model wrote ahead from it: the decision, the thing to do or the question still open. Edit them, then post them to
-  GitHub as one review, send them to the agent or copy them as a prompt.
+- **Comments and agent threads, kept apart.** A comment thread is what you say to the PR's author; an agent thread is
+  for exploring or changing the code with the agent. _Submit Review_ posts your comments to GitHub as you wrote them,
+  in one review, or sends them to the agent; an agent thread becomes a comment with _Summarize as Comment_, which you
+  edit first.
 - **GitHub, both ways.** The PR's review threads show between the lines next to yours, and your review goes back as
   replies, resolves and comments on the lines. The PR panel has the description, conversation, checks, reviewers,
   labels and the merge button; a failing check goes to the agent with its log.

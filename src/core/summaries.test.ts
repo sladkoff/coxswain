@@ -18,7 +18,7 @@ const jobs = await import("./jobs.ts");
 const summaries = await import("./summaries.ts");
 const { viewTools, listViews } = await import("./views.ts");
 const { addEntry, addNote } = await import("./entries.ts");
-const { draftReview, saveConclusion } = await import("./review-draft.ts");
+const { addCommentAt, draftReview, summarizeThread } = await import("./review-draft.ts");
 home.mock.restore();
 syncBuiltinESMExports();
 const originalPath = process.env.PATH;
@@ -266,10 +266,10 @@ test("summary jobs summarise what's missing, retry, and feed the view tools", as
   assert.equal(interrupted.state, "stopped");
   assert.match(interrupted.error ?? "", /quit/);
 
-  // Conclusions are a job too (ADR 0038): a thread with an answer is concluded by the model, one comment of the
-  // user's is its own conclusion, and what's written isn't asked for again.
+  // Submit Review takes comment threads only, their comments as written; an agent thread is summarized as a comment
+  // when asked, by a job (ADR 0038), and the comment it's turned into is a comment thread on the same lines.
   const anchor = { path: "a.ts", side: "new" as const, base: failed.base, head: null, code: "x" };
-  const asked = await addNote(db, {
+  const asked = await addEntry(db, "question", {
     workspaceId: 1,
     body: "Rename a?",
     anchor: { ...anchor, startLine: 1, endLine: 1 },
@@ -279,63 +279,39 @@ test("summary jobs summarise what's missing, retry, and feed the view tools", as
     body: "It could be `count`.",
     parentId: asked.id,
   });
-  await addNote(db, {
+  const dropped = await addNote(db, {
     workspaceId: 1,
     body: "Drop this export",
     anchor: { ...anchor, startLine: 1, endLine: 1 },
   });
+  await addNote(db, { workspaceId: 1, body: "And its test", parentId: dropped.id });
   const prompts: string[] = [];
   jobs.setSummaryRunner(async (r) => {
     prompts.push(r.prompt);
-    return {
-      text: '{"threads":[{"thread":1,"comment":"Rename `a` to `count`."}]}',
-      model: "Haiku",
-    };
+    return { text: " Rename `a` to `count`. ", model: "Haiku" };
   });
-  assert.deepEqual(
-    (await draftReview(db, 1, false)).threads.map((d) => [d.conclusion, d.pending]),
-    [
-      ["Rename a?", true],
-      ["Drop this export", false],
-    ],
-  );
-  const draft = await draftReview(db, 1, true);
-  assert.equal(draft.error, null);
-  assert.deepEqual(
-    draft.threads.map((d) => [d.conclusion, d.written, d.pending]),
-    [
-      ["Rename `a` to `count`.", true, false],
-      ["Drop this export", false, false],
-    ],
-  );
-  await draftReview(db, 1, true);
-  assert.equal(prompts.length, 1, "one run, for the one thread that needed it, once");
-  assert.match(prompts[0], /Me: Rename a\?\nAgent: It could be `count`\./);
-  const concluded = (await jobs.listJobs(db))[0];
-  assert.deepEqual(
-    [concluded.kind, concluded.why, concluded.items, concluded.done],
-    ["conclusions", "submit", 1, 1],
-  );
+  const drafted = async () =>
+    (await draftReview(db, 1)).map((d) => [d.lines, d.comments.map((c) => c.body)]);
+  assert.deepEqual(await drafted(), [["1", ["Drop this export", "And its test"]]]);
+  assert.equal(prompts.length, 0, "comments go as written");
 
-  // Conclusions are stored: the user's edit replaces the model's until the thread changes, then it's written again.
-  await saveConclusion(db, asked.id, "Call it `count`.");
+  const comment = await summarizeThread(db, asked.id);
+  assert.equal(comment, "Rename `a` to `count`.");
+  assert.equal(prompts.length, 1);
+  assert.match(prompts[0], /Me: Rename a\?\nAgent: It could be `count`\./);
+  const summarized = (await jobs.listJobs(db))[0];
   assert.deepEqual(
-    (await draftReview(db, 1, true)).threads.map((d) => [d.conclusion, d.written]),
-    [
-      ["Call it `count`.", false],
-      ["Drop this export", false],
-    ],
+    [summarized.kind, summarized.why, summarized.items, summarized.done],
+    ["conclusions", "comment", 1, 1],
   );
-  assert.equal(prompts.length, 1, "an edit isn't written over");
-  await addNote(db, { workspaceId: 1, body: "Or `total`?", parentId: asked.id });
-  assert.deepEqual(
-    (await draftReview(db, 1, true)).threads.map((d) => [d.conclusion, d.written]),
-    [
-      ["Rename `a` to `count`.", true],
-      ["Drop this export", false],
-    ],
-  );
-  assert.equal(prompts.length, 2, "the thread changed, so it's concluded again");
+  // A thread that leaves nothing for the PR's author comes back as "", not as an error.
+  jobs.setSummaryRunner(async () => ({ text: "NOTHING", model: "Haiku" }));
+  assert.equal(await summarizeThread(db, asked.id), "");
+  await addCommentAt(db, asked.id, comment);
+  assert.deepEqual(await drafted(), [
+    ["1", ["Drop this export", "And its test"]],
+    ["1", ["Rename `a` to `count`."]],
+  ]);
 });
 
 test("replies are read leniently and checked", () => {

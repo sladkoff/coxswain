@@ -21,9 +21,25 @@ import {
   type ReviewEntry,
   type Row,
 } from "./entries.ts";
-import { anchored, describe, fence, reviewRoots, unseen, who } from "./thread-context.ts";
-import { type Check, readJobLog } from "./github";
-import { prOf } from "./pull-requests.ts";
+import {
+  anchored,
+  describe,
+  fence,
+  isComment,
+  reviewRoots,
+  unseen,
+  who,
+} from "./thread-context.ts";
+import { type Check, githubGraphql, readJobLog } from "./github";
+import {
+  dropThread,
+  inConversation,
+  marker,
+  oneAtATime,
+  prOf,
+  resolveOnGitHub,
+  withHeader,
+} from "./pull-requests.ts";
 
 export { addNote, listEntries, type NewEntry, type ReviewEntry } from "./entries.ts";
 
@@ -31,7 +47,66 @@ export { addNote, listEntries, type NewEntry, type ReviewEntry } from "./entries
 const changedIn = (row: { workspace_id: number } | undefined) =>
   row && emit({ workspaceId: row.workspace_id, what: "entries" });
 
+// A change to the user's comments on GitHub; throws what went wrong, so the change isn't made here either.
+async function onGitHub(query: string, variables: Record<string, unknown>) {
+  const r = await githubGraphql(query, variables);
+  if (r.status === "ok") return;
+  throw new Error(
+    r.status === "error" ? r.message : "Sign in to GitHub with gh to change it there too",
+  );
+}
+
+// A posted comment's mutations: on a review thread, or in the PR's conversation (inConversation).
+const mutations = (e: { github_url: string | null }) =>
+  inConversation({ githubUrl: e.github_url })
+    ? {
+        edit: `mutation($id: ID!, $body: String!) { updateIssueComment(input: {id: $id, body: $body}) { clientMutationId } }`,
+        remove: `mutation($id: ID!) { deleteIssueComment(input: {id: $id}) { clientMutationId } }`,
+      }
+    : {
+        edit: `mutation($id: ID!, $body: String!) { updatePullRequestReviewComment(input: {
+          pullRequestReviewCommentId: $id, body: $body }) { clientMutationId } }`,
+        remove: `mutation($id: ID!) { deletePullRequestReviewComment(input: {id: $id}) { clientMutationId } }`,
+      };
+
+// What a posted comment's text becomes on GitHub: in the PR's conversation, after what coxswain put before it, as it
+// is there now (withHeader).
+async function onGitHubAs(
+  e: { github_id: string | null; github_url: string | null },
+  text: string,
+) {
+  if (!inConversation({ githubUrl: e.github_url })) return text;
+  const now = await githubGraphql<{ node: { body: string } | null }>(
+    `query($id: ID!) { node(id: $id) { ... on IssueComment { body } } }`,
+    { id: e.github_id },
+  );
+  if (now.status !== "ok")
+    throw new Error(
+      now.status === "error" ? now.message : "Sign in to GitHub with gh to change it there too",
+    );
+  const body = now.data.node?.body ?? "";
+  const at = body.indexOf(marker);
+  return at < 0 ? text : withHeader(body.slice(0, at).trim(), text);
+}
+
+// A comment already posted is edited on GitHub too, in its workspace's turn with reads of GitHub (oneAtATime).
 export async function editEntry(db: Db, id: number, body: string) {
+  const e = await db
+    .selectFrom("entries")
+    .select(["kind", "github_id", "github_url", "workspace_id"])
+    .where("id", "=", id)
+    .executeTakeFirst();
+  if (e?.kind === "note" && e.github_id)
+    return oneAtATime(e.workspace_id, async () => {
+      await onGitHub(mutations(e).edit, {
+        id: e.github_id,
+        body: await onGitHubAs(e, body.trim()),
+      });
+      await edit(db, id, body);
+    });
+  await edit(db, id, body);
+}
+const edit = async (db: Db, id: number, body: string) =>
   changedIn(
     await db
       .updateTable("entries")
@@ -40,10 +115,38 @@ export async function editEntry(db: Db, id: number, body: string) {
       .returning("workspace_id")
       .executeTakeFirst(),
   );
-}
 
 // Resolves a thread (its first entry), or reopens it.
+// With Post to GitHub on (getPostComments), a thread on GitHub is resolved or reopened there at once, first: a failure
+// there leaves it as it was here. Otherwise that waits for Submit Review.
 export async function resolveThread(db: Db, id: number, resolved: boolean) {
+  const root = await db
+    .selectFrom("entries")
+    .select(["workspace_id", "github_thread_id", "github_resolved"])
+    .where("id", "=", id)
+    .executeTakeFirst();
+  if (
+    root?.github_thread_id &&
+    root.github_resolved !== Number(resolved) &&
+    (await getPostComments(db))
+  )
+    return oneAtATime(root.workspace_id, async () => {
+      const done = await resolveOnGitHub(
+        db,
+        { id, githubThreadId: root.github_thread_id },
+        resolved,
+      );
+      if (done.status !== "ok")
+        throw new Error(
+          done.status === "error"
+            ? done.message
+            : "Sign in to GitHub with gh to resolve it there too",
+        );
+      await resolveHere(db, id, resolved);
+    });
+  await resolveHere(db, id, resolved);
+}
+const resolveHere = async (db: Db, id: number, resolved: boolean) =>
   changedIn(
     await db
       .updateTable("entries")
@@ -52,9 +155,49 @@ export async function resolveThread(db: Db, id: number, resolved: boolean) {
       .returning("workspace_id")
       .executeTakeFirst(),
   );
-}
 
+// One of the user's comments, deleted on GitHub too if it was posted (one already gone there is deleted here all the
+// same). The first of a thread takes what came from GitHub with it here (dropThread): GitHub keeps a thread with
+// replies, and the next read brings what's left back as a thread of its own; the user's unposted notes stay.
+export async function deleteComment(db: Db, id: number) {
+  const e = await db
+    .selectFrom("entries")
+    .select(["workspace_id", "parent_id", "github_id", "github_url"])
+    .where("id", "=", id)
+    .executeTakeFirst();
+  if (!e) return;
+  await oneAtATime(e.workspace_id, async () => {
+    if (e.github_id) await deleteOnGitHub(e);
+    if (e.parent_id === null) await dropThread(db, id);
+    else await db.deleteFrom("entries").where("id", "=", id).execute();
+  });
+  emit({ workspaceId: e.workspace_id, what: "entries" });
+}
+const deleteOnGitHub = (e: { github_id: string | null; github_url: string | null }) =>
+  onGitHub(mutations(e).remove, { id: e.github_id }).catch((err: Error) => {
+    if (!/Could not resolve to a node/.test(err.message)) throw err;
+  });
+
+// A thread's comments already posted are deleted on GitHub too, replies first; others' replies stay there.
 export async function deleteEntry(db: Db, id: number) {
+  const root = await db
+    .selectFrom("entries")
+    .select("workspace_id")
+    .where("id", "=", id)
+    .executeTakeFirst();
+  if (root) return oneAtATime(root.workspace_id, () => remove(db, id));
+}
+// One already gone from GitHub is deleted here all the same.
+async function remove(db: Db, id: number) {
+  const posted = await db
+    .selectFrom("entries")
+    .select(["github_id", "github_url"])
+    .where((eb) => eb.or([eb("id", "=", id), eb("parent_id", "=", id)]))
+    .where("kind", "=", "note")
+    .where("github_id", "is not", null)
+    .orderBy("id", "desc")
+    .execute();
+  for (const p of posted) await deleteOnGitHub(p);
   changedIn(
     await db
       .deleteFrom("entries")
@@ -88,11 +231,22 @@ export async function askQuestion(
   onPermission: (threadId: number, p: Permission) => Promise<string | null>,
   onQueued: (threadId: number) => void,
 ): Promise<{ question: ReviewEntry; agentSessionId: string; turn: Promise<TurnResult> }> {
+  if (e.parentId && (await inCommentThread(db, e.parentId)))
+    throw new Error("A comment thread doesn't go to the agent");
   return ask(db, await addEntry(db, "question", e), onChat, onPermission, onQueued);
 }
 
-// A thread's *Send to agent*: its latest note becomes a question and is asked, with the notes before it since the
-// last question. Null when there's no such note (the agent has seen the thread).
+const inCommentThread = async (db: Db, threadId: number) => {
+  const root = await db
+    .selectFrom("entries")
+    .select("kind")
+    .where("id", "=", threadId)
+    .executeTakeFirst();
+  return !!root && isComment(root);
+};
+
+// An agent thread's *Send to agent*: its latest note becomes a question and is asked, with the notes before it since
+// the last question. Null when there's no such note (the agent has seen the thread), or on a comment thread.
 export async function sendThread(
   db: Db,
   threadId: number,
@@ -107,7 +261,7 @@ export async function sendThread(
     .where("kind", "in", ["note", "question"])
     .orderBy("id", "desc")
     .executeTakeFirst();
-  if (note?.kind !== "note") return null;
+  if (note?.kind !== "note" || (await inCommentThread(db, threadId))) return null;
   await db.updateTable("entries").set({ kind: "question" }).where("id", "=", note.id).execute();
   return ask(db, { ...note, kind: "question" }, onChat, onPermission, onQueued);
 }
@@ -181,31 +335,24 @@ export async function stopQuestion(db: Db, threadId: number) {
   if (agentSessionId) await stopComment(db, agentSessionId, threadId);
 }
 
-// Every thread of the workspace, as one message for the agent pane's session: where each points, the code, and its
-// comments and answers in order, then what to do with them. An explanation or finding the user didn't reply to isn't
-// part of their review, nor is a resolved thread. An outdated one goes with what its lines read now. conclusions: from
-// Submit Review, only the threads picked there, each with its conclusion (glossary) after it.
-export type Conclusion = { threadId: number; body: string };
+// Every open comment thread of the workspace, as one message for the agent pane's session: where each points, the code,
+// and its comments in order, then what to do with them. Agent threads aren't part of the review, nor is a resolved
+// thread. An outdated one goes with what its lines read now. threadIds: from Submit Review, only the threads picked
+// there.
 function reviewPrompt(
   entries: ReviewEntry[],
-  conclusions?: Conclusion[],
+  threadIds?: number[],
 ): { threads: number; prompt: string } {
-  const concluded = conclusions && new Map(conclusions.map((c) => [c.threadId, c.body.trim()]));
-  const roots = reviewRoots(entries).filter((e) => !concluded || concluded.has(e.id));
+  const picked = threadIds && new Set(threadIds);
+  const roots = reviewRoots(entries).filter((e) => !picked || picked.has(e.id));
   const parts = roots.map((root, i) => {
     const thread = [root, ...entries.filter((e) => e.parentId === root.id)];
     const lines = thread.map((e) => `${who(e)}: ${e.body}`);
     const changed = root.state === "outdated" ? `\n${since(root)}` : "";
-    const conclusion = concluded?.get(root.id);
-    // A thread that is one comment of mine is its own conclusion.
-    const ended =
-      conclusion && !(thread.length === 1 && conclusion === root.body.trim())
-        ? `\nWhere it ended up: ${conclusion}`
-        : "";
-    return `${i + 1}. On ${describe(root)}${changed}\n${lines.join("\n")}${ended}`;
+    return `${i + 1}. On ${describe(root)}${changed}\n${lines.join("\n")}`;
   });
   const prompt = `Here's my review of this worktree's changes so far: every thread, with where it points and the code as it was
-then, in order. "Me" is me, "You" is your earlier answers, "@name" a reviewer on GitHub. "Where it ended up" is my conclusion of a thread, the comment I'd post on the pull request: it is what counts where the thread says otherwise. Work through them: make the changes my comments ask for,
+then, in order. "Me" is me, "@name" a reviewer on GitHub. Work through them: make the changes the comments ask for,
 answer what's still open, and tell me briefly what you did for each and what you left.\n\n${parts.join("\n\n")}`;
   return { threads: roots.length, prompt };
 }
@@ -222,9 +369,9 @@ const since = (e: ReviewEntry) =>
 export async function reviewPromptText(
   db: Db,
   workspaceId: number,
-  conclusions?: Conclusion[],
+  threadIds?: number[],
 ): Promise<string | null> {
-  const { threads, prompt } = reviewPrompt(await liveEntries(db, workspaceId), conclusions);
+  const { threads, prompt } = reviewPrompt(await liveEntries(db, workspaceId), threadIds);
   return threads ? prompt : null;
 }
 
@@ -234,9 +381,9 @@ export async function sendReview(
   db: Db,
   workspaceId: number,
   handlers: (agentSessionId: string) => Parameters<typeof runTurn>[3],
-  conclusions?: Conclusion[],
+  threadIds?: number[],
 ): Promise<TurnResult> {
-  const { threads, prompt } = reviewPrompt(await liveEntries(db, workspaceId), conclusions);
+  const { threads, prompt } = reviewPrompt(await liveEntries(db, workspaceId), threadIds);
   if (!threads) return { status: "error", message: "No threads to send" };
   const agentSessionId = await currentSession(db, workspaceId);
   return runTurn(db, agentSessionId, formatReview(threads, prompt), handlers(agentSessionId));
@@ -257,6 +404,27 @@ export async function setCommentToAgent(db: Db, toAgent: boolean) {
   await db
     .insertInto("settings")
     .values({ key: "comment.to-agent", value })
+    .onConflict((oc) => oc.column("key").doUpdateSet({ value }))
+    .execute();
+  emit({ what: "settings" });
+}
+
+// Whether a new comment is posted to GitHub at once, rather than collected for Submit Review: the composer's Post to
+// GitHub checkbox. Global.
+export async function getPostComments(db: Db): Promise<boolean> {
+  const row = await db
+    .selectFrom("settings")
+    .select("value")
+    .where("key", "=", "comment.post")
+    .executeTakeFirst();
+  return row?.value === "true";
+}
+
+export async function setPostComments(db: Db, post: boolean) {
+  const value = String(post);
+  await db
+    .insertInto("settings")
+    .values({ key: "comment.post", value })
     .onConflict((oc) => oc.column("key").doUpdateSet({ value }))
     .execute();
   emit({ what: "settings" });

@@ -68,8 +68,7 @@ _Settings…_; under it, _This workspace_: how many of the workspace on screen's
 its HEAD, with _Up to date_, _Summarising…_, _Not yet_ or _For views only_. Esc or a click outside closes it.
 
 Settings has _File summaries_: the agent (_Claude Code_ · _Codex_), the model (a native menu of what the agent offers,
-asked in the workspace on screen; greyed out without one) and _Work_: _Ahead_ or _Only when needed_, which also
-decides whether thread conclusions are written as threads change or when Submit Review opens.
+asked in the workspace on screen; greyed out without one) and _Work_: _Ahead_ or _Only when needed_.
 
 ## Before the main screen
 
@@ -181,13 +180,20 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   the file diff with the code they were about (_Then_) and what stands there now (_Now_). Hovering a line shows a `+` in the gutter; clicking it (or dragging it over a range)
   opens a comment box: the lines at its top, ✕ at its top right to cancel (or Esc), the text, and at the bottom right
   a _Comment_ / _Agent_ toggle and a send button (Enter; Shift+Enter adds a line). The toggle is one global
-  preference, kept across boxes and restarts. Sending starts a **thread** between the lines: every comment is one.
-  Under its comments, a reply box adds another comment to the thread, with its own _Comment_ / _Agent_ toggle: on
-  _Agent_ after the agent's answer, explanation or finding, so a conversation carries on with Enter; otherwise the
-  saved preference. Changing it there changes only that box. Each
-  comment is labelled _You_, or _You → agent_ when it went to the agent, and the agent's answers _Agent_.
+  preference, kept across boxes and restarts. Sending starts a **thread** between the lines, and the toggle decides
+  which kind for good: _Comment_ a **comment thread**, what the review says to the PR's author; _Agent_ an **agent
+  thread**, for exploring or changing the code with the agent. The agent's explanations and findings start agent
+  threads too. Under its comments, a reply box adds another comment to the thread. In a comment thread it has no
+  toggle: a reply is a comment. In an agent thread it has its own _Comment_ / _Agent_ toggle: on _Agent_ after the
+  agent's answer, explanation or finding, so a conversation carries on with Enter; otherwise the saved preference.
+  Changing it there changes only that box. With a PR, a box on _Comment_ (a new comment thread, or a reply in one) has
+  a _Post to GitHub_ checkbox on its left, one global preference like the toggle: on, sending posts the comment to the
+  PR at once as plain discussion, no review (on its lines, or in the PR's conversation); off, it waits for _Submit Review_. A post that fails leaves the comment here and
+  says why in a sheet. Each comment is labelled _You_, or _You → agent_ when it went to the agent, and the agent's
+  answers _Agent_.
 
-  On _Comment_, a comment is a note. On _Agent_, it's a question: a turn in the agent pane's agent session
+  In a comment thread, a comment is a note. In an agent thread, on _Comment_ it's a note for the agent, sent with the
+  next question; on _Agent_ it's a question: a turn in the agent pane's agent session
   (ADR 0021), which shows it as a card (_Comment on `path:lines` sent to Agent_, the comment, and _View thread_,
   which scrolls the canvas to the thread). The agent is given what it hasn't seen of the thread: in the session its last
   question went to, the notes since; in any other (a new session since, or the other agent), the lines and the whole
@@ -201,8 +207,20 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
 
   The thread's header has a ✓ to resolve it: the thread folds to its header (_Resolved_ and its first comment), is
   left out of _Submit Review_, and the ✓, green now, reopens it. Right of it, a ⋯ button with a native menu:
-  _Edit_ (the first comment, in place, if it's yours), _Delete_ (the thread, after a confirmation), and _Send to Agent_, which makes the
-  thread's latest note a question, with the notes before it since the last question; the answer comes in the thread.
+  _Delete Thread_ (after a confirmation; the user's comments posted from it are deleted on GitHub too; off, as
+  _Delete Thread (others have replied)_, while others' comments are in it, since GitHub keeps those), _Open on
+  GitHub_, and in an agent thread _Send to Agent_, which makes the thread's latest note a question, with the notes
+  before it since the last question (the answer comes in the thread), and _Summarize as Comment_. That one has the
+  summary model write the review comment the thread comes to: _Summarizing as a comment…_ under the thread, then the
+  comment in a box to edit (or _Nothing in this thread is left for the PR's author._, with _Write One_ and _Dismiss_),
+  under _A new comment on these lines, for the review_, with _Cancel_ and _Save_ (_Save and
+  Post_ while _Post to GitHub_ is on); saving adds it as a comment thread on the same lines or passage.
+
+  Each of the user's own comments has its own ⋯ on hover, right of _You_: _Edit_ (in place; _Save Here and on GitHub_
+  once posted), _Delete_ (after a confirmation; on GitHub too once posted), _Open on GitHub_. Deleting a thread's first
+  comment takes the thread with it here, as on GitHub, which keeps the rest for its replies: the next read brings them
+  back as a thread of their own, and the user's unposted notes stay as a thread on the same lines. A failed edit,
+  delete, resolve or summary says why under the thread.
 
   **Threads on a view's prose** ([ADR 0036](adr/0036-threads-on-view-prose.md)). Right-click on text selected in a
   view's prose (or on a paragraph, list or table, for all of it) and pick _Comment_: the same comment box opens after
@@ -219,28 +237,28 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   (_in All_, _in abc1234_, _in a view_) instead, then a ✓ that resolves it (under _Resolved_, green, reopens it; not while the agent
   answers). Clicking one scrolls the canvas to it.
 
-  _Submit Review N_ (N the open threads it takes: not resolved, and the agent's explanations and findings only once the
-  user replied; on with open threads or a PR) opens a dialog, like GitHub's _Finish your review_, at once. Each thread
-  has its conclusion (glossary): the one review comment that says where the thread ended up, a decision, something to
-  do, or a question still open. The summary model (Settings) writes them ahead, in a job (see Activity), half a minute
-  after a thread last changed and not while an agent is answering it, so they are there when the dialog opens; one not written yet says _Writing
-  its conclusion…_ in its place, and the three buttons wait while a picked thread has none. A thread that is one comment
-  of the user's is its own conclusion. Then the threads, compact: a checkbox, where it is and its first comment (a
-  click closes the dialog and shows the thread), how many entries it has and what posting does with it (_comment on
-  the lines_, _in the review's text_, _reply_, _resolve_ or _reopen_, _on GitHub already_), and under it the
-  conclusion in a box to edit. If the model fails the dialog says why and the conclusions are the user's own last
-  comments. At the bottom, with a PR, a summary for the review and _Comment_ · _Approve_ · _Request Changes_ (not on
-  your own PR), then three buttons. _Copy as Prompt_ puts the picked threads on the clipboard as the message the agent
-  would get (the bar says _Copied_). _Send to Agent_ sends them in one message to the agent pane's session: where each
-  points, the code, its comments and answers and where it ended up, asking the agent to make the changes and answer
-  what's open; the chat shows it as a card (_Review sent to Agent · N threads_) and the bar says _Agent working on N
-  threads_ until the turn ends. _Post to GitHub…_ (only with a PR) asks, then posts the picked conclusions as one
-  review and resolves the user's threads it posted; the dialog closes once posted.
+  _Submit Review N_ (N the open comment threads; on with open comment threads or a PR) opens a dialog, like GitHub's
+  _Finish your review_. Agent threads aren't in it. The comment threads, compact: a checkbox, where it is and its first
+  comment (a click closes the dialog and shows the thread), how many entries it has and what posting does with it
+  (_comment on the lines_, _in the conversation_, _reply_, _resolve_ or _reopen_, _on GitHub already_), and under it
+  each of its comments not on GitHub yet in a box to edit, which edits the comment. With none, it says _No open comment
+  threads. Agent threads become one with Summarize as Comment._ At the bottom, with a PR, a summary for the review and
+  _Comment_ · _Approve_ · _Request Changes_ (not on your own PR), then three buttons. _Copy as Prompt_ puts the picked
+  threads on the clipboard as the message the agent would get (the bar says _Copied_). _Send to Agent_ sends them in
+  one message to the agent pane's session: where each points, the code and its comments, asking the agent to make the
+  changes and answer what's open; the chat shows it as a card (_Review sent to Agent · N threads_) and the bar says
+  _Agent working on N threads_ until the turn ends. _Post to GitHub…_ (only with a PR) asks, then posts the picked
+  threads' comments as written: those on the PR's diff in one review, the others as comments in the PR's
+  conversation, led by a permalink GitHub shows as the highlighted code. If the user has a review in progress on
+  GitHub, it asks again first: _You have a review in progress on this PR on GitHub_, with how many comments it has,
+  and _Add and Submit_; nothing is posted without it. The dialog closes once posted. Every posted comment is linked:
+  replies there show in its thread, edits and deletes go both ways, and threads on the diff resolve with GitHub's.
 
   **Threads from GitHub** ([ADR 0037](adr/0037-pull-request-sync-and-posting.md)). A PR's review threads show between
   the lines like any thread, their header saying _on GitHub_, each comment under its author (_@ana on GitHub_). Replies
-  are the user's notes, sent to the agent like any; _Edit_ and _Delete_ are off, _Open on GitHub_ is in the ⋯ menu.
-  Resolving one is local until posted. A reply posted from here says _posted_; what went to GitHub is the conclusion of the replies, one comment.
+  are the user's comments, posted as written; the user's own comments there, wherever written, are theirs to edit and
+  delete, and _Open on GitHub_ is in the ⋯ menu. Resolving one goes to GitHub at once while _Post to GitHub_ is on, else with the next _Submit Review_; the ✓'s tooltip says which. A comment posted from
+  here says _posted_.
 
   **The PR panel.** The PR's chip in the canvas bar (_#12_, a dot for its checks: green, red, amber running, grey)
   shows the PR in the canvas in place of the diff; any other pick leaves it. It is laid out like the PR's page on
