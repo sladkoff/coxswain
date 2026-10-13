@@ -3,6 +3,14 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-10-13 — Searching Open a project in development
+
+### What works
+
+- The search field in _Open a project_ filters the repositories under `pnpm dev` too. StrictMode loaded the first
+  page twice, so every row had a duplicate key and React kept rows the search should have hidden; a repository
+  already listed is now skipped.
+
 ## 2026-10-05 — Comment threads and agent threads; comments posted as written
 
 ### What works
