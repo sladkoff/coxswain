@@ -5,18 +5,12 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync } 
 import { homedir } from "node:os";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import type { Db } from "./db";
-import {
-  createPullRequest,
-  type CreatedPullRequest,
-  findPullRequest,
-  getPullRequestHead,
-  type GitHubProblem,
-} from "./github.ts";
-import { addLocalProject, getProject, gitHubRepo, type Project } from "./projects.ts";
+import { type CreatedPullRequest, forgeOf, type ForgeProblem, forgeRepoOf } from "./forge.ts";
+import { addLocalProject, forgeRepo, getProject, type Project } from "./projects.ts";
 import { snapshotOf } from "./snapshot.ts";
 import { getWorkspaceRepo, setWorkspacePullRequest } from "./workspaces.ts";
 
-// ADR 0008: coxswain's own blobless clone per GitHub project, or the user's own repository for a local one (ADR 0040),
+// ADR 0008: coxswain's own blobless clone per project from a forge's list, or the user's own repository for a local one (ADR 0040),
 // and one worktree per workspace on the PR's head branch, or on the workspace's own branch (ADR 0028).
 export type GitProblem = { status: "git-error"; message: string };
 
@@ -37,8 +31,8 @@ export type Commit = { sha: string; parent: string; subject: string; turn?: stri
 export type FileText =
   | { status: "ok"; text: string | null; binary: boolean; image?: string }
   | GitProblem;
-export type CloneResult = { status: "ok" } | GitProblem | GitHubProblem;
-// head: what's on GitHub (ADR 0028), the PR's head or the branch's (on origin, for a project not on GitHub); the merge
+export type CloneResult = { status: "ok" } | GitProblem | ForgeProblem;
+// head: what's on the forge (ADR 0028), the PR's head or the branch's (on origin, for a project on no forge); the merge
 // base while a branch isn't pushed. Local changes are what the worktree has on top of it. prNumber: the workspace's PR,
 // which a branch workspace gets once one is opened for its branch. remote: whether there's an origin to push to (ADR
 // 0040). notice: something the user should know, e.g. the PR moved on but local changes kept the worktree back.
@@ -52,21 +46,24 @@ export type WorktreeResult =
       notice: string | null;
     }
   | GitProblem
-  | GitHubProblem;
+  | ForgeProblem;
 
 const root = join(homedir(), "coxswain");
-type ProjectRepo = Pick<Project, "path" | "github">;
-// ADR 0040: a local repository is the user's own; a GitHub one is coxswain's clone.
-const repoPath = (p: ProjectRepo) => p.path ?? join(root, "repos", p.github!);
-// The project's folder under worktrees/ and checkouts/: owner/name for a clone, local/<folder>-<hash of its path> for a
-// local repository, so two repositories in folders of the same name don't share one.
+type ProjectRepo = Pick<Project, "path" | "forge" | "host" | "repo">;
+// A clone's folder under repos/, worktrees/ and checkouts/: owner/name for GitHub's, <host>/<path> for another
+// forge's (ADR 0041).
+const cloneDir = (p: ProjectRepo) => (p.forge === "github" ? p.repo! : join(p.host!, p.repo!));
+// ADR 0040: a local repository is the user's own; one from a forge's list is coxswain's clone.
+const repoPath = (p: ProjectRepo) => p.path ?? join(root, "repos", cloneDir(p));
+// The project's folder under worktrees/ and checkouts/: the clone's, or local/<folder>-<hash of its path> for a local
+// repository, so two repositories in folders of the same name don't share one.
 const projectDir = (p: ProjectRepo) =>
   p.path
     ? join(
         "local",
         `${basename(p.path)}-${createHash("sha256").update(p.path).digest("hex").slice(0, 8)}`,
       )
-    : p.github!;
+    : cloneDir(p);
 // ADR 0005: worktrees go in ~/coxswain/worktrees/<owner>/<name>/pr-<number>/, or branch-<branch>/ for a workspace
 // started on a branch, kept once it has a PR (agents' sessions are tied to the folder). Named by the PR or branch, not
 // the workspace's row ID, so a database made afresh finds the same folder and never another's.
@@ -133,13 +130,12 @@ function clone(p: ProjectRepo): Promise<CloneResult> {
       status: "git-error",
       message: `The repository at ${p.path} is gone; put it back, or add it again from where it is now`,
     });
-  const key = p.github!;
+  const repo = forgeRepo(p)!;
+  const key = path;
   let cloning = clones.get(key);
   if (!cloning) {
     cloning = withGit(async () => {
-      // ADR 0006: clone with the protocol the user chose for gh; HTTPS relies on gh's credential helper.
-      const ssh = (await ghProtocol()) === "ssh";
-      const url = ssh ? `git@github.com:${key}.git` : `https://github.com/${key}.git`;
+      const url = await forgeOf(repo.forge).cloneUrl(repo);
       // Clone next to the final place and rename, so an interrupted clone never looks finished.
       const tmp = `${path}.cloning`;
       rmSync(tmp, { recursive: true, force: true });
@@ -153,7 +149,7 @@ function clone(p: ProjectRepo): Promise<CloneResult> {
   return cloning;
 }
 
-// ADR 0040: the local repository folder is in, as a project: its top level, on GitHub if its origin is. Refuses a folder
+// ADR 0040: the local repository folder is in, as a project: its top level, on a forge if its origin is. Refuses a folder
 // that isn't in a repository or one with no commit yet (worktrees need one), and coxswain's own worktrees.
 export async function addLocalRepository(db: Db, folder: string): Promise<Project> {
   const top = (
@@ -166,7 +162,7 @@ export async function addLocalRepository(db: Db, folder: string): Promise<Projec
   if (!(await hasRef(top, "HEAD")))
     throw new Error(`${top} has no commits yet; commit something first, then add it`);
   const origin = await gitText(top, ["remote", "get-url", "origin"]).catch(() => "");
-  return addLocalProject(db, top, basename(top), gitHubOf(origin.trim()));
+  return addLocalProject(db, top, basename(top), await forgeRepoOf(origin));
 }
 
 // ADR 0040: a new project in a new, empty folder at path: git init, on the user's default branch (else main), and an
@@ -188,22 +184,8 @@ export async function createRepository(db: Db, path: string): Promise<Project> {
   return addLocalRepository(db, path);
 }
 
-// A remote's owner/name if it's on github.com (HTTPS, SSH or git: URLs), else null.
-export function gitHubOf(url: string): string | null {
-  const m = url.match(
-    /^(?:(?:https?|ssh|git):\/\/(?:[^@/]+@)?|[^@/:]+@)github\.com[:/]([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/,
-  );
-  return m ? `${m[1]}/${m[2]}` : null;
-}
-
-function ghProtocol(): Promise<string> {
-  return new Promise((done) =>
-    execFile("gh", ["config", "get", "git_protocol"], (e, out) => done(e ? "" : out.trim())),
-  );
-}
-
 // The last result of opening each workspace's worktree, so switching back needs no network.
-// ponytail: memory only, so the first open after a restart waits for GitHub and fetch (~2.5 s); persist if that hurts.
+// ponytail: memory only, so the first open after a restart waits for the forge and fetch (~2.5 s); persist if that hurts.
 const lastOpened = new Map<
   number,
   { head: string; mergeBase: string; prNumber: number | null; remote: boolean }
@@ -217,17 +199,17 @@ export async function openedBefore(db: Db, workspaceId: number): Promise<Worktre
   return { status: "ok", ...last, notice: null };
 }
 
-// Makes sure the workspace's worktree exists and is on its latest head on GitHub, then says what its diff is against.
-// Talks to GitHub and fetches, so it takes a second or more; show openedBefore meanwhile.
+// Makes sure the workspace's worktree exists and is on its latest head on the forge, then says what its diff is against.
+// Talks to the forge and fetches, so it takes a second or more; show openedBefore meanwhile.
 export async function openWorktree(db: Db, workspaceId: number): Promise<WorktreeResult> {
   const w = await getWorkspaceRepo(db, workspaceId);
   const cloned = clone(w);
   let prNumber = w.prNumber;
-  // ADR 0028: a branch workspace gets its PR once one is opened for the branch, here or on GitHub. Offline, or the PR
-  // already has a workspace of its own: it carries on as a branch. A project not on GitHub has none (ADR 0040).
-  if (prNumber === null && w.branch && w.github) {
-    const { owner, name } = gitHubRepo(w);
-    const found = await findPullRequest(owner, name, w.branch);
+  // ADR 0028: a branch workspace gets its PR once one is opened for the branch, here or on its forge. Offline, or the PR
+  // already has a workspace of its own: it carries on as a branch. A project on no forge has none (ADR 0040).
+  const repo = forgeRepo(w);
+  if (prNumber === null && w.branch && repo) {
+    const found = await forgeOf(repo.forge).findPullRequest(repo, w.branch);
     if (found.status === "ok" && found.number !== null)
       prNumber = await setWorkspacePullRequest(db, workspaceId, found.number).then(
         () => found.number,
@@ -238,8 +220,11 @@ export async function openWorktree(db: Db, workspaceId: number): Promise<Worktre
     const c = await cloned;
     return c.status === "ok" ? openBranch(workspaceId, w) : c;
   }
-  const { owner, name } = gitHubRepo(w);
-  const [pr, c] = await Promise.all([getPullRequestHead(owner, name, prNumber), cloned]);
+  if (!repo) return { status: "git-error", message: "The project isn't on a forge" };
+  const [pr, c] = await Promise.all([
+    forgeOf(repo.forge).getPullRequestHead({ repo, number: prNumber }),
+    cloned,
+  ]);
   if (pr.status !== "ok") return pr;
   if (c.status !== "ok") return c;
   // ponytail: fork PRs need a remote for the fork (ADR 0008); read-only via pull/<n>/head would be the cheap first step.
@@ -260,7 +245,7 @@ export async function openWorktree(db: Db, workspaceId: number): Promise<Worktre
 }
 
 // A branch workspace without a PR (ADR 0028): its worktree on its branch, made from the base branch unless it's on
-// GitHub already. Its diff is against where it forked from the base branch, like a PR's; what's pushed is on GitHub.
+// its forge already. Its diff is against where it forked from the base branch, like a PR's; what's pushed is on the forge.
 // Offline, it carries on with what was fetched before. A local repository's base branch is the user's own, and what's
 // pushed is on its origin, if it has one (ADR 0040).
 function openBranch(
@@ -295,7 +280,7 @@ function openBranch(
     lastOpened.set(workspaceId, { head, mergeBase, prNumber: null, remote });
     const notice = fetched
       ? behind
-      : `Could not fetch from ${w.github ? "GitHub" : "origin"}; showing what was fetched before`;
+      : `Could not fetch from ${w.forge ? forgeOf(w.forge).names.forge : "origin"}; showing what was fetched before`;
     return { status: "ok" as const, head, mergeBase, prNumber: null, remote, notice };
   });
 }
@@ -362,7 +347,7 @@ async function pruneOurs(repo: string) {
 }
 
 // Fast-forwards the worktree to upstream when it's behind and has no local changes. Otherwise, if it's behind, says so
-// (moved: what happened on GitHub).
+// (moved: what happened on the forge).
 async function catchUp(path: string, upstream: string, moved: string): Promise<string | null> {
   const [head, remote, dirty] = await Promise.all([
     gitText(path, ["rev-parse", "HEAD"]),
@@ -385,13 +370,13 @@ export async function openedWorktree(db: Db, workspaceId: number): Promise<strin
   return path;
 }
 
-// The project's branches on GitHub (as last fetched), to start a branch workspace from, and its default branch. A
+// The project's branches on the forge (as last fetched), to start a branch workspace from, and its default branch. A
 // local repository's are its own and origin's, the default the one the user's checkout is on (ADR 0040).
 // ponytail: as of the clone and the fetches since; fetch them all first if a new branch is missed.
 export type BranchList =
   | { status: "ok"; branches: string[]; defaultBranch: string }
   | GitProblem
-  | GitHubProblem;
+  | ForgeProblem;
 export async function listBranches(db: Db, projectId: number): Promise<BranchList> {
   const p = await getProject(db, projectId);
   const cloned = await clone(p);
@@ -472,10 +457,10 @@ export async function pinRevision(
 
 // The merge base the workspace was last opened on, for the core's own reads of the live diff (Submit Review).
 export const currentMergeBase = (workspaceId: number) => lastOpened.get(workspaceId)?.mergeBase;
-// … and what was on GitHub then (ADR 0028): what comments are posted against (ADR 0037).
+// … and what was on the forge then (ADR 0028): what comments are posted against (ADR 0037).
 export const currentHead = (workspaceId: number) => lastOpened.get(workspaceId)?.head;
 
-// Pushes the worktree's branch to GitHub and makes it its upstream. Never forced: if the branch moved on there, it fails
+// Pushes the worktree's branch to the forge and makes it its upstream. Never forced: if the branch moved on there, it fails
 // with git's message.
 export function push(db: Db, workspaceId: number): Promise<{ status: "ok" } | GitProblem> {
   return withGit(async () => {
@@ -497,7 +482,8 @@ export async function openPullRequest(
   const w = await getWorkspaceRepo(db, workspaceId);
   if (w.prNumber !== null || !w.branch || !w.baseBranch)
     return { status: "git-error", message: "The workspace has a PR already" };
-  if (!w.github) return { status: "git-error", message: "The project isn't on GitHub" };
+  const repo = forgeRepo(w);
+  if (!repo) return { status: "git-error", message: "The project isn't on a forge" };
   const pushed = await push(db, workspaceId);
   if (pushed.status !== "ok") return pushed;
   const log = await withGit(async () =>
@@ -513,8 +499,7 @@ export async function openPullRequest(
       .filter(Boolean),
   );
   if (!Array.isArray(log)) return log;
-  const { owner, name } = gitHubRepo(w);
-  const pr = await createPullRequest(owner, name, {
+  const pr = await forgeOf(repo.forge).createPullRequest(repo, {
     head: w.branch,
     base: w.baseBranch,
     title: log.length === 1 ? log[0] : w.branch,
@@ -724,7 +709,7 @@ export async function headCommit(db: Db, workspaceId: number): Promise<string> {
   return (await gitText(await openedWorktree(db, workspaceId), ["rev-parse", "HEAD"])).trim();
 }
 
-// Where the worktree's branch was on GitHub when last fetched or pushed (its origin/ ref, which a push moves whether
+// Where the worktree's branch was on the forge when last fetched or pushed (its origin/ ref, which a push moves whether
 // or not it set an upstream); null for a branch never pushed or a detached HEAD.
 export async function upstreamCommit(db: Db, workspaceId: number): Promise<string | null> {
   const path = await openedWorktree(db, workspaceId);
@@ -888,7 +873,7 @@ function readBlobs(
   });
 }
 
-// A file at a commit, e.g. the merge base. May fetch its contents from GitHub the first time (blobless clone).
+// A file at a commit, e.g. the merge base. May fetch its contents from the forge the first time (blobless clone).
 export function readFileAt(
   db: Db,
   workspaceId: number,

@@ -1,13 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
-import type { PullRequest } from "../../core/github";
+import type { PullRequest } from "../../core/forge";
 import type { Project } from "../../core/projects";
 import { Button } from "./components/button";
 import { ChevronDownIcon, GitBranchIcon, GitPullRequestIcon } from "./components/icons";
 import { Dialog, ListHeading, ListRow, ProblemCard, SearchField } from "./components/layout";
 import { cn, divider, muted } from "./components/styles";
 import { ErrorText } from "./components/text";
-import { ago, gitHubOf, projectLabel } from "./format";
+import { ago, projectLabel } from "./format";
 import { core } from "./queries";
 
 type Props = {
@@ -30,12 +30,9 @@ export function NewWorkspace({
   onBranch,
   onClose,
 }: Props) {
-  // ADR 0040: a project not on GitHub has branches only.
-  const repo = gitHubOf(project);
-  const pullsQuery = useQuery({
-    ...core("listPullRequests", repo?.owner ?? "", repo?.name ?? ""),
-    enabled: !!repo,
-  });
+  // ADR 0040: a project on no forge has branches only.
+  const repo = project.names;
+  const pullsQuery = useQuery({ ...core("listPullRequests", project.id), enabled: !!repo });
   const branchesQuery = useQuery(core("listBranches", project.id));
   const pulls = pullsQuery.data?.status === "ok" ? pullsQuery.data.pulls : null;
   const listed = branchesQuery.data;
@@ -47,7 +44,9 @@ export function NewWorkspace({
   const q = query.trim().toLowerCase();
   const name = branchName(query);
   const shownPulls = (pulls ?? []).filter(
-    (p) => !q || `#${p.number} ${p.title} ${p.author} ${p.headRef}`.toLowerCase().includes(q),
+    (p) =>
+      !q ||
+      `${repo?.sign}${p.number} ${p.title} ${p.author} ${p.headRef}`.toLowerCase().includes(q),
   );
   // A branch with an open PR is found as that PR.
   const heads = new Set((pulls ?? []).map((p) => p.headRef));
@@ -89,7 +88,7 @@ export function NewWorkspace({
           }}
           placeholder={
             repo
-              ? "Search pull requests and branches, or name a new branch"
+              ? `Search ${repo.request}s and branches, or name a new branch`
               : "Search branches, or name a new branch"
           }
         />
@@ -130,7 +129,7 @@ export function NewWorkspace({
         </div>
       ))}
       <div className="min-h-0 flex-1 overflow-y-auto p-2 pt-0">
-        {shownPulls.length > 0 && <ListHeading>PULL REQUESTS</ListHeading>}
+        {shownPulls.length > 0 && <ListHeading>{`${repo?.request}s`.toUpperCase()}</ListHeading>}
         {shownPulls.map((p) => (
           <ListRow key={p.number} className="flex items-start gap-2.5" onClick={() => onSelect(p)}>
             <span
@@ -148,7 +147,8 @@ export function NewWorkspace({
                 {openPrNumbers.includes(p.number) && <Badge>Has a workspace</Badge>}
               </span>
               <span className={cn("truncate font-mono text-[11px]", muted)}>
-                #{p.number} · {p.author} · {p.headRef}
+                {repo?.sign}
+                {p.number} · {p.author} · {p.headRef}
               </span>
             </span>
             <span
@@ -160,7 +160,9 @@ export function NewWorkspace({
           </ListRow>
         ))}
         {shownBranches.length > 0 && (
-          <ListHeading>{repo && !project.path ? "BRANCHES ON GITHUB" : "BRANCHES"}</ListHeading>
+          <ListHeading>
+            {repo && !project.path ? `BRANCHES ON ${repo.forge.toUpperCase()}` : "BRANCHES"}
+          </ListHeading>
         )}
         {shownBranches.map((b) => (
           <ListRow key={b} className="flex items-center gap-2.5" onClick={() => void start(b)}>
@@ -174,7 +176,7 @@ export function NewWorkspace({
         ))}
         {loading && <Empty>Loading…</Empty>}
         {!loading && !q && !shownPulls.length && !shownBranches.length && (
-          <Empty>{repo ? "No open pull requests or branches" : "No branches"}</Empty>
+          <Empty>{repo ? `No open ${repo.request}s or branches` : "No branches"}</Empty>
         )}
       </div>
     </Dialog>

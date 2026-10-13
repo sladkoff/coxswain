@@ -3,17 +3,18 @@ import { match, P } from "ts-pattern";
 import type {
   Check,
   CheckState,
-  GitHubProblem,
+  ForgeProblem,
   MergeMethod,
+  PullRequestChange,
   PullRequestDetails,
-} from "../../core/github";
-import type { PullRequestChange } from "../../core/pull-requests";
+} from "../../core/forge";
 import { Button } from "./components/button";
 import { TextArea } from "./components/field";
 import { Card } from "./components/layout";
 import { cn, divider, muted } from "./components/styles";
 import { ErrorText, ProblemMessage, Prose } from "./components/text";
 import { ago } from "./format";
+import { useForgeNames } from "./forge";
 
 // The colour of a check's state, as a dot: on the PR panel, the canvas bar's PR chip and the Commits pane.
 export const checkColour: Record<CheckState, string> = {
@@ -29,8 +30,8 @@ export const CheckDot = ({ state, title }: { state: CheckState; title?: string }
   />
 );
 
-type Problem = GitHubProblem | null;
-// What went wrong at GitHub, in words: its own message for a refused change, else what to do about it.
+type Problem = ForgeProblem | null;
+// What went wrong at the forge, in words: its own message for a refused change, else what to do about it.
 export const ProblemText = ({ problem }: { problem: NonNullable<Problem> }) => (
   <ErrorText>
     {problem.status === "error" ? problem.message : <ProblemMessage problem={problem} />}
@@ -74,17 +75,17 @@ const Side = ({
   </div>
 );
 
-// The PR panel (ADR 0037), the canvas's PR location, laid out like the PR's page on GitHub: its title and state, then
+// The PR panel (ADR 0037), the canvas's PR location, laid out like the PR's page on its forge: its title and state, then
 // a column of the description, the conversation, the checks with merging under them and a comment box, beside a
 // column of its people and labels (under it in a narrow canvas).
-// Everything it changes on GitHub is a click of the user's: nothing is posted, merged or edited on its own.
+// Everything it changes on the forge is a click of the user's: nothing is posted, merged or edited on its own.
 export function PullRequestPanel(props: { workspaceId: number; pr: PullRequestDetails }) {
   const { pr, workspaceId } = props;
   const [problem, setProblem] = useState<Problem>(null);
-  // A change on GitHub; true once made.
+  // A change on the forge; true once made.
   const change = async (c: PullRequestChange) => {
     setProblem(null);
-    // The core checks GitHub after it, which refreshes the panel.
+    // The core checks the forge after it, which refreshes the panel.
     const r = await window.coxswain.changePullRequest(
       workspaceId,
       { id: pr.id, viewerId: pr.viewerId, head: pr.head },
@@ -123,6 +124,7 @@ const methodLabels: Record<MergeMethod, string> = {
 
 // Its title and state, and where it goes.
 function Header({ pr }: { pr: PullRequestDetails }) {
+  const names = useForgeNames();
   const [state, colour] = match(pr)
     .returnType<[string, string]>()
     .with({ state: "open", draft: true }, () => ["Draft", "bg-neutral-500"])
@@ -134,7 +136,10 @@ function Header({ pr }: { pr: PullRequestDetails }) {
     <header className={cn("flex flex-col gap-1.5 border-b pb-3", divider)}>
       <h1 className="text-lg font-semibold">
         <Prose inline>{pr.title}</Prose>{" "}
-        <span className={cn("font-normal", muted)}>#{pr.number}</span>
+        <span className={cn("font-normal", muted)}>
+          {names.sign}
+          {pr.number}
+        </span>
       </h1>
       <div className={cn("flex flex-wrap items-center gap-2 text-xs", muted)}>
         <span className={cn("rounded-full px-2 py-0.5 text-white", colour)}>{state}</span>
@@ -143,7 +148,7 @@ function Header({ pr }: { pr: PullRequestDetails }) {
           <code>{pr.baseRef}</code>
         </span>
         <a href={pr.url} target="_blank" rel="noreferrer" className="underline">
-          Open on GitHub
+          Open on {names.forge}
         </a>
       </div>
     </header>
@@ -161,6 +166,7 @@ function Checks({
   pr: PullRequestDetails;
   change: Change;
 }) {
+  const names = useForgeNames();
   const merge = async () => {
     const i =
       pr.mergeMethods.length > 1
@@ -171,16 +177,16 @@ function Checks({
         : 0;
     const method = pr.mergeMethods[i];
     const ok = await window.coxswain.confirm({
-      message: `${methodLabels[method]} PR #${pr.number}?`,
-      detail: `“${pr.title}” goes into ${pr.baseRef} on GitHub, as of ${pr.head.slice(0, 7)}. Local changes that aren't pushed aren't in it.`,
+      message: `${methodLabels[method]} ${names.pr} ${names.sign}${pr.number}?`,
+      detail: `“${pr.title}” goes into ${pr.baseRef} on ${names.forge}, as of ${pr.head.slice(0, 7)}. Local changes that aren't pushed aren't in it.`,
       action: methodLabels[method],
     });
     if (ok) await change({ kind: "merge", method });
   };
   const ready = async () => {
     const ok = await window.coxswain.confirm({
-      message: `Mark PR #${pr.number} as ready for review?`,
-      detail: "It stops being a draft on GitHub, and its reviewers are told.",
+      message: `Mark ${names.pr} ${names.sign}${pr.number} as ready for review?`,
+      detail: `It stops being a draft on ${names.forge}, and its reviewers are told.`,
       action: "Ready for Review",
     });
     if (ok) await change({ kind: "ready" });
@@ -262,7 +268,7 @@ function Checks({
         <div className={cn("flex items-center gap-2 border-t pt-2 text-xs", divider, muted)}>
           {pr.draft ? (
             <>
-              <span className="flex-1">This PR is a draft.</span>
+              <span className="flex-1">This {names.pr} is a draft.</span>
               <Button onClick={ready}>Ready for Review</Button>
             </>
           ) : (
@@ -276,7 +282,7 @@ function Checks({
                 title={
                   pr.mergeable === "conflicting"
                     ? "Resolve the conflicts with the base branch first"
-                    : "Merge it on GitHub, after asking"
+                    : `Merge it on ${names.forge}, after asking`
                 }
                 onClick={merge}
               >
@@ -291,6 +297,7 @@ function Checks({
 }
 
 function Description({ pr, change }: { pr: PullRequestDetails; change: Change }) {
+  const names = useForgeNames();
   const [editing, setEditing] = useState<string | null>(null);
   const save = async () => {
     if (editing !== null && (await change({ kind: "body", body: editing }))) setEditing(null);
@@ -324,7 +331,7 @@ function Description({ pr, change }: { pr: PullRequestDetails; change: Change })
             <div className="flex justify-end gap-1.5 text-xs">
               <Button onClick={() => setEditing(null)}>Cancel</Button>
               <Button variant="primary" onClick={save}>
-                Save to GitHub
+                Save to {names.forge}
               </Button>
             </div>
           </>
@@ -416,8 +423,9 @@ function Conversation({ pr }: { pr: PullRequestDetails }) {
   );
 }
 
-// A new comment on the PR, at the end of its page; it goes to GitHub when sent.
+// A new comment on the PR, at the end of its page; it goes to the forge when sent.
 function CommentBox({ change }: { change: Change }) {
+  const names = useForgeNames();
   const [body, setBody] = useState("");
   const send = async () => {
     if (body.trim() && (await change({ kind: "comment", body: body.trim() }))) setBody("");
@@ -430,11 +438,11 @@ function CommentBox({ change }: { change: Change }) {
         value={body}
         onChange={(e) => setBody(e.target.value)}
         onSubmit={() => void send()}
-        placeholder="Comment on the PR (⌘Enter to send to GitHub)"
+        placeholder={`Comment on the ${names.pr} (⌘Enter to send to ${names.forge})`}
       />
       <div className="flex justify-end">
         <Button disabled={!body.trim()} onClick={() => void send()}>
-          Comment on GitHub
+          Comment on {names.forge}
         </Button>
       </div>
     </Section>

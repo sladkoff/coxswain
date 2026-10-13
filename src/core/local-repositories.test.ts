@@ -43,7 +43,7 @@ test("a local repository is used in place, its worktrees outside it, without Git
   // A folder inside it adds the repository's top level.
   const project = await addLocalRepository(db, join(repo, "src"));
   assert.deepEqual(
-    [project.path, project.name, project.github, project.where],
+    [project.path, project.name, project.repo, project.where],
     [repo, "app", null, "~/code"],
   );
   assert.equal((await addLocalRepository(db, repo)).id, project.id);
@@ -76,7 +76,11 @@ test("a local repository is used in place, its worktrees outside it, without Git
 
   // An origin on github.com makes it a GitHub project.
   git(repo, "remote", "add", "origin", "git@github.com:acme/app.git");
-  assert.equal((await addLocalRepository(db, repo)).github, "acme/app");
+  const onGitHub = await addLocalRepository(db, repo);
+  assert.deepEqual(
+    [onGitHub.forge, onGitHub.host, onGitHub.repo],
+    ["github", "github.com", "acme/app"],
+  );
 });
 
 test("a new project is a new folder with an empty first commit", async (t) => {
@@ -84,7 +88,7 @@ test("a new project is a new folder with an empty first commit", async (t) => {
   t.after(() => db.destroy());
   const path = join(temp, "projects/fresh");
   const project = await createRepository(db, path);
-  assert.deepEqual([project.path, project.github], [path, null]);
+  assert.deepEqual([project.path, project.forge], [path, null]);
   assert.equal(git(path, "log", "--format=%s"), "Initial commit");
   assert.equal(git(path, "ls-tree", "HEAD"), "");
   await assert.rejects(

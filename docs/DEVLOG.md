@@ -3,6 +3,54 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-10-13 — GitLab as a second forge (ADR 0041)
+
+### What works
+
+- Everything coxswain does with PRs goes through a forge (`core/forge.ts`): GitHub's code moved to
+  `core/forges/github.ts`, and posting, mirroring, edits, deletes, resolves and the PR panel's changes are shared.
+  A project has a `forge`, `host` and `repo` instead of `github`; a local repository's `origin` on github.com still
+  makes it a GitHub project.
+- The UI names the project's forge and its PRs from the forge (`names`): _Post to GitHub_, _PR #12_, _Open Pull
+  Request…_. Problems name the host and the CLI to sign in with.
+- **GitLab** (`core/forges/gitlab.ts`): each host glab is signed in to with a token in its config is a forge host;
+  the token comes from `glab config get token` each time, sent as a bearer (glab's OAuth tokens take nothing else),
+  and a 401 lets glab refresh it once. Settings shows an account per host; _Open a project_ lists each host's
+  repositories; a local repository whose `origin` is on such a host (or its SSH host) is a GitLab project; clones go
+  to `~/coxswain/repos/<host>/<path>/` with glab's git protocol.
+- Merge requests read as PRs: the list, the rail's titles, a branch's MR, its head and merge base (`diff_refs`), and
+  the MR panel: state, description, assignees, reviewers with their state and approvals, labels, the conversation,
+  the head pipeline's jobs as checks and each commit's pipeline as its dot. Diff notes are mirrored as threads on
+  their lines (ranges, removed lines); the rest is the conversation.
+- Posting on GitLab: _Submit Review_ adds draft notes (positions with GitLab's line codes; both line numbers for an
+  unchanged line) and publishes them, with _Request Changes_ as the reviewer state and _Approve_ as an approval; each
+  draft is recorded as `draft:<id>` and found again after publishing (`rebind`), and replies to a thread started in
+  the review are posted once it's published. Single comments, replies, conversation comments, edit, delete,
+  resolve and reopen, description, assign yourself, ready (the draft prefix comes off the title), merge (squash where
+  the project allows it, at the head as read) and _Open Merge Request…_ go through the REST API. Off the diff, the
+  code is quoted: GitLab shows a link to lines as a link.
+- A failed job's _Send to Agent_ sends the end of its trace, without timestamps, colours and section markers.
+- Checked against GitLab 19.4 CE: every read on a real MR, every write on a scratch project's MRs, and coxswain
+  posting a review, a comment at once and a resolve end to end.
+
+### Tech debt
+
+- Paid off: `thread_conclusions` is dropped (the migration to forges locks older releases out anyway).
+- Entries' `github_*` columns are `forge_*`; a comment in the PR's conversation is told by `forge_conversation`, no
+  longer by its URL.
+- `ponytail:` in `forges/gitlab.ts`: a token glab keeps in the system keyring isn't seen (only hosts with a token in
+  glab's config are); the 100 newest pipelines and jobs are read, and the first 100 open MRs listed.
+- A draft note recorded as `draft:<id>` whose review never got submitted (coxswain closed halfway) stays recorded as
+  posted until the user submits a review again, which publishes it and records what it became.
+
+## 2026-10-13 — Searching Open a project in development
+
+### What works
+
+- The search field in _Open a project_ filters the repositories under `pnpm dev` too. StrictMode loaded the first
+  page twice, so every row had a duplicate key and React kept rows the search should have hidden; a repository
+  already listed is now skipped.
+
 ## 2026-10-05 — Comment threads and agent threads; comments posted as written
 
 ### What works
@@ -46,8 +94,6 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 
 - Paid off: Submit Review no longer puts comments in the review's text, where nothing could link to them; they go as
   linked conversation comments. It no longer adds to a review in progress on GitHub without asking.
-- `ponytail:` in `db.ts`: `thread_conclusions` is no longer used; dropped by the next migration that has to lock older
-  releases out anyway.
 - Paid off: conclusions ahead (a model run per changed thread, submitted or not) are gone.
 
 ## 2026-10-05 — Scrolling holds still while the agent answers (#38)

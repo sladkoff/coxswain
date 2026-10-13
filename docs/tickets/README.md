@@ -11,4 +11,4 @@ Each ticket has these sections:
 - **Notes**: anything known so far: the UX question it answers, ADRs, open points.
 
 When a ticket is done, mention it in the [devlog](../DEVLOG.md) and delete it. Numbers are never
-reused, so the next ticket takes the next number after the highest ever used (0004 so far).
+reused, so the next ticket takes the next number after the highest ever used (0009 so far).

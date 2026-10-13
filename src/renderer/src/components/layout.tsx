@@ -1,6 +1,6 @@
 import { type ComponentProps, type ReactNode, useEffect, useRef } from "react";
 import type { GitProblem } from "../../../core/git";
-import type { GitHubProblem } from "../../../core/github";
+import type { ForgeProblem } from "../../../core/forge";
 import { Button } from "./button";
 import { SearchIcon, XIcon } from "./icons";
 import { cn, divider, muted, noDrag, titleBar } from "./styles";
@@ -125,7 +125,7 @@ export function ProblemCard({
   problem,
   onRetry,
 }: {
-  problem: GitHubProblem | GitProblem;
+  problem: ForgeProblem | GitProblem;
   onRetry: () => void;
 }) {
   return (

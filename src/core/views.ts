@@ -13,6 +13,7 @@ import {
   snapshot,
 } from "./git.ts";
 import { readSkill, skillNames, type SkillName } from "./skills.ts";
+import { problemText } from "./forge.ts";
 import { fileSummaries, summarise } from "./summaries.ts";
 
 // ADR 0023, 0026: a view (glossary) is made by the agent pane's session with the tools below. It's pinned to base →
@@ -28,7 +29,7 @@ export type ViewPart =
   | { kind: "diff" | "file"; path: string; muted: boolean };
 export type ViewSection = { title: string; parts: ViewPart[] };
 // worktree: its head was a snapshot of the worktree, so it's stale once the worktree moves on; a view of a commit, a
-// turn or what's on GitHub never is. writing: being written (glossary), a turn that changed it still runs.
+// turn or what's on the forge never is. writing: being written (glossary), a turn that changed it still runs.
 export type View = {
   id: number;
   workspaceId: number;
@@ -583,8 +584,7 @@ export function viewTools(db: Db, workspaceId: number): McpTool[] {
       },
       call: async (v: { title: string; guide: boolean; base?: string; head?: string }) => {
         const at = (await openedBefore(db, workspaceId)) ?? (await openWorktree(db, workspaceId));
-        if (at.status !== "ok")
-          throw new Error("message" in at ? at.message : `GitHub: ${at.status}`);
+        if (at.status !== "ok") throw new Error("message" in at ? at.message : problemText(at));
         const base = v.base ? await resolveCommit(db, workspaceId, v.base) : at.mergeBase;
         // ADR 0028: pinned to the worktree as it is, local changes and all, unless a commit is given.
         const ofWorktree = !v.head || v.head === "worktree";

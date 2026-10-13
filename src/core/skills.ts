@@ -30,7 +30,7 @@ need. You plan the whole order yourself, in one go: the journey with the user an
 articles.`,
   "code-review": `Here a review is a guide with findings, so the skill's two axes become findings on lines. The fixed point is the
 view's base, and the diff is the one start_view gave you. The spec is the PR's title, description and the issues it
-links (\`gh pr view --json title,body,closingIssuesReferences\`), or the commits' messages for a branch without a PR;
+links (\`gh pr view --json title,body,closingIssuesReferences\` on GitHub, \`glab mr view\` on GitLab), or the commits' messages for a branch without a PR;
 it needs no setup or issue-tracker file. The standards are the repository's own documents (AGENTS.md, CLAUDE.md,
 CONTRIBUTING.md, ADRs) plus the smell baseline. Add each finding with add_finding on the lines it's about, starting
 with its axis: "Spec: …" or "Standards: …", and for a smell its name as a judgement call ("Standards, possible Feature

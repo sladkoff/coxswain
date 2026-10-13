@@ -65,13 +65,13 @@ test("a change makes stale what it affects: in its workspace, but for the unscop
   const keys = {
     here: ["openWorktree", 1],
     there: ["openWorktree", 2],
-    titles: ["listPullRequestTitles", "owner", "name", [7]],
+    titles: ["listPullRequestTitles", 3, [7]],
     entries: ["listEntries", 1],
     prompts: ["listPrompts"],
     picks: ["listAgentPicks", 2, "claude"],
   };
   Object.values(keys).forEach(seed);
-  await changed({ workspaceId: 1, what: "github" });
+  await changed({ workspaceId: 1, what: "forge" });
   assert.equal(stale(keys.here), true);
   assert.equal(stale(keys.there), false);
   assert.equal(stale(keys.titles), true);

@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useLocation, useNavigate, useRouter, useSearch } from "@tanstack/react-router";
 import { type UIEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Commit } from "../../core/git";
-import type { PullRequest } from "../../core/github";
+import type { PullRequest } from "../../core/forge";
 import type { NewEntry, ReviewEntry } from "../../core/review";
 import type { AttachedPrompt, Prompt, View, ViewRange } from "../../core/views";
 import type { Workspace } from "../../core/workspaces";
@@ -26,6 +26,7 @@ import { defaultViewId, threadLocation, type CanvasSearch } from "./canvas-state
 import { core, markReviewed as mark, queryClient } from "./queries";
 import { Settings } from "./Settings";
 import { projectLabel, workspaceLabel } from "./format";
+import { ForgeNamesContext, titled } from "./forge";
 import { Setup } from "./Setup";
 import { StatusBar } from "./StatusBar";
 import { usePullRequest } from "./usePullRequest";
@@ -63,6 +64,7 @@ export function App() {
   const setup = useQuery(core("checkSetup"));
   const projects = useQuery(core("listProjects")).data;
   const current = projects?.[0]; // listed most recently opened first
+  const names = current?.names ?? null; // how its forge names itself and its PRs (ADR 0041)
   const selectProject = async (id: number) => {
     await window.coxswain.openProject(id);
     close();
@@ -118,8 +120,8 @@ export function App() {
   // The workspace's entries, reviewed files and agent sessions go with it; its worktree stays on disk.
   const removeWorkspace = async (w: Workspace) => {
     const ok = await window.coxswain.confirm({
-      message: `Remove ${workspaceLabel(w)} from the sidebar?`,
-      detail: `Its comments, reviewed files and agent sessions are deleted. The worktree stays on disk, and adding the ${w.prNumber !== null ? "PR" : "branch"} again reuses it.`,
+      message: `Remove ${workspaceLabel(w, names)} from the sidebar?`,
+      detail: `Its comments, reviewed files and agent sessions are deleted. The worktree stays on disk, and adding the ${w.prNumber !== null ? (names?.pr ?? "PR") : "branch"} again reuses it.`,
       action: "Remove",
     });
     if (!ok) return;
@@ -213,7 +215,7 @@ export function App() {
     newest.current = { workspaceId: currentWorkspace.id, id: latest?.id ?? 0 };
   }, [currentWorkspace?.id, views, pr.commits, pr.snapshot, pr.snapshotReady]);
   const canvasView = (viewId != null && views?.find((v) => v.id === viewId)) || null;
-  // Without either, the diff: all of it, or one of its layers (glossary: scope), which add up to it: what's on GitHub,
+  // Without either, the diff: all of it, or one of its layers (glossary: scope), which add up to it: what's on the forge,
   // the commits not pushed yet, and what isn't committed (ADR 0028). Uncommitted is the live worktree, like all of it;
   // the rest are pinned ranges.
   const scope = s.scope ?? "all";
@@ -241,10 +243,10 @@ export function App() {
     }))
     .with({ scope: "pushed", commits: P.nonNullable.select() }, (c) => ({
       what:
-        currentWorkspace?.prNumber != null
-          ? "the PR's changes on GitHub"
-          : current?.github
-            ? "the changes on GitHub"
+        currentWorkspace?.prNumber != null && names
+          ? `the ${names.pr}'s changes on ${names.forge}`
+          : names
+            ? `the changes on ${names.forge}`
             : "the changes pushed",
       base: c.mergeBase,
       head: c.head,
@@ -264,7 +266,7 @@ export function App() {
   const viewRange: ViewRange | null =
     shownRange?.what != null ? { ...shownRange, what: shownRange.what } : null;
 
-  // How much each layer has, for the range menu: commits on GitHub and not pushed, files not committed.
+  // How much each layer has, for the range menu: commits on the forge and not pushed, files not committed.
   const allCommits = useQuery({
     ...core("listCommits", currentWorkspace?.id ?? 0, pr.commits?.mergeBase ?? ""),
     enabled: !!currentWorkspace && !!pr.commits,
@@ -565,16 +567,21 @@ export function App() {
       file: undefined,
       at: undefined,
     });
-  // Push and Open Pull Request… (ADR 0028) go to GitHub, so they ask first. What went wrong shows in the Commits pane.
+  // Push and Open Pull Request… (ADR 0028) go to the forge, so they ask first. What went wrong shows in the Commits
+  // pane.
   const [gitProblem, setGitProblem] = useState<string | null>(null);
   const pushed = async (w: Workspace, result: { status: string; message?: string }) => {
-    setGitProblem(result.status === "ok" ? null : (result.message ?? `GitHub: ${result.status}`));
+    setGitProblem(
+      result.status === "ok"
+        ? null
+        : (result.message ?? `${names?.forge ?? "origin"}: ${result.status}`),
+    );
   };
-  // ADR 0040: a project not on GitHub pushes to its origin, whatever that is.
-  const pushedTo = current?.github ? "GitHub" : "origin";
+  // ADR 0040: a project on no forge pushes to its origin, whatever that is.
+  const pushedTo = names?.forge ?? "origin";
   const push = async (w: Workspace) => {
     const ok = await window.coxswain.confirm({
-      message: `Push ${w.branch ? `“${w.branch}”` : "the PR's branch"} to ${pushedTo}?`,
+      message: `Push ${w.branch ? `“${w.branch}”` : `the ${names?.pr ?? "PR"}'s branch`} to ${pushedTo}?`,
       detail: `Its commits that aren't pushed yet go to ${pushedTo}. Uncommitted changes stay here.`,
       action: "Push",
     });
@@ -582,10 +589,9 @@ export function App() {
   };
   const openPullRequest = async (w: Workspace) => {
     const ok = await window.coxswain.confirm({
-      message: `Open a pull request for “${w.branch}” into “${w.baseBranch}”?`,
-      detail:
-        "Pushes the branch to GitHub and opens a draft pull request, then shows it in your browser to finish its title and description. Uncommitted changes aren't in it.",
-      action: "Open Pull Request",
+      message: `Open a ${names?.request} for “${w.branch}” into “${w.baseBranch}”?`,
+      detail: `Pushes the branch to ${names?.forge} and opens a draft ${names?.request}, then shows it in your browser to finish its title and description. Uncommitted changes aren't in it.`,
+      action: `Open ${titled(names?.request ?? "pull request")}`,
     });
     if (ok) await pushed(w, await window.coxswain.openPullRequest(w.id));
   };
@@ -699,7 +705,7 @@ export function App() {
   const actions: Action[] = [
     {
       id: "show-pull-request",
-      title: "Show Pull Request",
+      title: `Show ${titled(names?.request ?? "pull request")}`,
       enabled: onMain && !!pr.details,
       run: () => void show({ pr: true }),
     },
@@ -795,9 +801,9 @@ export function App() {
         [
           "pushed",
           currentWorkspace?.prNumber !== null
-            ? "Show Only the PR's Changes"
-            : current?.github
-              ? "Show Only What's on GitHub"
+            ? `Show Only the ${names?.pr ?? "PR"}'s Changes`
+            : names
+              ? `Show Only What's on ${names.forge}`
               : "Show Only What's Pushed",
         ],
         ["unpushed", "Show Only the Commits Not Pushed"],
@@ -812,13 +818,13 @@ export function App() {
     {
       id: "push",
       title: "Push",
-      enabled: ready && (currentWorkspace.prNumber !== null || (!current?.github && pr.remote)),
+      enabled: ready && (currentWorkspace.prNumber !== null || (!names && pr.remote)),
       run: () => void push(currentWorkspace!),
     },
     {
       id: "open-pull-request",
-      title: "Open Pull Request…",
-      enabled: ready && currentWorkspace.prNumber === null && !!current?.github,
+      title: `Open ${titled(names?.request ?? "pull request")}…`,
+      enabled: ready && currentWorkspace.prNumber === null && !!names,
       run: () => void openPullRequest(currentWorkspace!),
     },
     ...prompts.map((p) =>
@@ -844,7 +850,7 @@ export function App() {
     },
     ...workspaces.map((w) => ({
       id: `workspace:${w.id}`,
-      title: `Open Workspace: ${workspaceLabel(w)}`,
+      title: `Open Workspace: ${workspaceLabel(w, names)}`,
       enabled: w.id !== currentWorkspace?.id,
       run: () => void selectWorkspace(w.id),
     })),
@@ -941,362 +947,371 @@ export function App() {
 
   // Empty shell of the main screen from docs/UX.md: L1 project and workspaces, the agent pane, the canvas.
   return (
-    // Side panes keep their dragged width but shrink with the window before the Viewer goes below viewerMin.
-    <div className="flex h-full select-none overflow-hidden text-sm">
-      {dialog}
-      {sidebarOpen && (
-        <WorkspaceRail
-          project={current}
-          cloning={cloning}
-          workspaces={workspaces}
-          current={currentWorkspace}
-          onProjects={async () => {
-            const picked = await window.coxswain.showProjectsMenu(
-              projects.map((p) => ({ id: p.id, label: projectLabel(p) })),
-            );
-            if (picked === null) setScreen("projects");
-            else if (picked !== current.id) await selectProject(picked);
-          }}
-          onSelect={(w) => void selectWorkspace(w.id)}
-          onRemove={removeWorkspace}
-          onNew={() => setScreen("new-workspace")}
-          onHide={() => setSidebarOpen(false)}
-        />
-      )}
-
-      {palette !== null && (
-        <CommandPalette
-          workspaceId={currentWorkspace?.id}
-          actions={actions}
-          initialQuery={palette}
-          onOpen={openQuickly}
-          onClose={() => setPalette(null)}
-        />
-      )}
-      {currentWorkspace && (
-        <>
-          {/* The agent pane, always shown for a workspace. */}
-          <div
-            onPointerDownCapture={() => activateFindPane("chat")}
-            onFocusCapture={() => activateFindPane("chat")}
-            style={{ width: agentsWidth }}
-            className={cn("flex min-w-60 flex-col border-r", divider)}
-          >
-            <Agents
-              key={currentWorkspace.id}
-              workspace={currentWorkspace}
-              onViewThread={viewThread}
-              composerPrompt={
-                composerPrompt?.workspaceId === currentWorkspace.id ? composerPrompt : undefined
-              }
-              onShowSidebar={sidebarOpen ? undefined : () => setSidebarOpen(true)}
-            />
-          </div>
-          <Splitter min={240} max={800} onResize={setAgentsWidth} />
-        </>
-      )}
-
-      {/* The canvas: what the agent and the human look at together. For now, the workspace's file diffs. */}
-      <div
-        style={{ minWidth: viewerMin }}
-        className="flex min-w-0 flex-1 flex-col"
-        onPointerDownCapture={() => activateFindPane("canvas")}
-        onFocusCapture={() => activateFindPane("canvas")}
-      >
-        {!currentWorkspace ? (
-          <>
-            <div className={cn(titleBar, "border-b", divider)} />
-            <Centered>No workspace. Start one with +</Centered>
-          </>
-        ) : (
-          <div className="flex min-h-0 flex-1">
-            {paneOpen && (
-              <>
-                <div
-                  style={{ width: leftWidth }}
-                  className={cn("flex min-w-60 flex-col border-r", divider)}
-                >
-                  <PaneBar
-                    tab={paneTab}
-                    files={diffPr.changed?.length}
-                    ready={!!pr.commits}
-                    onTab={pickPaneTab}
-                    onHide={() => setPaneOpen(false)}
-                  />
-                  {paneTab === "turns" ? (
-                    <Turns workspaceId={currentWorkspace.id} current={commit} onPick={pickCommit} />
-                  ) : paneTab === "commits" ? (
-                    pr.commits && (
-                      <Commits
-                        workspaceId={currentWorkspace.id}
-                        mergeBase={pr.commits.mergeBase}
-                        head={pr.commits.head}
-                        canOpenPr={currentWorkspace.prNumber === null && !!current.github}
-                        remote={pr.remote}
-                        problem={gitProblem}
-                        current={commit}
-                        onPick={pickCommit}
-                        uncommitted={uncommitted?.status === "ok" ? uncommitted.size : null}
-                        uncommittedOn={!commit && !canvasView && scope === "uncommitted"}
-                        onPickUncommitted={() => pickScope("uncommitted")}
-                        onPush={() => void push(currentWorkspace)}
-                        onOpenPullRequest={() => void openPullRequest(currentWorkspace)}
-                        checks={pr.details?.commitChecks ?? {}}
-                      />
-                    )
-                  ) : (
-                    <Navigator
-                      key={currentWorkspace.id}
-                      workspace={currentWorkspace}
-                      pr={diffPr}
-                      view={view}
-                      layout={viewSettings.layout}
-                      reviewed={reviewed}
-                      showReviewed={viewSettings.showReviewed}
-                      entries={entries}
-                      local={range ? undefined : (pr.local ?? undefined)}
-                      selected={opened?.kind === "file" ? opened.path : undefined}
-                      onOpen={open}
-                    />
-                  )}
-                </div>
-                <Splitter min={240} max={720} onResize={setLeftWidth} />
-              </>
-            )}
-            <div className="flex min-w-0 flex-1 flex-col">
-              <CanvasBar
-                workspaceId={currentWorkspace.id}
-                paneOpen={paneOpen}
-                onShowPane={() => setPaneOpen(true)}
-                ready={!!pr.commits}
-                commit={commit}
-                view={canvasView}
-                views={views ?? []}
-                snapshot={pr.snapshot}
-                scope={scope}
-                hasPr={currentWorkspace.prNumber !== null}
-                onGitHub={!!current.github}
-                pr={pr.details}
-                onPr={!!s.pr}
-                onShowPr={() => void show({ pr: true })}
-                onRangeMenu={async () => {
-                  const picked = await window.coxswain.showRangeMenu(
-                    commit ? null : scope,
-                    currentWorkspace.prNumber !== null,
-                    layers,
-                  );
-                  if (picked === "commits" || picked === "turns") showPane(picked);
-                  else pickScope(picked);
-                }}
-                onClearCommit={() => pickCommit(null)}
-                onShowView={showView}
-                onRemoveView={removeView}
-                onNewView={newView}
-                onOpenQuickly={() => run("open-quickly")}
-                canBack={canBack}
-                canForward={canForward}
-                onBack={() => run("back")}
-                onForward={() => run("forward")}
-                onSettings={() => setScreen("settings")}
-                onViewOptions={async () =>
-                  setViewSettings(await window.coxswain.showViewMenu(viewSettings))
-                }
-              />
-              <FindBar pane="canvas" />
-              {s.pr ? (
-                pr.details ? (
-                  <PullRequestPanel
-                    key={currentWorkspace.id}
-                    workspaceId={currentWorkspace.id}
-                    pr={pr.details}
-                  />
-                ) : (
-                  <Centered>Loading the pull request…</Centered>
-                )
-              ) : (
-                <div className="flex min-h-0 flex-1">
-                  {sections && !showFile && (
-                    <ViewToc
-                      sections={sections}
-                      reviewed={reviewed}
-                      reviewedFiles={reviewedFiles}
-                      entries={entries}
-                      current={currentSection}
-                      writing={!!canvasView?.writing}
-                      onPick={pickSection}
-                      onReviewedChange={(i, on) => markSection(sections[i].files, on)}
-                    />
-                  )}
-                  <div
-                    style={{ minWidth: viewerMin }}
-                    className="flex min-w-0 flex-1 flex-col"
-                    ref={canvas}
-                    onScrollCapture={onCanvasScroll}
-                  >
-                    {!canvasReady ? (
-                      <Centered>
-                        {pr.commits || pr.problem ? "Loading…" : "Preparing the workspace…"}
-                      </Centered>
-                    ) : (
-                      <>
-                        {showFile && (
-                          // One Viewer per file: a reused one would scroll to a line in the file it drew before.
-                          <Viewer
-                            key={`${currentWorkspace.id}:${openedPath(opened)}:${s.fileAt ?? "live"}`}
-                            opened={opened}
-                            reviewed={false}
-                            {...viewerProps(currentWorkspace, pr.commits!.mergeBase, s.fileAt)}
-                          />
-                        )}
-                        {canvasView?.writing && !showFile && <WritingViewNotice />}
-                        {canvasView?.worktree &&
-                          pr.snapshot &&
-                          canvasView.head !== pr.snapshot &&
-                          !showFile && (
-                            <StaleViewNotice
-                              onUpdate={async () =>
-                                setComposerPrompt({
-                                  prompt: await window.coxswain.updateViewPrompt(canvasView),
-                                  workspaceId: currentWorkspace.id,
-                                })
-                              }
-                            />
-                          )}
-                        {/* Only the lines on screen are drawn. Hidden, not unmounted, under a whole file: it keeps its
-                      scroll and read files for Back. ponytail: every file is still read from disk up front. */}
-                        <Virtualizer
-                          key={`${currentWorkspace.id}:${viewId ?? "diff"}:${range?.base ?? pr.commits?.mergeBase}:${range?.head ?? "live"}`}
-                          className={cn("min-h-0 flex-1 overflow-auto", showFile && "hidden")}
-                        >
-                          {canvasView &&
-                          !canvasView.sections.length &&
-                          (!canvasView.guide || !diffDiffs.length) ? (
-                            <div className={cn("p-4 text-xs", muted)}>
-                              Nothing in this view yet.
-                            </div>
-                          ) : (
-                            !canvasView &&
-                            canvasFiles.every((file) => !isShown(file)) && (
-                              <div className={cn("p-4 text-xs", muted)}>
-                                {canvasFiles.length ? (
-                                  <>
-                                    All {canvasFiles.length} files reviewed.{" "}
-                                    <Button
-                                      variant="link"
-                                      onClick={() =>
-                                        setViewSettings((s) => ({ ...s, showReviewed: true }))
-                                      }
-                                    >
-                                      Show them
-                                    </Button>
-                                  </>
-                                ) : (
-                                  "No changes"
-                                )}
-                              </div>
-                            )
-                          )}
-                          {(
-                            sections ?? [
-                              {
-                                title: undefined,
-                                muted: false,
-                                files: diffDiffs,
-                                parts: shownDiffs.map((d) => ({ kind: "code", d, muted: false })),
-                              },
-                            ]
-                          ).map((x, i) => (
-                            <section
-                              key={i}
-                              id={`view-section-${i}`}
-                              className={cn(
-                                x.muted && "opacity-60",
-                                // A view's sections: a line between them, room at the end.
-                                x.title !== undefined && "border-t pb-4 first:border-t-0",
-                                divider,
-                              )}
-                            >
-                              {x.title !== undefined && (
-                                <ViewSectionHeader
-                                  title={x.title}
-                                  files={x.files.length}
-                                  reviewed={x.files.filter(isReviewed).length}
-                                  writing={!!canvasView?.writing}
-                                  onReviewedChange={(on) => markSection(x.files, on)}
-                                />
-                              )}
-                              <ProseThreads
-                                workspaceId={currentWorkspace.id}
-                                canPost={currentWorkspace.prNumber !== null}
-                                viewId={canvasView?.id ?? 0}
-                                section={i}
-                                entries={entries}
-                                turns={turns}
-                                onAsk={ask}
-                                onAnswerPermission={answerPermission}
-                              >
-                                {(x.parts as SectionPart[]).map((p, j) =>
-                                  p.kind === "prose" ? (
-                                    <ViewProse
-                                      key={j}
-                                      part={j}
-                                      after={(x.parts as SectionPart[])[j - 1]?.kind === "code"}
-                                    >
-                                      {p.text}
-                                    </ViewProse>
-                                  ) : (
-                                    <div
-                                      key={openedPath(p.d)}
-                                      id={`diff:${openedPath(p.d)}`}
-                                      className={cn(
-                                        p.muted && !x.muted && "opacity-60",
-                                        x.title !== undefined && viewDiff,
-                                      )}
-                                    >
-                                      <Viewer
-                                        stacked
-                                        opened={p.d}
-                                        reviewed={isReviewed(p.d)}
-                                        collapsed={!isShown(p.d)}
-                                        {...viewerProps(
-                                          currentWorkspace,
-                                          range?.base ?? pr.commits!.mergeBase,
-                                          range?.head,
-                                        )}
-                                      />
-                                    </div>
-                                  ),
-                                )}
-                              </ProseThreads>
-                            </section>
-                          ))}
-                        </Virtualizer>
-                      </>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-        {currentWorkspace && diffPr.changed && (
-          <StatusBar
-            workspaceId={currentWorkspace.id}
-            entries={entries}
-            files={
-              sections
-                ? canvasFiles.map((d) => (d.kind === "diff" ? d.file : { path: d.path }))
-                : diffPr.changed
-            }
-            reviewed={sections ? canvasFiles.filter(isReviewed).map(openedPath) : reviewed}
-            turns={turns}
-            onViewThread={viewThread}
-            viewTitle={canvasView?.title}
-            pr={pr.details}
+    <ForgeNamesContext.Provider value={current.names}>
+      {/* Side panes keep their dragged width but shrink with the window before the Viewer goes below viewerMin. */}
+      <div className="flex h-full select-none overflow-hidden text-sm">
+        {dialog}
+        {sidebarOpen && (
+          <WorkspaceRail
+            project={current}
+            cloning={cloning}
+            workspaces={workspaces}
+            current={currentWorkspace}
+            onProjects={async () => {
+              const picked = await window.coxswain.showProjectsMenu(
+                projects.map((p) => ({ id: p.id, label: projectLabel(p) })),
+              );
+              if (picked === null) setScreen("projects");
+              else if (picked !== current.id) await selectProject(picked);
+            }}
+            onSelect={(w) => void selectWorkspace(w.id)}
+            onRemove={removeWorkspace}
+            onNew={() => setScreen("new-workspace")}
+            onHide={() => setSidebarOpen(false)}
           />
         )}
+
+        {palette !== null && (
+          <CommandPalette
+            workspaceId={currentWorkspace?.id}
+            actions={actions}
+            initialQuery={palette}
+            onOpen={openQuickly}
+            onClose={() => setPalette(null)}
+          />
+        )}
+        {currentWorkspace && (
+          <>
+            {/* The agent pane, always shown for a workspace. */}
+            <div
+              onPointerDownCapture={() => activateFindPane("chat")}
+              onFocusCapture={() => activateFindPane("chat")}
+              style={{ width: agentsWidth }}
+              className={cn("flex min-w-60 flex-col border-r", divider)}
+            >
+              <Agents
+                key={currentWorkspace.id}
+                workspace={currentWorkspace}
+                onViewThread={viewThread}
+                composerPrompt={
+                  composerPrompt?.workspaceId === currentWorkspace.id ? composerPrompt : undefined
+                }
+                onShowSidebar={sidebarOpen ? undefined : () => setSidebarOpen(true)}
+              />
+            </div>
+            <Splitter min={240} max={800} onResize={setAgentsWidth} />
+          </>
+        )}
+
+        {/* The canvas: what the agent and the human look at together. For now, the workspace's file diffs. */}
+        <div
+          style={{ minWidth: viewerMin }}
+          className="flex min-w-0 flex-1 flex-col"
+          onPointerDownCapture={() => activateFindPane("canvas")}
+          onFocusCapture={() => activateFindPane("canvas")}
+        >
+          {!currentWorkspace ? (
+            <>
+              <div className={cn(titleBar, "border-b", divider)} />
+              <Centered>No workspace. Start one with +</Centered>
+            </>
+          ) : (
+            <div className="flex min-h-0 flex-1">
+              {paneOpen && (
+                <>
+                  <div
+                    style={{ width: leftWidth }}
+                    className={cn("flex min-w-60 flex-col border-r", divider)}
+                  >
+                    <PaneBar
+                      tab={paneTab}
+                      files={diffPr.changed?.length}
+                      ready={!!pr.commits}
+                      onTab={pickPaneTab}
+                      onHide={() => setPaneOpen(false)}
+                    />
+                    {paneTab === "turns" ? (
+                      <Turns
+                        workspaceId={currentWorkspace.id}
+                        current={commit}
+                        onPick={pickCommit}
+                      />
+                    ) : paneTab === "commits" ? (
+                      pr.commits && (
+                        <Commits
+                          workspaceId={currentWorkspace.id}
+                          mergeBase={pr.commits.mergeBase}
+                          head={pr.commits.head}
+                          canOpenPr={currentWorkspace.prNumber === null && !!names}
+                          remote={pr.remote}
+                          problem={gitProblem}
+                          current={commit}
+                          onPick={pickCommit}
+                          uncommitted={uncommitted?.status === "ok" ? uncommitted.size : null}
+                          uncommittedOn={!commit && !canvasView && scope === "uncommitted"}
+                          onPickUncommitted={() => pickScope("uncommitted")}
+                          onPush={() => void push(currentWorkspace)}
+                          onOpenPullRequest={() => void openPullRequest(currentWorkspace)}
+                          checks={pr.details?.commitChecks ?? {}}
+                        />
+                      )
+                    ) : (
+                      <Navigator
+                        key={currentWorkspace.id}
+                        workspace={currentWorkspace}
+                        pr={diffPr}
+                        view={view}
+                        layout={viewSettings.layout}
+                        reviewed={reviewed}
+                        showReviewed={viewSettings.showReviewed}
+                        entries={entries}
+                        local={range ? undefined : (pr.local ?? undefined)}
+                        selected={opened?.kind === "file" ? opened.path : undefined}
+                        onOpen={open}
+                      />
+                    )}
+                  </div>
+                  <Splitter min={240} max={720} onResize={setLeftWidth} />
+                </>
+              )}
+              <div className="flex min-w-0 flex-1 flex-col">
+                <CanvasBar
+                  workspaceId={currentWorkspace.id}
+                  paneOpen={paneOpen}
+                  onShowPane={() => setPaneOpen(true)}
+                  ready={!!pr.commits}
+                  commit={commit}
+                  view={canvasView}
+                  views={views ?? []}
+                  snapshot={pr.snapshot}
+                  scope={scope}
+                  hasPr={currentWorkspace.prNumber !== null}
+                  pr={pr.details}
+                  onPr={!!s.pr}
+                  onShowPr={() => void show({ pr: true })}
+                  onRangeMenu={async () => {
+                    const picked = await window.coxswain.showRangeMenu(
+                      commit ? null : scope,
+                      currentWorkspace.prNumber !== null
+                        ? `In the ${names?.pr ?? "PR"}`
+                        : names
+                          ? `On ${names.forge}`
+                          : "Pushed",
+                      layers,
+                    );
+                    if (picked === "commits" || picked === "turns") showPane(picked);
+                    else pickScope(picked);
+                  }}
+                  onClearCommit={() => pickCommit(null)}
+                  onShowView={showView}
+                  onRemoveView={removeView}
+                  onNewView={newView}
+                  onOpenQuickly={() => run("open-quickly")}
+                  canBack={canBack}
+                  canForward={canForward}
+                  onBack={() => run("back")}
+                  onForward={() => run("forward")}
+                  onSettings={() => setScreen("settings")}
+                  onViewOptions={async () =>
+                    setViewSettings(await window.coxswain.showViewMenu(viewSettings))
+                  }
+                />
+                <FindBar pane="canvas" />
+                {s.pr ? (
+                  pr.details ? (
+                    <PullRequestPanel
+                      key={currentWorkspace.id}
+                      workspaceId={currentWorkspace.id}
+                      pr={pr.details}
+                    />
+                  ) : (
+                    <Centered>Loading the {names?.request ?? "pull request"}…</Centered>
+                  )
+                ) : (
+                  <div className="flex min-h-0 flex-1">
+                    {sections && !showFile && (
+                      <ViewToc
+                        sections={sections}
+                        reviewed={reviewed}
+                        reviewedFiles={reviewedFiles}
+                        entries={entries}
+                        current={currentSection}
+                        writing={!!canvasView?.writing}
+                        onPick={pickSection}
+                        onReviewedChange={(i, on) => markSection(sections[i].files, on)}
+                      />
+                    )}
+                    <div
+                      style={{ minWidth: viewerMin }}
+                      className="flex min-w-0 flex-1 flex-col"
+                      ref={canvas}
+                      onScrollCapture={onCanvasScroll}
+                    >
+                      {!canvasReady ? (
+                        <Centered>
+                          {pr.commits || pr.problem ? "Loading…" : "Preparing the workspace…"}
+                        </Centered>
+                      ) : (
+                        <>
+                          {showFile && (
+                            // One Viewer per file: a reused one would scroll to a line in the file it drew before.
+                            <Viewer
+                              key={`${currentWorkspace.id}:${openedPath(opened)}:${s.fileAt ?? "live"}`}
+                              opened={opened}
+                              reviewed={false}
+                              {...viewerProps(currentWorkspace, pr.commits!.mergeBase, s.fileAt)}
+                            />
+                          )}
+                          {canvasView?.writing && !showFile && <WritingViewNotice />}
+                          {canvasView?.worktree &&
+                            pr.snapshot &&
+                            canvasView.head !== pr.snapshot &&
+                            !showFile && (
+                              <StaleViewNotice
+                                onUpdate={async () =>
+                                  setComposerPrompt({
+                                    prompt: await window.coxswain.updateViewPrompt(canvasView),
+                                    workspaceId: currentWorkspace.id,
+                                  })
+                                }
+                              />
+                            )}
+                          {/* Only the lines on screen are drawn. Hidden, not unmounted, under a whole file: it keeps its
+                      scroll and read files for Back. ponytail: every file is still read from disk up front. */}
+                          <Virtualizer
+                            key={`${currentWorkspace.id}:${viewId ?? "diff"}:${range?.base ?? pr.commits?.mergeBase}:${range?.head ?? "live"}`}
+                            className={cn("min-h-0 flex-1 overflow-auto", showFile && "hidden")}
+                          >
+                            {canvasView &&
+                            !canvasView.sections.length &&
+                            (!canvasView.guide || !diffDiffs.length) ? (
+                              <div className={cn("p-4 text-xs", muted)}>
+                                Nothing in this view yet.
+                              </div>
+                            ) : (
+                              !canvasView &&
+                              canvasFiles.every((file) => !isShown(file)) && (
+                                <div className={cn("p-4 text-xs", muted)}>
+                                  {canvasFiles.length ? (
+                                    <>
+                                      All {canvasFiles.length} files reviewed.{" "}
+                                      <Button
+                                        variant="link"
+                                        onClick={() =>
+                                          setViewSettings((s) => ({ ...s, showReviewed: true }))
+                                        }
+                                      >
+                                        Show them
+                                      </Button>
+                                    </>
+                                  ) : (
+                                    "No changes"
+                                  )}
+                                </div>
+                              )
+                            )}
+                            {(
+                              sections ?? [
+                                {
+                                  title: undefined,
+                                  muted: false,
+                                  files: diffDiffs,
+                                  parts: shownDiffs.map((d) => ({ kind: "code", d, muted: false })),
+                                },
+                              ]
+                            ).map((x, i) => (
+                              <section
+                                key={i}
+                                id={`view-section-${i}`}
+                                className={cn(
+                                  x.muted && "opacity-60",
+                                  // A view's sections: a line between them, room at the end.
+                                  x.title !== undefined && "border-t pb-4 first:border-t-0",
+                                  divider,
+                                )}
+                              >
+                                {x.title !== undefined && (
+                                  <ViewSectionHeader
+                                    title={x.title}
+                                    files={x.files.length}
+                                    reviewed={x.files.filter(isReviewed).length}
+                                    writing={!!canvasView?.writing}
+                                    onReviewedChange={(on) => markSection(x.files, on)}
+                                  />
+                                )}
+                                <ProseThreads
+                                  workspaceId={currentWorkspace.id}
+                                  canPost={currentWorkspace.prNumber !== null}
+                                  viewId={canvasView?.id ?? 0}
+                                  section={i}
+                                  entries={entries}
+                                  turns={turns}
+                                  onAsk={ask}
+                                  onAnswerPermission={answerPermission}
+                                >
+                                  {(x.parts as SectionPart[]).map((p, j) =>
+                                    p.kind === "prose" ? (
+                                      <ViewProse
+                                        key={j}
+                                        part={j}
+                                        after={(x.parts as SectionPart[])[j - 1]?.kind === "code"}
+                                      >
+                                        {p.text}
+                                      </ViewProse>
+                                    ) : (
+                                      <div
+                                        key={openedPath(p.d)}
+                                        id={`diff:${openedPath(p.d)}`}
+                                        className={cn(
+                                          p.muted && !x.muted && "opacity-60",
+                                          x.title !== undefined && viewDiff,
+                                        )}
+                                      >
+                                        <Viewer
+                                          stacked
+                                          opened={p.d}
+                                          reviewed={isReviewed(p.d)}
+                                          collapsed={!isShown(p.d)}
+                                          {...viewerProps(
+                                            currentWorkspace,
+                                            range?.base ?? pr.commits!.mergeBase,
+                                            range?.head,
+                                          )}
+                                        />
+                                      </div>
+                                    ),
+                                  )}
+                                </ProseThreads>
+                              </section>
+                            ))}
+                          </Virtualizer>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          {currentWorkspace && diffPr.changed && (
+            <StatusBar
+              workspaceId={currentWorkspace.id}
+              entries={entries}
+              files={
+                sections
+                  ? canvasFiles.map((d) => (d.kind === "diff" ? d.file : { path: d.path }))
+                  : diffPr.changed
+              }
+              reviewed={sections ? canvasFiles.filter(isReviewed).map(openedPath) : reviewed}
+              turns={turns}
+              onViewThread={viewThread}
+              viewTitle={canvasView?.title}
+              pr={pr.details}
+            />
+          )}
+        </div>
       </div>
-    </div>
+    </ForgeNamesContext.Provider>
   );
 }
 

@@ -68,7 +68,7 @@ import {
 } from "../core/git";
 import { type CodeAt, findDefinitions, findUsages, stopLanguageServers } from "../core/lsp";
 import {
-  checkGitHub,
+  checkForge,
   checkedPullRequest,
   checkedWorktree,
   watchWorkspace,
@@ -92,21 +92,23 @@ import {
 } from "../core/views";
 import {
   type Check,
-  getCurrentUser,
-  listPullRequestTitles,
-  listPullRequests,
-  listRepos,
-} from "../core/github";
+  forgeHosts,
+  forgeOf,
+  type ForgeKind,
+  type ForgeRepo,
+  type PullRequestChange,
+  type PullRequestRef,
+} from "../core/forge";
 import { addCommentAt, draftReview, summarizeThread } from "../core/review-draft";
 import {
   changePullRequest,
+  listPullRequests,
+  listPullRequestTitles,
   postComment,
   postReview,
-  type PullRequestChange,
-  type PullRequestRef,
   type ReviewPost,
 } from "../core/pull-requests";
-import { addGitHubProject, listProjects, openProject } from "../core/projects";
+import { addForgeProject, listProjects, openProject } from "../core/projects";
 import {
   addNote,
   askQuestion,
@@ -186,7 +188,7 @@ function createWindow() {
     webPreferences: { preload: join(__dirname, "../preload/index.js") },
   });
   win.once("ready-to-show", () => win.show());
-  // ADR 0030: coming back to the window rereads the worktree and checks GitHub.
+  // ADR 0030: coming back to the window rereads the worktree and checks the forge.
   win.on("focus", windowFocused);
   // Back and Forward before the page sees the key: the file tree takes ⌥⌘← and ⌥⌘→ for itself, so the menu's
   // accelerators never fire while it has focus.
@@ -398,7 +400,7 @@ app.whenReady().then(() => {
   ipcMain.handle("setup:check", () => checkSetup());
   ipcMain.handle("projects:list", () => listProjects(db));
   ipcMain.handle("projects:open", (_, projectId: number) => openProject(db, projectId));
-  ipcMain.handle("projects:add-github", (_, fullName: string) => addGitHubProject(db, fullName));
+  ipcMain.handle("projects:add-forge", (_, repo: ForgeRepo) => addForgeProject(db, repo));
   // ADR 0040: a local repository or a new project, from a native dialog; null if it's cancelled. A folder git won't
   // take rejects with why.
   ipcMain.handle("projects:add-local", async (e) => {
@@ -420,13 +422,16 @@ app.whenReady().then(() => {
     });
     return picked.canceled || !picked.filePath ? null : createRepository(db, picked.filePath);
   });
-  ipcMain.handle("github:current-user", () => getCurrentUser());
-  ipcMain.handle("github:list-repos", (_, page: number) => listRepos(page));
-  ipcMain.handle("github:list-pulls", (_, owner: string, name: string) =>
-    listPullRequests(owner, name),
+  ipcMain.handle("forge:hosts", () => forgeHosts());
+  ipcMain.handle("forge:current-user", (_, forge: ForgeKind, host: string) =>
+    forgeOf(forge).currentUser(host),
   );
-  ipcMain.handle("github:pull-titles", (_, owner: string, name: string, numbers: number[]) =>
-    listPullRequestTitles(owner, name, numbers),
+  ipcMain.handle("forge:list-repos", (_, forge: ForgeKind, host: string, page: number) =>
+    forgeOf(forge).listRepos(host, page),
+  );
+  ipcMain.handle("forge:list-pulls", (_, projectId: number) => listPullRequests(db, projectId));
+  ipcMain.handle("forge:pull-titles", (_, projectId: number, numbers: number[]) =>
+    listPullRequestTitles(db, projectId, numbers),
   );
   ipcMain.handle("workspaces:list", (_, projectId: number) => listWorkspaces(db, projectId));
   ipcMain.handle("workspaces:open", (_, workspaceId: number) => openWorkspace(db, workspaceId));
@@ -443,9 +448,9 @@ app.whenReady().then(() => {
     await removeWorkspace(db, workspaceId);
   });
   ipcMain.handle("git:clone", (_, projectId: number) => cloneProject(db, projectId));
-  // ADR 0030: what the last check of GitHub found, or the first one's; the core checks again on its own.
+  // ADR 0030: what the last check of the forge found, or the first one's; the core checks again on its own.
   ipcMain.handle("git:open-worktree", (_, workspaceId: number) => checkedWorktree(db, workspaceId));
-  // The workspace on screen is watched: its HEAD, what's pushed of it, and GitHub.
+  // The workspace on screen is watched: its HEAD, what's pushed of it, and its forge.
   ipcMain.handle("workspaces:watch", (_, workspaceId: number | null) =>
     watchWorkspace(db, workspaceId),
   );
@@ -455,16 +460,16 @@ app.whenReady().then(() => {
   ipcMain.handle("git:branches", (_, projectId: number) => listBranches(db, projectId));
   ipcMain.handle("git:snapshot", (_, workspaceId: number) => snapshot(db, workspaceId));
   ipcMain.handle("git:uncommitted", (_, workspaceId: number) => uncommitted(db, workspaceId));
-  // What went to GitHub is checked at once, not at the next look.
+  // What went to the forge is checked at once, not at the next look.
   ipcMain.handle("git:push", async (_, workspaceId: number) => {
     const pushed = await push(db, workspaceId);
-    await checkGitHub(db, workspaceId).catch(() => {});
+    await checkForge(db, workspaceId).catch(() => {});
     return pushed;
   });
   ipcMain.handle("git:open-pull-request", async (_, workspaceId: number) => {
     const pr = await openPullRequest(db, workspaceId);
     if (pr.status === "ok") void shell.openExternal(pr.url);
-    await checkGitHub(db, workspaceId).catch(() => {});
+    await checkForge(db, workspaceId).catch(() => {});
     return pr;
   });
   ipcMain.handle("git:changed-files", (_, workspaceId: number, mergeBase: string, head?: string) =>
@@ -611,31 +616,31 @@ app.whenReady().then(() => {
     return result;
   });
   // ADR 0037: the workspace's PR for its panel, as the last check found it; checking mirrors its review threads.
-  ipcMain.handle("github:pull-request", (_, workspaceId: number) =>
+  ipcMain.handle("forge:pull-request", (_, workspaceId: number) =>
     checkedPullRequest(db, workspaceId),
   );
-  ipcMain.handle("github:post-review", async (e, workspaceId: number, post: ReviewPost) => {
+  ipcMain.handle("forge:post-review", async (e, workspaceId: number, post: ReviewPost) => {
     const result = await postReview(db, workspaceId, post);
     emit({ workspaceId, what: "entries" }); // what got posted, also halfway
-    await checkGitHub(db, workspaceId).catch(() => {});
+    await checkForge(db, workspaceId).catch(() => {});
     return result;
   });
-  ipcMain.handle("github:post-comment", async (e, workspaceId: number, threadId: number) => {
+  ipcMain.handle("forge:post-comment", async (e, workspaceId: number, threadId: number) => {
     const result = await postComment(db, workspaceId, threadId);
     emit({ workspaceId, what: "entries" });
-    await checkGitHub(db, workspaceId).catch(() => {});
+    await checkForge(db, workspaceId).catch(() => {});
     return result;
   });
   ipcMain.handle(
-    "github:change-pr",
+    "forge:change-pr",
     async (_, workspaceId: number, pr: PullRequestRef, change: PullRequestChange) => {
-      const changed = await changePullRequest(pr, change);
-      await checkGitHub(db, workspaceId).catch(() => {});
+      const changed = await changePullRequest(db, workspaceId, pr, change);
+      await checkForge(db, workspaceId).catch(() => {});
       return changed;
     },
   );
   // A failed check to the agent pane's session; the reply streams as agents:entry, like Send to Agent's.
-  ipcMain.handle("github:send-check", async (e, workspaceId: number, check: Check) => {
+  ipcMain.handle("forge:send-check", async (e, workspaceId: number, check: Check) => {
     const send = (channel: string, ...args: unknown[]) =>
       !e.sender.isDestroyed() && e.sender.send(channel, ...args);
     const result = await sendCheck(db, workspaceId, check, (agentSessionId) => {
@@ -708,10 +713,17 @@ app.whenReady().then(() => {
   // a dismissal from a pick. A dismissed menu leaves the promise pending; nothing else waits on it.
   ipcMain.handle(
     "menus:thread",
-    // delete: "others", not while others have replied, which GitHub keeps; their comments aren't the user's to delete.
+    // delete: "others", not while others have replied, which the forge keeps; their comments aren't the user's to delete.
+    // url: the thread on the forge, named forge.
     (
       e,
-      can: { send: boolean; summarize: boolean; delete: boolean | "others"; url: string | null },
+      can: {
+        send: boolean;
+        summarize: boolean;
+        delete: boolean | "others";
+        url: string | null;
+        forge: string;
+      },
     ) =>
       new Promise<"delete" | "send" | "summarize">((resolve) =>
         Menu.buildFromTemplate([
@@ -722,7 +734,7 @@ app.whenReady().then(() => {
             click: () => resolve("delete"),
           },
           ...(can.url
-            ? [{ label: "Open on GitHub", click: () => void shell.openExternal(can.url!) }]
+            ? [{ label: `Open on ${can.forge}`, click: () => void shell.openExternal(can.url!) }]
             : []),
           { type: "separator" },
           { label: "Send to Agent", enabled: can.send, click: () => resolve("send") },
@@ -737,13 +749,13 @@ app.whenReady().then(() => {
   // One of the user's comments' ⋯ menu, resolving like the thread's.
   ipcMain.handle(
     "menus:comment",
-    (e, can: { delete: boolean; url: string | null }) =>
+    (e, can: { delete: boolean; url: string | null; forge: string }) =>
       new Promise<"edit" | "delete">((resolve) =>
         Menu.buildFromTemplate([
           { label: "Edit", click: () => resolve("edit") },
           { label: "Delete", enabled: can.delete, click: () => resolve("delete") },
           ...(can.url
-            ? [{ label: "Open on GitHub", click: () => void shell.openExternal(can.url!) }]
+            ? [{ label: `Open on ${can.forge}`, click: () => void shell.openExternal(can.url!) }]
             : []),
         ]).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
       ),
@@ -795,7 +807,7 @@ app.whenReady().then(() => {
     (
       e,
       scope: "all" | "pushed" | "unpushed" | "uncommitted" | null,
-      hasPr: boolean,
+      pushed: string, // what the pushed layer is called: "In the PR", "On GitHub", …
       layers: Layers,
     ) =>
       new Promise<RangePick>((resolve) => {
@@ -810,7 +822,7 @@ app.whenReady().then(() => {
         Menu.buildFromTemplate([
           item("all", "All Changes"),
           { type: "separator" },
-          item("pushed", hasPr ? "In the PR" : "On GitHub", n(layers.pushed, "commit")),
+          item("pushed", pushed, n(layers.pushed, "commit")),
           item("unpushed", "Not Pushed", n(layers.unpushed, "commit")),
           item("uncommitted", "Uncommitted", n(layers.uncommitted, "file")),
           { type: "separator" },

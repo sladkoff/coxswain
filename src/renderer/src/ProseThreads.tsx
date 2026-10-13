@@ -94,7 +94,7 @@ type Draft = ProseAnchor & Place;
 // A view section's threads on its prose, around the section's parts (children), which render ViewProse.
 export function ProseThreads(props: {
   workspaceId: number;
-  canPost: boolean; // the workspace has a PR, for Post to GitHub
+  canPost: boolean; // the workspace has a PR, for Post to its forge
   viewId: number;
   section: number;
   entries: ReviewEntry[]; // the workspace's

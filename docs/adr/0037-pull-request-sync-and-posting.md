@@ -8,6 +8,9 @@ Accepted
 
 ## Context
 
+This ADR says how it works on GitHub; [ADR 0041](0041-forges-github-and-gitlab.md) says how the same works on GitLab.
+The code that posts and mirrors is shared, behind the forge interface (`core/forge.ts`).
+
 coxswain read only a PR's head, title and state (ADR 0006, 0008). Its review comments, conversation, description,
 people and checks stayed on GitHub, and nothing written in coxswain could get back there (#3, G2, G4). A workspace is
 one worktree on one branch (ADR 0028), and GitHub has at most one open PR per head branch, so a workspace has at most one
@@ -18,7 +21,7 @@ PR; the branch, not the workspace, is what ties them. Writing to GitHub must alw
 1. **The branch connects a workspace to GitHub.** A workspace has zero or one PR, found by its branch (ADR 0028).
    Several PRs from one piece of work are several branches, so several workspaces; splitting a workspace's commits off
    into a new one isn't built.
-2. **One read per PR**: a GraphQL query (`getPullRequest`, `core/github.ts`) for the PR's state, description, people,
+2. **One read per PR**: a GraphQL query (`getPullRequest`, `core/forges/github.ts`) for the PR's state, description, people,
    labels, conversation, review threads, each commit's check state and the head's checks. The core reads it with each
    check of GitHub for the workspace on screen ([ADR 0030](0030-workspace-watcher.md)): every minute, on window focus,
    on a push and after a change made here; the UI shows what the last check read. GraphQL has no ETags (ADR 0006
@@ -32,9 +35,9 @@ PR; the branch, not the workspace, is what ties them. Writing to GitHub must alw
    drops here a thread gone from GitHub, or whose first comment is (GitHub keeps a thread for its replies; the next
    read mirrors what's left as a new thread): what was on GitHub goes, and the user's unposted notes in it stay, as a
    local thread on the same anchor (`dropThread`).
-   `entries.github_id` links an entry to its comment, `github_thread_id` a thread's first entry to its review thread.
+   `entries.forge_id` links an entry to its comment, `forge_thread_id` a thread's first entry to its review thread.
    Threads on a whole file have no lines, so they show in the PR panel's conversation instead.
-4. **Resolving goes as comments do.** GitHub's resolve or reopen, seen in a read, is taken over (`github_resolved`
+4. **Resolving goes as comments do.** GitHub's resolve or reopen, seen in a read, is taken over (`forge_resolved`
    records what GitHub had). A resolve or reopen here of a thread on GitHub goes there at once while _Post to GitHub_
    is on in the comment box (`resolveThread`; a failure there leaves the thread as it was), else with the next
    _Submit Review_. A thread in the PR's conversation has no resolve on GitHub: resolving it is local.
@@ -51,7 +54,7 @@ PR; the branch, not the workspace, is what ties them. Writing to GitHub must alw
    quoted. A review of the user's in progress on GitHub (one they started there, or left by a failed post) is never
    added to silently: posting comes back as pending, with its comment count, and _Submit Review_ asks before adding
    to it and submitting it. Each comment posted records its GitHub comment
-   (`github_id`, `github_url`), and a new thread its review thread (`github_thread_id`) on its first entry, so the thread
+   (`forge_id`, `forge_url`, and `forge_conversation` for one in the PR's conversation), and a new thread its review thread (`forge_thread_id`) on its first entry, so the thread
    here _is_ the thread on GitHub: the next read finds it by that id, replies there land in it, edits there are taken
    over, and resolving goes both ways. Editing or deleting a posted comment here does so on GitHub first
    (`updatePullRequestReviewComment`, `deletePullRequestReviewComment`, or `updateIssueComment`, `deleteIssueComment`
@@ -116,7 +119,7 @@ PR; the branch, not the workspace, is what ties them. Writing to GitHub must alw
 
 - A workspace's GitHub threads are in SQLite as long as the workspace is; removing the workspace removes them.
 - Review threads and conversation comments are read in full, page by page. The first 100 comments of a thread,
-  commits and checks are read (`ponytail:` in `core/github.ts`); a longer thread's replies aren't pruned.
+  commits and checks are read (`ponytail:` in `core/forges/github.ts`); a longer thread's replies aren't pruned.
 - A thread gone from GitHub is dropped here (`dropThread`): what was on GitHub goes, and the user's unposted notes in it
   stay, as a local thread on the same anchor.
 - A comment whose commit the clone doesn't have (force-pushed away) has no code and reads as outdated.

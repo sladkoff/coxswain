@@ -2,8 +2,8 @@
 // write tells: the main process forwards the changes to the UI, which refetches (ADR 0017), and background.ts starts the
 // work that follows from one. In memory and in order: a listener that needs time does it on its own.
 
-// In a workspace: entries, worktree, transcript, sessions, view, reviewed, and github (its PR or what's pushed of it
-// moved on GitHub; ADR 0030): what the UI refetches. opened: the workspace's worktree was opened or checked again,
+// In a workspace: entries, worktree, transcript, sessions, view, reviewed, and forge (its PR or what's pushed of it
+// moved on its forge; ADR 0030): what the UI refetches. opened: the workspace's worktree was opened or checked again,
 // which changes nothing the UI shows. Not in one: projects, workspaces (the list, or a workspace's row), settings and commands (an agent's slash commands).
 export type CoreEvent =
   | {
@@ -15,7 +15,7 @@ export type CoreEvent =
         | "sessions"
         | "view"
         | "reviewed"
-        | "github"
+        | "forge"
         | "opened";
     }
   | { what: "projects" | "workspaces" | "settings" | "commands" };

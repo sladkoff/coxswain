@@ -1,5 +1,6 @@
+import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import type { GitHubProblem, Repo } from "../../core/github";
+import type { ForgeKind, ForgeProblem, Repo } from "../../core/forge";
 import type { Project } from "../../core/projects";
 import { Button } from "./components/button";
 import { LockIcon } from "./components/icons";
@@ -7,6 +8,7 @@ import { Dialog, ListHeading, ListRow, ProblemCard, SearchField } from "./compon
 import { cn, divider, muted } from "./components/styles";
 import { ErrorText } from "./components/text";
 import { ago } from "./format";
+import { core } from "./queries";
 
 type Props = {
   projects: Project[];
@@ -18,27 +20,11 @@ type Props = {
   onClose: () => void;
 };
 
-// Open a project: Add Local Repository… and New Project… (ADR 0040), the user's projects, then every GitHub repository
-// they can see, most recently pushed first.
+// Open a project: Add Local Repository… and New Project… (ADR 0040), the user's projects, then every repository they
+// can see on each forge's host (ADR 0041), most recently pushed first.
 export function Projects({ projects, current, start, onSelect, onAdded, onClose }: Props) {
-  const [repos, setRepos] = useState<Repo[]>([]);
-  const [page, setPage] = useState(0); // last page loaded
-  const [hasMore, setHasMore] = useState(true);
-  const [loading, setLoading] = useState(false);
-  const [problem, setProblem] = useState<GitHubProblem | null>(null);
   const [query, setQuery] = useState("");
-
-  const loadMore = async () => {
-    setLoading(true);
-    const result = await window.coxswain.listRepos(page + 1);
-    setLoading(false);
-    if (result.status !== "ok") return setProblem(result);
-    setProblem(null);
-    setRepos((r) => [...r, ...result.repos]);
-    setPage(page + 1);
-    setHasMore(result.hasMore);
-  };
-  useEffect(() => void loadMore(), []);
+  const hosts = useQuery(core("listForgeHosts")).data ?? [];
 
   // What git won't take (not a repository, no commits, a folder that isn't empty) shows here.
   const [error, setError] = useState<string | null>(null);
@@ -59,21 +45,15 @@ export function Projects({ projects, current, start, onSelect, onAdded, onClose 
     if (start) void (start === "add-local" ? addLocal() : create());
   }, []);
 
-  // ponytail: search filters the pages loaded so far; switch to GitHub's search API if people miss old repos.
   const q = query.trim().toLowerCase();
   const shownProjects = projects.filter((p) =>
-    `${p.name} ${p.github ?? ""} ${p.path ?? ""}`.toLowerCase().includes(q),
+    `${p.name} ${p.repo ?? ""} ${p.path ?? ""}`.toLowerCase().includes(q),
   );
-  const shownRepos = q
-    ? repos.filter(
-        (r) => r.fullName.toLowerCase().includes(q) || r.description?.toLowerCase().includes(q),
-      )
-    : repos;
 
   return (
     <Dialog
       title="Open a project"
-      subtitle="One of yours, a repository on this Mac, a new one, or any GitHub repository you can see"
+      subtitle="One of yours, a repository on this Mac, a new one, or any repository you can see on GitHub or GitLab"
       onClose={onClose}
     >
       <SearchField
@@ -91,11 +71,6 @@ export function Projects({ projects, current, start, onSelect, onAdded, onClose 
         </Button>
       </div>
       {error && <ErrorText className="shrink-0 px-4 pt-2">{error}</ErrorText>}
-      {problem && (
-        <div className="px-4 pt-3">
-          <ProblemCard problem={problem} onRetry={loadMore} />
-        </div>
-      )}
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
         {shownProjects.length > 0 && (
           <>
@@ -116,29 +91,77 @@ export function Projects({ projects, current, start, onSelect, onAdded, onClose 
             ))}
           </>
         )}
-        <ListHeading>GITHUB REPOSITORIES</ListHeading>
-        {shownRepos.map((r) => (
-          <RepoRow
-            key={r.id}
-            repo={r}
-            onClick={() => void add(window.coxswain.addGitHubProject(r.fullName))}
+        {hosts.map((h) => (
+          <HostRepos
+            key={h.host}
+            {...h}
+            query={q}
+            onAdd={(path) => void add(window.coxswain.addForgeProject({ ...h, path }))}
           />
         ))}
-        {!problem && (
-          <div className={cn("py-3 text-center text-xs", muted)}>
-            {loading ? (
-              "Loading…"
-            ) : hasMore ? (
-              <Button className="text-xs" onClick={loadMore}>
-                Load more
-              </Button>
-            ) : (
-              `${repos.length} repositories`
-            )}
-          </div>
-        )}
       </div>
     </Dialog>
+  );
+}
+
+// The repositories the user can see on one forge's host, page by page.
+// ponytail: search filters the pages loaded so far; switch to the forge's search if people miss old repos.
+function HostRepos(props: {
+  forge: ForgeKind;
+  host: string;
+  query: string;
+  onAdd: (path: string) => void;
+}) {
+  const [repos, setRepos] = useState<Repo[]>([]);
+  const [page, setPage] = useState(0); // last page loaded
+  const [hasMore, setHasMore] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [problem, setProblem] = useState<ForgeProblem | null>(null);
+  const loadMore = async () => {
+    setLoading(true);
+    const result = await window.coxswain.listRepos(props.forge, props.host, page + 1);
+    setLoading(false);
+    if (result.status !== "ok") return setProblem(result);
+    setProblem(null);
+    // StrictMode loads the first page twice in development; a repository already listed isn't listed again.
+    setRepos((r) => [...r, ...result.repos.filter((n) => !r.some((o) => o.id === n.id))]);
+    setPage(page + 1);
+    setHasMore(result.hasMore);
+  };
+  useEffect(() => void loadMore(), []);
+  const q = props.query;
+  const shown = q
+    ? repos.filter(
+        (r) => r.fullName.toLowerCase().includes(q) || r.description?.toLowerCase().includes(q),
+      )
+    : repos;
+  return (
+    <>
+      <ListHeading>
+        {props.forge === "github" ? "GITHUB" : props.host.toUpperCase()} REPOSITORIES
+      </ListHeading>
+      {problem && (
+        <div className="px-2 pt-1">
+          <ProblemCard problem={problem} onRetry={loadMore} />
+        </div>
+      )}
+      {shown.map((r) => (
+        <RepoRow key={r.id} repo={r} onClick={() => props.onAdd(r.fullName)} />
+      ))}
+      {!problem && (
+        <div className={cn("py-3 text-center text-xs", muted)}>
+          {loading ? (
+            "Loading…"
+          ) : hasMore ? (
+            <Button className="text-xs" onClick={loadMore}>
+              Load more
+            </Button>
+          ) : (
+            `${repos.length} repositories`
+          )}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -170,7 +193,8 @@ const Badge = ({ children }: { children: string }) => (
 );
 
 function RepoRow({ repo: r, onClick }: { repo: Repo; onClick: () => void }) {
-  const [owner, name] = r.fullName.split("/");
+  const name = r.fullName.split("/").at(-1)!;
+  const owner = r.fullName.slice(0, -name.length - 1);
   return (
     <ListRow className="flex items-center gap-2.5" onClick={onClick}>
       <Initial name={name} />

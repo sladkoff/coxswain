@@ -4,16 +4,17 @@ import { agentNames } from "./Agents";
 import { core } from "./queries";
 import { Button } from "./components/button";
 import { cn, muted, selectable } from "./components/styles";
-import type { CheckState } from "../../core/github";
+import type { CheckState } from "../../core/forge";
 import { CheckDot } from "./PullRequest";
 import { ErrorText, ProblemMessage } from "./components/text";
 import { ago, count, shortDateTime } from "./format";
+import { titled, useForgeNames } from "./forge";
 
 type Props = {
   workspaceId: number;
   mergeBase: string;
-  head: string; // what's on GitHub; the commits after it aren't pushed
-  canOpenPr: boolean; // a branch workspace on GitHub without a PR yet
+  head: string; // what's on the forge; the commits after it aren't pushed
+  canOpenPr: boolean; // a branch workspace on a forge without a PR yet
   remote: boolean; // there's an origin to push to; without one no commit is "not pushed" (ADR 0040)
   problem: string | null; // why the last push failed
   current: Commit | null; // null: all changes
@@ -23,13 +24,14 @@ type Props = {
   onPickUncommitted: () => void;
   onPush: () => void;
   onOpenPullRequest: () => void;
-  checks: Record<string, CheckState>; // each pushed commit's checks on GitHub, by sha (ADR 0037)
+  checks: Record<string, CheckState>; // each pushed commit's checks on the forge, by sha (ADR 0037)
 };
 
 // The Commits pane, left of the canvas: All Changes, Uncommitted changes if there are any, then the commits, newest first; those not pushed yet are marked,
 // with Push (and Open Pull Request… for a branch without one). Picking a commit shows its diff. A commit shows its
 // subject over its sha, author, when and size.
 export function Commits(props: Props) {
+  const names = useForgeNames();
   const { workspaceId, current, onPick } = props;
   const listed = useQuery(core("listCommits", workspaceId, props.mergeBase)).data;
   const unpushed = useQuery(core("listCommits", workspaceId, props.head)).data;
@@ -41,7 +43,7 @@ export function Commits(props: Props) {
       {(local.size > 0 || props.canOpenPr) && (
         <div className="mb-1 flex items-center gap-2 px-2">
           <span className={cn("flex-1", muted)}>
-            {local.size ? `${local.size} not pushed` : "Not on GitHub as a PR yet"}
+            {local.size ? `${local.size} not pushed` : `Not on ${names.forge} as a ${names.pr} yet`}
           </span>
           {local.size > 0 && !props.canOpenPr && (
             <Button className="py-0.5" onClick={props.onPush}>
@@ -50,7 +52,7 @@ export function Commits(props: Props) {
           )}
           {props.canOpenPr && (
             <Button className="py-0.5" onClick={props.onOpenPullRequest}>
-              Open Pull Request…
+              Open {titled(names.request)}…
             </Button>
           )}
         </div>
@@ -151,7 +153,7 @@ function Row(props: {
   by: string;
   date?: string;
   size: Size;
-  checks?: CheckState; // its checks on GitHub, all at once
+  checks?: CheckState; // its checks on the forge, all at once
 }) {
   const marks = (props.marks ?? []).filter(Boolean);
   return (

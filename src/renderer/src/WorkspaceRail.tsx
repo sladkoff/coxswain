@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { match } from "ts-pattern";
 import { type ReactNode, useEffect } from "react";
 import type { AgentStatus } from "../../core/session-state";
-import type { PullRequestTitle } from "../../core/github";
+import type { PullRequestTitle } from "../../core/forge";
 import type { Project } from "../../core/projects";
 import type { Workspace } from "../../core/workspaces";
 import { Button } from "./components/button";
@@ -14,7 +14,8 @@ import {
   PanelLeftIcon,
 } from "./components/icons";
 import { cn, divider, muted, noDrag, selectable, titleBar } from "./components/styles";
-import { gitHubOf, projectLabel, workspaceLabel } from "./format";
+import { projectLabel, workspaceLabel } from "./format";
+import { useForgeNames } from "./forge";
 import { core } from "./queries";
 
 type Props = {
@@ -44,13 +45,11 @@ export function WorkspaceRail({
   onHide,
 }: Props) {
   const numbers = workspaces.flatMap((w) => (w.prNumber !== null ? [w.prNumber] : []));
-  const repo = gitHubOf(project);
   // A new list of numbers keeps the titles shown until its own are in, so the rows don't flash back to numbers.
   const titles = useQuery({
-    ...core("listPullRequestTitles", repo?.owner ?? "", repo?.name ?? "", numbers),
-    enabled: !!repo && numbers.length > 0,
-    placeholderData: (before, query) =>
-      query?.queryKey[1] === repo?.owner && query?.queryKey[2] === repo?.name ? before : undefined,
+    ...core("listPullRequestTitles", project.id, numbers),
+    enabled: !!project.forge && numbers.length > 0,
+    placeholderData: (before, query) => (query?.queryKey[1] === project.id ? before : undefined),
   }).data;
   const statuses = useQuery(core("listAgentStatuses")).data ?? {};
   const shown = current?.id;
@@ -166,8 +165,11 @@ function WorkspaceRow({
   onClick: () => void;
   onContextMenu: () => void;
 }) {
-  const title = pull?.title ?? (w.prNumber !== null ? workspaceLabel(w) : w.branch!);
-  const meta = [w.prNumber !== null && `#${w.prNumber}`, w.branch].filter(Boolean).join(" · ");
+  const names = useForgeNames();
+  const title = pull?.title ?? (w.prNumber !== null ? workspaceLabel(w, names) : w.branch!);
+  const meta = [w.prNumber !== null && `${names.sign}${w.prNumber}`, w.branch]
+    .filter(Boolean)
+    .join(" · ");
   const [icon, color, state] = match({
     prNumber: w.prNumber,
     state: pull?.state,

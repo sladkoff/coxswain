@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";
 import type { ChangedFile, GitProblem } from "../../core/git";
-import type { GitHubProblem, PullRequestDetails } from "../../core/github";
+import type { ForgeProblem, PullRequestDetails } from "../../core/forge";
 import type { Workspace } from "../../core/workspaces";
 import { core } from "./queries";
 
@@ -16,7 +16,7 @@ export type PullRequestData = {
   snapshot: string | null;
   snapshotReady: boolean; // settled, including an error: a failed snapshot must not block the live diff
   notice: string | null;
-  problem: GitHubProblem | GitProblem | null;
+  problem: ForgeProblem | GitProblem | null;
   // ADR 0037: the PR on GitHub, for its panel, CI and the review threads mirrored into entries; null without one.
   details: PullRequestDetails | null;
 };

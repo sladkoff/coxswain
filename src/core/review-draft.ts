@@ -8,11 +8,11 @@ import { nothingToSay, reviewRoots, summaryInstructions, summaryPrompt } from ".
 import { getWorkspaceRepo } from "./workspaces.ts";
 
 // Submit Review's draft (ADR 0037): the comment threads a review takes, for the user to pick from before they go to the
-// agent, the clipboard or GitHub. Comments go as the user wrote them.
+// agent, the clipboard or the forge. Comments go as the user wrote them.
 
-// A comment thread in the draft. entries: how many it has. comments: the user's not on GitHub yet, which Post to
-// GitHub posts as they are. toAgent: Send to Agent and Copy as Prompt take it (open). post: what Post to GitHub does
-// with it, null if nothing (no PR, or all of it is on GitHub already).
+// A comment thread in the draft. entries: how many it has. comments: the user's not on the forge yet, which Post to
+// … posts as they are. toAgent: Send to Agent and Copy as Prompt take it (open). post: what Post to … does
+// with it, null if nothing (no PR, or all of it is on the forge already).
 export type DraftThread = {
   threadId: number;
   path: string | null;

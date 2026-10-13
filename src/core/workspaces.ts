@@ -4,7 +4,7 @@ import { emit } from "./events.ts";
 // A workspace is a unit of work in a project (ADR 0028): a PR, or a branch started in coxswain, which gets a PR once
 // one is opened for it. Its worktree's path follows from its project and its branch or PR number (git.ts
 // worktreePath), so it isn't stored.
-// branch, baseBranch: set for a workspace started on a branch, kept once it has a PR. A PR's branch comes from GitHub.
+// branch, baseBranch: set for a workspace started on a branch, kept once it has a PR. A PR's branch comes from its forge.
 export type Workspace = {
   id: number;
   projectId: number;
@@ -87,7 +87,7 @@ export function branchNameProblem(name: string): string | null {
   return null;
 }
 
-// Adds a workspace on a branch, new or already on GitHub, and makes it the current one. Its worktree branches off
+// Adds a workspace on a branch, new or already on its forge, and makes it the current one. Its worktree branches off
 // baseBranch when it's opened, unless the branch exists (git.ts openWorktree).
 export async function openBranchWorkspace(
   db: Db,
@@ -119,7 +119,7 @@ export async function openBranchWorkspace(
   return workspace;
 }
 
-// A branch workspace's PR, once one is opened for its branch (here or on GitHub).
+// A branch workspace's PR, once one is opened for its branch (here or on its forge).
 export async function setWorkspacePullRequest(db: Db, workspaceId: number, prNumber: number) {
   await db
     .updateTable("workspaces")
@@ -138,7 +138,9 @@ export async function getWorkspaceRepo(db: Db, workspaceId: number) {
       "p.id as projectId",
       "p.name",
       "p.path",
-      "p.github",
+      "p.forge",
+      "p.host",
+      "p.repo",
       "w.pr_number as prNumber",
       "w.branch",
       "w.base_branch as baseBranch",

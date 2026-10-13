@@ -21,7 +21,7 @@ export function startBackground(db: Db) {
             "sessions",
             "view",
             "reviewed",
-            "github",
+            "forge",
             "projects",
             "workspaces",
             "settings",

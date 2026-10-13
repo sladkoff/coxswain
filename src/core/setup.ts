@@ -7,7 +7,7 @@ export type SetupProblem = { tool: "git" | "claude"; problem: string; fix: strin
 export type SetupCheck = { problems: SetupProblem[]; path: string };
 
 // The startup check: git and Claude Code, on the PATH the app was started with. Local only, so it passes offline. The
-// GitHub CLI isn't checked: a project needn't be on GitHub (ADR 0040), and where GitHub is used it says what's wrong. ponytail: doesn't check that `claude` is signed in; its first turn says so.
+// Neither forge's CLI is checked: a project needn't be on a forge (ADR 0040), and where one is used it says what's wrong. ponytail: doesn't check that `claude` is signed in; its first turn says so.
 export async function checkSetup(): Promise<SetupCheck> {
   const problems: SetupProblem[] = [];
   try {

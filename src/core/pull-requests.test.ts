@@ -6,7 +6,7 @@ import os from "node:os";
 import { join } from "node:path";
 import { after, mock, test } from "node:test";
 import { openDatabase } from "./db.ts";
-import type { ReviewThread } from "./github.ts";
+import type { ReviewThread } from "./forge.ts";
 
 // The real git and core code, on a disposable coxswain directory.
 const temp = mkdtempSync(join(os.tmpdir(), "coxswain-pr-"));
@@ -15,7 +15,7 @@ syncBuiltinESMExports();
 const { hunkRanges, listPostable, oneAtATime, syncConversation, syncThreads, textOf, withHeader } =
   await import("./pull-requests.ts");
 const { addEntry, addNote, listEntries } = await import("./entries.ts");
-const { checkRunState, statusState } = await import("./github.ts");
+const { checkRunState, statusState } = await import("./forges/github.ts");
 home.mock.restore();
 syncBuiltinESMExports();
 after(() => rmSync(temp, { recursive: true, force: true }));
@@ -67,7 +67,14 @@ test("review threads mirror into entries, and what's new here is postable", asyn
   t.after(() => db.destroy());
   await db
     .insertInto("projects")
-    .values({ id: 1, github: "test/repo", name: "repo", last_opened_at: "" })
+    .values({
+      id: 1,
+      forge: "github",
+      host: "github.com",
+      repo: "test/repo",
+      name: "repo",
+      last_opened_at: "",
+    })
     .execute();
   await db
     .insertInto("workspaces")
@@ -96,7 +103,7 @@ test("review threads mirror into entries, and what's new here is postable", asyn
   assert.equal(await syncThreads(db, 1, [thread], mergeBase), false, "nothing new the second time");
   const listed = () => listEntries(db, 1, mergeBase, mergeBase, head);
   let entries = await listed();
-  const root = entries.find((e) => e.githubThreadId === "T1")!;
+  const root = entries.find((e) => e.forgeThreadId === "T1")!;
   assert.deepEqual(
     [root.kind, root.author, root.code, root.state, root.shown],
     ["comment", "ana", "two", "current", true],
@@ -129,7 +136,7 @@ test("review threads mirror into entries, and what's new here is postable", asyn
   });
   const postable = await listPostable(db, 1, mergeBase, head);
   assert.deepEqual(
-    postable.map((p) => [p.body, p.github, p.resolve, p.placement]),
+    postable.map((p) => [p.body, p.onForge, p.resolve, p.placement]),
     [
       ["Why two?", true, true, "reply"],
       ["Near it", false, null, "lines"],
@@ -165,7 +172,7 @@ test("review threads mirror into entries, and what's new here is postable", asyn
   const near = entries.find((e) => e.body === "Near it")!;
   await db
     .updateTable("entries")
-    .set({ github_id: "C9", github_thread_id: "T2", github_resolved: 0 })
+    .set({ forge_id: "C9", forge_thread_id: "T2", forge_resolved: 0 })
     .where("id", "=", near.id)
     .execute();
   const nearThread: ReviewThread = {
@@ -177,7 +184,7 @@ test("review threads mirror into entries, and what's new here is postable", asyn
   };
   await syncThreads(db, 1, [nearThread], mergeBase);
   entries = await listed();
-  assert.equal(entries.filter((e) => e.githubThreadId === "T2").length, 1, "no second copy");
+  assert.equal(entries.filter((e) => e.forgeThreadId === "T2").length, 1, "no second copy");
   assert.equal(entries.find((e) => e.id === near.id)!.body, "Near it, edited");
   assert.deepEqual(
     entries.filter((e) => e.parentId === near.id).map((e) => [e.author, e.body]),
@@ -185,10 +192,10 @@ test("review threads mirror into entries, and what's new here is postable", asyn
   );
   // A comment posted at once has its GitHub comment before the next read finds its thread: a reply to it is a reply.
   const far = entries.find((e) => e.body === "Far away")!;
-  await db.updateTable("entries").set({ github_id: "C20" }).where("id", "=", far.id).execute();
+  await db.updateTable("entries").set({ forge_id: "C20" }).where("id", "=", far.id).execute();
   await addNote(db, { workspaceId: 1, body: "And here", parentId: far.id });
   const farPost = (await listPostable(db, 1, mergeBase, head)).find((p) => p.threadId === far.id)!;
-  assert.deepEqual([farPost.github, farPost.placement, farPost.resolve], [true, "reply", null]);
+  assert.deepEqual([farPost.onForge, farPost.placement, farPost.resolve], [true, "reply", null]);
   await syncThreads(
     db,
     1,
@@ -203,7 +210,7 @@ test("review threads mirror into entries, and what's new here is postable", asyn
     ],
     mergeBase,
   );
-  assert.equal((await listed()).find((e) => e.id === far.id)!.githubThreadId, "T3");
+  assert.equal((await listed()).find((e) => e.id === far.id)!.forgeThreadId, "T3");
   await addEntry(db, "question", {
     workspaceId: 1,
     body: "What does this do?",
@@ -221,7 +228,11 @@ test("review threads mirror into entries, and what's new here is postable", asyn
   });
   await db
     .updateTable("entries")
-    .set({ github_id: "IC1", github_url: "https://github.com/test/repo/pull/7#issuecomment-1" })
+    .set({
+      forge_id: "IC1",
+      forge_url: "https://github.com/test/repo/pull/7#issuecomment-1",
+      forge_conversation: 1,
+    })
     .where("id", "=", conv.id)
     .execute();
   await addNote(db, { workspaceId: 1, body: "More", parentId: conv.id });
@@ -246,7 +257,7 @@ test("review threads mirror into entries, and what's new here is postable", asyn
   assert.equal(await body(), undefined, "deleted on GitHub");
   const more = (await listed()).find((e) => e.body === "More")!;
   assert.deepEqual(
-    [more.parentId, more.githubId, more.path, more.startLine],
+    [more.parentId, more.forgeId, more.path, more.startLine],
     [null, null, "f.txt", 18],
     "the unposted note stays, a local thread on the same lines",
   );
@@ -264,12 +275,12 @@ test("review threads mirror into entries, and what's new here is postable", asyn
   const seen = { viewer: "me", complete: true };
   await syncThreads(db, 1, [thread, mineThread], mergeBase, seen);
   entries = await listed();
-  const mine = entries.find((e) => e.githubThreadId === "T4")!;
+  const mine = entries.find((e) => e.forgeThreadId === "T4")!;
   assert.deepEqual(
     [mine.kind, ...entries.filter((e) => e.parentId === mine.id).map((e) => e.kind)],
     ["note", "comment"],
   );
-  assert.ok(!entries.some((e) => e.githubThreadId === "T2"), "T2 is gone from GitHub");
+  assert.ok(!entries.some((e) => e.forgeThreadId === "T2"), "T2 is gone from GitHub");
   assert.ok(!entries.some((e) => e.id === far.id), "T3 is gone from GitHub");
   const andHere = entries.find((e) => e.body === "And here")!;
   assert.deepEqual(
@@ -285,7 +296,7 @@ test("review threads mirror into entries, and what's new here is postable", asyn
     seen,
   );
   entries = await listed();
-  const left = entries.filter((e) => e.githubThreadId === "T4");
+  const left = entries.filter((e) => e.forgeThreadId === "T4");
   assert.deepEqual(
     left.map((e) => [e.kind, e.author, e.body]),
     [["comment", "bo", "Theirs"]],

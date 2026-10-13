@@ -269,6 +269,32 @@ export const migrations = [
   drop table projects;
   alter table projects_new rename to projects;
   create unique index projects_clones on projects (github) where path is null`,
+  // ADR 0041: a project's forge (github, gitlab), its host and its repository's path there, or none of them. Entries
+  // name the forge, not GitHub; forge_conversation: a posted comment in the PR's conversation, not on a review thread.
+  `create table projects_new (
+    id integer primary key,
+    name text not null,
+    path text unique,
+    forge text,
+    host text,
+    repo text,
+    last_opened_at text not null,
+    check (path is not null or repo is not null),
+    check ((forge is null) = (repo is null) and (forge is null) = (host is null))
+  );
+  insert into projects_new (id, name, path, forge, host, repo, last_opened_at)
+    select id, name, path, iif(github is null, null, 'github'), iif(github is null, null, 'github.com'), github,
+      last_opened_at from projects;
+  drop table projects;
+  alter table projects_new rename to projects;
+  create unique index projects_clones on projects (forge, host, repo) where path is null;
+  alter table entries rename column github_id to forge_id;
+  alter table entries rename column github_thread_id to forge_thread_id;
+  alter table entries rename column github_url to forge_url;
+  alter table entries rename column github_resolved to forge_resolved;
+  alter table entries add column forge_conversation integer not null default 0;
+  update entries set forge_conversation = 1 where forge_url like '%#issuecomment-%';
+  drop table thread_conclusions`,
 ];
 
 // ADR 0016: the tables as the migrations above leave them. Change this with every migration that changes a table.
@@ -278,7 +304,9 @@ type Tables = {
     id: Generated<number>;
     name: string;
     path: string | null;
-    github: string | null;
+    forge: "github" | "gitlab" | null;
+    host: string | null;
+    repo: string | null;
     last_opened_at: string;
   };
   workspaces: {
@@ -331,16 +359,6 @@ type Tables = {
     finished_at: string | null;
     updated_at: string;
   };
-  // ponytail: no longer read or written since comments go to GitHub as written; dropped by the next migration that
-  // has to lock older releases out anyway.
-  thread_conclusions: {
-    thread_id: number;
-    fingerprint: string;
-    conclusion: string;
-    model: string;
-    edited: number;
-    created_at: string;
-  };
   file_summaries: {
     workspace_id: number;
     path: string;
@@ -383,10 +401,11 @@ type Tables = {
     section: Generated<number | null>;
     quote_at: Generated<number | null>;
     author: Generated<string | null>;
-    github_id: Generated<string | null>;
-    github_thread_id: Generated<string | null>;
-    github_url: Generated<string | null>;
-    github_resolved: Generated<number | null>;
+    forge_id: Generated<string | null>;
+    forge_thread_id: Generated<string | null>;
+    forge_url: Generated<string | null>;
+    forge_resolved: Generated<number | null>;
+    forge_conversation: Generated<number>;
   };
 };
 

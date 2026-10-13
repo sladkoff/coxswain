@@ -44,7 +44,8 @@ That is too much work before we can even test the rest. Many developers already 
    repositories is fetched page by page and searched, never loaded in full up front.
 7. **Freshness by polling.** A local app can't receive webhooks, so the core polls, with conditional
    requests (ETags) so that unchanged responses don't count against the rate limit.
-8. **One GitHub account, github.com only.**
+8. **One GitHub account, github.com only.** GitLab hosts are a forge of their own
+   ([ADR 0041](0041-forges-github-and-gitlab.md)).
 
 ## Alternatives considered
 
@@ -67,4 +68,4 @@ That is too much work before we can even test the rest. Many developers already 
   missing things.
 - Replacing `gh` with native OAuth changes only where the core gets its token; everything else in
   this ADR stays.
-- Several accounts, or GitHub Enterprise, would need a new ADR.
+- Several accounts, or GitHub Enterprise, would need a change to this ADR; GitLab is ADR 0041's.

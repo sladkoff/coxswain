@@ -1,5 +1,6 @@
 import type { Commit } from "../../core/git";
-import type { PullRequestDetails } from "../../core/github";
+import type { PullRequestDetails } from "../../core/forge";
+import { useProjectForge } from "./forge";
 import { CheckDot } from "./PullRequest";
 import type { View } from "../../core/views";
 import { Activity } from "./Activity";
@@ -74,8 +75,7 @@ type Props = {
   snapshot: string | null; // the worktree now; a view of the worktree pinned to another is stale
   scope: "all" | "pushed" | "unpushed" | "uncommitted";
   hasPr: boolean; // what's pushed is the PR's
-  onGitHub: boolean; // what's pushed is on GitHub, not another origin (ADR 0040)
-  pr: PullRequestDetails | null; // the PR on GitHub, once read: its chip opens the PR panel (ADR 0037)
+  pr: PullRequestDetails | null; // the PR on its forge, once read: its chip opens the PR panel (ADR 0037)
   onPr: boolean; // the PR panel shows
   onShowPr: () => void;
   onRangeMenu: () => void; // the Diff tab's range: a scope, or a commit or turn from the Commits pane
@@ -98,6 +98,7 @@ type Props = {
 // hidden, a button here shows it. It also drags the window, so it lines up with the agent pane's.
 export function CanvasBar(props: Props) {
   const titles = viewTitles(props.views);
+  const forge = useProjectForge();
   const onDiff = !props.view && !props.onPr;
   // Always shown, a view showing or not, so the chips next to it never move.
   const range = props.commit
@@ -106,7 +107,7 @@ export function CanvasBar(props: Props) {
       : props.commit.sha.slice(0, 7)
     : {
         all: "All",
-        pushed: props.hasPr ? "PR" : props.onGitHub ? "On GitHub" : "Pushed",
+        pushed: props.hasPr ? (forge?.pr ?? "PR") : forge ? `On ${forge.forge}` : "Pushed",
         unpushed: "Not Pushed",
         uncommitted: "Uncommitted",
       }[props.scope];
@@ -134,11 +135,12 @@ export function CanvasBar(props: Props) {
       {props.pr && (
         <ToggleButton
           on={props.onPr}
-          title={`The PR on GitHub: its description, checks and conversation, and Post to GitHub${props.pr.checkState ? `\nChecks: ${props.pr.checkState}` : ""}`}
+          title={`The ${forge?.pr} on ${forge?.forge}: its description, checks and conversation, and Post to ${forge?.forge}${props.pr.checkState ? `\nChecks: ${props.pr.checkState}` : ""}`}
           className="flex shrink-0 items-center gap-1.5"
           onClick={props.onShowPr}
         >
-          #{props.pr.number}
+          {forge?.sign}
+          {props.pr.number}
           {props.pr.checkState && <CheckDot state={props.pr.checkState} />}
         </ToggleButton>
       )}

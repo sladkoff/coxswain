@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { match, P } from "ts-pattern";
-import type { PullRequestDetails } from "../../core/github";
+import type { PullRequestDetails } from "../../core/forge";
 import type { ReviewEntry } from "../../core/review";
 import { Button, SegmentedControl, ToggleButton } from "./components/button";
 import { ChevronDownIcon } from "./components/icons";
@@ -10,6 +10,7 @@ import { ErrorText } from "./components/text";
 import { count, isComment } from "./format";
 import { SubmitReviewDialog } from "./SubmitReview";
 import type { Turn } from "./Viewer";
+import { useForgeNames } from "./forge";
 
 type Props = {
   workspaceId: number;
@@ -26,6 +27,7 @@ type Props = {
 // the file diffs on screen are reviewed, and their lines), and Submit Review on the right. The thread count opens the
 // threads above the bar.
 export function StatusBar(props: Props) {
+  const names = useForgeNames();
   const [open, setOpen] = useState(false);
   const [listed, setListed] = useState<"open" | "resolved">("open");
   // Sending the open threads to the agent pane's session; the agent's reply shows there.
@@ -169,11 +171,12 @@ export function StatusBar(props: Props) {
             .with(
               { threads: true },
               () =>
-                "Go through the open comment threads, then send them to the agent or post them to GitHub",
+                `Go through the open comment threads, then send them to the agent or post them to ${names.forge}`,
             )
             .with(
               { pr: true },
-              () => "No open comment threads for the agent; a review can still be posted to GitHub",
+              () =>
+                `No open comment threads for the agent; a review can still be posted to ${names.forge}`,
             )
             .otherwise(
               () =>
@@ -211,6 +214,7 @@ function ThreadRow(props: {
   onClick: () => void;
   onResolve: (resolved: boolean) => void;
 }) {
+  const names = useForgeNames();
   const { root: t, replies } = props;
   const lines = match(t)
     .with({ section: P.number.select() }, (section) => `§ ${section + 1}`)
@@ -230,7 +234,7 @@ function ThreadRow(props: {
     .with({ t: { shown: false } }, () => [null, writtenIn(t)])
     .with({ answers: P.number.gt(0) }, () => ["bg-green-600", count(answers, "answer")])
     .with({ t: { kind: "question" } }, () => ["bg-blue-500", "sent to agent"])
-    .with({ t: { kind: "comment" } }, () => [null, `@${t.author} on GitHub`])
+    .with({ t: { kind: "comment" } }, () => [null, `@${t.author} on ${names.forge}`])
     .otherwise(() => [null, null]);
   return (
     <div className="flex items-center pr-1 hover:bg-neutral-100 dark:hover:bg-neutral-800">

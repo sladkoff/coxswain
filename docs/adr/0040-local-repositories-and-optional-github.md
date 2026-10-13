@@ -18,14 +18,16 @@ second kind of project.
 
 ## Decision
 
-1. **A project is a git repository; GitHub is optional.** A project has a `name`, a `path` and a `github`
-   (`owner/name`). `path` null: coxswain's own clone in `~/coxswain/repos/<owner>/<name>/` (ADR 0008), so it follows
-   from `github` and isn't stored. `github` null: the project isn't on GitHub, and has no PRs, threads or posting.
+1. **A project is a git repository; a forge is optional.** A project has a `name`, a `path`, and the `forge`, `host`
+   and `repo` it is on ([ADR 0041](0041-forges-github-and-gitlab.md)). `path` null: coxswain's own clone in
+   `~/coxswain/repos/` (ADR 0008), so it follows from the repository and isn't stored. No forge: the project isn't on
+   one, and has no PRs, threads or posting.
 2. **Three ways to add one:**
    - **A GitHub repository** from the list: cloned, as before.
    - **Add Local Repository…**: a folder the user picks in a native dialog. It must be in a git repository with at
-     least one commit; the project is the repository's top level. If its `origin` remote is on github.com, the project
-     remembers its `owner/name` (ADR 0006's _Detect_) and gets every GitHub feature, on the user's own checkout.
+     least one commit; the project is the repository's top level. If its `origin` remote is on github.com or a GitLab host
+     coxswain knows (ADR 0041), the project remembers the repository there (ADR 0006's _Detect_) and gets every forge
+     feature, on the user's own checkout.
    - **New Project…**: a new folder, picked in a native save dialog, which coxswain makes, `git init`s and gives an
      empty first commit, with the user's own git identity. A folder that isn't a git repository yet can't be added;
      it can be made a repository first, or its contents moved into a new project.
@@ -57,7 +59,6 @@ second kind of project.
   entry in the user's repository, and tools that walk the tree would find every worktree.
 - **Add any folder, `git init`ing it.** Its first commit would take whatever is there, `node_modules`, build output
   or secrets, without a `.gitignore`. A new project starts empty instead.
-- **A forge interface now,** with GitHub as its one implementation. Waits for GitLab, when there are two to shape it.
 
 ## Consequences
 
@@ -67,4 +68,5 @@ second kind of project.
 - An empty first commit means a new project's first workspace starts from an empty tree.
 - Projects can't be removed yet; when they can, a local repository's worktrees must be removed with `git worktree
 remove`, not by deleting the folder, so the user's repository forgets them.
-- Projects on GitLab or another host work as local repositories (Push included) until coxswain knows the host.
+- Projects on a host coxswain doesn't know (not github.com, and no GitLab `glab` is signed in to) work as local
+  repositories, Push included.

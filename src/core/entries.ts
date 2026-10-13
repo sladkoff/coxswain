@@ -26,7 +26,7 @@ export type ProseAnchor = { viewId: number; section: number; quote: string; at: 
 export type ReviewEntry = {
   id: number;
   workspaceId: number;
-  // comment: mirrored from a review thread on GitHub (ADR 0037), by author, its GitHub login.
+  // comment: mirrored from a review thread on the forge (ADR 0037), by author, their login there.
   kind: "note" | "question" | "answer" | "explanation" | "finding" | "comment";
   body: string;
   parentId: number | null; // the thread's first entry, for replies, follow-ups and answers
@@ -44,10 +44,11 @@ export type ReviewEntry = {
   revision: string | null; // on prose: the section's version, a hash of its markdown (ADR 0036)
   section: number | null; // on prose: its section in the view; code is then the quote
   quoteAt: number | null; // on prose: where the quote starts in the section's text
-  author: string | null; // a mirrored comment's GitHub login
-  githubId: string | null; // the comment on GitHub: a mirrored one's, or an entry's once posted
-  githubThreadId: string | null; // on a thread's first entry: its review thread on GitHub
-  githubUrl: string | null;
+  author: string | null; // a mirrored comment's login on the forge
+  forgeId: string | null; // the comment on the forge: a mirrored one's, or an entry's once posted
+  forgeThreadId: string | null; // on a thread's first entry: its review thread on the forge
+  forgeUrl: string | null;
+  forgeConversation: number; // 1: posted in the PR's conversation, not on a review thread
   // ADR 0015: current while its lines are unchanged in the live diff (the worktree, or the merge base for the old
   // side), wherever they moved; outdated once they changed. The same whatever range it's listed for. A reply or
   // answer takes its thread's. Floating entries are current.
@@ -87,9 +88,10 @@ export const columns = [
   "section",
   "quote_at as quoteAt",
   "author",
-  "github_id as githubId",
-  "github_thread_id as githubThreadId",
-  "github_url as githubUrl",
+  "forge_id as forgeId",
+  "forge_thread_id as forgeThreadId",
+  "forge_url as forgeUrl",
+  "forge_conversation as forgeConversation",
 ] as const;
 
 // Every entry of the workspace, in order.

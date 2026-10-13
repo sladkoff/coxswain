@@ -26,17 +26,17 @@ type Reads = {
   [K in keyof Api]: Api[K] extends (...args: never[]) => Promise<unknown> ? K : never;
 }[keyof Api];
 
-const github = { staleTime: 60_000, refetchOnWindowFocus: true };
+const forge = { staleTime: 60_000, refetchOnWindowFocus: true };
 type Extra = { staleTime?: number; refetchOnWindowFocus?: boolean };
 const extra: Partial<Record<Reads, Extra>> = {
   readAgentState: { staleTime: Infinity },
   listAgentStatuses: { staleTime: Infinity }, // refetched when a status changes (below)
   listJobs: { staleTime: Infinity }, // the core pushes them (below)
   readFileAt: { staleTime: Infinity }, // a file at a commit never changes
-  listPullRequests: github,
-  listPullRequestTitles: github,
+  listPullRequests: forge,
+  listPullRequestTitles: forge,
 };
-// Offline or signed out: a GitHub read keeps what it fetched before. Throwing leaves the query's data as it was.
+// Offline or signed out: a forge's read keeps what it fetched before. Throwing leaves the query's data as it was.
 // The workspace's own (openWorktree, readPullRequest) are kept by the core.
 const keepsOk = new Set<Reads>(["listPullRequestTitles"]);
 
@@ -57,7 +57,7 @@ export function core<K extends Reads>(name: K, ...args: Parameters<Api[K]>) {
         before?.status === "ok" &&
         (result as { status?: string }).status !== "ok"
       )
-        throw new Error((result as { message?: string }).message ?? "GitHub is unreachable");
+        throw new Error((result as { message?: string }).message ?? "The forge is unreachable");
       return result;
     },
     // Also runs when the query commits its response, after any intervening IPC events.
@@ -97,7 +97,7 @@ const affects: Record<Changed["what"], Reads[]> = {
   view: ["listViews"],
   reviewed: ["listReviewed"],
   // ADR 0030: its PR or what's pushed moved; the sidebar shows the PR's title and state too.
-  github: ["openWorktree", "readPullRequest", "listPullRequestTitles"],
+  forge: ["openWorktree", "readPullRequest", "listPullRequestTitles"],
   projects: ["listProjects"],
   workspaces: ["listWorkspaces"],
   // An agent sent its slash commands for one of its sessions.

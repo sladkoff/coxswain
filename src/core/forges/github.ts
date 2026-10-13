@@ -2,49 +2,34 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { Octokit } from "@octokit/core";
 import { match, P } from "ts-pattern";
+import type {
+  Check,
+  CheckState,
+  CommentRef,
+  CurrentUser,
+  Forge,
+  ForgeComment,
+  ForgeProblem,
+  ForgeRepo,
+  ForgeResult,
+  Posted,
+  Pr,
+  PullRequestResult,
+  PullRequestTitle,
+  ReviewThread,
+} from "../forge.ts";
 
-export type GitHubProblem =
-  | { status: "signed-out" }
-  | { status: "gh-missing" }
-  | { status: "error"; message: string };
+// ADR 0006: GitHub, github.com only, through Octokit with the token of the user's gh.
 
-export type CurrentUser =
-  | { status: "signed-in"; login: string; name: string | null; avatarUrl: string }
-  | GitHubProblem;
-
-export type Repo = {
-  id: number;
-  fullName: string;
-  description: string | null;
-  private: boolean;
-  pushedAt: string | null;
-};
-
-export type PullRequest = {
-  number: number;
-  title: string;
-  author: string | null;
-  headRef: string;
-  draft: boolean;
-  updatedAt: string;
-};
-
-export type PullRequestList = { status: "ok"; pulls: PullRequest[] } | GitHubProblem;
-
-// What the workspace rail shows of a workspace's PR: its title and whether it's still open.
-export type PullRequestTitle = {
-  number: number;
-  title: string;
-  state: "open" | "merged" | "closed";
-  draft: boolean;
-};
-export type PullRequestTitles = { status: "ok"; pulls: PullRequestTitle[] } | GitHubProblem;
-
-export type RepoPage = { status: "ok"; repos: Repo[]; hasMore: boolean } | GitHubProblem;
+const problem = (status: "signed-out" | "cli-missing"): ForgeProblem => ({
+  status,
+  forge: "github",
+  host: "github.com",
+});
 
 // ADR 0006: the token comes from `gh` each time and is never stored.
 // ponytail: relies on PATH, a Finder-launched packaged app won't see Homebrew's gh; fix when we package.
-export async function ghToken(): Promise<string | null> {
+async function ghToken(): Promise<string | null> {
   try {
     const { stdout } = await promisify(execFile)("gh", [
       "auth",
@@ -59,24 +44,29 @@ export async function ghToken(): Promise<string | null> {
   }
 }
 
-async function withGitHub<T>(fn: (octokit: Octokit) => Promise<T>): Promise<T | GitHubProblem> {
+async function withGitHub<T>(fn: (octokit: Octokit) => Promise<T>): Promise<T | ForgeProblem> {
   let token: string | null;
   try {
     token = await ghToken();
   } catch {
-    return { status: "gh-missing" };
+    return problem("cli-missing");
   }
-  if (!token) return { status: "signed-out" };
+  if (!token) return problem("signed-out");
 
   try {
     return await fn(new Octokit({ auth: token }));
   } catch (e) {
-    if ((e as { status?: number }).status === 401) return { status: "signed-out" };
+    if ((e as { status?: number }).status === 401) return problem("signed-out");
     return { status: "error", message: (e as Error).message };
   }
 }
 
-export function getCurrentUser(): Promise<CurrentUser> {
+const ownerName = (repo: ForgeRepo) => {
+  const [owner, name] = repo.path.split("/");
+  return { owner, name };
+};
+
+function getCurrentUser(): Promise<CurrentUser> {
   return withGitHub(async (octokit) => {
     const { data } = await octokit.request("GET /user");
     return { status: "signed-in", login: data.login, name: data.name, avatarUrl: data.avatar_url };
@@ -86,7 +76,7 @@ export function getCurrentUser(): Promise<CurrentUser> {
 const PER_PAGE = 100;
 
 // Every repository the user can see (owned, collaborator, organisation member), most recently pushed first.
-export function listRepos(page: number): Promise<RepoPage> {
+function listRepos(page: number) {
   return withGitHub(async (octokit) => {
     const { data } = await octokit.request("GET /user/repos", {
       sort: "pushed",
@@ -94,7 +84,7 @@ export function listRepos(page: number): Promise<RepoPage> {
       page,
     });
     return {
-      status: "ok",
+      status: "ok" as const,
       repos: data.map((r) => ({
         id: Number(r.id),
         fullName: r.full_name,
@@ -109,7 +99,8 @@ export function listRepos(page: number): Promise<RepoPage> {
 
 // Open PRs of one repository, most recently updated first.
 // ponytail: first 100 only; page like listRepos if a repository has more open PRs than that.
-export function listPullRequests(owner: string, name: string): Promise<PullRequestList> {
+function listPullRequests(repo: ForgeRepo) {
+  const { owner, name } = ownerName(repo);
   return withGitHub(async (octokit) => {
     const { data } = await octokit.request("GET /repos/{owner}/{repo}/pulls", {
       owner,
@@ -120,7 +111,7 @@ export function listPullRequests(owner: string, name: string): Promise<PullReque
       per_page: 100,
     });
     return {
-      status: "ok",
+      status: "ok" as const,
       pulls: data.map((p) => ({
         number: p.number,
         title: p.title,
@@ -135,13 +126,10 @@ export function listPullRequests(owner: string, name: string): Promise<PullReque
 
 // Title and state of some PRs of one repository, open or not, in one GraphQL request. A number GitHub doesn't know is
 // left out.
-export function listPullRequestTitles(
-  owner: string,
-  name: string,
-  numbers: number[],
-): Promise<PullRequestTitles> {
+function listPullRequestTitles(repo: ForgeRepo, numbers: number[]) {
+  const { owner, name } = ownerName(repo);
   return withGitHub(async (octokit) => {
-    if (!numbers.length) return { status: "ok", pulls: [] };
+    if (!numbers.length) return { status: "ok" as const, pulls: [] };
     const fields = numbers
       .map((n) => `pr${n}: pullRequest(number: ${Math.trunc(n)}) { number title state isDraft }`)
       .join("\n");
@@ -154,7 +142,7 @@ export function listPullRequestTitles(
       throw e;
     });
     return {
-      status: "ok",
+      status: "ok" as const,
       pulls: Object.values(data.repository).flatMap((p) =>
         p
           ? [
@@ -171,22 +159,15 @@ export function listPullRequestTitles(
   });
 }
 
-type PullRequestHead =
-  | { status: "ok"; head: string; mergeBase: string; headRef: string; fromFork: boolean }
-  | GitHubProblem;
-
 // Where a PR's head is, and the commits its diff is between: GitHub diffs the head against the merge base,
 // not the base branch's tip.
-export function getPullRequestHead(
-  owner: string,
-  name: string,
-  prNumber: number,
-): Promise<PullRequestHead> {
+function getPullRequestHead(pr: Pr) {
+  const { owner, name } = ownerName(pr.repo);
   return withGitHub(async (octokit) => {
-    const { data: pr } = await octokit.request("GET /repos/{owner}/{repo}/pulls/{pull_number}", {
+    const { data } = await octokit.request("GET /repos/{owner}/{repo}/pulls/{pull_number}", {
       owner,
       repo: name,
-      pull_number: prNumber,
+      pull_number: pr.number,
     });
     // Head commits are reachable from the base repository even when the PR comes from a fork.
     const { data: compare } = await octokit.request(
@@ -194,26 +175,23 @@ export function getPullRequestHead(
       {
         owner,
         repo: name,
-        basehead: `${pr.base.sha}...${pr.head.sha}`,
+        basehead: `${data.base.sha}...${data.head.sha}`,
         per_page: 1,
       },
     );
     return {
-      status: "ok",
-      head: pr.head.sha,
+      status: "ok" as const,
+      head: data.head.sha,
       mergeBase: compare.merge_base_commit.sha,
-      headRef: pr.head.ref,
-      fromFork: pr.head.repo?.full_name !== pr.base.repo.full_name,
+      headRef: data.head.ref,
+      fromFork: data.head.repo?.full_name !== data.base.repo.full_name,
     };
   });
 }
 
 // The open PR whose head is this branch of the repository, if there is one.
-export function findPullRequest(
-  owner: string,
-  name: string,
-  branch: string,
-): Promise<{ status: "ok"; number: number | null } | GitHubProblem> {
+function findPullRequest(repo: ForgeRepo, branch: string) {
+  const { owner, name } = ownerName(repo);
   return withGitHub(async (octokit) => {
     const { data } = await octokit.request("GET /repos/{owner}/{repo}/pulls", {
       owner,
@@ -222,18 +200,16 @@ export function findPullRequest(
       state: "open",
       per_page: 1,
     });
-    return { status: "ok", number: data[0]?.number ?? null };
+    return { status: "ok" as const, number: data[0]?.number ?? null };
   });
 }
 
-export type CreatedPullRequest = { status: "ok"; number: number; url: string } | GitHubProblem;
-
 // Opens a draft PR of a pushed branch; the user finishes its title and description on GitHub.
-export function createPullRequest(
-  owner: string,
-  name: string,
+function createPullRequest(
+  repo: ForgeRepo,
   pr: { head: string; base: string; title: string; body: string },
-): Promise<CreatedPullRequest> {
+) {
+  const { owner, name } = ownerName(repo);
   return withGitHub(async (octokit) => {
     const { data } = await octokit.request("POST /repos/{owner}/{repo}/pulls", {
       owner,
@@ -241,81 +217,14 @@ export function createPullRequest(
       ...pr,
       draft: true,
     });
-    return { status: "ok", number: data.number, url: data.html_url };
+    return { status: "ok" as const, number: data.number, url: data.html_url };
   });
 }
 
-// ADR 0037: a PR as its panel shows it, with its review threads (mirrored into entries) and its checks, in one GraphQL
-// request. Polled while its workspace shows; GraphQL has no ETags, so each poll counts against the rate limit.
-export type CheckState = "success" | "failure" | "pending" | "neutral";
-// A check on a commit: a check run (GitHub Actions and other apps) or a commit status. jobId: an Actions job, whose
-// log can be read.
-export type Check = {
-  name: string;
-  state: CheckState;
-  detail: string | null;
-  url: string | null;
-  jobId: number | null;
-};
-export type GitHubComment = {
-  id: string;
-  author: string;
-  body: string;
-  createdAt: string;
-  url: string;
-};
-// A review thread on lines: side and lines as they were where its first comment was written (commit). file: a thread
-// on a whole file, which has no lines.
-export type ReviewThread = {
-  id: string;
-  resolved: boolean;
-  path: string;
-  side: "old" | "new";
-  startLine: number | null;
-  endLine: number | null;
-  commit: string | null;
-  comments: GitHubComment[];
-  complete: boolean; // every comment of it was read, not only the first 100
-};
-// One item of the PR's conversation: a comment on the PR, a review's summary (review: its verdict), or a comment on a
-// whole file (path).
-export type ConversationItem = GitHubComment & { review?: string; path?: string };
-export type MergeMethod = "merge" | "squash" | "rebase";
-export type PullRequestDetails = {
-  status: "ok";
-  id: string;
-  number: number;
-  title: string;
-  body: string;
-  url: string;
-  state: "open" | "merged" | "closed";
-  draft: boolean;
-  // Whether it merges cleanly, and what GitHub says of merging it now (blocked by required checks or reviews, …).
-  mergeable: "mergeable" | "conflicting" | "unknown";
-  mergeState: string;
-  author: string | null;
-  baseRef: string;
-  headRef: string;
-  head: string;
-  viewer: string;
-  viewerId: string;
-  canUpdate: boolean;
-  assignees: string[];
-  reviewers: { login: string; state: string }[]; // state: requested, approved, changes requested, commented, …
-  labels: { name: string; color: string }[];
-  checks: Check[]; // the head commit's
-  checkState: CheckState | null; // all of them at once; null without any
-  commitChecks: Record<string, CheckState>; // each commit's, by sha
-  mergeMethods: MergeMethod[];
-  conversation: ConversationItem[];
-  threads: ReviewThread[];
-  comments: GitHubComment[]; // the conversation's comments, all of them
-};
-export type PullRequestResult = PullRequestDetails | GitHubProblem;
-
-// Review threads and the conversation's comments are read in full, page by page (morePages), since a read mirrors
-// them and takes what it doesn't find for deleted. ponytail: the first 100 comments of a thread (a longer one isn't
-// pruned, see ReviewThread.complete), commits and checks; page them if PRs grow past that.
+// ADR 0037: the PR in one GraphQL request. Polled while its workspace shows; GraphQL has no ETags, so each poll counts
+// against the rate limit. Review threads and the conversation's comments are read in full, page by page (morePages),
+// since a read mirrors them and takes what it doesn't find for deleted. ponytail: the first 100 comments of a thread (a
+// longer one isn't pruned, see ReviewThread.complete), commits and checks; page them if PRs grow past that.
 const threadFields = `id isResolved path diffSide subjectType originalLine originalStartLine
   comments(first: 100) { pageInfo { hasNextPage } nodes { id author { login } body createdAt url originalCommit { oid } } }`;
 const pullRequestQuery = `query($owner: String!, $name: String!, $number: Int!) {
@@ -436,7 +345,7 @@ type RawPullRequest = {
   };
 };
 
-const comment = (c: RawComment): GitHubComment => ({
+const comment = (c: RawComment): ForgeComment => ({
   id: c.id,
   author: c.author?.login ?? "ghost",
   body: c.body,
@@ -536,9 +445,9 @@ export function parsePullRequest(data: RawPullRequest): PullRequestResult {
     title: pr.title,
     body: pr.body,
     url: pr.url,
-    state: pr.state.toLowerCase() as PullRequestDetails["state"],
+    state: pr.state.toLowerCase() as "open" | "merged" | "closed",
     draft: pr.isDraft,
-    mergeable: pr.mergeable.toLowerCase() as PullRequestDetails["mergeable"],
+    mergeable: pr.mergeable.toLowerCase() as "mergeable" | "conflicting" | "unknown",
     mergeState: words(pr.mergeStateStatus),
     author: pr.author?.login ?? null,
     baseRef: pr.baseRefName,
@@ -573,26 +482,23 @@ export function parsePullRequest(data: RawPullRequest): PullRequestResult {
   };
 }
 
-export function getPullRequest(
-  owner: string,
-  name: string,
-  prNumber: number,
-): Promise<PullRequestResult> {
+function getPullRequest(pr: Pr): Promise<PullRequestResult> {
+  const { owner, name } = ownerName(pr.repo);
   return withGitHub(async (octokit) => {
     const raw = await octokit.graphql<RawPullRequest>(pullRequestQuery, {
       owner,
       name,
-      number: prNumber,
+      number: pr.number,
     });
-    const pr = raw.repository.pullRequest;
-    if (pr) {
+    const found = raw.repository.pullRequest;
+    if (found) {
       const more = <T>(field: string, fields: string, page: Page<T>) =>
-        morePages<T>(octokit, pr.id, field, fields, page);
-      pr.reviewThreads.nodes = await more("reviewThreads", threadFields, pr.reviewThreads);
-      pr.comments.nodes = await more(
+        morePages<T>(octokit, found.id, field, fields, page);
+      found.reviewThreads.nodes = await more("reviewThreads", threadFields, found.reviewThreads);
+      found.comments.nodes = await more(
         "comments",
         "id author { login } body createdAt url",
-        pr.comments,
+        found.comments,
       );
     }
     return parsePullRequest(raw);
@@ -622,21 +528,18 @@ async function morePages<T>(
 }
 
 // One GraphQL mutation (or query) as the current user; what goes wrong comes back as a problem.
-export function githubGraphql<T>(
-  query: string,
-  variables: Record<string, unknown>,
-): Promise<{ status: "ok"; data: T } | GitHubProblem> {
+function graphql<T>(query: string, variables: Record<string, unknown>) {
   return withGitHub(async (octokit) => ({
     status: "ok" as const,
     data: await octokit.graphql<T>(query, variables),
   }));
 }
+// The same, for a mutation whose answer isn't needed.
+const mutate = (query: string, variables: Record<string, unknown>): Promise<ForgeResult> =>
+  graphql(query, variables).then((r) => (r.status === "ok" ? { status: "ok" } : r));
 
-// One REST call as the current user, resolving with its response's data; what goes wrong comes back as a problem.
-export function githubRequest<T>(
-  route: string,
-  params: Record<string, unknown>,
-): Promise<{ status: "ok"; data: T } | GitHubProblem> {
+// One REST call as the current user, resolving with its response's data.
+function request<T>(route: string, params: Record<string, unknown>) {
   return withGitHub(async (octokit) => ({
     status: "ok" as const,
     data: (await octokit.request(route, params)).data as T,
@@ -644,12 +547,8 @@ export function githubRequest<T>(
 }
 
 // The last lines of a GitHub Actions job's log, where a failure usually says why. Timestamps are cut off.
-export function readJobLog(
-  owner: string,
-  name: string,
-  jobId: number,
-  lines = 150,
-): Promise<{ status: "ok"; log: string } | GitHubProblem> {
+function readJobLog(repo: ForgeRepo, jobId: number, lines: number) {
+  const { owner, name } = ownerName(repo);
   return withGitHub(async (octokit) => {
     const { data } = await octokit.request("GET /repos/{owner}/{repo}/actions/jobs/{job_id}/logs", {
       owner,
@@ -666,3 +565,309 @@ export function readJobLog(
     return { status: "ok" as const, log };
   });
 }
+
+// ADR 0006: clone with the protocol the user chose for gh; HTTPS relies on gh's credential helper.
+function ghProtocol(): Promise<string> {
+  return new Promise((done) =>
+    execFile("gh", ["config", "get", "git_protocol"], (e, out) => done(e ? "" : out.trim())),
+  );
+}
+
+// The PR's node and its head on GitHub, for posting. With the user's review in progress, if they have one (only its
+// author sees a pending review).
+async function postTarget(pr: Pr) {
+  const { owner, name } = ownerName(pr.repo);
+  const found = await graphql<{
+    repository: {
+      pullRequest: {
+        id: string;
+        headRefOid: string;
+        reviews: { nodes: { id: string; comments: { totalCount: number } }[] };
+      };
+    };
+  }>(
+    `
+      query ($owner: String!, $name: String!, $number: Int!) {
+        repository(owner: $owner, name: $name) {
+          pullRequest(number: $number) {
+            id
+            headRefOid
+            reviews(states: PENDING, first: 1) {
+              nodes {
+                id
+                comments {
+                  totalCount
+                }
+              }
+            }
+          }
+        }
+      }
+    `,
+    { owner, name, number: pr.number },
+  );
+  if (found.status !== "ok") return found;
+  const p = found.data.repository.pullRequest;
+  const pending = p.reviews.nodes[0];
+  return {
+    status: "ok" as const,
+    target: {
+      id: p.id,
+      head: p.headRefOid,
+      pending: pending ? { id: pending.id, comments: pending.comments.totalCount } : null,
+    },
+  };
+}
+
+const sideOf = (side: "old" | "new") => (side === "old" ? "LEFT" : "RIGHT");
+
+// A posted comment's mutations: on a review thread, or in the PR's conversation.
+const mutations = (c: CommentRef) =>
+  c.inConversation
+    ? {
+        edit: `mutation($id: ID!, $body: String!) { updateIssueComment(input: {id: $id, body: $body}) { clientMutationId } }`,
+        remove: `mutation($id: ID!) { deleteIssueComment(input: {id: $id}) { clientMutationId } }`,
+      }
+    : {
+        edit: `mutation($id: ID!, $body: String!) { updatePullRequestReviewComment(input: {
+          pullRequestReviewCommentId: $id, body: $body }) { clientMutationId } }`,
+        remove: `mutation($id: ID!) { deletePullRequestReviewComment(input: {id: $id}) { clientMutationId } }`,
+      };
+
+type RestComment = { id: number; node_id: string; html_url: string };
+const posted = (c: RestComment): Posted => ({ id: c.node_id, url: c.html_url });
+
+export const githubForge: Forge = {
+  names: { forge: "GitHub", pr: "PR", request: "pull request", sign: "#", cli: "gh" },
+  verdicts: ["COMMENT", "APPROVE", "REQUEST_CHANGES"],
+  // GitHub takes no single comment on the diff while the user has a review in progress.
+  pendingBlocksComments: true,
+  currentUser: () => getCurrentUser(),
+  listRepos: (_host, page) => listRepos(page),
+  cloneUrl: async (repo) =>
+    (await ghProtocol()) === "ssh"
+      ? `git@github.com:${repo.path}.git`
+      : `https://github.com/${repo.path}.git`,
+  listPullRequests,
+  listPullRequestTitles,
+  findPullRequest,
+  getPullRequestHead,
+  createPullRequest,
+  getPullRequest,
+  readJobLog,
+  // GitHub shows a permalink to lines as the code, highlighted, with a link to it.
+  permalink: (repo, sha, a) =>
+    `https://github.com/${repo.path}/blob/${sha}/${a.path}#${a.startLine === a.endLine ? `L${a.startLine}` : `L${a.startLine}-L${a.endLine}`}`,
+  postTarget,
+  comment: async (_pr, target, body) => {
+    const said = await graphql<{ addComment: { commentEdge: { node: Posted } } }>(
+      `
+        mutation ($pr: ID!, $body: String!) {
+          addComment(input: { subjectId: $pr, body: $body }) {
+            commentEdge {
+              node {
+                id
+                url
+              }
+            }
+          }
+        }
+      `,
+      { pr: target.id, body },
+    );
+    if (said.status !== "ok") return said;
+    return { status: "ok", comment: said.data.addComment.commentEdge.node };
+  },
+  // The user's review in progress, or a new one on the PR's head.
+  startReview: async (_pr, target) => {
+    let reviewId = target.pending?.id;
+    if (!reviewId) {
+      const made = await graphql<{ addPullRequestReview: { pullRequestReview: { id: string } } }>(
+        `
+          mutation ($pr: ID!, $commit: GitObjectID!) {
+            addPullRequestReview(input: { pullRequestId: $pr, commitOID: $commit }) {
+              pullRequestReview {
+                id
+              }
+            }
+          }
+        `,
+        { pr: target.id, commit: target.head },
+      );
+      if (made.status !== "ok") return made;
+      reviewId = made.data.addPullRequestReview.pullRequestReview.id;
+    }
+    const review = reviewId;
+    return {
+      status: "ok",
+      review: {
+        repliesWait: false,
+        thread: async (a, body) => {
+          const side = sideOf(a.side);
+          const made = await graphql<{
+            addPullRequestReviewThread: { thread: { id: string; comments: { nodes: Posted[] } } };
+          }>(
+            `
+              mutation ($input: AddPullRequestReviewThreadInput!) {
+                addPullRequestReviewThread(input: $input) {
+                  thread {
+                    id
+                    comments(first: 1) {
+                      nodes {
+                        id
+                        url
+                      }
+                    }
+                  }
+                }
+              }
+            `,
+            {
+              input: {
+                pullRequestReviewId: review,
+                path: a.path,
+                body,
+                subjectType: "LINE",
+                line: a.endLine,
+                side,
+                ...(a.startLine !== a.endLine && { startLine: a.startLine, startSide: side }),
+              },
+            },
+          );
+          if (made.status !== "ok") return made;
+          const t = made.data.addPullRequestReviewThread.thread;
+          return { status: "ok", threadId: t.id, comment: t.comments.nodes[0] };
+        },
+        reply: async (threadId, body) => {
+          const replied = await graphql<{ addPullRequestReviewThreadReply: { comment: Posted } }>(
+            `
+              mutation ($review: ID!, $thread: ID!, $body: String!) {
+                addPullRequestReviewThreadReply(
+                  input: {
+                    pullRequestReviewId: $review
+                    pullRequestReviewThreadId: $thread
+                    body: $body
+                  }
+                ) {
+                  comment {
+                    id
+                    url
+                  }
+                }
+              }
+            `,
+            { review, thread: threadId, body },
+          );
+          if (replied.status !== "ok") return replied;
+          return { status: "ok", comment: replied.data.addPullRequestReviewThreadReply.comment };
+        },
+        submit: async (verdict, body) => {
+          const submitted = await mutate(
+            `mutation($review: ID!, $event: PullRequestReviewEvent!, $body: String) { submitPullRequestReview(input: {
+              pullRequestReviewId: $review, event: $event, body: $body }) { pullRequestReview { id } } }`,
+            { review, event: verdict, body: body || null },
+          );
+          return submitted.status === "ok" ? { status: "ok", rebound: [] } : submitted;
+        },
+      },
+    };
+  },
+  // GitHub's REST single comments, each published as it's made.
+  postThread: async (pr, target, a, body) => {
+    const { owner, name } = ownerName(pr.repo);
+    const side = sideOf(a.side);
+    const made = await request<RestComment>(
+      "POST /repos/{owner}/{repo}/pulls/{pull_number}/comments",
+      {
+        owner,
+        repo: name,
+        pull_number: pr.number,
+        body,
+        commit_id: target.head,
+        path: a.path,
+        line: a.endLine,
+        side,
+        ...(a.startLine !== a.endLine && { start_line: a.startLine, start_side: side }),
+      },
+    );
+    if (made.status !== "ok") return made;
+    return { status: "ok", comment: posted(made.data), threadId: null };
+  },
+  // A reply goes to the thread's first comment, by its REST id.
+  postReply: async (pr, thread, body) => {
+    const { owner, name } = ownerName(pr.repo);
+    const top = await graphql<{ node: { databaseId: number } | null }>(
+      `
+        query ($id: ID!) {
+          node(id: $id) {
+            ... on PullRequestReviewComment {
+              databaseId
+            }
+          }
+        }
+      `,
+      { id: thread.first },
+    );
+    if (top.status !== "ok") return top;
+    if (!top.data.node)
+      return { status: "error", message: "The thread's first comment is gone from GitHub" };
+    const r = await request<RestComment>(
+      "POST /repos/{owner}/{repo}/pulls/{pull_number}/comments/{comment_id}/replies",
+      { owner, repo: name, pull_number: pr.number, comment_id: top.data.node.databaseId, body },
+    );
+    if (r.status !== "ok") return r;
+    return { status: "ok", comment: posted(r.data) };
+  },
+  resolve: (_pr, threadId, resolved) =>
+    mutate(
+      resolved
+        ? `mutation($id: ID!) { resolveReviewThread(input: {threadId: $id}) { thread { id } } }`
+        : `mutation($id: ID!) { unresolveReviewThread(input: {threadId: $id}) { thread { id } } }`,
+      { id: threadId },
+    ),
+  commentBody: async (_pr, c) => {
+    const now = await graphql<{ node: { body: string } | null }>(
+      c.inConversation
+        ? `query($id: ID!) { node(id: $id) { ... on IssueComment { body } } }`
+        : `query($id: ID!) { node(id: $id) { ... on PullRequestReviewComment { body } } }`,
+      { id: c.id },
+    );
+    return now.status === "ok" ? { status: "ok", body: now.data.node?.body ?? null } : now;
+  },
+  editComment: (_pr, c, body) => mutate(mutations(c).edit, { id: c.id, body }),
+  deleteComment: async (_pr, c) => {
+    const done = await mutate(mutations(c).remove, { id: c.id });
+    return done.status === "error" && /Could not resolve to a node/.test(done.message)
+      ? { status: "ok" }
+      : done;
+  },
+  changePullRequest: (_pr, ref, change) => {
+    const [query, variables] = match(change)
+      .returnType<[string, Record<string, unknown>]>()
+      .with({ kind: "body" }, (c) => [
+        `mutation($pr: ID!, $body: String!) { updatePullRequest(input: {pullRequestId: $pr, body: $body}) { clientMutationId } }`,
+        { pr: ref.id, body: c.body },
+      ])
+      .with({ kind: "comment" }, (c) => [
+        `mutation($pr: ID!, $body: String!) { addComment(input: {subjectId: $pr, body: $body}) { clientMutationId } }`,
+        { pr: ref.id, body: c.body },
+      ])
+      .with({ kind: "assign" }, (c) => [
+        c.on
+          ? `mutation($pr: ID!, $me: ID!) { addAssigneesToAssignable(input: {assignableId: $pr, assigneeIds: [$me]}) { clientMutationId } }`
+          : `mutation($pr: ID!, $me: ID!) { removeAssigneesFromAssignable(input: {assignableId: $pr, assigneeIds: [$me]}) { clientMutationId } }`,
+        { pr: ref.id, me: ref.viewerId },
+      ])
+      .with({ kind: "ready" }, () => [
+        `mutation($pr: ID!) { markPullRequestReadyForReview(input: {pullRequestId: $pr}) { clientMutationId } }`,
+        { pr: ref.id },
+      ])
+      .with({ kind: "merge" }, (c) => [
+        `mutation($pr: ID!, $method: PullRequestMergeMethod!, $head: GitObjectID!) { mergePullRequest(input: {
+          pullRequestId: $pr, mergeMethod: $method, expectedHeadOid: $head}) { clientMutationId } }`,
+        { pr: ref.id, method: c.method.toUpperCase(), head: ref.head },
+      ])
+      .exhaustive();
+    return mutate(query, variables);
+  },
+};

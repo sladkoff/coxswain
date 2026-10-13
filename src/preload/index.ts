@@ -27,13 +27,17 @@ import type {
   Check,
   CreatedPullRequest,
   CurrentUser,
-  GitHubProblem,
+  ForgeKind,
+  ForgeProblem,
+  ForgeRepo,
   PullRequestList,
   PullRequestResult,
   PullRequestTitles,
   RepoPage,
-} from "../core/github";
-import type { Posting, PullRequestChange, PullRequestRef, ReviewPost } from "../core/pull-requests";
+  PullRequestChange,
+  PullRequestRef,
+} from "../core/forge";
+import type { Posting, ReviewPost } from "../core/pull-requests";
 import type { AttachedPrompt, Prompt, View, ViewRange } from "../core/views";
 import type { Project } from "../core/projects";
 import type { NewEntry, ReviewEntry } from "../core/review";
@@ -65,27 +69,30 @@ export type Changed =
 
 // The one interface between the UI and the core (ADR 0002).
 const api = {
-  currentUser: (): Promise<CurrentUser> => ipcRenderer.invoke("github:current-user"),
-  listRepos: (page: number): Promise<RepoPage> => ipcRenderer.invoke("github:list-repos", page),
+  // ADR 0041: the hosts coxswain can reach a forge on (github.com, and each GitLab glab is signed in to), the user
+  // signed in to one, and the repositories they can see there, page by page.
+  listForgeHosts: (): Promise<{ forge: ForgeKind; host: string }[]> =>
+    ipcRenderer.invoke("forge:hosts"),
+  currentUser: (forge: ForgeKind, host: string): Promise<CurrentUser> =>
+    ipcRenderer.invoke("forge:current-user", forge, host),
+  listRepos: (forge: ForgeKind, host: string, page: number): Promise<RepoPage> =>
+    ipcRenderer.invoke("forge:list-repos", forge, host, page),
   listProjects: (): Promise<Project[]> => ipcRenderer.invoke("projects:list"),
   openProject: (projectId: number): Promise<void> => ipcRenderer.invoke("projects:open", projectId),
-  addGitHubProject: (fullName: string): Promise<Project> =>
-    ipcRenderer.invoke("projects:add-github", fullName),
+  addForgeProject: (repo: ForgeRepo): Promise<Project> =>
+    ipcRenderer.invoke("projects:add-forge", repo),
   // ADR 0040: native dialogs; null if cancelled, rejects with why git won't take the folder.
   addLocalProject: (): Promise<Project | null> => ipcRenderer.invoke("projects:add-local"),
   createProject: (): Promise<Project | null> => ipcRenderer.invoke("projects:create"),
-  listPullRequests: (owner: string, name: string): Promise<PullRequestList> =>
-    ipcRenderer.invoke("github:list-pulls", owner, name),
+  listPullRequests: (projectId: number): Promise<PullRequestList> =>
+    ipcRenderer.invoke("forge:list-pulls", projectId),
   // The rail's titles: title and state of the workspaces' PRs, open or not.
-  listPullRequestTitles: (
-    owner: string,
-    name: string,
-    numbers: number[],
-  ): Promise<PullRequestTitles> => ipcRenderer.invoke("github:pull-titles", owner, name, numbers),
+  listPullRequestTitles: (projectId: number, numbers: number[]): Promise<PullRequestTitles> =>
+    ipcRenderer.invoke("forge:pull-titles", projectId, numbers),
   cloneProject: (projectId: number): Promise<CloneResult> =>
     ipcRenderer.invoke("git:clone", projectId),
-  // ADR 0030: what the workspace's worktree is on, as the core's last check of GitHub found it (the first check's
-  // the first time); the core checks again and says so with a github change.
+  // ADR 0030: what the workspace's worktree is on, as the core's last check of the forge found it (the first check's
+  // the first time); the core checks again and says so with a forge change.
   openWorktree: (workspaceId: number): Promise<WorktreeResult> =>
     ipcRenderer.invoke("git:open-worktree", workspaceId),
   // The branches to start a branch workspace from, and the default one.
@@ -219,9 +226,9 @@ const api = {
   ): Promise<ReviewEntry[]> =>
     ipcRenderer.invoke("review:list", workspaceId, mergeBase, base, head),
   addNote: (note: NewEntry): Promise<ReviewEntry> => ipcRenderer.invoke("review:add-note", note),
-  // Edit and delete reach GitHub for comments already posted there, and reject with what went wrong.
+  // Edit and delete reach the forge for comments already posted there, and reject with what went wrong.
   deleteEntry: (id: number): Promise<void> => ipcRenderer.invoke("review:delete", id),
-  // One comment; the first of a thread takes the thread's GitHub side with it, keeping the unposted notes.
+  // One comment; the first of a thread takes the thread's side on the forge with it, keeping the unposted notes.
   deleteComment: (id: number): Promise<void> => ipcRenderer.invoke("review:delete-comment", id),
   resolveThread: (id: number, resolved: boolean): Promise<void> =>
     ipcRenderer.invoke("review:resolve", id, resolved),
@@ -234,7 +241,7 @@ const api = {
     ipcRenderer.invoke("review:ask", question),
   // A thread's Stop: its question comes off the queue, or the turn answering it stops.
   stopQuestion: (threadId: number): Promise<void> => ipcRenderer.invoke("review:stop", threadId),
-  // Submit Review's draft: the open comment threads, with the comments not on GitHub yet.
+  // Submit Review's draft: the open comment threads, with the comments not on the forge yet.
   draftReview: (workspaceId: number): Promise<DraftThread[]> =>
     ipcRenderer.invoke("review:draft", workspaceId),
   // An agent thread's Summarize as Comment: the comment it comes to, from the summary model, for the user to edit.
@@ -249,24 +256,24 @@ const api = {
     ipcRenderer.invoke("review:send-all", workspaceId, threadIds),
   // ADR 0037: the workspace's PR for its panel, as the core's last check found it.
   readPullRequest: (workspaceId: number): Promise<PullRequestResult> =>
-    ipcRenderer.invoke("github:pull-request", workspaceId),
-  // A comment thread's comments not on GitHub yet, posted at once as a review of their own.
-  postComment: (workspaceId: number, threadId: number): Promise<{ status: "ok" } | GitHubProblem> =>
-    ipcRenderer.invoke("github:post-comment", workspaceId, threadId),
+    ipcRenderer.invoke("forge:pull-request", workspaceId),
+  // A comment thread's comments not on the forge yet, posted at once as a review of their own.
+  postComment: (workspaceId: number, threadId: number): Promise<{ status: "ok" } | ForgeProblem> =>
+    ipcRenderer.invoke("forge:post-comment", workspaceId, threadId),
   // Posts the picked threads' comments, as written, as one review.
-  // A review of the user's in progress on GitHub comes back as pending, to ask before adding to it.
+  // A review of the user's in progress on the forge comes back as pending, to ask before adding to it.
   postReview: (workspaceId: number, post: ReviewPost): Promise<Posting> =>
-    ipcRenderer.invoke("github:post-review", workspaceId, post),
-  // The PR panel's changes on GitHub: description, a comment, assigning yourself, ready for review, merge.
+    ipcRenderer.invoke("forge:post-review", workspaceId, post),
+  // The PR panel's changes on the forge: description, a comment, assigning yourself, ready for review, merge.
   changePullRequest: (
     workspaceId: number,
     pr: PullRequestRef,
     change: PullRequestChange,
-  ): Promise<{ status: "ok" } | GitHubProblem> =>
-    ipcRenderer.invoke("github:change-pr", workspaceId, pr, change),
+  ): Promise<{ status: "ok" } | ForgeProblem> =>
+    ipcRenderer.invoke("forge:change-pr", workspaceId, pr, change),
   // A failed check to the agent pane's session; resolves when the agent's turn ends.
   sendCheck: (workspaceId: number, check: Check): Promise<TurnResult> =>
-    ipcRenderer.invoke("github:send-check", workspaceId, check),
+    ipcRenderer.invoke("forge:send-check", workspaceId, check),
   // The same message, put on the clipboard instead; false if there are no threads.
   copyReviewPrompt: (workspaceId: number, threadIds?: number[]): Promise<boolean> =>
     ipcRenderer.invoke("review:copy-prompt", workspaceId, threadIds),
@@ -312,7 +319,7 @@ const api = {
     ipcRenderer.invoke("views:list", workspaceId),
   // Removes a view with its explanations and findings.
   removeView: (viewId: number): Promise<void> => ipcRenderer.invoke("views:remove", viewId),
-  // ADR 0030: the core keeps the workspace on screen fresh (its HEAD, what's pushed, GitHub); null stops.
+  // ADR 0030: the core keeps the workspace on screen fresh (its HEAD, what's pushed, its forge); null stops.
   watchWorkspace: (workspaceId: number | null): Promise<void> =>
     ipcRenderer.invoke("workspaces:watch", workspaceId),
   // How many of the workspace's committed file diffs have a file summary.
@@ -333,7 +340,7 @@ const api = {
   getCommentToAgent: (): Promise<boolean> => ipcRenderer.invoke("settings:comment-to-agent"),
   setCommentToAgent: (toAgent: boolean): Promise<void> =>
     ipcRenderer.invoke("settings:set-comment-to-agent", toAgent),
-  // Whether a new comment is posted to GitHub at once: the composer's Post to GitHub checkbox. Global.
+  // Whether a new comment is posted to the forge at once: the composer's Post to … checkbox. Global.
   getPostComments: (): Promise<boolean> => ipcRenderer.invoke("settings:post-comments"),
   setPostComments: (post: boolean): Promise<void> =>
     ipcRenderer.invoke("settings:set-post-comments", post),
@@ -366,19 +373,24 @@ const api = {
   // The Diff tab's range menu: a scope, or "commits". `scope` is null while a commit or turn shows. Pending if dismissed.
   showRangeMenu: (
     scope: "all" | "pushed" | "unpushed" | "uncommitted" | null,
-    hasPr: boolean,
+    pushed: string,
     layers: Layers,
-  ): Promise<RangePick> => ipcRenderer.invoke("menus:range", scope, hasPr, layers),
-  // A thread's ⋯ menu; stays pending if dismissed. url: its comment on GitHub, opened in the browser from the menu.
+  ): Promise<RangePick> => ipcRenderer.invoke("menus:range", scope, pushed, layers),
+  // A thread's ⋯ menu; stays pending if dismissed. url: its comment on the forge (named forge), opened in the browser
+  // from the menu.
   showThreadMenu: (can: {
     send: boolean;
     summarize: boolean;
     delete: boolean | "others";
     url: string | null;
+    forge: string;
   }): Promise<"delete" | "send" | "summarize"> => ipcRenderer.invoke("menus:thread", can),
-  // One of the user's comments' ⋯ menu: Edit, Delete, Open on GitHub. Pending if dismissed.
-  showCommentMenu: (can: { delete: boolean; url: string | null }): Promise<"edit" | "delete"> =>
-    ipcRenderer.invoke("menus:comment", can),
+  // One of the user's comments' ⋯ menu: Edit, Delete, Open on its forge. Pending if dismissed.
+  showCommentMenu: (can: {
+    delete: boolean;
+    url: string | null;
+    forge: string;
+  }): Promise<"edit" | "delete"> => ipcRenderer.invoke("menus:comment", can),
   // A pick from a list (the agent pane's session, agent, model, effort): the index of the picked label. Pending if
   // dismissed.
   showPickMenu: (labels: string[], checked: number): Promise<number> =>

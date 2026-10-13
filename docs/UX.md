@@ -67,7 +67,10 @@ being worked on now; the last error; and Stop while it runs. Its header names th
 _Settings…_; under it, _This workspace_: how many of the workspace on screen's committed file diffs have a summary at
 its HEAD, with _Up to date_, _Summarising…_, _Not yet_ or _For views only_. Esc or a click outside closes it.
 
-Settings has _File summaries_: the agent (_Claude Code_ · _Codex_), the model (a native menu of what the agent offers,
+Settings has _Accounts_: a card per forge host ([ADR 0041](adr/0041-forges-github-and-gitlab.md)), github.com and
+each GitLab host the GitLab CLI is signed in to, with the user there (avatar, name, _@login on host_) or what to run to
+sign in, and _Check again_; under them, how to add a GitLab host (`glab auth login --hostname …`). Then _File
+summaries_: the agent (_Claude Code_ · _Codex_), the model (a native menu of what the agent offers,
 asked in the workspace on screen; greyed out without one) and _Work_: _Ahead_ or _Only when needed_.
 
 ## Before the main screen
@@ -78,16 +81,21 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
 
 ## Levels
 
+The UI names a project's forge and its PRs as the forge does ([ADR 0041](adr/0041-forges-github-and-gitlab.md)):
+on GitHub _PR #12_, _Open Pull Request…_, _Post to GitHub_; on GitLab _MR !12_, _Open Merge Request…_, _Post to
+GitLab_. Where this document says GitHub, a GitLab project says GitLab.
+
 - **L1 — Current project and its workspaces**, a sidebar about 230 px wide; its top bar holds the macOS window
   buttons and, at its right, a panel button that hides the sidebar entirely; the same button then shows at the agent
   pane header's left (after the window buttons) to bring it back, and the command palette has _Show or Hide the
-  Sidebar_. At the top, the current project: its initial, name and where it is (its GitHub owner, or the folder its repository is in). Clicking it opens a native menu of the user's projects, the current one
+  Sidebar_. At the top, the current project: its initial, name and where it is (its owner or group on its forge, or the folder its repository is in). Clicking it opens a native menu of the user's projects, the current one
   checked, to switch to one; _Add Project…_ at its bottom opens the _Open a project_
   dialog over the window: a search field, _Add Local Repository…_ and _New Project…_ (native folder and save
-  dialogs, [ADR 0040](adr/0040-local-repositories-and-optional-github.md)), the user's projects (initial, name, where, _Current_), then their GitHub
-  repositories, most recently pushed first (owner/name, a lock if private, the description, when pushed: _3 days ago_),
-  to add one. Esc, ✕ or a click outside closes it, as it does the New workspace dialog. The rest of the screen belongs to the current project. A project's
-  repository must be git, cloned or local, and may be on GitHub; one that isn't has no PRs, so its New workspace
+  dialogs, [ADR 0040](adr/0040-local-repositories-and-optional-github.md)), the user's projects (initial, name, where, _Current_), then a section per forge host
+  (_GITHUB REPOSITORIES_, _GITLAB.EXAMPLE.COM REPOSITORIES_) with the repositories the user can see there, most recently
+  pushed first (group/name, a lock if private, the description, when pushed: _3 days ago_), each loading on its own
+  and saying what's wrong (e.g. how to sign in) on its own, to add one. Esc, ✕ or a click outside closes it, as it does the New workspace dialog. The rest of the screen belongs to the current project. A project's
+  repository must be git, cloned or local, and may be on a forge; one that isn't has no PRs, so its New workspace
   dialog lists only branches, and its Commits pane offers Push (to `origin`, if it has one) instead of Open Pull Request….
 
   Below it, under _Workspaces_, one row per workspace of the project, in the order they were added, the current one

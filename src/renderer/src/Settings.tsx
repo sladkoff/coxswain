@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import type { CurrentUser } from "../../core/github";
+import type { CurrentUser, ForgeKind } from "../../core/forge";
 import type { SummarySettings } from "../../core/jobs";
 import { Button, SegmentedControl } from "./components/button";
 import { TextArea, Input } from "./components/field";
@@ -21,36 +21,19 @@ export function Settings({
   workspaceId?: number;
   newPrompt?: boolean;
 }) {
-  const [user, setUser] = useState<CurrentUser | null>(null);
-  const check = () => {
-    setUser(null);
-    window.coxswain.currentUser().then(setUser);
-  };
-  useEffect(check, []);
-
+  const hosts = useQuery(core("listForgeHosts")).data ?? [];
   return (
     <Screen title="Settings" onClose={onClose} className="max-w-xl overflow-auto">
-      <h2 className="mb-3 font-medium">GitHub account</h2>
-      <Card className="flex min-h-16 items-center gap-3">
-        {!user ? (
-          <span className={muted}>Checking…</span>
-        ) : user.status === "signed-in" ? (
-          <>
-            <img src={user.avatarUrl} alt="" className="size-10 rounded-full" />
-            <div>
-              <div className="font-medium">{user.name ?? user.login}</div>
-              <div className={muted}>@{user.login} · signed in through the GitHub CLI</div>
-            </div>
-          </>
-        ) : (
-          <>
-            <ProblemMessage problem={user} />
-            <Button className="ml-auto shrink-0" onClick={check}>
-              Check again
-            </Button>
-          </>
-        )}
-      </Card>
+      <h2 className="mb-3 font-medium">Accounts</h2>
+      <div className="flex flex-col gap-2">
+        {hosts.map((h) => (
+          <Account key={h.host} {...h} />
+        ))}
+      </div>
+      <p className={cn("mt-2 text-xs", muted)}>
+        GitHub through the GitHub CLI (<code>gh</code>), and each GitLab host the GitLab CLI (
+        <code>glab</code>) is signed in to. Add one with <code>glab auth login --hostname …</code>.
+      </p>
       <h2 className="mt-6 mb-3 font-medium">File summaries</h2>
       <Summaries workspaceId={workspaceId} />
       <h2 className="mt-6 mb-3 font-medium">View prompts</h2>
@@ -60,6 +43,53 @@ export function Settings({
         coxswain {__VERSION__} <span className={muted}>· {__COMMIT__}</span>
       </Card>
     </Screen>
+  );
+}
+
+// ADR 0041: who the user is on one forge's host, as its CLI signed them in.
+function Account({ forge, host }: { forge: ForgeKind; host: string }) {
+  const [user, setUser] = useState<CurrentUser | null>(null);
+  const check = () => {
+    setUser(null);
+    void window.coxswain.currentUser(forge, host).then(setUser);
+  };
+  useEffect(check, [forge, host]);
+  return (
+    <Card className="flex min-h-16 items-center gap-3">
+      {!user ? (
+        <span className={muted}>Checking {host}…</span>
+      ) : user.status === "signed-in" ? (
+        <>
+          <Avatar url={user.avatarUrl} name={user.name ?? user.login} />
+          <div>
+            <div className="font-medium">{user.name ?? user.login}</div>
+            <div className={muted}>
+              @{user.login} on {host}
+            </div>
+          </div>
+        </>
+      ) : (
+        <>
+          <ProblemMessage problem={user} />
+          <Button className="ml-auto shrink-0" onClick={check}>
+            Check again
+          </Button>
+        </>
+      )}
+    </Card>
+  );
+}
+
+// A user's picture, or their initial where it won't load: a GitLab that's private serves avatars only to a signed-in
+// browser, not to a token.
+function Avatar({ url, name }: { url: string; name: string }) {
+  const [broken, setBroken] = useState(false);
+  return broken ? (
+    <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-neutral-200 font-medium text-neutral-600 dark:bg-neutral-700 dark:text-neutral-300">
+      {name[0]?.toUpperCase()}
+    </span>
+  ) : (
+    <img src={url} alt="" className="size-10 rounded-full" onError={() => setBroken(true)} />
   );
 }
 

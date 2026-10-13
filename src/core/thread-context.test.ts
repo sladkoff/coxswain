@@ -30,9 +30,10 @@ const entry = (
     section: null,
     quoteAt: null,
     author: null,
-    githubId: null,
-    githubThreadId: null,
-    githubUrl: null,
+    forgeId: null,
+    forgeThreadId: null,
+    forgeUrl: null,
+    forgeConversation: 0,
     ...more,
   }) satisfies Omit<ReviewEntry, "state" | "shown" | "now">;
 
@@ -86,5 +87,5 @@ test("summarize as comment: the prompt has the thread, oldest first, by who wrot
     { kind: "comment", body: "Agreed", author: "ana" },
   ]);
   assert.match(prompt, /The thread, on `a\.ts` line 3/);
-  assert.match(prompt, /Me: Why a cache\?\nAgent: It's read twice\.\n@ana on GitHub: Agreed$/);
+  assert.match(prompt, /Me: Why a cache\?\nAgent: It's read twice\.\n@ana, a reviewer: Agreed$/);
 });

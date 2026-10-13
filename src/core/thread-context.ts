@@ -58,17 +58,17 @@ export const reviewRoots = <
   entries: E[],
 ) => entries.filter((e) => anchored(e) && !e.parentId && !e.resolvedAt && isComment(e));
 
-// Who wrote an entry, as a prompt names them: "Me" (the user), "You" (the agent), or a reviewer on GitHub by login
+// Who wrote an entry, as a prompt names them: "Me" (the user), "You" (the agent), or a reviewer on the forge by login
 // (ADR 0037).
 export const who = (e: Pick<ReviewEntry, "kind" | "author">) =>
   match(e.kind)
-    .with("comment", () => `@${e.author} on GitHub`)
+    .with("comment", () => `@${e.author}, a reviewer`)
     .with(P.union("answer", "explanation", "finding"), () => "You")
     .with(P.union("note", "question"), () => "Me")
     .exhaustive();
 
 // What the agent session hasn't seen of the question's thread, to go after it. A session its last question went to has
-// seen the thread up to it: only the notes written since, and comments on GitHub since. Any other session (the first question, a new session since,
+// seen the thread up to it: only the notes written since, and comments on the forge since. Any other session (the first question, a new session since,
 // or the other agent) gets where the thread is and everything in it so far (#11), also what the agent wrote if the
 // thread began as its explanation or finding in a view.
 export function unseen(
@@ -89,7 +89,7 @@ export function unseen(
       .join("\n\n");
   const about = thread[0] && anchored(thread[0]) ? [`About ${describe(thread[0])}`] : [];
   const lines = thread.map((e) => `${who(e)}: ${e.body}`);
-  const so = `The thread so far, oldest first ("Me" is me, "You" is you, maybe in another session, "@name" a reviewer on GitHub):\n${lines.join("\n")}`;
+  const so = `The thread so far, oldest first ("Me" is me, "You" is you, maybe in another session, "@name" a reviewer on the PR):\n${lines.join("\n")}`;
   return [...about, ...(lines.length ? [so] : [])].join("\n\n");
 }
 
@@ -107,7 +107,7 @@ export const nothingToSay = "NOTHING";
 const entryChars = 2000;
 const speaker = (e: Entry) =>
   match(e.kind)
-    .with("comment", () => `@${e.author} on GitHub`)
+    .with("comment", () => `@${e.author}, a reviewer`)
     .with(P.union("answer", "explanation", "finding"), () => "Agent")
     .with(P.union("note", "question"), () => "Me")
     .exhaustive();

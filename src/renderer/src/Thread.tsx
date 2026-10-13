@@ -6,8 +6,9 @@ import { Button, SegmentedControl } from "./components/button";
 import { TextArea } from "./components/field";
 import { SendIcon, SpinnerIcon } from "./components/icons";
 import { cn, divider, muted } from "./components/styles";
-import { ErrorText, Prose } from "./components/text";
+import { ErrorText, problemText, Prose } from "./components/text";
 import { byAgent, isComment } from "./format";
+import { useForgeNames } from "./forge";
 import { core, queryClient } from "./queries";
 import type { Ask, Turn } from "./Viewer";
 
@@ -29,7 +30,7 @@ const box =
 
 type DraftBoxProps = {
   label: string; // what it's on: its lines, or the passage quoted
-  canPost: boolean; // the workspace has a PR, for Post to GitHub
+  canPost: boolean; // the workspace has a PR, for Post to its forge
   onSend: (body: string, toAgent: boolean, post: boolean) => void;
   onCancel: () => void;
 };
@@ -66,16 +67,17 @@ type ComposerProps = {
   reply?: boolean;
   afterAgent?: boolean;
   comment?: boolean;
-  // With a PR, a comment (a new comment thread, or a reply in one) has a Post to GitHub checkbox: on, it's posted at
+  // With a PR, a comment (a new comment thread, or a reply in one) has a Post to … checkbox (its forge): on, it's posted at
   // once; off, it waits for Submit Review. One global preference, like the toggle.
   canPost?: boolean;
   onSend: (body: string, toAgent: boolean, post: boolean) => void;
   onCancel?: () => void;
 };
 
-// A comment's text, then the Post to GitHub checkbox, the Comment/Agent toggle and the send button on the right. Enter
+// A comment's text, then the Post to … checkbox (the forge), the Comment/Agent toggle and the send button on the right. Enter
 // sends, Shift+Enter adds a line.
 function Composer(props: ComposerProps) {
+  const names = useForgeNames();
   const [body, setBody] = useState("");
   // A global preference (every composer shares it), so the query is updated at once, then stored.
   const saved = useQuery(core("getCommentToAgent")).data ?? false;
@@ -126,7 +128,7 @@ function Composer(props: ComposerProps) {
               checked={postNow}
               onChange={(e) => setPostNow(e.target.checked)}
             />
-            Post to GitHub
+            Post to {names.forge}
           </label>
         )}
         {!props.comment && (
@@ -139,7 +141,7 @@ function Composer(props: ComposerProps) {
                 label: "Comment",
                 title: props.reply
                   ? "A note in the thread, for the agent to see with your next question"
-                  : "A comment thread: Submit Review posts its comments to GitHub as you wrote them",
+                  : `A comment thread: Submit Review posts its comments to ${names.forge} as you wrote them`,
               },
               {
                 value: true,
@@ -153,7 +155,7 @@ function Composer(props: ComposerProps) {
         )}
         <Button
           variant="primary"
-          title={postable && postNow ? "Send and post to GitHub (Enter)" : "Send (Enter)"}
+          title={postable && postNow ? `Send and post to ${names.forge} (Enter)` : "Send (Enter)"}
           disabled={!body.trim()}
           onClick={send}
         >
@@ -168,11 +170,11 @@ type ThreadBoxProps = {
   root: ReviewEntry; // the thread's first note or question
   replies: ReviewEntry[]; // notes, follow-up questions and answers, in order
   turn: Turn | undefined;
-  canPost: boolean; // the workspace has a PR, for Post to GitHub
+  canPost: boolean; // the workspace has a PR, for Post to its forge
   onReply: (body: string, toAgent: boolean, post: boolean) => void;
   onStop: () => void;
   onAnswerPermission: (id: string, optionId: string) => void;
-  onResolve: (resolved: boolean) => Promise<void>; // false: reopen; on GitHub too with Post to GitHub on
+  onResolve: (resolved: boolean) => Promise<void>; // false: reopen; on the forge too with Post to … on
   onRemove: () => Promise<void>;
   onSend: () => void; // the latest note, to the agent
   onSummarize: () => Promise<string>; // an agent thread's comment, for the user to edit
@@ -182,9 +184,9 @@ type ThreadBoxProps = {
 
 // A thread: its first entry, the replies and answers, the reply streaming in while a turn runs, and a box to reply.
 // A comment thread or an agent thread (glossary), and stays one. Each of the user's comments has its own ⋯ (Comment).
-// The thread's ⋯ deletes the thread (the user's posted comments on GitHub too), not while others have replied; in an
+// The thread's ⋯ deletes the thread (the user's posted comments on the forge too), not while others have replied; in an
 // agent thread it also sends the latest note to the agent, or summarizes the thread as a comment, which opens below it
-// to edit before it's added (and posted, with Post to GitHub on). Resolved, it folds to its header and first comment
+// to edit before it's added (and posted, with Post to … on). Resolved, it folds to its header and first comment
 // until reopened.
 export function ThreadBox({
   root,
@@ -200,6 +202,7 @@ export function ThreadBox({
   onSummarize,
   onAddComment,
 }: ThreadBoxProps) {
+  const names = useForgeNames();
   const running = turn?.running ?? false;
   const agent = !isComment(root);
   const postNow = useQuery(core("getPostComments")).data ?? false;
@@ -209,7 +212,7 @@ export function ThreadBox({
   const [summary, setSummary] = useState<string | boolean>(false);
   const [writing, setWriting] = useState(false);
   const lastOwn = [root, ...replies].findLast((e) => e.kind === "note" || e.kind === "question");
-  const posted = [root, ...replies].some((e) => e.kind === "note" && e.githubId);
+  const posted = [root, ...replies].some((e) => e.kind === "note" && e.forgeId);
   const others = [root, ...replies].some((e) => e.kind === "comment");
   const failing = (p: Promise<unknown>) => {
     setError(null);
@@ -218,19 +221,20 @@ export function ThreadBox({
     );
   };
   const menu = async () => {
-    // Others' comments on GitHub are theirs, and GitHub keeps a thread they replied to.
+    // Others' comments on the forge are theirs, and the forge keeps a thread they replied to.
     const picked = await window.coxswain.showThreadMenu({
       send: agent && !running && lastOwn?.kind === "note",
       summarize: agent && !running && !root.resolvedAt && summary === false,
       delete: others ? "others" : true,
-      url: root.githubUrl,
+      url: root.forgeUrl,
+      forge: names.forge,
     });
     if (
       picked === "delete" &&
       (await window.coxswain.confirm({
         message: "Delete this thread?",
         detail: posted
-          ? "Its comments are deleted here and on GitHub. This can't be undone."
+          ? `Its comments are deleted here and on ${names.forge}. This can't be undone.`
           : "Its comments and the agent's answers are deleted. This can't be undone.",
         action: "Delete",
       }))
@@ -251,7 +255,7 @@ export function ThreadBox({
         <span className={root.section != null ? "min-w-0 truncate" : "shrink-0"}>
           {anchorLabel(root)}
           {root.state === "outdated" && " · outdated"}
-          {root.githubThreadId && " · on GitHub"}
+          {root.forgeThreadId && ` · on ${names.forge}`}
         </span>
         {root.resolvedAt ? (
           <span className="min-w-0 flex-1 truncate">Resolved · {root.body}</span>
@@ -264,9 +268,9 @@ export function ThreadBox({
             (root.resolvedAt
               ? "Resolved: click to reopen"
               : "Resolve: mark the thread done; it folds to one line") +
-            (root.githubThreadId
+            (root.forgeThreadId
               ? postNow
-                ? "\nOn GitHub too, at once (Post to GitHub is on)"
+                ? `\nOn ${names.forge} too, at once (Post to ${names.forge} is on)`
                 : "\nHere only, until Submit Review posts it"
               : "")
           }
@@ -378,7 +382,7 @@ export function ThreadBox({
 }
 
 // A note, or with toAgent a question for the agent pane's session; its answer goes in the thread. post: the note is
-// posted to GitHub at once; if that fails it stays here, for Submit Review, and a sheet says why.
+// posted to the forge at once; if that fails it stays here, for Submit Review, and a sheet says why.
 export async function postEntry(e: NewEntry, toAgent: boolean, onAsk: Ask, post = false) {
   if (toAgent) return onAsk(e);
   const note = await window.coxswain.addNote(e);
@@ -388,8 +392,8 @@ export async function postEntry(e: NewEntry, toAgent: boolean, onAsk: Ask, post 
     .catch((e: Error) => ({ status: "error" as const, message: e.message }));
   if (r.status !== "ok")
     await window.coxswain.showError({
-      message: "The comment wasn't posted to GitHub",
-      detail: `${r.status === "error" ? r.message : "Sign in to GitHub with gh."} It's kept here; Submit Review can post it.`,
+      message: "The comment wasn't posted",
+      detail: `${problemText(r)}. It's kept here; Submit Review can post it.`,
     });
 }
 
@@ -424,9 +428,7 @@ export function EntryThread(props: {
         if (!post) return;
         const r = await window.coxswain.postComment(workspaceId, id);
         if (r.status !== "ok")
-          throw new Error(
-            `Saved, but not posted: ${r.status === "error" ? r.message : "sign in to GitHub with gh"}. Submit Review can post it.`,
-          );
+          throw new Error(`Saved, but not posted: ${problemText(r)}. Submit Review can post it.`);
       }}
     />
   );
@@ -473,21 +475,22 @@ const agentLabels: Partial<Record<ReviewEntry["kind"], string>> = {
 };
 
 // One entry of a thread: the user's (a question marked as sent to the agent), the agent's (an answer, an explanation
-// or a finding), or a comment on GitHub by its author (ADR 0037). One posted from here says so. The user's own have a
-// ⋯: Edit (in place), Delete (a note; on GitHub too once posted), Open on GitHub. run: the change, failing under the
+// or a finding), or a comment on the forge by its author (ADR 0037). One posted from here says so. The user's own have
+// a ⋯: Edit (in place), Delete (a note; on the forge too once posted), Open on the forge. run: the change, failing under the
 // thread.
 function Comment({ entry: e, run }: { entry: ReviewEntry; run: (p: Promise<unknown>) => unknown }) {
+  const names = useForgeNames();
   const [editing, setEditing] = useState(false);
   if (e.kind === "comment")
     return (
       <div>
         <span className={author}>
-          @{e.author} <span className={cn("font-normal", muted)}>on GitHub</span>
+          @{e.author} <span className={cn("font-normal", muted)}>on {names.forge}</span>
         </span>
         <Prose className="leading-relaxed">{e.body}</Prose>
       </div>
     );
-  const posted = e.githubUrl ? " · posted" : "";
+  const posted = e.forgeUrl ? " · posted" : "";
   const label = agentLabels[e.kind] && `${agentLabels[e.kind]}${posted}`;
   if (label)
     return (
@@ -502,7 +505,7 @@ function Comment({ entry: e, run }: { entry: ReviewEntry; run: (p: Promise<unkno
     return (
       <EditBox
         body={e.body}
-        saveLabel={e.githubId ? "Save Here and on GitHub" : "Save"}
+        saveLabel={e.forgeId ? `Save Here and on ${names.forge}` : "Save"}
         onSave={(body) => {
           setEditing(false);
           void run(window.coxswain.editEntry(e.id, body));
@@ -513,15 +516,16 @@ function Comment({ entry: e, run }: { entry: ReviewEntry; run: (p: Promise<unkno
   const menu = async () => {
     const picked = await window.coxswain.showCommentMenu({
       delete: e.kind === "note",
-      url: e.githubUrl,
+      url: e.forgeUrl,
+      forge: names.forge,
     });
     if (picked === "edit") setEditing(true);
     if (
       picked === "delete" &&
       (await window.coxswain.confirm({
         message: "Delete this comment?",
-        detail: e.githubId
-          ? "It's deleted here and on GitHub. This can't be undone."
+        detail: e.forgeId
+          ? `It's deleted here and on ${names.forge}. This can't be undone.`
           : "This can't be undone.",
         action: "Delete",
       }))

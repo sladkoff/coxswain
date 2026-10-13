@@ -1,8 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { match, P } from "ts-pattern";
-import type { GitHubProblem, PullRequestDetails } from "../../core/github";
-import type { ReviewEvent } from "../../core/pull-requests";
+import type { ForgeProblem, PullRequestDetails, Verdict } from "../../core/forge";
 import type { DraftThread } from "../../core/review-draft";
 import { Button, SegmentedControl } from "./components/button";
 import { TextArea } from "./components/field";
@@ -12,15 +11,16 @@ import { cn, divider, muted } from "./components/styles";
 import { ErrorText } from "./components/text";
 import { count } from "./format";
 import { ProblemText } from "./PullRequest";
+import { useForgeNames } from "./forge";
 
-const eventLabels: Record<ReviewEvent, string> = {
+const eventLabels: Record<Verdict, string> = {
   COMMENT: "Comment",
   APPROVE: "Approve",
   REQUEST_CHANGES: "Request Changes",
 };
 
-// What Post to GitHub does with a thread, in a few words; nothing without a PR.
-const posts = (t: DraftThread, hasPr: boolean) =>
+// What Post to … does with a thread, in a few words; nothing without a PR.
+const posts = (t: DraftThread, hasPr: boolean, forge: string) =>
   match({ hasPr, post: t.post })
     .with({ hasPr: false }, () => "")
     .with({ post: P.nonNullable.select() }, (post) =>
@@ -37,10 +37,10 @@ const posts = (t: DraftThread, hasPr: boolean) =>
         .filter(Boolean)
         .join(" · "),
     )
-    .otherwise(() => "on GitHub already");
+    .otherwise(() => `on ${forge} already`);
 
 // Submit Review (ADR 0037), the bottom bar's dialog, like GitHub's Finish your review: the open comment threads, each
-// with its comments not on GitHub yet, which go as written; editing one edits the comment. The user picks threads, then
+// with its comments not on the forge yet, which go as written; editing one edits the comment. The user picks threads, then
 // sends them to the agent, copies them as a prompt, or posts them to the PR as one review with a verdict and a summary.
 // It closes once that's done, or to show a thread.
 export function SubmitReviewDialog(props: {
@@ -52,6 +52,7 @@ export function SubmitReviewDialog(props: {
   onClose: () => void;
 }) {
   const { pr, workspaceId } = props;
+  const names = useForgeNames();
   // Read once per opening: a refetch would write over the user's edits.
   const draft = useQuery({
     queryKey: ["draftReview", workspaceId],
@@ -64,10 +65,10 @@ export function SubmitReviewDialog(props: {
   const threads = draft.data ?? [];
   const [unpicked, setUnpicked] = useState<Set<number>>(new Set());
   const [edited, setEdited] = useState<Record<number, string>>({});
-  const [event, setEvent] = useState<ReviewEvent>("COMMENT");
+  const [event, setEvent] = useState<Verdict>("COMMENT");
   const [body, setBody] = useState("");
   const [posting, setPosting] = useState(false);
-  const [problem, setProblem] = useState<GitHubProblem | null>(null);
+  const [problem, setProblem] = useState<ForgeProblem | null>(null);
   // Edits are saved to their comments when their box is left, and before anything goes, which reads them there.
   const unsaved = useRef<Record<number, string>>({});
   const save = () => {
@@ -82,7 +83,7 @@ export function SubmitReviewDialog(props: {
   const ids = (list: DraftThread[]) => list.map((t) => t.threadId);
   const toAgent = picked.filter((t) => t.toAgent);
   const toPost = picked.filter((t) => t.post);
-  const own = pr?.author === pr?.viewer; // GitHub won't let you approve your own PR
+  const own = pr?.author === pr?.viewer; // forges won't let you approve your own PR
   const copy = async () => {
     await save();
     if (await window.coxswain.copyReviewPrompt(workspaceId, ids(toAgent))) props.onCopied();
@@ -91,8 +92,8 @@ export function SubmitReviewDialog(props: {
   const post = async () => {
     if (!pr) return;
     const ok = await window.coxswain.confirm({
-      message: `Post ${count(toPost.length, "thread")} to PR #${pr.number} as a review?`,
-      detail: `${eventLabels[event]}. Your comments are posted as you wrote them, and everyone on the PR sees them.`,
+      message: `Post ${count(toPost.length, "thread")} to ${names.pr} ${names.sign}${pr.number} as a review?`,
+      detail: `${eventLabels[event]}. Your comments are posted as you wrote them, and everyone on the ${names.pr} sees them.`,
       action: "Post",
     });
     if (!ok) return;
@@ -102,11 +103,11 @@ export function SubmitReviewDialog(props: {
     const send = (addToPending: boolean) =>
       window.coxswain.postReview(workspaceId, { threads: ids(toPost), event, body, addToPending });
     let r = await send(false);
-    // A review of the user's in progress on GitHub is only added to, and submitted, once they say so.
+    // A review of the user's in progress on the forge is only added to, and submitted, once they say so.
     if (
       r.status === "pending" &&
       (await window.coxswain.confirm({
-        message: "You have a review in progress on this PR on GitHub",
+        message: `You have a review in progress on this ${names.pr} on ${names.forge}`,
         detail: `It has ${count(r.comments, "comment")} you haven't submitted. Add these to it and submit it, with ${eventLabels[event]}?`,
         action: "Add and Submit",
       }))
@@ -121,8 +122,8 @@ export function SubmitReviewDialog(props: {
       title="Submit Review"
       subtitle={
         pr
-          ? `To the agent, or as a review on PR #${pr.number}`
-          : "To the agent: this workspace has no PR to post to"
+          ? `To the agent, or as a review on ${names.pr} ${names.sign}${pr.number}`
+          : `To the agent: this workspace has no ${names.pr} to post to`
       }
       onClose={props.onClose}
     >
@@ -178,7 +179,10 @@ export function SubmitReviewDialog(props: {
                         {t.body}
                       </button>
                       <span className="shrink-0">
-                        {[t.entries > 1 && count(t.entries, "entry", "entries"), posts(t, !!pr)]
+                        {[
+                          t.entries > 1 && count(t.entries, "entry", "entries"),
+                          posts(t, !!pr, names.forge),
+                        ]
                           .filter(Boolean)
                           .join(" · ")}
                       </span>
@@ -214,7 +218,7 @@ export function SubmitReviewDialog(props: {
                 value={body}
                 onChange={(e) => setBody(e.target.value)}
                 onSubmit={() => void post()}
-                placeholder="A summary for the review on GitHub (optional)"
+                placeholder={`A summary for the review on ${names.forge} (optional)`}
               />
             )}
             {problem && <ProblemText problem={problem} />}
@@ -252,11 +256,11 @@ export function SubmitReviewDialog(props: {
               {pr && (
                 <Button
                   variant="primary"
-                  title="Post the picked threads' comments to the PR as one review, after asking"
+                  title={`Post the picked threads' comments to the ${names.pr} as one review, after asking`}
                   disabled={posting || (!toPost.length && !body.trim() && event === "COMMENT")}
                   onClick={() => void post()}
                 >
-                  {posting ? "Posting…" : "Post to GitHub…"}
+                  {posting ? "Posting…" : `Post to ${names.forge}…`}
                 </Button>
               )}
             </div>

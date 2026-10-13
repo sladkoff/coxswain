@@ -12,7 +12,8 @@ import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
 import { match } from "ts-pattern";
 import type { GitProblem } from "../../../core/git";
-import type { GitHubProblem } from "../../../core/github";
+import type { ForgeKind, ForgeProblem } from "../../../core/forge";
+import { useForgeNames } from "../forge";
 import { cn } from "./styles";
 
 const code =
@@ -211,24 +212,39 @@ export function ErrorText({ children, className }: { children: ReactNode; classN
   );
 }
 
-export function ProblemMessage({ problem }: { problem: GitHubProblem | GitProblem }) {
-  switch (problem.status) {
-    case "git-error":
-      return <span className="select-text">Git: {problem.message}</span>;
-    case "signed-out":
-      return (
-        <span>
-          Not signed in. Run <code className={code}>gh auth login</code> in a terminal.
-        </span>
-      );
-    case "gh-missing":
-      return (
-        <span>
-          The GitHub CLI isn't installed. Run <code className={code}>brew install gh</code>, then{" "}
-          <code className={code}>gh auth login</code>.
-        </span>
-      );
-    case "error":
-      return <span>Couldn't reach GitHub: {problem.message}</span>;
-  }
+// ADR 0041: each forge's CLI, which coxswain gets its token from, and how to sign in to a host with it.
+const clis: Record<ForgeKind, { forge: string; cli: string; login: (host: string) => string }> = {
+  github: { forge: "GitHub", cli: "gh", login: () => "gh auth login" },
+  gitlab: { forge: "GitLab", cli: "glab", login: (host) => `glab auth login --hostname ${host}` },
+};
+
+// What to do about a forge's problem, as a sentence: for a sheet or an error's message.
+export const problemText = (p: ForgeProblem) =>
+  match(p)
+    .with({ status: "error" }, (p) => p.message)
+    .otherwise((p) => `Sign in to ${p.host} with ${clis[p.forge].login(p.host)}`);
+
+export function ProblemMessage({ problem }: { problem: ForgeProblem | GitProblem }) {
+  const names = useForgeNames();
+  return match(problem)
+    .with({ status: "git-error" }, (p) => <span className="select-text">Git: {p.message}</span>)
+    .with({ status: "signed-out" }, (p) => (
+      <span>
+        Not signed in to {p.host}. Run <code className={code}>{clis[p.forge].login(p.host)}</code>{" "}
+        in a terminal.
+      </span>
+    ))
+    .with({ status: "cli-missing" }, (p) => (
+      <span>
+        The {clis[p.forge].forge} CLI isn't installed. Run{" "}
+        <code className={code}>brew install {clis[p.forge].cli}</code>, then{" "}
+        <code className={code}>{clis[p.forge].login(p.host)}</code>.
+      </span>
+    ))
+    .with({ status: "error" }, (p) => (
+      <span>
+        Couldn't reach {names.forge}: {p.message}
+      </span>
+    ))
+    .exhaustive();
 }
