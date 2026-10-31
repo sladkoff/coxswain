@@ -190,6 +190,7 @@ async function start(server: LanguageServer, checkout: Checkout): Promise<Runnin
       rootUri: uri,
       workspaceFolders: [{ uri, name: basename(checkout.path) }],
       capabilities: {},
+      initializationOptions: await server.initializationOptions?.(checkout.path),
     }),
   ]);
   void connection.sendNotification(InitializedNotification.type, {});

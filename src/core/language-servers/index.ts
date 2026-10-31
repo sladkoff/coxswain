@@ -8,6 +8,7 @@ export type LanguageServer = {
   languageIds: Record<string, string>; // the file extensions it takes, with their LSP language IDs
   // Folders read from the worktree, symlinked into a commit's checkout, which doesn't have them (e.g. node_modules).
   dependencies: string[];
+  initializationOptions?: (root: string) => Promise<Record<string, unknown>>;
   start: () => Promise<{ command: string; args: string[] }>; // may fetch it first (download.ts)
 };
 

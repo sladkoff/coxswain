@@ -30,6 +30,7 @@ const github = { staleTime: 60_000, refetchOnWindowFocus: true };
 type Extra = { staleTime?: number; refetchOnWindowFocus?: boolean };
 const extra: Partial<Record<Reads, Extra>> = {
   // These reads have explicit core events. Remounting an observer is not a reason to repeat local work.
+  getUiPreferences: { staleTime: Infinity },
   getAppearance: { staleTime: Infinity },
   getSoftDark: { staleTime: Infinity },
   getCodeTheme: { staleTime: Infinity },
@@ -144,6 +145,7 @@ const affects: Record<Changed["what"], Reads[]> = {
   // An agent sent its slash commands for one of its sessions.
   commands: ["agentCommands"],
   settings: [
+    "getUiPreferences",
     "getAppearance",
     "getSoftDark",
     "getCodeTheme",

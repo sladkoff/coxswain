@@ -72,3 +72,60 @@ test("a download that doesn't match its checksum is refused and not kept", async
     false,
   );
 });
+
+test("Python import names and argument references navigate through re-exports to source", async () => {
+  const path = realpathSync(mkdtempSync(join(tmpdir(), "coxswain-import-")));
+  mkdirSync(join(path, "pkg"));
+  writeFileSync(join(path, "pkg", "source.py"), "class SuggestSampleTestSetup:\n    pass\n");
+  writeFileSync(join(path, "pkg", "__init__.py"), "from .source import SuggestSampleTestSetup\n");
+  writeFileSync(
+    join(path, "consumer.py"),
+    "from pkg import SuggestSampleTestSetup\n\ndef use(value: SuggestSampleTestSetup):\n    pass\n",
+  );
+  const checkout = { path, worktree: path };
+  for (const at of [
+    { line: 1, character: 18 },
+    { line: 3, character: 15 },
+  ]) {
+    assert.deepEqual(
+      await lookUp(checkout, { commit: null, path: "consumer.py", ...at }, "definitions"),
+      {
+        status: "ok",
+        lines: [{ path: "pkg/source.py", line: 1, text: "class SuggestSampleTestSetup:" }],
+      },
+    );
+  }
+});
+
+test("Python source navigation resolves namespace packages in an uninstalled workspace", async () => {
+  const path = realpathSync(mkdtempSync(join(tmpdir(), "coxswain-namespace-")));
+  mkdirSync(join(path, "lib", "feature", "cortea", "domain"), { recursive: true });
+  writeFileSync(join(path, "pyproject.toml"), '[project]\nname="root"\nversion="0.1"\n');
+  writeFileSync(
+    join(path, "lib", "feature", "pyproject.toml"),
+    '[project]\nname="feature"\nversion="0.1"\n',
+  );
+  writeFileSync(
+    join(path, "lib", "feature", "cortea", "domain", "source.py"),
+    "class SuggestSampleTestSetup:\n    pass\n",
+  );
+  writeFileSync(
+    join(path, "consumer.py"),
+    "from cortea.domain.source import SuggestSampleTestSetup\n\ndef use(value: SuggestSampleTestSetup):\n    pass\n",
+  );
+  const result = await lookUp(
+    { path, worktree: path },
+    { commit: null, path: "consumer.py", line: 3, character: 15 },
+    "definitions",
+  );
+  assert.deepEqual(result, {
+    status: "ok",
+    lines: [
+      {
+        path: "lib/feature/cortea/domain/source.py",
+        line: 1,
+        text: "class SuggestSampleTestSetup:",
+      },
+    ],
+  });
+});

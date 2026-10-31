@@ -24,6 +24,7 @@ export function Sections(props: {
   entries: ReviewEntry[];
   turns: Record<number, Turn>;
   options: GuideOptions;
+  showReviewed: boolean;
   authors: GuideAuthor[];
   changed: ChangedFile[];
   changedSinceReview: string[];
@@ -134,7 +135,7 @@ export function Sections(props: {
       ...byFile.keys(),
     ]);
     return [...paths]
-      .filter((path) => props.options.showReviewedFiles || !reviewedPaths.has(path))
+      .filter((path) => props.showReviewed || !reviewedPaths.has(path))
       .map((path, fileIndex, visiblePaths) => {
         const file = files.get(path);
         const opened =

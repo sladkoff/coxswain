@@ -48,28 +48,21 @@ import type { CoreEvent } from "../core/events";
 import type { GuideAuthor } from "../shared/guide-authors";
 import type { Job } from "../core/jobs";
 
-// The Navigator's settings in its cog menu. layout: changed files as a tree or as a flat list.
-// The canvas bar's settings in its cog menu. showReviewed: reviewed file diffs stay in the Navigator and on the canvas.
-// The canvas's display options (its sliders button): how file diffs show, and how the Navigator lists them.
-export type GuideOptions = {
-  showResolved: boolean;
-  showReviewedFiles: boolean;
-  onlyFilesWithThreads: boolean;
-  showAgentThreads: boolean;
-  showComments: boolean;
-  hiddenAuthors: string[];
-  shownAuthors: string[];
-};
-export type GuideDescriptionPosition = "beside" | "above";
+import type {
+  GuideOptions,
+  GuideDescriptionPosition,
+  ViewSettings,
+  UiPreferences,
+} from "../shared/ui-preferences";
+export type {
+  GuideOptions,
+  GuideDescriptionPosition,
+  ViewSettings,
+} from "../shared/ui-preferences";
 export type ChangesMenuResult =
   | { kind: "filters"; options: GuideOptions }
   | { kind: "grouping"; enabled: boolean }
   | { kind: "layout"; layout: "tree" | "list" };
-export type ViewSettings = {
-  diffStyle: "unified" | "split";
-  showReviewed: boolean;
-  layout: "tree" | "list";
-};
 export type SettingsMenuResult =
   | { kind: "display"; settings: ViewSettings }
   | { kind: "description-position"; position: GuideDescriptionPosition }
@@ -103,6 +96,9 @@ window.addEventListener("DOMContentLoaded", syncWindowZoom);
 window.addEventListener("resize", syncWindowZoom);
 
 const api = {
+  getUiPreferences: (): Promise<UiPreferences> => ipcRenderer.invoke("settings:ui"),
+  setUiPreferences: (patch: Partial<UiPreferences>): Promise<void> =>
+    ipcRenderer.invoke("settings:set-ui", patch),
   currentUser: (): Promise<CurrentUser> => ipcRenderer.invoke("github:current-user"),
   listRepos: (page: number): Promise<RepoPage> => ipcRenderer.invoke("github:list-repos", page),
   listProjects: (): Promise<Project[]> => ipcRenderer.invoke("projects:list"),

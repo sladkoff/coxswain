@@ -39,7 +39,6 @@ export type NavigatorProps = {
   reviewed: string[];
   changedSinceReview: string[];
   showReviewed: boolean;
-  onShowReviewed: (show: boolean) => void;
   entries: ReviewEntry[]; // the workspace's, counted per file
   local?: ChangedFile[]; // files with local changes, marked (ADR 0028); left out when only those are listed
   selected?: string; // the file shown in the canvas, revealed and selected in Files
@@ -99,7 +98,6 @@ export function Navigator({
   reviewed,
   changedSinceReview,
   showReviewed,
-  onShowReviewed,
   entries,
   local,
   selected,
@@ -160,7 +158,6 @@ export function Navigator({
         reviewed={reviewed}
         changedSinceReview={changedSinceReview}
         showReviewed={showReviewed}
-        onShowReviewed={onShowReviewed}
         entries={entries}
         local={local}
         selected={selected}

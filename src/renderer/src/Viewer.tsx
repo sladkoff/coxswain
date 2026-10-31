@@ -1,3 +1,7 @@
+import { codeSymbolAtPoint } from "./code-symbol";
+import { match, P } from "ts-pattern";
+import { useCodeLine } from "./use-code-line";
+import type { CodeLine } from "./source-destination";
 import { useCodeThemeType } from "./components/useCodeThemeType";
 import { fileContents } from "./components/file-contents";
 import { holdScrollPosition } from "./components/hold-scroll-position";
@@ -66,12 +70,15 @@ type Props = {
   turns: Record<number, Turn>; // by thread
   onAsk: Ask;
   onAnswerPermission: (threadId: number, id: string, optionId: string) => void;
-  onOpenFile: (path: string, line: number, commit?: string) => void; // a whole file on the canvas at that line
+  onOpenFile: (path: string, line: number, commit?: string) => void; // prefer the current visible review file at that revision
   diffStyle: "unified" | "split";
   // One of several file diffs one after another: the parent scrolls, not the Viewer.
   stacked?: boolean;
   editor?: boolean; // whole file fills the Files editor beneath its tabs, without card chrome
   onCollapsedChange?: (path: string, collapsed: boolean, kind?: "file") => void;
+  codeLine?: CodeLine;
+  codeLineVersion?: string;
+  codeLinePassive?: boolean;
   revealVersion?: number;
   onThreadResolved?: (id: number) => void;
   collapsed?: boolean; // only its header, e.g. a reviewed file diff in a view
@@ -148,7 +155,7 @@ const baseOptions = {
   // Go to Definition: a token under the pointer while ⌘ is held reads as a link.
   unsafeCSS:
     diffChromeCSS +
-    "[data-definition-link] { text-decoration: underline; cursor: pointer; }" +
+    "[data-definition-link] { cursor: pointer; } ::highlight(code-definition-link) { text-decoration: underline; }" +
     findHighlightCSS,
 } as const;
 
@@ -175,6 +182,22 @@ export const Viewer = memo(function Viewer(props: Props) {
     setSelection(null);
   };
   const path = openedPath(opened);
+  const codeLine = useMemo(
+    () =>
+      match({ requested: props.codeLine, opened })
+        .when(
+          ({ requested }) => requested?.path === path,
+          ({ requested }) => requested,
+        )
+        .with({ opened: { kind: "file", line: P.number.select() } }, (line) => ({
+          path,
+          line,
+          side: "additions" as const,
+        }))
+        .with(P._, () => undefined)
+        .exhaustive(),
+    [props.codeLine, opened, path],
+  );
   const codeTheme = useQuery(core("getCodeTheme")).data ?? "default";
   const themeType = useCodeThemeType();
   const revealed = entries.find((e) => e.id === props.revealThread && e.path === path);
@@ -197,7 +220,7 @@ export const Viewer = memo(function Viewer(props: Props) {
             ).queryKey,
           ) !== undefined)),
   );
-  const near = wasNear || !!revealed;
+  const near = wasNear || !!revealed || !!codeLine;
   const placeholder = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = placeholder.current;
@@ -232,25 +255,57 @@ export const Viewer = memo(function Viewer(props: Props) {
   // line clicked. Both ask the file's language server at the side's revision (ADR 0034): the old side of a file diff
   // is the base, the new side and a whole file the head, or the worktree when there is none.
   // ponytail: the picker is a native menu of the first 30, a results pane if long lists need browsing.
-  const hovered = useRef<{ element: HTMLElement; at: CodeAt } | null>(null);
-  const codeAt = (t: Token): CodeAt => {
+  const linkHighlight = useMemo(() => new Highlight(), []);
+  const hovered = useRef<{ element: HTMLElement; at: CodeAt; range: Range } | null>(null);
+  const stopHover = useRef<(() => void) | null>(null);
+  const codeAt = (t: Token, character: number): CodeAt => {
     const old = t.side === "deletions";
     return {
       commit: old ? mergeBase : (head ?? null),
       path: old ? oldPath : path,
       line: t.lineNumber,
-      // On the name, not an import path's quote.
-      character: t.lineCharStart + Math.max(0, t.tokenText.search(/\w/)),
+      character: t.lineCharStart + character,
     };
   };
+  const markLink = (metaKey: boolean) => {
+    const hit = hovered.current;
+    linkHighlight.clear();
+    hit?.element.toggleAttribute("data-definition-link", metaKey);
+    if (hit && metaKey) {
+      CSS.highlights.set("code-definition-link", linkHighlight);
+      linkHighlight.add(hit.range);
+    }
+  };
+  const enterToken = (token: Token, event: PointerEvent) => {
+    stopHover.current?.();
+    const move = (event: PointerEvent) => {
+      const symbol = codeSymbolAtPoint(token.tokenElement, event.clientX, event.clientY);
+      hovered.current = symbol
+        ? { element: token.tokenElement, at: codeAt(token, symbol.start), range: symbol.range }
+        : null;
+      token.tokenElement.removeAttribute("data-definition-link");
+      markLink(event.metaKey);
+    };
+    token.tokenElement.addEventListener("pointermove", move);
+    stopHover.current = () => {
+      token.tokenElement.removeEventListener("pointermove", move);
+      token.tokenElement.removeAttribute("data-definition-link");
+      hovered.current = null;
+      linkHighlight.clear();
+    };
+    move(event);
+  };
   useEffect(() => {
-    const mark = (e: KeyboardEvent) =>
-      hovered.current?.element.toggleAttribute("data-definition-link", e.metaKey);
+    const mark = (event: KeyboardEvent) => markLink(event.metaKey);
+    const clear = () => stopHover.current?.();
     window.addEventListener("keydown", mark);
     window.addEventListener("keyup", mark);
+    window.addEventListener("blur", clear);
     return () => {
+      clear();
       window.removeEventListener("keydown", mark);
       window.removeEventListener("keyup", mark);
+      window.removeEventListener("blur", clear);
     };
   }, []);
   // Shows a result line: at once if it's the only definition, else picked from a menu that says when there's none.
@@ -287,6 +342,13 @@ export const Viewer = memo(function Viewer(props: Props) {
     [o, n, oldPath, path],
   );
   const root = useRef<HTMLDivElement>(null);
+  const onCodeLineRender = useCodeLine<Box>(
+    root,
+    props.codeLinePassive ? undefined : codeLine,
+    !!files,
+    props.codeLineVersion,
+    opened.kind,
+  );
   const onCodeFindRender = useCodeFind<Box>({
     root,
     placeholder,
@@ -338,9 +400,10 @@ export const Viewer = memo(function Viewer(props: Props) {
           );
         }
       }
+      onCodeLineRender(...args);
       onCodeFindRender(...args);
     },
-    [onCodeFindRender],
+    [onCodeFindRender, onCodeLineRender],
   );
 
   const options = useMemo(
@@ -351,6 +414,7 @@ export const Viewer = memo(function Viewer(props: Props) {
       onPostRender,
       diffStyle: props.diffStyle,
       collapsed: props.collapsed,
+      expandUnchanged: !!codeLine,
       enableGutterUtility: true,
       // In a diff the range has a side; a whole file is always the worktree. ponytail: a range spanning
       // both sides of a diff is taken as the side it ends on.
@@ -361,21 +425,18 @@ export const Viewer = memo(function Viewer(props: Props) {
           endLine: r.end,
         }),
       onLineSelectionChange: setSelection,
-      onTokenEnter: (t: Token, e: PointerEvent) => {
-        if (!/\w/.test(t.tokenText)) return;
-        hovered.current = { element: t.tokenElement, at: codeAt(t) };
-        t.tokenElement.toggleAttribute("data-definition-link", e.metaKey);
+      onTokenEnter: enterToken,
+      onTokenLeave: () => stopHover.current?.(),
+      onTokenClick: (token: Token, event: MouseEvent) => {
+        if (!event.metaKey) return;
+        const symbol = codeSymbolAtPoint(token.tokenElement, event.clientX, event.clientY);
+        if (symbol) void goToDefinition(codeAt(token, symbol.start));
       },
-      onTokenLeave: (t: Token) => {
-        t.tokenElement.removeAttribute("data-definition-link");
-        hovered.current = null;
-      },
-      onTokenClick: (t: Token, e: MouseEvent) =>
-        e.metaKey && /\w/.test(t.tokenText) && void goToDefinition(codeAt(t)),
     }),
     [
       props.diffStyle,
       props.collapsed,
+      codeLine,
       codeTheme,
       themeType,
       workspace.id,
@@ -388,13 +449,23 @@ export const Viewer = memo(function Viewer(props: Props) {
     ],
   );
 
+  // Replies and streamed answers change the annotation's contents, not its location.
+  // Keep the library's annotation list stable unless an anchored root itself changes.
+  const roots = entries.filter((entry) => !entry.parentId);
+  const [annotationRoots, setAnnotationRoots] = useState(roots);
+  if (
+    roots.length !== annotationRoots.length ||
+    roots.some((entry, i) => entry !== annotationRoots[i])
+  ) {
+    setAnnotationRoots(roots);
+  }
   const annotations = useMemo(() => {
     // Threads show under their first question, so only anchored entries without a parent get a box.
     // A whole file shows the new side (snapshot or worktree), so only new-side entries belong in it; one at a commit
     // Go to Definition found it at, none: they're about the canvas's range.
     // Only entries whose lines are in this range go between the lines (ADR 0015); outdated ones open from the header.
     const boxes: { side: "old" | "new"; line: number; box: Box }[] = [
-      ...entries
+      ...annotationRoots
         .filter(
           (e) =>
             e.path === path &&
@@ -415,23 +486,11 @@ export const Viewer = memo(function Viewer(props: Props) {
         metadata: a.box,
       })),
     };
-  }, [entries, draft, opened]);
+  }, [annotationRoots, draft, opened]);
 
-  // Go to Definition's line: selected, and scrolled to once the library has drawn it.
   useEffect(() => {
-    const line = opened.kind === "file" && opened.line;
-    if (!line || !files) return;
-    setSelection({ start: line, end: line });
-    let tries = 40;
-    const find = () => {
-      const el = root.current
-        ?.querySelector("diffs-container")
-        ?.shadowRoot?.querySelector(`[data-line="${line}"]`);
-      if (el) el.scrollIntoView({ block: "center" });
-      else if (tries--) setTimeout(find, 50);
-    };
-    find();
-  }, [opened, !!files]);
+    if (codeLine) setSelection({ start: codeLine.line, end: codeLine.line, side: codeLine.side });
+  }, [codeLine]);
 
   if (!near && !props.collapsed) {
     // Roughly the file diff's height, so scrolling to a file further down lands near it.

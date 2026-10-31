@@ -9,6 +9,7 @@ export type CanvasSearch = {
   settings?: true; // app Settings tab; the workspace location remains underneath it
   fileTabs?: { path: string; commit?: string }[]; // editor tabs, scoped to this workspace's location
   editorFile?: { path: string; commit?: string }; // last active editor tab when leaving Files
+  codeLine?: import("./source-destination").CodeLine; // declaration selected within Guide or Changes
   thread?: number; // a thread to reveal and scroll to, including in a reviewed file
   ws?: number; // the workspace; Back into another workspace's entry opens it again
   view?: "diffs" | "files" | "sections"; // the Navigator tab; defaults to Sections

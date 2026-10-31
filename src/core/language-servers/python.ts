@@ -1,3 +1,5 @@
+import { glob, stat } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { downloaded, type Release } from "./download.ts";
 import type { LanguageServer } from "./index.ts";
 
@@ -43,5 +45,33 @@ export const python: LanguageServer = {
   name: "Python",
   languageIds: { ".py": "python", ".pyi": "python" },
   dependencies: [".venv", "venv"],
+  initializationOptions: async (root) => {
+    // Let the language server resolve editable workspace packages even before a venv is installed.
+    // These are package roots, not a name-based fallback for Go to Definition.
+    const roots = new Set<string>([root]);
+    for await (const manifest of glob("**/pyproject.toml", {
+      cwd: root,
+      exclude: [
+        "**/node_modules/**",
+        "**/.venv/**",
+        "**/venv/**",
+        "**/.git/**",
+        "**/dist/**",
+        "**/build/**",
+      ],
+    })) {
+      const directory = join(root, dirname(manifest));
+      roots.add(directory);
+      const src = join(directory, "src");
+      if (
+        await stat(src).then(
+          (info) => info.isDirectory(),
+          () => false,
+        )
+      )
+        roots.add(src);
+    }
+    return { pyrefly: { extraSearchPaths: [...roots].sort() } };
+  },
   start: async () => ({ command: await downloaded(pyrefly), args: ["lsp"] }),
 };

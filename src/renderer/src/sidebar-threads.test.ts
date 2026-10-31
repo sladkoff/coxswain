@@ -5,7 +5,6 @@ import type { GuideOptions } from "../../preload";
 import { visibleSidebarThreads } from "./sidebar-threads.ts";
 const options: GuideOptions = {
   showResolved: true,
-  showReviewedFiles: true,
   onlyFilesWithThreads: false,
   showAgentThreads: true,
   showComments: true,

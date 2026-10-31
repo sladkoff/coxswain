@@ -192,10 +192,10 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   Selecting Guide opens the current guide (or newest available view), and clicking a title jumps to that section with clearance below the glass toolbar. Section picks and the sidebar tab are router locations, so Back/Forward restores them. Without a view, Guide says _No guide sections_.
   Drag the horizontal divider above its bar to resize it vertically; both lists keep at least 96 px. The divider
   also takes Up/Down keys (10 px, or 50 px with Shift). The height is shared by Commits and Turns and retained while
-  collapsed or hidden; it resets on restart, like pane widths. Both lists come from the worktree, so _Changes_ shows the PR's file diffs and local changes (e.g. an
+  collapsed or hidden; its height and pane widths persist across restarts. Both lists come from the worktree, so _Changes_ shows the PR's file diffs and local changes (e.g. an
   agent's) together, a file with local changes marked with an amber ● after its +/− lines, and reloads after each
-  turn. Reviewed files are hidden unless _Show Reviewed Files_ is on, and then show a ✓. When every changed file is reviewed, Changes shows a centered, muted _All N files reviewed_ state and a muted, subtly bordered _Show Reviewed Files_ button only when the list is empty because all changed files are reviewed and hidden. Showing reviewed files removes this empty state; the ⋯ menu can hide them again.
-  The small, muted ⋯ menu beside Changes/Files holds _Show Reviewed Files_ and _Files as Tree_ or _Files as List_ (a flat list, each file's folder dimmed next to its +/−
+  turn. Reviewed files follow the global _Hide Reviewed Files_ setting in the top bar. When every changed file is reviewed and hidden, Changes shows a centered, muted _All N files reviewed_ state.
+  The small, muted ⋯ menu beside Changes/Files holds _Files as Tree_ or _Files as List_ (a flat list, each file's folder dimmed next to its +/−
   lines). A changed file with open threads (yours, and the agent's while its view shows) shows a speech bubble after its +/−
   lines (hovering says how many of each kind). Selecting a file in _Changes_ scrolls the canvas to its file diff; selecting one in _Files_ shows the whole
   file in the canvas, until the control goes back to _Changes_.
@@ -204,8 +204,7 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   finds an action by name (fuzzy, best match first, its shortcut on the right), ↑/↓ pick, Enter runs it. Without the
   `>` it finds files: _File > Open Quickly…_ (⌘⇧O), or the magnifier left of the canvas bar's display options, opens it that way.
   Typing filters the worktree's files by path (fuzzy: a match in the file name, then elsewhere, then its letters in
-  order), and Enter opens the file in the canvas and shows the Navigator on _Files_, with the file selected and its
-  folders open. Esc or a click outside closes it. Actions it lists: Back and Forward, show or hide the Navigator and Commits,
+  order), and Enter navigates to the file already displayed in Guide or Changes when available. Otherwise it opens the file in _Files_, with the file selected and its folders open. Esc or a click outside closes it. Actions it lists: Back and Forward, show or hide the Navigator and Commits,
   show the diff or a view, each New View, Unified or Split diffs, show or hide reviewed files, open a workspace, New
   Workspace, switch project, Add Project, Settings. Actions that can't run now (Back at the start) aren't listed.
 
@@ -261,7 +260,7 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   All file diffs of the workspace follow one another, to scroll through. The display options (sliders)
   in its bar open a native menu: _Unified_ or _Split_ file diffs and the Navigator's _Files as
   Tree_ or _Files as List_; off, reviewed file diffs are hidden, and
-  when all are, the canvas shows a centered, muted _All N files reviewed_ message and a bordered _Show Reviewed Files_ button, matching the sidebar. A file diff's header uses the same muted label styling as a guide section for its _Reviewed_
+  when all are, the canvas shows a centered, muted _All N files reviewed_ message, matching the sidebar. A file diff's header uses the same muted label styling as a guide section for its _Reviewed_
   checkbox.
 
   **Go to Definition.** Holding ⌘ over a name or an import path in a file diff or a whole file underlines it;
@@ -325,7 +324,7 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   highlighted until it's resolved. If the agent rewrites the section, the thread goes outdated and moves to the top of
   the section. The threads list shows these threads under the view's title, each with its section (_§ 2_).
 
-  **Guide and threads.** The left Navigator defaults to Guide. Its rows are left-aligned and show the section number and a semibold title, with file and added/deleted line totals only for sections with files; sections without files show muted No files subtext. Threads appear beneath their section, grouped under a single filename (or Section discussion), in the same scrolling list. Each thread uses two compact lines: a plain-text preview without markup, then status and one total reply count (human and agent follow-ups combined), without colored dots; line numbers are omitted. Section file/diff counts sit directly below the title without an extra gap; unmatched threads appear under Other threads. Guide sidebar sections have 8-point gaps with aligned title, file and avatar columns. Sections connect to file rows with subtle tree branches with slanted connectors, a softly curved last join and no extra gap between file rows. The vertical branch starts just below the section number. Thread rows use softly bordered 12-point pills beneath their file, with small gaps between pills. File rows sit directly on the sidebar background, with Pierre’s language/file-type icons, a filename and per-file added/deleted totals. A muted directory appears only to disambiguate duplicate filenames and truncates in the middle to preserve its ending; deleted filenames are struck through. Selecting a file expands its card even if reviewed, without changing its Reviewed mark or expanding other reviewed cards, and aligns its header below the toolbar. By default Guide lists all changed files, including reviewed files and files without threads. The header’s ⋯ menu independently offers Hide Reviewed Files and Only Files with Threads; the latter respects the current thread filters. Hide Reviewed Files excludes reviewed files and their nested threads. Guide file rows have a right-aligned native Reviewed checkbox, aligned with the section checkbox column. Clicking the filename navigates; clicking the checkbox only changes review state. The menu also independently includes Agent Threads and Comments. An Authors submenu independently includes or excludes each thread author. Human authors are included by default, bot authors excluded using GitHub’s actor type (with bot-login suffix fallback); Show All Authors includes everyone. Explicit author choices override these defaults. Thread previews show the author’s avatar, with a person icon fallback. The header’s muted ⋯ menu has a Hide Resolved Threads checkbox: off (the default) includes open and resolved threads; on lists only open threads. Sections without matching threads simply have no thread rows; there is no No open threads message or show-resolved button in the list. Show Threads opens the left sidebar on Guide. Changes explicitly shows the raw diff, while Guide opens the current or newest guide. The right sidebar holds only Chat, starts directly below the glass toolbar without a standalone header, and keeps its width divider. Prompt attachments and review work open Chat; review sending errors appear in Guide.
+  **Guide and threads.** The left Navigator defaults to Guide. Its rows are left-aligned and show the section number and a semibold title, with file and added/deleted line totals only for sections with files; sections without files show muted No files subtext. Threads appear beneath their section, grouped under a single filename (or Section discussion), in the same scrolling list. Each thread uses two compact lines: a plain-text preview without markup, then status and one total reply count (human and agent follow-ups combined), without colored dots; line numbers are omitted. Section file/diff counts sit directly below the title without an extra gap; unmatched threads appear under Other threads. Guide sidebar sections have 8-point gaps with aligned title, file and avatar columns. Sections connect to file rows with subtle tree branches with slanted connectors, a softly curved last join and no extra gap between file rows. The vertical branch starts just below the section number. Thread rows use softly bordered 12-point pills beneath their file, with small gaps between pills. File rows sit directly on the sidebar background, with Pierre’s language/file-type icons, a filename and per-file added/deleted totals. A muted directory appears only to disambiguate duplicate filenames and truncates in the middle to preserve its ending; deleted filenames are struck through. Selecting a file expands its card even if reviewed, without changing its Reviewed mark or expanding other reviewed cards, and aligns its header below the toolbar. By default Guide lists all changed files, including reviewed files and files without threads. The header’s ⋯ menu offers Only Files with Threads, which respects the current thread filters. Hide Reviewed Files excludes reviewed files and their nested threads. Guide file rows have a right-aligned native Reviewed checkbox, aligned with the section checkbox column. Clicking the filename navigates; clicking the checkbox only changes review state. The menu also independently includes Agent Threads and Comments. An Authors submenu independently includes or excludes each thread author. Human authors are included by default, bot authors excluded using GitHub’s actor type (with bot-login suffix fallback); Show All Authors includes everyone. Explicit author choices override these defaults. Thread previews show the author’s avatar, with a person icon fallback. The header’s muted ⋯ menu has a Hide Resolved Threads checkbox: off (the default) includes open and resolved threads; on lists only open threads. Sections without matching threads simply have no thread rows; there is no No open threads message or show-resolved button in the list. Show Threads opens the left sidebar on Guide. Changes explicitly shows the raw diff, while Guide opens the current or newest guide. The right sidebar holds only Chat, starts directly below the glass toolbar without a standalone header, and keeps its width divider. Prompt attachments and review work open Chat; review sending errors appear in Guide.
 
   Review → _Submit Review N_ (N the open comment threads; on with open comment threads or a PR) opens a dialog, like GitHub's
   _Finish your review_. Agent threads aren't in it. The comment threads, compact: a checkbox, where it is and its first
@@ -367,7 +366,7 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
 
   The view shows its sections in order, each with its heading, how many file
   diffs it embeds and a _Reviewed_ checkbox that marks them all (ticked once all are; unticking unmarks them all), then its markdown (ADR 0026): prose, tables, mermaid diagrams, and embedded file diffs, which work
-  as in the diff (threads, _Reviewed_), reviewed cards are completely hidden when _Hide Reviewed Files_ is enabled, while section explanations remain visible. The canvas option lives in the top Settings dropdown and applies to both Changes and Guide, independently of sidebar filtering. Marking a file Reviewed scrolls the next unreviewed file into focus, skipping reviewed files; the last unreviewed file leaves the scroll position alone. Each section uses an explanation
+  as in the diff (threads, _Reviewed_), reviewed cards are completely hidden when _Hide Reviewed Files_ is enabled, while section explanations remain visible. The global option lives only in the top Settings dropdown and applies to Changes, Guide and both sidebars across all workspaces and windows. Marking a file Reviewed scrolls the next unreviewed file into focus, skipping reviewed files; the last unreviewed file leaves the scroll position alone. Each section uses an explanation
   column beside its embedded file cards, without a separate file overview or navigation sidebar. Text remains
   sticky within the section; long explanations scroll below the top bar. Below 960 px of canvas width,
   the explanation stacks above the cards without sticky positioning. Prose-only sections span the canvas.
@@ -454,8 +453,8 @@ A prose-only view has no reviewable files. An empty view says _Nothing in this v
 - A workspace remembers its selected agent session and unsent draft for the window's lifetime. Running turns,
   earlier messages, pending permissions and errors survive switching workspaces; the agent pane reattaches to the
   core's session state. A turn can finish while its pane is hidden.
-- Picking a comment from the Threads section or a chat card selects its view or recorded range and enables Show Reviewed
-  Files before scrolling to its thread, or stays where it is if the thread is on screen there. The Reviewed mark
+- Picking a comment from the Threads section or a chat card selects its view or recorded range and temporarily reveals its reviewed file
+  before scrolling to its thread, or stays where it is if the thread is on screen there. The Reviewed mark
   stays. An outdated thread opens above its file with its code then and now, rather than leaving navigation at a
   hidden annotation.
 
@@ -596,7 +595,7 @@ Changes category/folder disclosures use a fixed 16-point slot in both states, ke
 
 Changes category diff totals align to the same right edge as file diff totals, just before the review checkbox; the file count stays beside the category name.
 
-Sidebar ⋯ menus contain only sidebar filters, grouping and Tree/List controls. The top Settings dropdown contains canvas display controls, Section Descriptions, Hide Reviewed Files and Update Guide. Sidebar review filters do not change canvas visibility.
+Sidebar ⋯ menus contain only sidebar filters, grouping and Tree/List controls. The top Settings dropdown contains canvas display controls, Section Descriptions, Hide Reviewed Files and Update Guide. Hide Reviewed Files is shared by the sidebars and canvas; it has no sidebar control or empty-state toggle.
 
 The bottom of the top Settings dropdown includes Auto-update from Remote for the current workspace, checked by default. It persists across restarts, follows force-pushes for clean workspaces, and switches off automatically on local edits, untracked files or unpushed commits. It stays off until explicitly re-enabled; enabling it with local work immediately switches it off again. Other workspaces are unaffected.
 
@@ -612,7 +611,7 @@ Changes, Implementation/Tests/Generated and folder file counts show reviewed/cha
 
 Submit Review omits the No open comment threads empty-state notice when Approve is selected; approving without comments is a normal review.
 
-The Changes canvas all-reviewed empty state is centered horizontally and vertically in its available body, matching the sidebar’s text size, muted colour, spacing and Show Reviewed Files button.
+The Changes canvas all-reviewed empty state is centered horizontally and vertically in its available body, matching the sidebar’s text size, muted colour and spacing.
 
 Guide sidebar auto-follow smoothly reveals the active file row, falling back to its section title when the file is filtered out. It scrolls only when that row is outside the sidebar viewport. A critically damped reveal accelerates gently and preserves velocity when the active target changes; the offset is never directly mapped to canvas scrolling. Repeated identical reading markers do not restart scrolling, and manual sidebar input cancels the current movement. Reduce Motion remains immediate.
 
@@ -671,3 +670,21 @@ to the left of GitHub and preview actions, in both native and standard chrome.
 Code theme families always contain light and dark variants. Code views and the Settings
 preview explicitly follow the resolved app appearance, including OS changes in System
 mode; Soft Dark uses the dark variant. Changing appearance preserves the theme family.
+
+Chat opens a session at its latest message once its history loads. Submitting messages, streaming answers and turn-status updates preserve the transcript scroll position, including when it was at the bottom; the reader scrolls to follow new content.
+
+Display settings persist app-wide in SQLite across restarts: Unified/Split, Tree/List, Hide Reviewed Files, Section Descriptions, change grouping, sidebar thread/author filters, sidebar visibility and width, Chat width, and Commits/Turns selection, visibility and height. Existing appearance, code theme, agent/model/effort, Guide and review settings retain their saved behavior. Defaults apply until a preference is first changed.
+
+Inline agent-thread follow-ups preserve the canvas scroll position when their question is saved, the turn starts, and answers stream or become saved replies. Thread annotation locations remain stable while their conversation contents update; canvas browser scroll anchoring is disabled to avoid following the growing conversation.
+
+Picking a thread in the sidebar aligns that specific conversation below the toolbar and file header. Threads in the same file, including threads sharing a code line, have independent destinations. A selected Guide section does not also scroll when a thread is the navigation target.
+
+Code links (⌘-click, Go to Definition and Find Usages) and file search (⌘K / Open Quickly) reuse the current Guide or Changes canvas when its target file is displayed there. Collapsed visible cards expand; files hidden by Hide Reviewed Files stay hidden and open in Files instead. A code link must match the displayed revision and side, including renamed old-side paths; another revision opens in Files. In-place declaration navigation selects its line, reveals unchanged diff context when needed, and remains in Back/Forward history. Explicit Files-tree and file-tab picks keep using Files.
+
+Within code tokens, ⌘-hover and ⌘-click target the identifier under the pointer, not the first identifier in the syntax-highlighted span. Generic wrappers and their type arguments are separate links, including `FromDishka[SuggestSampleTestSetup]`; brackets, commas and whitespace are not links. The underline covers only the hovered identifier, and the context menu uses the same symbol.
+
+Python import and reference links resolve local workspace package sources even before a virtual environment is installed; third-party dependency links require those sources to be installed. Clicking a sidebar file/Guide section keeps its destination anchored through later diff-height changes, until manual scrolling/input or another navigation takes over.
+
+Toggling Hide Reviewed Files preserves the current file’s reading offset in Guide and Changes, including preference changes from another window and later diff-height corrections. If that file is being hidden, the nearest following visible file takes its place below the toolbar, falling back to the previous file. Guide prose keeps its section position. This does not add a history step or change review marks.
+
+Test grouping recognizes test directories and language-specific filename conventions. Outside test directories, Python tests use `_spec.py` (or `_spec.pyi`); `sample_test.py`, `test_of_detail.py` and `suggest_sample_test_setup.py` stay in Implementation. Frontend `.test.ts` / `.spec.ts` and existing other-language test conventions remain supported. Guide generation uses the same classification.

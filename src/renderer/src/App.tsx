@@ -1,3 +1,7 @@
+import { PreserveReviewScroll } from "./components/PreserveReviewScroll";
+import { reviewSourceDestination, type ReviewSurface } from "./source-destination";
+import { scrollToThread } from "./components/scroll-to-thread";
+import { useUiPreferences } from "./ui-preferences";
 import { setAgentPane } from "./agent-pane";
 import { fileCountLabel } from "./remaining-files";
 import { createGuideReadingPosition } from "./guide-reading-position";
@@ -68,7 +72,6 @@ import { ProseThreads } from "./ProseThreads";
 import { PullRequestPanel } from "./PullRequest";
 import { ViewProse, ViewSectionHeader } from "./ViewSection";
 import { GuideExplanation } from "./components/GuideExplanation";
-import type { ViewSettings, GuideOptions, GuideDescriptionPosition } from "../../preload";
 import { openedPath, type Opened, type Turn, Viewer } from "./Viewer";
 import { WorkspaceTabs } from "./WorkspaceTabs";
 import { FileTabs } from "./FileTabs";
@@ -108,9 +111,9 @@ export function App() {
     close();
   };
 
-  // ponytail: pane widths reset on restart; persist them in SQLite once a settings table exists.
-  const [leftWidth, setLeftWidth] = useState(336);
-  const [agentsWidth, setAgentsWidth] = useState(416);
+  const preference = useUiPreferences();
+  const [leftWidth, setLeftWidth] = preference("leftWidth");
+  const [agentsWidth, setAgentsWidth] = preference("agentsWidth");
   // Chat is secondary to the canvas, collapsed by default; an explicit choice survives restarts.
   const agentsOpen = useQuery(core("getAgentPaneOpen")).data ?? false;
   const setAgentsOpen = (open: boolean) => {
@@ -119,24 +122,15 @@ export function App() {
   };
   // The pane on the left of the canvas, under its own bar: the Navigator on top, the commits or the agent turns below.
   // Starts open, with history collapsed to its bar at the pane’s bottom.
-  const [paneOpen, setPaneOpen] = useState(true);
-  const [history, setHistory] = useState<HistoryTab>("commits");
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const [groupChanges, setGroupChanges] = useState(true);
-  // ponytail: resets on restart like other display options; persist them together in SQLite.
-  const [guideDescriptionPosition, setGuideDescriptionPosition] =
-    useState<GuideDescriptionPosition>("beside");
-  // ponytail: like pane widths, this height resets on restart; store pane geometry together in SQLite.
-  const [historyHeight, setHistoryHeight] = useState<number | null>(null);
-  const [guideOptions, setGuideOptions] = useState<GuideOptions>({
-    showResolved: true,
-    showReviewedFiles: true,
-    onlyFilesWithThreads: false,
-    showAgentThreads: true,
-    showComments: true,
-    hiddenAuthors: [],
-    shownAuthors: [],
-  });
+  const [paneOpen, setPaneOpen] = preference("paneOpen");
+  const [history, setHistory] = preference("history");
+  const [historyOpen, setHistoryOpen] = preference("historyOpen");
+  const [groupChanges, setGroupChanges] = preference("groupChanges");
+  const [guideDescriptionPosition, setGuideDescriptionPosition] = preference(
+    "guideDescriptionPosition",
+  );
+  const [historyHeight, setHistoryHeight] = preference("historyHeight");
+  const [guideOptions, setGuideOptions] = preference("guideOptions");
   useEffect(() => {
     if (agentsOpen) activateFindPane("chat");
   }, [agentsOpen]);
@@ -154,12 +148,7 @@ export function App() {
   const toggleHistory = (t: HistoryTab) =>
     paneOpen && historyOpen && history === t ? setHistoryOpen(false) : showHistory(t);
 
-  // ponytail: resets on restart, like the Navigator's settings; store them once there's a settings table.
-  const [viewSettings, setViewSettings] = useState<ViewSettings>({
-    diffStyle: "unified",
-    showReviewed: true,
-    layout: "tree",
-  });
+  const [viewSettings, setViewSettings] = preference("viewSettings");
   const workspaces =
     useQuery({ ...core("listWorkspaces", current?.id ?? 0), enabled: !!current }).data ?? [];
   const closedTabQuery = useQuery(core("getClosedWorkspaceTabs"));
@@ -266,6 +255,7 @@ export function App() {
         search: {
           ...shown.current,
           settings: undefined,
+          codeLine: undefined,
           thread: undefined,
           pr: undefined,
           section: undefined,
@@ -820,7 +810,7 @@ export function App() {
     });
     if (ok) await pushed(w, await window.coxswain.openPullRequest(w.id));
   };
-  // The one way to show a whole file: on the canvas, at `line` if given, with the Navigator on Files and the file
+  // Explicit Files navigation: on the canvas, at `line` if given, with the Navigator on Files and the file
   // revealed there. Files, Open Quickly, Go to Definition and Find Usages all go through it. Stable, so the memoised
   // Viewers don't all redraw.
   const openFile = useCallback(
@@ -832,6 +822,32 @@ export function App() {
       void show(openEditorFile(now, { path, commit }, line));
     },
     [show],
+  );
+  const reviewSurface = useRef<ReviewSurface>({ visible: [], base: "" });
+  reviewSurface.current = {
+    visible: canvasFiles.filter(isShown),
+    base: range?.base ?? pr.commits?.mergeBase ?? "",
+    head: range?.head,
+  };
+  const expandSourceFile = useRef(setFileCollapsed);
+  expandSourceFile.current = setFileCollapsed;
+  const openSourceFile = useCallback(
+    (path: string, line?: number, commit?: string) => {
+      const destination = reviewSourceDestination(
+        shown.current,
+        reviewSurface.current,
+        path,
+        line,
+        commit,
+      );
+      if (!destination) return openFile(path, line, commit);
+      const file = reviewSurface.current.visible.find(
+        (file) => openedPath(file) === destination.at,
+      );
+      expandSourceFile.current(destination.at, false, file?.kind === "file" ? "file" : undefined);
+      void show(destination);
+    },
+    [openFile, show],
   );
   // An entry of its own, though the canvas still shows the file diffs.
   const openReviewFile = async (path: string, pane: "sections" | "diffs") => {
@@ -862,11 +878,11 @@ export function App() {
   const showFile = view === "files" && opened;
   const editorTabs = fileTabsOf(s);
   // The command palette, with its first query while it's open: ">" for actions (⌘K), "" for files (Open Quickly, ⌘⇧O).
-  // A file picked is shown on the canvas with the Navigator on Files.
+  // File search reuses a displayed review file before opening Files.
   const [palette, setPalette] = useState<string | null>(null);
   const openQuickly = (path: string) => {
     setPalette(null);
-    openFile(path);
+    openSourceFile(path);
   };
   // Revealing a thread must happen before its file/section can mount. Preserve its Reviewed mark.
   // Bumped by each thread picked: picking the one shown again leaves the location as it is, but should scroll again.
@@ -882,7 +898,10 @@ export function App() {
     }
     if ((!root?.path && root?.section == null) || root.workspaceId !== shown.current.ws) return;
     if (root.path) setFileCollapsed(root.path, false);
-    setViewSettings((settings) => ({ ...settings, showReviewed: true }));
+    const revealed = canvasFiles.find((file) => openedPath(file) === root.path);
+    setReviewReveal(
+      root.path ? disclosureKey(root.path, revealed?.kind === "file" ? "file" : undefined) : null,
+    );
     // Already on the canvas (its file shows and its lines are there, e.g. a note written in the view shown): scroll to
     // it in place rather than leave for the range it was written in.
     const here = entries.find((e) => e.id === threadId);
@@ -974,7 +993,7 @@ export function App() {
     screen,
   ]);
   useEffect(() => {
-    if (s.section === undefined || !canvasReady || !canvas.current || !sections) return;
+    if (s.thread || s.section === undefined || !canvasReady || !canvas.current || !sections) return;
     if (moved && scrolls.current.has(location.state.__TSR_key ?? "")) return;
     const target = canvasElement(canvas.current, `view-section-${s.section}`);
     if (!target) return;
@@ -983,9 +1002,17 @@ export function App() {
       anchor: target.id,
       offset: -(parseFloat(getComputedStyle(target).scrollMarginTop) || 0),
     });
-  }, [location.state.__TSR_key, s.section, canvasReady, sections?.length]);
+  }, [location.state.__TSR_key, s.thread, s.section, canvasReady, sections?.length]);
   useEffect(() => {
-    if (!s.at || s.thread || s.section !== undefined || !canvasReady || !canvas.current || showFile)
+    if (
+      !s.at ||
+      s.codeLine ||
+      s.thread ||
+      s.section !== undefined ||
+      !canvasReady ||
+      !canvas.current ||
+      showFile
+    )
       return;
     if (moved && scrolls.current.has(location.state.__TSR_key ?? "")) return;
     const target = canvasElement(canvas.current, `diff:${s.at}`);
@@ -995,7 +1022,7 @@ export function App() {
       anchor: target.id,
       offset: -(parseFloat(getComputedStyle(target).scrollMarginTop) || 0),
     });
-  }, [location.state.__TSR_key, s.at, canvasReady, !!showFile]);
+  }, [location.state.__TSR_key, s.at, s.codeLine, canvasReady, !!showFile]);
   // What holds the thread: its file diff, or on a view's prose its section (ADR 0036).
   const threadSection = allEntries?.find((e) => e.id === s.thread)?.section;
   const threadIn = match({ at: s.at, section: threadSection })
@@ -1245,14 +1272,6 @@ export function App() {
       enabled: viewSettings.diffStyle !== "split",
       run: () => setViewSettings((v) => ({ ...v, diffStyle: "split" })),
     },
-    {
-      id: "toggle-reviewed",
-      title: viewSettings.showReviewed ? "Hide Reviewed Files" : "Show Reviewed Files",
-      run: () => {
-        setReviewReveal(null);
-        setViewSettings((v) => ({ ...v, showReviewed: !v.showReviewed }));
-      },
-    },
     ...workspaces.map((w) => ({
       id: `workspace:${w.id}`,
       title: `Open Workspace: ${workspaceLabel(w)}`,
@@ -1298,7 +1317,10 @@ export function App() {
     turns,
     onAsk: ask,
     onAnswerPermission: answerPermission,
-    onOpenFile: openFile,
+    onOpenFile: openSourceFile,
+    codeLine: s.codeLine,
+    codeLinePassive: moved,
+    codeLineVersion: location.state.__TSR_key,
     diffStyle: viewSettings.diffStyle,
     revealThread: s.thread,
     revealVersion: threadPicks,
@@ -1472,7 +1494,7 @@ export function App() {
                       files={fileCountLabel(
                         view === "diffs" ? diffPr.changed : pr.changed,
                         view === "diffs" ? reviewedQuery.data : liveReviewedQuery.data,
-                        guideOptions.showReviewedFiles,
+                        viewSettings.showReviewed,
                       )}
                       onTab={pickPaneTab}
                       onHide={() => setPaneOpen(false)}
@@ -1531,6 +1553,7 @@ export function App() {
                               entries={entries}
                               turns={turns}
                               options={guideOptions}
+                              showReviewed={viewSettings.showReviewed}
                               authors={guideAuthors}
                               changed={diffPr.changed ?? []}
                               changedSinceReview={changedSinceReview}
@@ -1567,12 +1590,6 @@ export function App() {
                           reviewed={reviewed}
                           changedSinceReview={changedSinceReview}
                           showReviewed={viewSettings.showReviewed}
-                          onShowReviewed={(showReviewed) => {
-                            setGuideOptions((options) => ({
-                              ...options,
-                              showReviewedFiles: showReviewed,
-                            }));
-                          }}
                           entries={entries}
                           local={range ? undefined : (pr.local ?? undefined)}
                           selected={
@@ -1676,231 +1693,227 @@ export function App() {
                     <Centered>Loading the pull request…</Centered>
                   )
                 ) : (
-                  <RetainedCanvas
-                    key={currentWorkspace.id}
-                    surface={match(view)
-                      .with("files", () => "files" as const)
-                      .with("sections", () =>
-                        canvasView ? ("guide" as const) : ("changes" as const),
-                      )
-                      .with("diffs", () => "changes" as const)
-                      .exhaustive()}
-                    ready={canvasReady}
+                  <PreserveReviewScroll
                     canvasRef={canvas}
+                    identity={`${currentWorkspace.id}:${view}:${viewId ?? "changes"}`}
+                    showReviewed={viewSettings.showReviewed}
                   >
-                    <div
-                      style={{ minWidth: viewerMin }}
-                      className="review-canvas flex min-w-0 flex-1 flex-col bg-neutral-50 dark:bg-neutral-950"
-                      onScrollCapture={onCanvasScroll}
+                    <RetainedCanvas
+                      key={currentWorkspace.id}
+                      surface={match(view)
+                        .with("files", () => "files" as const)
+                        .with("sections", () =>
+                          canvasView ? ("guide" as const) : ("changes" as const),
+                        )
+                        .with("diffs", () => "changes" as const)
+                        .exhaustive()}
+                      ready={canvasReady}
+                      canvasRef={canvas}
                     >
-                      {view === "files" && (
-                        <div className="shrink-0 pt-[var(--ui-toolbar-height)]">
-                          <FileTabs
-                            tabs={editorTabs}
-                            active={s.file ? { path: s.file, commit: s.fileAt } : undefined}
-                            onSelect={(tab) => openFile(tab.path, undefined, tab.commit)}
-                            onClose={(tab) => void show(closeEditorFile(s, tab))}
-                          />
-                        </div>
-                      )}
-                      {!canvasReady ? (
-                        <Centered>
-                          {pr.commits || pr.problem ? "Loading…" : "Preparing the workspace…"}
-                        </Centered>
-                      ) : (
-                        <>
-                          {showFile && (
-                            // One Viewer per file: a reused one would scroll to a line in the file it drew before.
-                            <Viewer
-                              editor
-                              key={`${currentWorkspace.id}:${openedPath(opened)}:${s.fileAt ?? "live"}`}
-                              opened={opened}
-                              reviewed={false}
-                              {...viewerProps(currentWorkspace, pr.commits!.mergeBase, s.fileAt)}
+                      <div
+                        style={{ minWidth: viewerMin }}
+                        className="review-canvas flex min-w-0 flex-1 flex-col bg-neutral-50 dark:bg-neutral-950"
+                        onScrollCapture={onCanvasScroll}
+                      >
+                        {view === "files" && (
+                          <div className="shrink-0 pt-[var(--ui-toolbar-height)]">
+                            <FileTabs
+                              tabs={editorTabs}
+                              active={s.file ? { path: s.file, commit: s.fileAt } : undefined}
+                              onSelect={(tab) => openFile(tab.path, undefined, tab.commit)}
+                              onClose={(tab) => void show(closeEditorFile(s, tab))}
                             />
-                          )}
-                          {view === "files" && !showFile && (
-                            <Centered>Open a file from the sidebar or with ⇧⌘O</Centered>
-                          )}
-                          {view !== "files" && canvasView?.writing && !showFile && (
-                            <WritingViewNotice />
-                          )}
-                          {canvasView?.worktree &&
-                            view !== "files" &&
-                            pr.snapshot &&
-                            canvasView.head !== pr.snapshot &&
-                            !showFile && (
-                              <StaleViewNotice
-                                onUpdate={() => setUpdatingGuide(currentWorkspace.id)}
+                          </div>
+                        )}
+                        {!canvasReady ? (
+                          <Centered>
+                            {pr.commits || pr.problem ? "Loading…" : "Preparing the workspace…"}
+                          </Centered>
+                        ) : (
+                          <>
+                            {showFile && (
+                              // One Viewer per file: a reused one would scroll to a line in the file it drew before.
+                              <Viewer
+                                editor
+                                key={`${currentWorkspace.id}:${openedPath(opened)}:${s.fileAt ?? "live"}`}
+                                opened={opened}
+                                reviewed={false}
+                                {...viewerProps(currentWorkspace, pr.commits!.mergeBase, s.fileAt)}
                               />
                             )}
-                          {!canvasView && view !== "files" && shownDiffs?.length === 0 && (
-                            <div
-                              className={cn(
-                                "flex flex-1 flex-col items-center justify-center gap-3 p-4 text-center text-xs",
-                                muted,
+                            {view === "files" && !showFile && (
+                              <Centered>Open a file from the sidebar or with ⇧⌘O</Centered>
+                            )}
+                            {view !== "files" && canvasView?.writing && !showFile && (
+                              <WritingViewNotice />
+                            )}
+                            {canvasView?.worktree &&
+                              view !== "files" &&
+                              pr.snapshot &&
+                              canvasView.head !== pr.snapshot &&
+                              !showFile && (
+                                <StaleViewNotice
+                                  onUpdate={() => setUpdatingGuide(currentWorkspace.id)}
+                                />
                               )}
-                            >
-                              {canvasFiles.length ? (
-                                <>
-                                  <span>All {canvasFiles.length} files reviewed</span>
-                                  <Button
-                                    className={muted}
-                                    onClick={() =>
-                                      setViewSettings((settings) => ({
-                                        ...settings,
-                                        showReviewed: true,
-                                      }))
-                                    }
-                                  >
-                                    Show Reviewed Files
-                                  </Button>
-                                </>
-                              ) : (
-                                "No changes"
-                              )}
-                            </div>
-                          )}
-                          {/* Pierre draws visible review lines; RetainedCanvas keeps each pane's geometry on tab switches. */}
-                          {view !== "files" &&
-                            diffDiffs &&
-                            shownDiffs &&
-                            (canvasView || shownDiffs.length > 0) && (
-                              <Virtualizer
-                                key={`${currentWorkspace.id}:${viewId ?? "diff"}:${range?.base ?? pr.commits?.mergeBase}:${range?.head ?? "live"}`}
+                            {!canvasView && view !== "files" && shownDiffs?.length === 0 && (
+                              <div
                                 className={cn(
-                                  "min-h-0 flex-1 overflow-auto [scroll-padding-top:var(--review-content-start)] [scroll-padding-bottom:var(--review-content-start)]",
+                                  "flex flex-1 flex-col items-center justify-center gap-3 p-4 text-center text-xs",
+                                  muted,
                                 )}
-                                // Keep spacing off the scrollport: its padding also offsets sticky file headers.
-                                contentClassName="pt-[var(--review-content-start)] pb-[var(--review-content-end)]"
                               >
-                                {canvasView &&
-                                  !canvasView.sections.length &&
-                                  (!canvasView.guide || !diffDiffs.length) && (
-                                    <div className={cn("p-4 text-xs", muted)}>
-                                      Nothing in this view yet.
-                                    </div>
+                                {canvasFiles.length ? (
+                                  <>
+                                    <span>All {canvasFiles.length} files reviewed</span>
+                                  </>
+                                ) : (
+                                  "No changes"
+                                )}
+                              </div>
+                            )}
+                            {/* Pierre draws visible review lines; RetainedCanvas keeps each pane's geometry on tab switches. */}
+                            {view !== "files" &&
+                              diffDiffs &&
+                              shownDiffs &&
+                              (canvasView || shownDiffs.length > 0) && (
+                                <Virtualizer
+                                  style={{ overflowAnchor: "none" }}
+                                  key={`${currentWorkspace.id}:${viewId ?? "diff"}:${range?.base ?? pr.commits?.mergeBase}:${range?.head ?? "live"}`}
+                                  className={cn(
+                                    "min-h-0 flex-1 overflow-auto [scroll-padding-top:var(--review-content-start)] [scroll-padding-bottom:var(--review-content-start)]",
                                   )}
-                                {(
-                                  sections ?? [
-                                    {
-                                      title: undefined,
-                                      muted: false,
-                                      files: diffDiffs,
-                                      parts: shownDiffs.map((d) => ({
-                                        kind: "code",
-                                        d,
-                                        muted: false,
-                                      })),
-                                    },
-                                  ]
-                                ).map((x, i) => (
-                                  <section
-                                    key={i}
-                                    id={`view-section-${i}`}
-                                    className={cn(
-                                      x.muted && "opacity-60",
-                                      // A guide's explanation and cards share a row, with room between sections.
-                                      x.title !== undefined && "guide-section mb-12",
-                                      divider,
+                                  // Keep spacing off the scrollport: its padding also offsets sticky file headers.
+                                  contentClassName="pt-[var(--review-content-start)] pb-[var(--review-content-end)]"
+                                >
+                                  {canvasView &&
+                                    !canvasView.sections.length &&
+                                    (!canvasView.guide || !diffDiffs.length) && (
+                                      <div className={cn("p-4 text-xs", muted)}>
+                                        Nothing in this view yet.
+                                      </div>
                                     )}
-                                  >
-                                    <ProseThreads
-                                      revealThread={s.thread}
-                                      revealVersion={threadPicks}
-                                      onThreadResolved={(id) => {
-                                        if (shown.current.thread === id)
-                                          void show({ thread: undefined });
-                                      }}
-                                      workspaceId={currentWorkspace.id}
-                                      canPost={currentWorkspace.prNumber !== null}
-                                      viewId={canvasView?.id ?? 0}
-                                      section={i}
-                                      entries={entries}
-                                      turns={turns}
-                                      onAsk={ask}
-                                      onAnswerPermission={answerPermission}
+                                  {(
+                                    sections ?? [
+                                      {
+                                        title: undefined,
+                                        muted: false,
+                                        files: diffDiffs,
+                                        parts: shownDiffs.map((d) => ({
+                                          kind: "code",
+                                          d,
+                                          muted: false,
+                                        })),
+                                      },
+                                    ]
+                                  ).map((x, i) => (
+                                    <section
+                                      key={i}
+                                      id={`view-section-${i}`}
+                                      className={cn(
+                                        x.muted && "opacity-60",
+                                        // A guide's explanation and cards share a row, with room between sections.
+                                        x.title !== undefined && "guide-section mb-12",
+                                        divider,
+                                      )}
                                     >
-                                      <div
-                                        className={cn(
-                                          x.title !== undefined && "guide-section-layout",
-                                          x.title !== undefined &&
-                                            x.files.length > 0 &&
-                                            guideDescriptionPosition === "beside" &&
-                                            "guide-section-with-code",
-                                          x.title !== undefined &&
-                                            x.files.length === 0 &&
-                                            "guide-section-prose-only",
-                                        )}
+                                      <ProseThreads
+                                        revealThread={s.thread}
+                                        revealVersion={threadPicks}
+                                        onThreadResolved={(id) => {
+                                          if (shown.current.thread === id)
+                                            void show({ thread: undefined });
+                                        }}
+                                        workspaceId={currentWorkspace.id}
+                                        canPost={currentWorkspace.prNumber !== null}
+                                        viewId={canvasView?.id ?? 0}
+                                        section={i}
+                                        entries={entries}
+                                        turns={turns}
+                                        onAsk={ask}
+                                        onAnswerPermission={answerPermission}
                                       >
-                                        {x.title !== undefined && (
-                                          <GuideExplanation>
-                                            <ViewSectionHeader
-                                              title={x.title}
-                                              position={
-                                                x.title !== null && canvasView
-                                                  ? {
-                                                      index: i + 1,
-                                                      total: canvasView.sections.length,
-                                                    }
-                                                  : undefined
-                                              }
-                                              files={x.files.length}
-                                              reviewed={x.files.filter(isReviewed).length}
-                                              writing={!!canvasView?.writing}
-                                              onReviewedChange={(on) => markSection(x.files, on)}
-                                            />
+                                        <div
+                                          className={cn(
+                                            x.title !== undefined && "guide-section-layout",
+                                            x.title !== undefined &&
+                                              x.files.length > 0 &&
+                                              guideDescriptionPosition === "beside" &&
+                                              "guide-section-with-code",
+                                            x.title !== undefined &&
+                                              x.files.length === 0 &&
+                                              "guide-section-prose-only",
+                                          )}
+                                        >
+                                          {x.title !== undefined && (
+                                            <GuideExplanation>
+                                              <ViewSectionHeader
+                                                title={x.title}
+                                                position={
+                                                  x.title !== null && canvasView
+                                                    ? {
+                                                        index: i + 1,
+                                                        total: canvasView.sections.length,
+                                                      }
+                                                    : undefined
+                                                }
+                                                files={x.files.length}
+                                                reviewed={x.files.filter(isReviewed).length}
+                                                writing={!!canvasView?.writing}
+                                                onReviewedChange={(on) => markSection(x.files, on)}
+                                              />
+                                              {(x.parts as SectionPart[]).map(
+                                                (p, j) =>
+                                                  p.kind === "prose" && (
+                                                    <ViewProse key={j} part={j}>
+                                                      {p.text}
+                                                    </ViewProse>
+                                                  ),
+                                              )}
+                                            </GuideExplanation>
+                                          )}
+                                          <div className="min-w-0">
                                             {(x.parts as SectionPart[]).map(
-                                              (p, j) =>
-                                                p.kind === "prose" && (
-                                                  <ViewProse key={j} part={j}>
-                                                    {p.text}
-                                                  </ViewProse>
+                                              (p) =>
+                                                p.kind === "code" &&
+                                                isShown(p.d) && (
+                                                  <div
+                                                    key={openedPath(p.d)}
+                                                    id={`diff:${openedPath(p.d)}`}
+                                                    data-reviewed={isReviewed(p.d)}
+                                                    className={cn(
+                                                      p.muted && !x.muted && "opacity-60",
+                                                      reviewCard,
+                                                      x.title === undefined && reviewGutter,
+                                                      "mb-8 overflow-clip",
+                                                    )}
+                                                  >
+                                                    <Viewer
+                                                      stacked
+                                                      opened={p.d}
+                                                      reviewed={isReviewed(p.d)}
+                                                      collapsed={isCollapsed(p.d)}
+                                                      {...viewerProps(
+                                                        currentWorkspace,
+                                                        range?.base ?? pr.commits!.mergeBase,
+                                                        range?.head,
+                                                      )}
+                                                    />
+                                                  </div>
                                                 ),
                                             )}
-                                          </GuideExplanation>
-                                        )}
-                                        <div className="min-w-0">
-                                          {(x.parts as SectionPart[]).map(
-                                            (p) =>
-                                              p.kind === "code" &&
-                                              isShown(p.d) && (
-                                                <div
-                                                  key={openedPath(p.d)}
-                                                  id={`diff:${openedPath(p.d)}`}
-                                                  data-reviewed={isReviewed(p.d)}
-                                                  className={cn(
-                                                    p.muted && !x.muted && "opacity-60",
-                                                    reviewCard,
-                                                    x.title === undefined && reviewGutter,
-                                                    "mb-8 overflow-clip",
-                                                  )}
-                                                >
-                                                  <Viewer
-                                                    stacked
-                                                    opened={p.d}
-                                                    reviewed={isReviewed(p.d)}
-                                                    collapsed={isCollapsed(p.d)}
-                                                    {...viewerProps(
-                                                      currentWorkspace,
-                                                      range?.base ?? pr.commits!.mergeBase,
-                                                      range?.head,
-                                                    )}
-                                                  />
-                                                </div>
-                                              ),
-                                          )}
+                                          </div>
                                         </div>
-                                      </div>
-                                    </ProseThreads>
-                                  </section>
-                                ))}
-                              </Virtualizer>
-                            )}
-                        </>
-                      )}
-                    </div>
-                  </RetainedCanvas>
+                                      </ProseThreads>
+                                    </section>
+                                  ))}
+                                </Virtualizer>
+                              )}
+                          </>
+                        )}
+                      </div>
+                    </RetainedCanvas>
+                  </PreserveReviewScroll>
                 )}
                 <FloatingReviewButton
                   disabled={!canSubmitReview}
@@ -1981,63 +1994,6 @@ function WritingViewNotice() {
       The agent is updating the Guide. Read on; more may come.
     </div>
   );
-}
-
-// Scrolls to a thread once it's drawn. The file diffs' Virtualizer draws only the lines near the viewport, so a thread
-// further away isn't there yet: go to its file (or view section), page down it until the thread is drawn, then keep it in place until it
-// holds (after a jump the Virtualizer applies a fix-up worked out for the old place, as in restoreScroll). Waits for the
-// file while it loads; stops when the user scrolls, and is cancelled on navigation. ponytail: a screen per step, about
-// a second per thousand lines of a long file; ask the library for the line's position if that's too slow.
-function scrollToThread(canvas: HTMLElement, containerId: string, threadId: number) {
-  let timer: ReturnType<typeof setTimeout>;
-  let steps = 200;
-  let held = 0;
-  const events = ["wheel", "keydown", "pointerdown"] as const;
-  const stop = () => {
-    clearTimeout(timer);
-    events.forEach((e) => canvas.removeEventListener(e, stop));
-  };
-  const go = () => {
-    timer = setTimeout(go, 50);
-    const scroller = canvasScroller(canvas);
-    const file = canvasElement(canvas, containerId);
-    if (!scroller || !file || !canvas.contains(file)) return;
-    if (steps-- <= 0) return stop();
-    const view = scroller.getBoundingClientRect();
-    // The library keeps a thread's element while its lines aren't drawn, but without a box.
-    const thread = canvasElement(canvas, `thread:${threadId}`);
-    if (thread && canvas.contains(thread) && thread.getClientRects().length) {
-      // Align the anchor line above the conversation, independently of response length.
-      let slotted: HTMLElement | null = thread;
-      while (slotted && !slotted.assignedSlot && slotted !== file) slotted = slotted.parentElement;
-      const annotation = slotted?.assignedSlot?.closest("[data-line-annotation]");
-      const line = annotation?.previousElementSibling;
-      const box = line?.getBoundingClientRect() ?? thread.getBoundingClientRect();
-      const chrome = getComputedStyle(canvas);
-      const clearance =
-        (canvas
-          .closest(".workspace-shell")
-          ?.querySelector(".workspace-bar")
-          ?.getBoundingClientRect().height || 44) +
-        (parseFloat(chrome.getPropertyValue("--review-gutter")) || 24);
-      const headerHeight =
-        file.querySelector(".review-file-header")?.getBoundingClientRect().height ?? 0;
-      const by = box.top - view.top - clearance - headerHeight - 24;
-      if (Math.abs(by) < 2) return void (++held >= 4 && stop());
-      held = 0;
-      scroller.scrollTop += by;
-      return;
-    }
-    // At its top (give or take a pixel, which scrollTop rounds away) or past it: page down.
-    const f = file.getBoundingClientRect();
-    scroller.scrollTop +=
-      f.top > view.top + 2 || f.bottom < view.top
-        ? f.top - view.top
-        : Math.min(view.height * 0.8, Math.max(0, f.bottom - view.bottom));
-  };
-  events.forEach((e) => canvas.addEventListener(e, stop));
-  timer = setTimeout(go);
-  return stop;
 }
 
 function GuideProgress({ workspaceId, hasGuide }: { workspaceId: number; hasGuide: boolean }) {

@@ -1,6 +1,6 @@
 import type { MenuItemConstructorOptions } from "electron";
 import type { GuideOptions } from "../preload";
-import { guideAuthorVisible, type GuideAuthor } from "../shared/guide-authors";
+import { guideAuthorVisible, type GuideAuthor } from "../shared/guide-authors.ts";
 
 export function sidebarFilterItems(
   options: GuideOptions,
@@ -16,7 +16,6 @@ export function sidebarFilterItems(
     key: keyof Omit<GuideOptions, "hiddenAuthors" | "shownAuthors">;
     label: string;
   }[] = [
-    { key: "showReviewedFiles", label: "Hide Reviewed Files" },
     { key: "onlyFilesWithThreads", label: "Only Files with Threads" },
     { key: "showResolved", label: "Hide Resolved Threads" },
     { key: "showAgentThreads", label: "Agent Threads" },
@@ -26,7 +25,7 @@ export function sidebarFilterItems(
     ...toggles.map(({ key, label }) => ({
       label,
       type: "checkbox" as const,
-      checked: key === "showReviewedFiles" || key === "showResolved" ? !options[key] : options[key],
+      checked: key === "showResolved" ? !options[key] : options[key],
       click: () => onPick({ ...options, [key]: !options[key] }),
     })),
     { type: "separator" },

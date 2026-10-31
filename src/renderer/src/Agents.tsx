@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { match, P } from "ts-pattern";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Agent, AgentSession, Pick } from "../../core/agents";
 import type { Attachment } from "../../core/attachments";
 import { Attachments, draftAttachmentPreviews } from "./Attachments";
@@ -9,7 +9,7 @@ import type { AttachedPrompt } from "../../core/views";
 import type { Workspace } from "../../core/workspaces";
 import { Entry, TurnStatus } from "./ChatEntry";
 import { FindBar } from "./FindBar";
-import { chatFindTarget, findSnapshot, refreshFind, registerFindTarget } from "./find";
+import { chatFindTarget, refreshFind, registerFindTarget } from "./find";
 import { Button } from "./components/button";
 import {
   ArrowUpIcon,
@@ -131,17 +131,16 @@ export function Agents({ workspace, onViewThread, composerPrompt }: Props) {
   useEffect(() => {
     refreshFind(findTarget);
   }, [findTarget, entries]);
-  const bottom = useRef<HTMLDivElement>(null);
-  // Follows the reply only while the transcript is scrolled to its end, so scrolling up to read stays put (#38).
-  // A new session, or a message sent, follows it again.
-  const pinned = useRef(true);
-  useEffect(() => {
-    pinned.current = true;
-  }, [session?.agentSessionId]);
-  // Braces matter: Chromium's scrollIntoView returns a promise, which React would take for a cleanup function.
-  useEffect(() => {
-    if (pinned.current && findSnapshot().target !== findTarget) bottom.current?.scrollIntoView();
-  }, [entries, running, permission, pendingMessage]);
+  // Open a loaded session at its latest message once. Sending and streaming never move the reader.
+  const openedSession = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    const id = session?.agentSessionId ?? null;
+    if (openedSession.current === id) return;
+    if (loading) return;
+    openedSession.current = id;
+    const scroller = transcript.current;
+    if (scroller) scroller.scrollTop = scroller.scrollHeight;
+  }, [session?.agentSessionId, loading]);
 
   const send = async () => {
     const message = draft.trim();
@@ -154,7 +153,6 @@ export function Agents({ workspace, onViewThread, composerPrompt }: Props) {
       attachmentError
     )
       return;
-    pinned.current = true;
     patch({
       sending: session?.agentSessionId ?? "new",
       pendingMessage: attached
@@ -256,11 +254,8 @@ export function Agents({ workspace, onViewThread, composerPrompt }: Props) {
       <div
         ref={transcript}
         tabIndex={-1}
-        onScroll={(e) => {
-          const s = e.currentTarget;
-          pinned.current = s.scrollHeight - s.scrollTop - s.clientHeight < 40;
-        }}
         className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4"
+        style={{ overflowAnchor: "none" }}
       >
         {loading && !running && <div className={cn("m-auto text-xs", muted)}>Loading session…</div>}
         {entries.length === 0 && !running && !loading && (
@@ -293,7 +288,6 @@ export function Agents({ workspace, onViewThread, composerPrompt }: Props) {
             window.coxswain.answerPermission(permission!.id, optionId);
           }}
         />
-        <div ref={bottom} />
       </div>
       {/* The composer: one box, the model and effort and Send (Stop while a turn runs) along its bottom. */}
       <div

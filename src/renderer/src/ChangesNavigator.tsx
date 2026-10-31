@@ -1,3 +1,4 @@
+import { Button } from "./components/button";
 import { reviewCountLabel } from "./remaining-files";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useFileTree } from "@pierre/trees/react";
@@ -8,7 +9,6 @@ import { visibleSidebarThreads } from "./sidebar-threads";
 import { SidebarFileThreads } from "./components/SidebarFileThreads";
 import { SidebarFileLabel } from "./components/SidebarFileLabel";
 import { SidebarReviewedCheckbox } from "./components/SidebarReviewedCheckbox";
-import { Button } from "./components/button";
 import { SidebarDisclosure } from "./components/SidebarDisclosure";
 import { useFileTreeTheme } from "./components/file-tree-theme";
 import { cn, muted } from "./components/styles";
@@ -37,7 +37,7 @@ export function ChangesNavigator(props: NavigatorProps) {
   const byFile = useMemo(() => Map.groupBy(roots, (entry) => entry.path!), [roots]);
   const files = (props.pr.changed ?? []).filter(
     (file) =>
-      (props.options.showReviewedFiles || !props.reviewed.includes(file.path)) &&
+      (props.showReviewed || !props.reviewed.includes(file.path)) &&
       (!props.options.onlyFilesWithThreads || byFile.has(file.path)),
   );
   if (!files.length) {
@@ -52,15 +52,10 @@ export function ChangesNavigator(props: NavigatorProps) {
         )}
       >
         <span>
-          {allReviewed && !props.options.showReviewedFiles
+          {allReviewed && !props.showReviewed
             ? `All ${props.pr.changed?.length} files reviewed`
             : "No matching files"}
         </span>
-        {allReviewed && !props.options.showReviewedFiles && (
-          <Button className={muted} onClick={() => props.onShowReviewed(true)}>
-            Show Reviewed Files
-          </Button>
-        )}
       </div>
     );
   }
@@ -132,13 +127,9 @@ export function ChangesNavigator(props: NavigatorProps) {
                         "relative top-px shrink-0 text-[11px] font-normal tabular-nums",
                         muted,
                       )}
-                      title={
-                        props.options.showReviewedFiles
-                          ? "Reviewed / changed files"
-                          : "Unreviewed files"
-                      }
+                      title={props.showReviewed ? "Reviewed / changed files" : "Unreviewed files"}
                     >
-                      {reviewCountLabel(allFiles.length, reviewed, props.options.showReviewedFiles)}
+                      {reviewCountLabel(allFiles.length, reviewed, props.showReviewed)}
                     </span>
                     <span className="flex-1" />
                     {groupFiles.length > 0 && (
@@ -284,17 +275,9 @@ function ChangesTree(
                       "relative top-px shrink-0 text-[11px] font-normal tabular-nums",
                       muted,
                     )}
-                    title={
-                      props.options.showReviewedFiles
-                        ? "Reviewed / changed files"
-                        : "Unreviewed files"
-                    }
+                    title={props.showReviewed ? "Reviewed / changed files" : "Unreviewed files"}
                   >
-                    {reviewCountLabel(
-                      children.length,
-                      reviewedChildren,
-                      props.options.showReviewedFiles,
-                    )}
+                    {reviewCountLabel(children.length, reviewedChildren, props.showReviewed)}
                   </span>
                 </Button>
                 <SidebarReviewedCheckbox

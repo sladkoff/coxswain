@@ -1,3 +1,5 @@
+import { getUiPreferences, setUiPreferences } from "../core/ui-preferences";
+import type { UiPreferences } from "../shared/ui-preferences";
 import {
   getDefaultPrompts,
   setDefaultPrompt,
@@ -459,6 +461,10 @@ app.whenReady().then(async () => {
     const parent = BrowserWindow.fromWebContents(e.sender);
     return parent ? showDiagram(parent, svg) : false;
   });
+  ipcMain.handle("settings:ui", () => getUiPreferences(db));
+  ipcMain.handle("settings:set-ui", (_, patch: Partial<UiPreferences>) =>
+    setUiPreferences(db, patch),
+  );
   ipcMain.handle("settings:code-theme", () => getCodeTheme(db));
   ipcMain.handle("settings:set-code-theme", async (_, value: CodeTheme) => {
     await setCodeTheme(db, value);

@@ -64,3 +64,5 @@ our own per language would be a type checker per language.
   editable installs) finds nothing across them until `uv sync` has run.
 - The first Python file clicked on a machine downloads pyrefly (about 14 MB), so it needs the network once.
 - Languages without a server have no Go to Definition or Find Usages.
+
+Python initialization adds project directories containing `pyproject.toml` and their existing `src` directories as Pyrefly `extraSearchPaths`. Discovery skips environments, dependencies, git metadata and build output. This lets the language server resolve local flat-layout, src-layout and namespace workspace packages before an editable environment is installed, while preserving its own symbol resolution and project configuration. No symbol-name search or repository configuration writes are used. Third-party dependencies still need to exist in the project’s environment.

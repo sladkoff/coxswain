@@ -3,6 +3,62 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-10-31 — Keep domain source filenames out of Tests
+
+- Test classification now requires a test directory or language-specific filename convention. Python uses `_spec.py` / `_spec.pyi` outside test directories, so `sample_test.py`, `test_of_detail.py` and `suggest_sample_test_setup.py` stay in Implementation. Frontend `.test.ts` / `.spec.ts` and other-language conventions remain supported.
+- Shared classification fixes Changes grouping and future Guide generation. Regression coverage includes the reported path and other domain source names, while preserving existing test and generated conventions.
+
+## 2026-10-31 — Hotfix v1.9.2
+
+- Release includes stable Chat and inline-thread scrolling, precise sidebar thread destinations, file navigation that survives deferred diff loading, and reading-position preservation when filtering reviewed files.
+- Code navigation distinguishes identifiers inside syntax tokens, reuses visible Guide/Changes files, and resolves Python workspace imports to their source. Display preferences and pane layout persist, with one global Hide Reviewed Files control. Domain source filenames containing `_test_` stay in Implementation.
+- No database migration or dependency update. Release uses the existing macOS arm64/x64, Windows x64 and Linux x64 workflow.
+
+## 2026-10-31 — Keep the reading position when filtering reviewed files
+
+- Hide Reviewed Files captures the old canvas layout before React removes/inserts cards, then restores the surviving reading anchor before paint. Guide and Changes preserve the current file’s offset; hiding that file chooses the next visible card (or previous when last). Guide prose retains its section.
+- The snapshot boundary also covers app-wide preference updates from another window. It cancels older navigation corrections before restoring the filter anchor, follows lazy diff resizes and yields to manual input. No router history change or storage change.
+- A running-renderer fixture previously moved the reading card from -150 to -1350 pixels when hiding a reviewed card above it; it now remains at -150 on both Hide and Show. Unit coverage checks surviving/removed files, last-file fallback and Guide prose.
+
+## 2026-10-31 — Resolve workspace imports and hold file navigation through loading
+
+- Python language servers receive package roots from project manifests, including src layouts, so local namespace-package imports resolve without an installed virtual environment. The active project’s SuggestSampleTestSetup now resolves from both its import and argument to the source class, rather than its local import. Existing re-export coverage confirms the server reaches original definitions when imports resolve. External packages still need installed source.
+- Anchored file/section navigation no longer stops after its first correct position. It follows subsequent virtualized-content resizes, with immediate cancellation on manual input or navigation. Numeric history restores keep their bounded retry behavior.
+- Regressions reproduce unresolved workspace imports returning the import declaration and late diff-height changes shifting a clicked header by 1000 pixels. Both now pass. Package-root discovery uses Pyrefly initialization options, without modifying user repositories or adding dependencies.
+
+## 2026-10-31 — Separate code links inside highlighted tokens
+
+- Code navigation uses the identifier’s actual glyph bounds under the pointer, rather than the first word in a syntax token. Wrappers and arguments such as `FromDishka[SuggestSampleTestSetup]` now produce separate language-server positions, including when the highlighter combines them into one span.
+- ⌘-hover underlines only that identifier and updates while moving inside the same token; punctuation has no link. Context-menu Definition/Usages share the selected symbol. DOM ranges preserve UTF-16 offsets and handle nested/wrapped token text.
+- Reproduced both pointer locations resolving to FromDishka; the fixed running-renderer check resolves each name separately. Symbol tests cover bracketed generics, punctuation, import strings and Unicode offsets.
+
+## 2026-10-31 — Follow source links within the current review
+
+- Code links and file search prefer a target already displayed in Guide or Changes. Hidden reviewed files, absent paths and incompatible revisions still open in Files. Explicit file-tree/tab picks remain Files navigation.
+- In-place code navigation expands a visible collapsed card, selects the correct old/new line, reveals unchanged context and reaches offscreen lines through Pierre’s public virtualizer position API. Router locations retain Back/Forward behavior; user input cancels delayed line reveal.
+- Destination tests cover Guide/Changes, hidden/missing files, matching and mismatched revisions, renamed old-side paths and whole-file Guide embeds. Checked navigation to an offscreen declaration beyond the original diff hunk in the running viewer.
+
+## 2026-10-31 — Navigate to the selected thread
+
+- Sidebar thread navigation aligns the selected conversation rather than a neighbouring code element, so threads within one file have independent scroll destinations. Section navigation yields while a thread is selected instead of competing for its scroll position.
+- Extracted thread scrolling into a shared renderer helper. Regression coverage switches between two conversations sharing a code anchor and back again; the previous alignment fails this check. Checked both thread destinations in the running virtualized file viewer.
+
+## 2026-10-31 — Stable inline agent-thread follow-ups
+
+- Follow-ups in file/Guide threads no longer rebuild Pierre annotations when only replies change. Rebuilding reset the virtualized canvas to the top. The canvas also disables browser scroll anchoring, which otherwise follows the growing reply and shifts the reader.
+- Reproduced in the running Viewer: a saved follow-up moved scrollTop from 1650 to 0; stabilizing annotations alone still moved it to 2441 during streaming. Both fixes keep it at 1650 throughout question save, turn start and streaming. `scripts/check-thread-scroll.mjs` exercises this path in a running dev app with local debugging enabled.
+
+## 2026-10-31 — Persistent display settings and one reviewed-file filter
+
+- Hide Reviewed Files is one app-wide preference in the top Settings menu, shared by Guide, Changes and their sidebars. Removed sidebar and empty-state toggles and the duplicate command-palette action. Opening a thread temporarily reveals its file without changing the saved filter.
+- Display options, sidebar filters (including authors), grouping, pane widths/visibility and Commits/Turns selection/height now persist in the existing SQLite settings table and notify other windows through core settings events. Existing appearance, agent, Guide and review preferences remain persisted by their owners. No schema migration.
+- Paid off the display-option and pane-geometry restart shortcuts in App. Database-reopen coverage checks every newly saved preference and independent concurrent updates.
+
+## 2026-10-31 — Stable Chat reading position
+
+- Sending messages and receiving agent replies no longer force Chat to the bottom. Opening a loaded session still starts at its latest message; subsequent entries and turn-status changes leave the reader in place. Browser scroll anchoring is disabled for the transcript so composer/layout changes cannot anchor it to the bottom.
+- Verified with synthetic conversation updates in the running development app: the previous bottom-follow effect moved the transcript 780 pixels on an appended answer. No core or storage changes.
+
 ## 2026-10-28 — Big PRs no longer crash the main process
 
 - Opening a 1600-file PR ran the main process out of memory ("Failed to allocate memory" in `Buffer.concat`). Reviewed's fingerprints read every changed file at base and head with `git cat-file --batch`. Each worktree or GitHub change refetched those queries while the previous read still ran, because TanStack cancels the fetch but not the core call, and 1300 reads piled up at 7 GB. `readBlobs` now shares an in-flight read of the same files at the same commit.
