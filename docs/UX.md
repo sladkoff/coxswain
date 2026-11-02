@@ -466,7 +466,7 @@ Guide thread metadata truncates within the card width, even in a narrow sidebar.
 
 A section’s Reviewed checkbox uses a neutral mixed-state minus when some of its files are reviewed; none reviewed is unchecked, and all reviewed is checked. Clicking the mixed state marks the remaining files reviewed.
 
-Section titles are navigation actions with hover and keyboard focus feedback. A subtle highlight follows the section at the canvas reading position, rather than retaining the last clicked section; the sidebar scrolls smoothly just enough to keep the current file visible, falling back to its section title when that file is filtered out. The current file has priority over the section for scroll following; Reduce Motion uses immediate scrolling. Individual file rows also receive a subtle highlight based on the canvas reading position. Picking a section title or its first file uses the same section scroll anchor and toolbar clearance, including stacked layouts. Picking the file still reveals its diff when reviewed.
+Section titles are navigation actions with hover and keyboard focus feedback. A subtle highlight follows the section at the canvas reading position, rather than retaining the last clicked section; the sidebar scrolls smoothly just enough to keep the current file visible, falling back to its section title when that file is filtered out. The current file has priority over the section for scroll following; Reduce Motion uses immediate scrolling. Individual file rows also receive a subtle highlight based on the canvas reading position. Picking a section title aligns that section; picking a file aligns its own header below the toolbar, including stacked layouts, and still reveals its diff when reviewed.
 
 Guide sidebar hierarchy uses system-font section numbers aligned to the title’s first baseline, 13-point semibold section titles, regular-weight secondary file names, subdued aggregate counts, and quieter thread previews on lightly separated pill surfaces. Hover feedback and blue Reviewed checkboxes remain clear.
 
@@ -688,3 +688,19 @@ Python import and reference links resolve local workspace package sources even b
 Toggling Hide Reviewed Files preserves the current file’s reading offset in Guide and Changes, including preference changes from another window and later diff-height corrections. If that file is being hidden, the nearest following visible file takes its place below the toolbar, falling back to the previous file. Guide prose keeps its section position. This does not add a history step or change review marks.
 
 Test grouping recognizes test directories and language-specific filename conventions. Outside test directories, Python tests use `_spec.py` (or `_spec.pyi`); `sample_test.py`, `test_of_detail.py` and `suggest_sample_test_setup.py` stay in Implementation. Frontend `.test.ts` / `.spec.ts` and existing other-language test conventions remain supported. Guide generation uses the same classification.
+
+In the Guide and Changes sidebars, Up/Down moves through visible section, file and thread rows and opens navigation rows. Home/End goes to the first/last visible row. Hidden, disabled and inactive rows and Reviewed checkboxes are skipped. Moving onto a Changes folder or group focuses it without toggling; Left/Right retains its expand/collapse behavior, Enter opens navigation rows, and Space toggles Reviewed when the row has a review control. Keyboard movement keeps the focused row in view and cancels Guide sidebar auto-follow before navigating. The Files tree retains Pierre’s existing keyboard controls.
+
+Space on a focused reviewable sidebar row toggles its Reviewed checkbox, including section/folder/group review controls, without opening the row or scrolling. Holding Space toggles only once. Enter still opens the focused row; a thread without a review control retains normal Space activation.
+
+Keyboard focus in Guide and Changes outlines the whole sidebar pill with a 1 px inset system-focus border following the pill’s 12 px radius, including its review control.
+
+Sidebar thread navigation takes sole ownership of canvas scrolling, cancelling older file/filter restoration before seeking the conversation. Cancelled timers and queued resize callbacks cannot move the canvas afterward.
+
+Clicking a sidebar file exits a selected thread or declaration and scrolls to the file header, even when the selected filename is unchanged. Repeated file-row clicks retrigger this navigation after manual scrolling. Guide file picks target the file itself rather than its section’s explanation.
+
+Large file lists reserve each pending card’s estimated space while contents load. Files in the viewport and explicit navigation targets take priority over lookahead reads, reducing loading-induced scroll shifts without changing navigation or review state.
+
+Large Guide and Changes canvases keep lightweight file anchors while mounting file contents only near the viewport. The last measured height remains while a file is offscreen. Explicit thread/declaration and Find targets mount before reveal. Unsent text, selections, expanded context and active thread editing remain intact when scrolled away. Guide explanations keep their layout.
+
+Guide and Changes sidebars load nearby file/thread groups while retaining their place in the list. Arrows, Home/End and Space also work across unloaded groups, including multiple threads on one file; Guide auto-follow still locates distant files. A failed or stalled diff preparation shows Retry in its card.

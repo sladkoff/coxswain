@@ -2,7 +2,6 @@ import {
   FileDiff,
   VirtualizedFile,
   VirtualizedFileDiff,
-  parseDiffFromFile,
   type File,
   type FileContents,
   type FileDiffMetadata,
@@ -10,9 +9,11 @@ import {
 } from "@pierre/diffs";
 import { useVirtualizer } from "@pierre/diffs/react";
 import { useCallback, useEffect, useMemo, useRef, type RefObject } from "react";
+import { prepareDiff } from "./diff-metadata";
 import { diffFindLines, findText } from "./find-text";
 import {
   refreshFind,
+  findSnapshot,
   registerFindTarget,
   textRange,
   type FindMatch,
@@ -36,6 +37,7 @@ type Options = {
 export function useCodeFind<A>(options: Options) {
   const virtualizer = useVirtualizer();
   const instance = useRef<File<A> | FileDiff<A> | null>(null);
+  const instanceNode = useRef<HTMLElement | null>(null);
   const latest = useRef(options);
   latest.current = options;
   const { identity, path, kind } = options;
@@ -52,8 +54,14 @@ export function useCodeFind<A>(options: Options) {
         loading ??= latest.current
           .load()
           .then(
-            (files) => {
+            async (files) => {
               loaded = files;
+              if (files && kind === "diff")
+                parsed = {
+                  old: files.old.contents,
+                  new: files.new.contents,
+                  diff: await prepareDiff(files.old, files.new),
+                };
             },
             (error) => {
               loaded = null;
@@ -68,16 +76,11 @@ export function useCodeFind<A>(options: Options) {
       search(query, matchCase) {
         const files = loaded === null ? null : (latest.current.files ?? loaded);
         if (!files || !query) return [];
-        const viewer = instance.current;
+        const viewer = instanceNode.current?.isConnected ? instance.current : null;
         let diff: FileDiffMetadata | undefined;
         if (kind === "diff") {
-          if (!parsed || parsed.old !== files.old.contents || parsed.new !== files.new.contents) {
-            parsed = {
-              old: files.old.contents,
-              new: files.new.contents,
-              diff: parseDiffFromFile(files.old, files.new),
-            };
-          }
+          if (!parsed || parsed.old !== files.old.contents || parsed.new !== files.new.contents)
+            return [];
           diff = parsed.diff;
         }
         const matches: FindMatch[] = [];
@@ -121,7 +124,7 @@ export function useCodeFind<A>(options: Options) {
                   row.scrollIntoView({ block: "center", inline: "nearest" });
                   return;
                 }
-                const rendered = instance.current;
+                const rendered = instanceNode.current?.isConnected ? instance.current : null;
                 const root = element();
                 if (!root) return;
                 if (!virtualizer || !latest.current.root.current) {
@@ -161,9 +164,22 @@ export function useCodeFind<A>(options: Options) {
   useEffect(() => {
     refreshFind(target);
   }, [target, options.files]);
+  const renderedFiles = useRef<FindFiles | undefined>(undefined);
   return useCallback(
-    (_node: HTMLElement, rendered: File<A> | FileDiff<A>) => {
+    (_node: HTMLElement, rendered: File<A> | FileDiff<A>, files?: FindFiles) => {
       instance.current = rendered;
+      instanceNode.current = _node;
+      const changed =
+        files &&
+        (files.old !== renderedFiles.current?.old || files.new !== renderedFiles.current?.new);
+      renderedFiles.current = files;
+      const active = findSnapshot().target;
+      if (changed && (active === target || active?.members?.().includes(target))) {
+        void target.prepare?.().then(
+          () => refreshFind(target),
+          () => refreshFind(target),
+        );
+      }
       refreshFind(target);
     },
     [target],

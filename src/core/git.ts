@@ -1,3 +1,7 @@
+import { FileReadQueue } from "./file-read-queue.ts";
+import { ContentDigests, digestContent } from "./content-digests.ts";
+import type { FileReadPriority, FileReadTarget } from "../shared/file-reads.ts";
+import { readFile } from "node:fs/promises";
 import { execFile, spawn } from "node:child_process";
 import { match } from "ts-pattern";
 import { createHash } from "node:crypto";
@@ -86,6 +90,23 @@ export const worktreePath = (
     projectDir(p),
     w.branch ? `branch-${w.branch.replaceAll("/", "+")}` : `pr-${w.prNumber}`,
   );
+
+const fileReads = new FileReadQueue();
+const contentDigests = new ContentDigests();
+const fileReadKey = (cwd: string, file: string, commit?: string) =>
+  JSON.stringify([cwd, commit ?? null, file]);
+
+// Raising priority changes scheduling only; it never starts a second read or changes stored data.
+export async function prioritizeFileReads(
+  db: Db,
+  workspaceId: number,
+  files: FileReadTarget[],
+  priority: FileReadPriority,
+): Promise<void> {
+  const cwd = await openedWorktree(db, workspaceId);
+  for (const file of files)
+    fileReads.prioritize(fileReadKey(cwd, file.path, file.commit), priority);
+}
 
 class GitError extends Error {}
 
@@ -834,14 +855,25 @@ export const asText = (bytes: Buffer, file: string): FileText => {
 };
 
 // A file as it is in the worktree now.
-export function readWorktreeFile(db: Db, workspaceId: number, file: string): Promise<FileText> {
+export function readWorktreeFile(
+  db: Db,
+  workspaceId: number,
+  file: string,
+  priority: FileReadPriority = "interactive",
+): Promise<FileText> {
   return withGit(async () => {
     const path = await openedWorktree(db, workspaceId);
     const full = resolve(path, file);
     if (relative(path, full).startsWith("..")) throw new GitError(`Outside the worktree: ${file}`);
-    return existsSync(full)
-      ? asText(readFileSync(full), file)
-      : { status: "ok" as const, text: null, binary: false };
+    return fileReads.run(fileReadKey(path, file), priority, async () => {
+      try {
+        return asText(await readFile(full), file);
+      } catch (error) {
+        if (error && typeof error === "object" && "code" in error && error.code === "ENOENT")
+          return { status: "ok" as const, text: null, binary: false };
+        throw error;
+      }
+    });
   });
 }
 
@@ -886,6 +918,51 @@ async function reviewFingerprints(
   if (!files.length)
     return { current: new Map<string, string>(), accepted: new Map<string, Set<string>>() };
   const path = await openedWorktree(db, workspaceId);
+  // Modern fingerprints need only digests. Immutable revisions reuse small, bounded cache entries;
+  // live worktree contents are still re-read so same-size edits never retain a stale Reviewed mark.
+  if (legacyBases === undefined) {
+    const load = (commit: string) =>
+      contentDigests.read(
+        JSON.stringify([path, commit]),
+        files,
+        (missing) => readBlobs(path, commit, missing),
+        kind,
+      );
+    const [next, old] = await Promise.all([
+      head
+        ? load(head)
+        : Promise.resolve(
+            new Map(
+              files.map((file) => {
+                const bytes = worktreeBytes(path, file);
+                const digest = digestContent(bytes, kind);
+                return [file, digest] as const;
+              }),
+            ),
+          ),
+      kind === "diff" ? load(base) : Promise.resolve(new Map()),
+    ]);
+    const current = new Map(
+      files.map((file) => {
+        const digest = next.get(file);
+        if (!digest) throw new Error(`Missing fingerprint: ${file}`);
+        const fingerprint =
+          kind === "file"
+            ? "file:" + digest
+            : "diff:" +
+              createHash("sha1")
+                .update(old.get(file) ?? "absent")
+                .update("\0")
+                .update(digest)
+                .digest("hex");
+        return [file, fingerprint] as const;
+      }),
+    );
+    return {
+      current,
+      accepted: new Map([...current].map(([file, hash]) => [file, new Set([hash])])),
+    };
+  }
   const contents = head
     ? await readBlobs(path, head, files)
     : new Map(files.map((f) => [f, worktreeBytes(path, f)]));
@@ -966,7 +1043,9 @@ function readBlobs(
   const key = [cwd, commit, ...files].join("\0");
   let read = reading.get(key);
   if (!read) {
-    read = catBlobs(cwd, commit, files).finally(() => reading.delete(key));
+    read = fileReads
+      .run(`batch:${key}`, "visible", () => catBlobs(cwd, commit, files))
+      .finally(() => reading.delete(key));
     reading.set(key, read);
   }
   return read;
@@ -1016,12 +1095,13 @@ export function readFileAt(
   workspaceId: number,
   commit: string,
   file: string,
+  priority: FileReadPriority = "interactive",
 ): Promise<FileText> {
   return withGit(async () => {
     if (!isCommit(commit)) throw new GitError(`Not a commit: ${commit}`);
-    return asText(
-      await git(await openedWorktree(db, workspaceId), ["show", `${commit}:${file}`]),
-      file,
+    const cwd = await openedWorktree(db, workspaceId);
+    return fileReads.run(fileReadKey(cwd, file, commit), priority, async () =>
+      asText(await git(cwd, ["show", `${commit}:${file}`]), file),
     );
   });
 }

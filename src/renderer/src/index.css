@@ -547,6 +547,14 @@ body {
 .guide-nav-item {
   border-radius: 12px;
 }
+/* Draw keyboard focus on the whole pill, including its review control. */
+.guide-nav-item:has(> [data-sidebar-nav]:focus-visible) {
+  outline: 1px solid -webkit-focus-ring-color;
+  outline-offset: -1px;
+}
+.guide-nav-item > [data-sidebar-nav]:focus-visible {
+  outline: none;
+}
 .guide-nav-item:hover {
   background: var(--guide-hover-bg);
   color: var(--color-neutral-900);

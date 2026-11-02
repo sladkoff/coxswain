@@ -3,6 +3,48 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-11-02 — Window review content and prepare diffs off-thread
+
+- Guide and Changes retain measured file anchors while releasing offscreen Viewer subscriptions. Sidebar file/thread groups also window their React content; directories, section headings and Guide prose remain mounted. Explicit navigation and offscreen Find mount their destination. Unsent text, selections, disclosure/editing state and expanded context pin their file to preserve work.
+- Diff rendering and Find share weakly cached, coalesced metadata from a presentation worker using the pinned Pierre parser. Rendering now takes precomputed FileDiff metadata. Errors evict preparation cache entries; a stalled worker is replaced after 15 seconds without progress and the card offers Retry. Source reads remain core-owned.
+- Scoped Viewer entries by file/root once in App and removed repeated all-changed-file Map construction in Guide sidebar sections.
+- In the 1,200-file dev fixture, mount wall time fell from 73.5 ms to 24.5 ms and query records from 2,401 to 4. A 200-file sweep leaves only 12 file-read queries observed.
+- Added running-app regression coverage for live Find refresh/context in unmounted files, full-list sweeps, distant arrows/Home/End and Space, two threads on the same file, draft retention, offscreen declaration/Find, worker coalescing and error recovery, and renderer event-loop progress during a large diff parse.
+- Limits: lightweight shells and Find registrations still scale with file count; query-cache text/metadata has normal retention, and explicit expanded context/editing can retain additional Viewers. Parsing is serial, with no individual cancellation; cold core fingerprint buffers and live bulk reads remain separate costs. See ADR 0044.
+
+## 2026-11-02 — Visible-first loading for large PRs
+
+- Pending file cards keep their estimated height; visible and explicitly selected files receive reserved core read capacity. Duplicate queued reads coalesce and pending targets can be promoted; worktree file reads are asynchronous.
+- Changed-since-review skips paths without a baseline or review mark. A bounded immutable digest cache shares repeated and overlapping revision reads without changing stored review fingerprints or caching live edits. No migration or dependency change.
+- Synthetic 1,200-file fixture: reads before a response fell from 66 to 2; repeat fingerprints fell from 279.2 ms to 3.0 ms; empty review-indicator work fell from 366.0 ms to 0.3 ms. Raw results and limits are in the performance report.
+- Debt: all file shells and expanded sidebar rows still mount, diff parsing remains synchronous, cold fingerprint batches still retain buffers, and live bulk fingerprint reads remain synchronous. `ponytail:` queued reads lack consumer cancellation; add cancellation/reference counts with file-shell windowing.
+
+## 2026-11-02 — Large-PR performance investigation
+
+- Added source audit, reproducible core/renderer benchmarks and measured findings in `docs/research/large-pr-performance.md`; baseline production behavior was measured before the improvements above.
+- In a synthetic 1200-file viewport, collapsing loading placeholders scheduled 66 content reads before a response; fixture-only height reservation reduced this to 2. Whole-PR fingerprint work still rereads immutable contents, with a 90.8 ms event-loop stall in the larger overlapping-request fixture.
+- Priorities: stable loading heights and bounded visible-first reads; narrower/cached fingerprint work; shared indexes/subscriptions; file-shell and sidebar windowing; asynchronous/cached diff metadata. Existing syntax workers and near-viewport reads are already in place.
+
+## 2026-11-02 — Return to the file header from a thread
+
+- Sidebar file picks explicitly clear thread, declaration and section targets and align the file’s own header. Guide’s first file no longer aliases the section’s explanation anchor.
+- Repeated picks retrigger the file scroll even when the router’s filename is unchanged; prior thread/file correction loops are cancelled immediately. Whole-file Guide cards expand using their correct disclosure key.
+- Regression coverage checks leaving a same-file thread in Guide and Changes. In the live app the containing file moved from -344 px above the viewport to its 84 px toolbar clearance.
+
+## 2026-11-02 — Stop competing scroll corrections when opening a thread
+
+- Sidebar thread navigation cancels older file/filter scroll restoration before aligning the selected conversation. An old resize observer previously kept pulling the canvas back to a file anchor while thread navigation moved it down again, causing the recorded flicker.
+- Cancelled restoration and thread-seeking callbacks now ignore queued work. Regression coverage reproduces an older file anchor pulling a thread 1000 pixels away after a resize and verifies ownership transfer plus queued-callback cancellation.
+- Checked the supplied recording and a live sidebar thread click: after the fix the canvas made one jump and emitted no late scroll corrections during the observation window.
+
+## 2026-11-02 — Arrow navigation across review sidebars
+
+- Guide and Changes share Up/Down and Home/End navigation through section, file and thread actions. Moving to a navigation row opens it; groups/folders are focused without toggling, and existing Left/Right disclosure controls remain available. The Files tree keeps its native Pierre behavior.
+- Space toggles the focused row’s own Reviewed checkbox, including section/group/folder controls, without opening the row or scrolling. Repeated keydown events do not repeatedly toggle it. Enter retains normal opening behavior.
+- Keyboard focus uses a 1 px inset outline on the complete sidebar pill, following its 12 px radius instead of the button’s browser-default outline.
+- Keyboard traversal skips hidden, disabled/inactive rows and review controls, crosses Changes groups and includes nested threads. Guide auto-follow yields to keyboard input. No persistence or routing model change.
+- `scripts/check-sidebar-keyboard.mjs` verifies navigation, activation, boundaries, disclosures, modifiers and review-control isolation in a running development renderer. Mounted Guide and Changes checks also reach both file actions and the nested thread without losing focus.
+
 ## 2026-10-31 — Keep domain source filenames out of Tests
 
 - Test classification now requires a test directory or language-specific filename convention. Python uses `_spec.py` / `_spec.pyi` outside test directories, so `sample_test.py`, `test_of_detail.py` and `suggest_sample_test_setup.py` stay in Implementation. Frontend `.test.ts` / `.spec.ts` and other-language conventions remain supported.

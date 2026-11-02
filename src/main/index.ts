@@ -1,3 +1,4 @@
+import type { FileReadPriority, FileReadTarget } from "../shared/file-reads";
 import { getUiPreferences, setUiPreferences } from "../core/ui-preferences";
 import type { UiPreferences } from "../shared/ui-preferences";
 import {
@@ -89,6 +90,7 @@ import {
   listWorktreeFiles,
   openPullRequest,
   push,
+  prioritizeFileReads,
   readFileAt,
   readWorktreeFile,
   snapshot,
@@ -558,11 +560,20 @@ app.whenReady().then(async () => {
   ipcMain.handle("git:worktree-files", (_, workspaceId: number) =>
     listWorktreeFiles(db, workspaceId),
   );
-  ipcMain.handle("git:read-worktree-file", (_, workspaceId: number, path: string) =>
-    readWorktreeFile(db, workspaceId, path),
+  ipcMain.handle(
+    "git:prioritize-file-reads",
+    (_, workspaceId: number, files: FileReadTarget[], priority: FileReadPriority) =>
+      prioritizeFileReads(db, workspaceId, files, priority),
   );
-  ipcMain.handle("git:read-file-at", (_, workspaceId: number, commit: string, path: string) =>
-    readFileAt(db, workspaceId, commit, path),
+  ipcMain.handle(
+    "git:read-worktree-file",
+    (_, workspaceId: number, path: string, priority?: FileReadPriority) =>
+      readWorktreeFile(db, workspaceId, path, priority),
+  );
+  ipcMain.handle(
+    "git:read-file-at",
+    (_, workspaceId: number, commit: string, path: string, priority?: FileReadPriority) =>
+      readFileAt(db, workspaceId, commit, path, priority),
   );
   ipcMain.handle("lsp:definitions", (_, workspaceId: number, at: CodeAt) =>
     findDefinitions(db, workspaceId, at),

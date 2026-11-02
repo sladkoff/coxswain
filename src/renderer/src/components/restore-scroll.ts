@@ -12,15 +12,18 @@ export const canvasScroller = (canvas: HTMLElement) =>
 // Numeric restores retry up to two seconds while virtualized content arrives.
 export function restoreScroll(canvas: HTMLElement, saved: Scroll) {
   let tries = 40;
+  let stopped = false;
   let timer: ReturnType<typeof setTimeout>;
   let observer: ResizeObserver | undefined;
   const events = ["wheel", "touchstart", "pointerdown", "keydown", "review-scroll-cancel"] as const;
   const stop = () => {
+    stopped = true;
     clearTimeout(timer);
     observer?.disconnect();
     events.forEach((event) => canvas.removeEventListener(event, stop));
   };
   const go = () => {
+    if (stopped) return;
     const scroller = canvasScroller(canvas);
     const anchor = saved.anchor ? canvasElement(canvas, saved.anchor) : null;
     const ready = saved.anchor

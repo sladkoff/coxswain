@@ -42,3 +42,18 @@ export function threadLocation(root: ReviewEntry): CanvasSearch {
         : undefined,
   };
 }
+
+// A sidebar file pick is a file-header destination, even when leaving a thread in that same file.
+export function reviewFileLocation(path: string, pane: "sections" | "diffs"): CanvasSearch {
+  return {
+    view: pane,
+    ...(pane === "diffs" ? { viewId: null } : {}),
+    at: path,
+    file: undefined,
+    fileAt: undefined,
+    line: undefined,
+    codeLine: undefined,
+    thread: undefined,
+    section: undefined,
+  };
+}

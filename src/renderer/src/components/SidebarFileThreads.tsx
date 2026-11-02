@@ -1,3 +1,4 @@
+import { WindowedContent } from "./windowed-content";
 import { SidebarReviewedCheckbox } from "./SidebarReviewedCheckbox";
 import type { ChangedFile } from "../../../core/git";
 import type { ReviewEntry } from "../../../core/review";
@@ -10,7 +11,7 @@ import { fileStatusColor } from "./file-tree-theme";
 import { cn, muted } from "./styles";
 
 // The same file row, review control and thread pills in Guide and Changes.
-export function SidebarFileThreads(props: {
+type Props = {
   path: string;
   file?: ChangedFile;
   showFolder: boolean;
@@ -23,7 +24,20 @@ export function SidebarFileThreads(props: {
   replies: Map<number, ReviewEntry[]>;
   turns: Record<number, Turn>;
   onThread: (id: number) => void;
-}) {
+};
+export function SidebarFileThreads(props: Props) {
+  return (
+    <WindowedContent
+      sidebar
+      path={props.path}
+      estimate={32 + props.threads.length * 64}
+      force={props.current}
+    >
+      <FileThreads {...props} />
+    </WindowedContent>
+  );
+}
+function FileThreads(props: Props) {
   const { path, file } = props;
   return (
     <>
@@ -39,6 +53,7 @@ export function SidebarFileThreads(props: {
             variant="ghost"
             className="guide-section-link review-guide-file flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left"
             title={path}
+            data-sidebar-nav="open"
             onClick={props.onOpen}
           >
             <span className={muted} style={{ color: fileStatusColor(file?.status) }}>

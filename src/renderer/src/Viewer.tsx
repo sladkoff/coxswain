@@ -1,3 +1,6 @@
+import { prepareDiff } from "./diff-metadata";
+import { WindowedContent, mountWindow } from "./components/windowed-content";
+import type { FileReadPriority, FileReadTarget } from "../../shared/file-reads";
 import { codeSymbolAtPoint } from "./code-symbol";
 import { match, P } from "ts-pattern";
 import { useCodeLine } from "./use-code-line";
@@ -6,7 +9,7 @@ import { useCodeThemeType } from "./components/useCodeThemeType";
 import { fileContents } from "./components/file-contents";
 import { holdScrollPosition } from "./components/hold-scroll-position";
 import type { DiffLineAnnotation, LineAnnotation, SelectedLineRange } from "@pierre/diffs";
-import { File, MultiFileDiff } from "@pierre/diffs/react";
+import { File, FileDiff } from "@pierre/diffs/react";
 import { useQuery } from "@tanstack/react-query";
 import {
   memo,
@@ -165,6 +168,71 @@ const baseOptions = {
 // Memoised, and so are the files and annotations it hands the library: @pierre/diffs re-diffs on a new file
 // object and redraws on every render, so the canvas's many Viewers must only render when their props change.
 export const Viewer = memo(function Viewer(props: Props) {
+  const shell = useRef<HTMLDivElement>(null);
+  const path = openedPath(props.opened);
+  const oldPath = props.opened.kind === "diff" ? (props.opened.file.previousPath ?? path) : path;
+  const readOld = props.opened.kind === "diff" && props.opened.file.status !== "added";
+  const readNew = !(props.opened.kind === "diff" && props.opened.file.status === "deleted");
+  const onFindRender = useCodeFind<Box>({
+    root: shell,
+    placeholder: shell,
+    path,
+    kind: props.opened.kind,
+    files: undefined,
+    identity: `${props.workspace.id}:${props.mergeBase}:${props.head ?? "live"}:${props.opened.kind}:${path}`,
+    reveal: () => {
+      const node = shell.current?.querySelector<HTMLElement>("[data-window-content]");
+      if (node) mountWindow(node);
+    },
+    load: async () => {
+      const [old, next] = await Promise.all([
+        readOld
+          ? queryClient.fetchQuery({
+              ...core("readFileAt", props.workspace.id, props.mergeBase, oldPath),
+              staleTime: Infinity,
+            })
+          : emptyText,
+        readNew
+          ? queryClient.fetchQuery({
+              ...(props.head
+                ? core("readFileAt", props.workspace.id, props.head, path)
+                : core("readWorktreeFile", props.workspace.id, path)),
+              staleTime: Infinity,
+            })
+          : emptyText,
+      ]);
+      if (old.status !== "ok" || next.status !== "ok") throw new Error(`Could not read ${path}`);
+      if (old.binary || next.binary) return null;
+      return { old: fileContents(old, oldPath), new: fileContents(next, path) };
+    },
+  });
+  const targeted =
+    props.codeLine?.path === path ||
+    props.entries.some((e) => e.id === props.revealThread && e.path === path);
+  const estimate = match({ collapsed: !!props.collapsed, opened: props.opened })
+    .with({ collapsed: true }, () => 44)
+    .with(
+      { opened: { kind: "diff" } },
+      ({ opened }) => 44 + 20 * Math.min(opened.file.additions + opened.file.deletions + 6, 200),
+    )
+    .with({ opened: { kind: "file" } }, () => 400)
+    .exhaustive();
+  return (
+    <div ref={shell} className={props.stacked ? undefined : "flex min-h-0 flex-1 flex-col"}>
+      {props.stacked ? (
+        <WindowedContent estimate={estimate} force={targeted}>
+          <LiveViewer {...props} onFindRender={onFindRender} />
+        </WindowedContent>
+      ) : (
+        <LiveViewer {...props} onFindRender={onFindRender} />
+      )}
+    </div>
+  );
+});
+
+const LiveViewer = memo(function LiveViewer(
+  props: Props & { onFindRender: ReturnType<typeof useCodeFind<Box>> },
+) {
   const { workspace, mergeBase, head, opened, entries } = props;
   const header = useRef<HTMLDivElement>(null);
   const disclosureScroll = useRef<ReturnType<typeof holdScrollPosition>>(undefined);
@@ -222,32 +290,78 @@ export const Viewer = memo(function Viewer(props: Props) {
   );
   const near = wasNear || !!revealed || !!codeLine;
   const placeholder = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const el = placeholder.current;
-    if (near || !el) return;
-    const o = new IntersectionObserver((es) => es.some((e) => e.isIntersecting) && setNear(true), {
-      root: el.closest(".overflow-auto"),
-      rootMargin: "1500px 0px",
-    });
-    o.observe(el);
-    return () => o.disconnect();
-  }, [near, props.collapsed]);
+  const readTargets = useMemo<FileReadTarget[]>(
+    () => [
+      ...(readOld ? [{ path: oldPath, commit: mergeBase }] : []),
+      ...(readNew ? [{ path, ...(head ? { commit: head } : {}) }] : []),
+    ],
+    [readOld, readNew, oldPath, path, mergeBase, head],
+  );
+  const interactiveRead = !props.stacked || !!revealed || !!codeLine;
+  const readPriority = (): FileReadPriority => {
+    if (interactiveRead) return "interactive";
+    const element = placeholder.current;
+    const viewport = element?.closest(".overflow-auto")?.getBoundingClientRect();
+    const box = element?.getBoundingClientRect();
+    return viewport && box && box.bottom > viewport.top && box.top < viewport.bottom
+      ? "visible"
+      : "prefetch";
+  };
 
   // Rereading after an agent turn keeps the old text in place until the new text is in.
   const oldSide = useQuery({
     ...core("readFileAt", workspace.id, mergeBase, oldPath),
-    enabled: near && readOld,
+    queryFn: () => window.coxswain.readFileAt(workspace.id, mergeBase, oldPath, readPriority()),
+    enabled: near && readOld && !props.collapsed,
   }).data;
   const newSide = useQuery({
     ...(head
       ? core("readFileAt", workspace.id, head, path)
       : core("readWorktreeFile", workspace.id, path)),
-    enabled: near && readNew,
+    queryFn: () =>
+      head
+        ? window.coxswain.readFileAt(workspace.id, head, path, readPriority())
+        : window.coxswain.readWorktreeFile(workspace.id, path, readPriority()),
+    enabled: near && readNew && !props.collapsed,
   }).data;
   const o =
     (readOld ? oldSide : opened.kind === "file" ? noText : emptyText) ??
     (props.collapsed ? emptyText : undefined);
   const n = (readNew ? newSide : emptyText) ?? (props.collapsed ? emptyText : undefined);
+  useEffect(() => {
+    if (props.collapsed || (o && n)) return;
+    const element = placeholder.current;
+    if (!element) return;
+    const viewport = element.closest(".overflow-auto");
+    const lookahead = new IntersectionObserver(
+      (items) => {
+        if (items.some((item) => item.isIntersecting)) setNear(true);
+      },
+      { root: viewport, rootMargin: "1500px 0px" },
+    );
+    const visible = new IntersectionObserver(
+      (items) => {
+        if (!items.some((item) => item.isIntersecting)) return;
+        setNear(true);
+        void window.coxswain
+          .prioritizeFileReads(workspace.id, readTargets, "visible")
+          .catch(() => {});
+      },
+      { root: viewport },
+    );
+    lookahead.observe(element);
+    visible.observe(element);
+    return () => {
+      lookahead.disconnect();
+      visible.disconnect();
+    };
+  }, [props.collapsed, !!o, !!n, workspace.id, readTargets]);
+  useEffect(() => {
+    if (interactiveRead && near && !(o && n))
+      void window.coxswain
+        .prioritizeFileReads(workspace.id, readTargets, "interactive")
+        .catch(() => {});
+  }, [interactiveRead, near, !!o, !!n, workspace.id, readTargets]);
   useEffect(closeDraft, [opened]);
 
   // Go to Definition: ⌘ over a token underlines it, ⌘-click opens where it's defined, picked from a menu if several.
@@ -349,42 +463,20 @@ export const Viewer = memo(function Viewer(props: Props) {
     props.codeLineVersion,
     opened.kind,
   );
-  const onCodeFindRender = useCodeFind<Box>({
-    root,
-    placeholder,
-    path,
-    kind: opened.kind,
-    files: files || undefined,
-    identity: `${workspace.id}:${mergeBase}:${head ?? "live"}:${opened.kind}:${path}`,
-    reveal: () => setNear(true),
-    load: async () => {
-      const [old, next] = await Promise.all([
-        readOld
-          ? queryClient.fetchQuery({
-              ...core("readFileAt", workspace.id, mergeBase, oldPath),
-              staleTime: Infinity,
-            })
-          : emptyText,
-        readNew
-          ? queryClient.fetchQuery({
-              ...(head
-                ? core("readFileAt", workspace.id, head, path)
-                : core("readWorktreeFile", workspace.id, path)),
-              staleTime: Infinity,
-            })
-          : emptyText,
-      ]);
-      if (old.status !== "ok" || next.status !== "ok") throw new Error(`Could not read ${path}`);
-      if (old.binary || next.binary) return null;
-      return {
-        old: fileContents(old, oldPath),
-        new: fileContents(next, path),
-      };
+  const onCodeFindRender = props.onFindRender;
+  const parsedDiff = useQuery({
+    queryKey: ["diff-metadata", files?.old.cacheKey, files?.new.cacheKey],
+    queryFn: () => {
+      if (!files) throw new Error("File contents are not ready");
+      return prepareDiff(files.old, files.new);
     },
+    enabled: opened.kind === "diff" && !!files && !props.collapsed,
+    retry: false,
+    staleTime: Infinity,
   });
 
   const onPostRender = useCallback(
-    (...args: Parameters<typeof onCodeFindRender>) => {
+    (...args: Parameters<typeof onCodeLineRender>) => {
       root.current?.removeAttribute("data-diff-pending");
       const shadow = root.current?.querySelector("diffs-container")?.shadowRoot;
       const gutter = shadow?.querySelector<HTMLElement>("[data-column-number]");
@@ -401,9 +493,10 @@ export const Viewer = memo(function Viewer(props: Props) {
         }
       }
       onCodeLineRender(...args);
-      onCodeFindRender(...args);
+      // Pierre also supplies a render phase at runtime; do not forward it as file contents.
+      onCodeFindRender(args[0], args[1], files);
     },
-    [onCodeFindRender, onCodeLineRender],
+    [onCodeFindRender, onCodeLineRender, files],
   );
 
   const options = useMemo(
@@ -492,17 +585,17 @@ export const Viewer = memo(function Viewer(props: Props) {
     if (codeLine) setSelection({ start: codeLine.line, end: codeLine.line, side: codeLine.side });
   }, [codeLine]);
 
+  // Roughly the file diff's height, so scrolling to a file further down lands near it.
+  const placeholderHeight =
+    opened.kind === "diff"
+      ? 44 + 20 * Math.min(opened.file.additions + opened.file.deletions + 6, 200)
+      : 400;
   if (!near && !props.collapsed) {
-    // Roughly the file diff's height, so scrolling to a file further down lands near it.
-    const height =
-      opened.kind === "diff"
-        ? 44 + 20 * Math.min(opened.file.additions + opened.file.deletions + 6, 200)
-        : 400;
     return (
       <div
         ref={placeholder}
         data-diff-pending
-        style={{ height }}
+        style={{ height: placeholderHeight }}
         className={cn("border-b px-3 py-2 text-xs", divider, muted)}
       >
         {path}
@@ -514,6 +607,7 @@ export const Viewer = memo(function Viewer(props: Props) {
       <div
         ref={placeholder}
         data-diff-pending
+        style={props.stacked && !props.collapsed ? { minHeight: placeholderHeight } : undefined}
         className={props.editor ? "min-h-0 flex-1" : undefined}
       >
         <Centered>Loading…</Centered>
@@ -615,6 +709,7 @@ export const Viewer = memo(function Viewer(props: Props) {
     <div
       ref={root}
       data-diff-pending={props.collapsed ? undefined : true}
+      data-window-pin={draft || showOutdated || selection ? "true" : undefined}
       tabIndex={-1}
       onContextMenu={(e) => void tokenMenu(e.nativeEvent)}
       className={cn(
@@ -710,24 +805,40 @@ export const Viewer = memo(function Viewer(props: Props) {
         {(showOutdated || (revealed && !revealed.shown && revealed.state === "outdated")) && (
           <OutdatedThreads entries={outdated} renderThread={(entry) => render({ entry })} />
         )}
-        {opened.kind === "file" ? (
-          <File<Box>
-            file={files.new}
-            options={options}
-            selectedLines={selection}
-            lineAnnotations={annotations.file}
-            renderAnnotation={(a) => render(a.metadata)}
-          />
-        ) : (
-          <MultiFileDiff<Box>
-            oldFile={files.old}
-            newFile={files.new}
-            options={options}
-            selectedLines={selection}
-            lineAnnotations={annotations.diff}
-            renderAnnotation={(a) => render(a.metadata)}
-          />
-        )}
+        {match({ kind: opened.kind, diff: parsedDiff.data })
+          .with({ kind: "file" }, () => (
+            <File<Box>
+              file={files.new}
+              options={options}
+              selectedLines={selection}
+              lineAnnotations={annotations.file}
+              renderAnnotation={(a) => render(a.metadata)}
+            />
+          ))
+          .with({ kind: "diff", diff: P.nonNullable.select() }, (diff) => (
+            <FileDiff<Box>
+              fileDiff={diff}
+              options={options}
+              selectedLines={selection}
+              lineAnnotations={annotations.diff}
+              renderAnnotation={(a) => render(a.metadata)}
+            />
+          ))
+          .with({ kind: "diff" }, () => (
+            <div style={{ minHeight: placeholderHeight - 44 }}>
+              <Centered>
+                {parsedDiff.error ? (
+                  <div className="flex items-center gap-2">
+                    <span>Could not prepare diff</span>
+                    <Button onClick={() => void parsedDiff.refetch()}>Retry</Button>
+                  </div>
+                ) : (
+                  "Loading…"
+                )}
+              </Centered>
+            </div>
+          ))
+          .exhaustive()}
       </div>
     </div>
   );

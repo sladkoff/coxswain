@@ -309,7 +309,12 @@ export function ThreadBox({
     </Button>
   ) : null;
   return (
-    <div id={`thread:${root.id}`} className={box} aria-label={anchorLabel(root)}>
+    <div
+      id={`thread:${root.id}`}
+      data-window-pin={expanded || summary !== false || error ? "true" : undefined}
+      className={box}
+      aria-label={anchorLabel(root)}
+    >
       {root.resolvedAt && !showResolved && (
         <div className={cn("flex items-center gap-2 text-xs", muted)}>
           {disclosureControl}

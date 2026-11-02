@@ -1,3 +1,4 @@
+import { sidebarKeyDown } from "./components/sidebar-keyboard";
 import type { GuideReadingStore } from "./guide-reading-position";
 import { createSidebarFollower } from "./components/sidebar-follow";
 import { SidebarReviewedCheckbox } from "./components/SidebarReviewedCheckbox";
@@ -105,12 +106,15 @@ export function Sections(props: {
   );
   const shown = visibleSidebarThreads(roots, props.options, props.authors);
   const replies = Map.groupBy(props.entries, (entry) => entry.parentId ?? 0);
+  const sectionByPath = new Map<string, number>();
+  sections.forEach((section, index) => {
+    for (const file of section.files)
+      if (!sectionByPath.has(openedPath(file))) sectionByPath.set(openedPath(file), index);
+  });
   const groups = Map.groupBy(shown, (entry) => {
     if (entry.section != null && entry.viewId === props.viewId && sections[entry.section])
       return entry.section;
-    return sections.findIndex((section) =>
-      section.files.some((file) => openedPath(file) === entry.path),
-    );
+    return sectionByPath.get(entry.path ?? "") ?? -1;
   });
   const pathsByName = new Map<string, Set<string>>();
   for (const section of sections)
@@ -121,12 +125,14 @@ export function Sections(props: {
       paths.add(path);
       pathsByName.set(name, paths);
     }
+  const changedFiles = new Map(props.changed.map((file) => [file.path, file]));
   const threads = (index: number) => {
     const byFile = Map.groupBy(groups.get(index) ?? [], (entry) => entry.path ?? "");
-    const files = new Map(props.changed.map((file) => [file.path, file]));
+    const files = changedFiles;
     for (const file of sections[index]?.files ?? [])
       if (file.kind === "diff") files.set(file.file.path, file.file);
     const sectionFiles = sections[index]?.files ?? [];
+    const openedFiles = new Map(sectionFiles.map((file) => [openedPath(file), file]));
     const reviewedPaths = new Set(sectionFiles.filter(props.isReviewed).map(openedPath));
     const paths = new Set([
       ...(!props.options.onlyFilesWithThreads
@@ -139,8 +145,7 @@ export function Sections(props: {
       .map((path, fileIndex, visiblePaths) => {
         const file = files.get(path);
         const opened =
-          sectionFiles.find((item) => openedPath(item) === path) ??
-          (file ? { kind: "diff" as const, file } : undefined);
+          openedFiles.get(path) ?? (file ? { kind: "diff" as const, file } : undefined);
         const slash = path.lastIndexOf("/");
         const ambiguous = (pathsByName.get(path.slice(slash + 1))?.size ?? 0) > 1;
         return (
@@ -172,7 +177,11 @@ export function Sections(props: {
     <nav
       ref={nav}
       style={themeStyles}
-      aria-label="Guide sections"
+      onKeyDownCapture={(event) => {
+        follower.current?.stop();
+        sidebarKeyDown(event);
+      }}
+      aria-label="Guide sections, files and threads"
       className="guide-navigation min-h-0 flex-1 overflow-y-auto py-2 pr-4 pl-2 text-xs [scrollbar-gutter:stable]"
     >
       {props.notice && (
@@ -195,6 +204,7 @@ export function Sections(props: {
                 variant="ghost"
                 style={{ justifyContent: "flex-start", alignItems: "baseline" }}
                 className="guide-section-link flex min-w-0 flex-1 items-baseline gap-2 px-2 py-2 text-left"
+                data-sidebar-nav="open"
                 onClick={() => props.onPick(index)}
               >
                 <span className={cn("w-4 shrink-0 text-[13px] leading-5 font-normal", muted)}>

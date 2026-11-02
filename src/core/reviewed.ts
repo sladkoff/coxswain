@@ -162,19 +162,24 @@ export async function listChangedSinceReview(
   base: string,
   head?: string,
 ): Promise<string[]> {
-  const files = await listChangedFiles(db, workspaceId, base, head);
-  if (files.status !== "ok") throw new Error(files.message);
-  const paths = files.files.map((f) => f.path);
-  const [baselines, now, reviewed, rows] = await Promise.all([
+  const [baselines, rows] = await Promise.all([
     readBaselines(db, workspaceId),
-    diffFingerprints(db, workspaceId, base, paths, head),
-    listReviewed(db, workspaceId, base, head),
     db
       .selectFrom("reviewed_files")
       .select("path")
       .where("workspace_id", "=", workspaceId)
       .where("fingerprint", "not like", "file:%")
       .execute(),
+  ]);
+  const candidates = new Set([...Object.keys(baselines), ...rows.map((row) => row.path)]);
+  if (!candidates.size) return [];
+  const files = await listChangedFiles(db, workspaceId, base, head);
+  if (files.status !== "ok") throw new Error(files.message);
+  const paths = files.files.map((file) => file.path).filter((path) => candidates.has(path));
+  if (!paths.length) return [];
+  const [now, reviewed] = await Promise.all([
+    diffFingerprints(db, workspaceId, base, paths, head),
+    listReviewed(db, workspaceId, base, head),
   ]);
   const priorReview = new Set(rows.map((row) => row.path));
   const currentReview = new Set(reviewed);
