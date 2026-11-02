@@ -164,7 +164,8 @@ async function checkThreadScroll(mode) {
 
   try {
     render();
-    await new Promise((r) => setTimeout(r, 1200));
+    for (let attempt = 0; attempt < 100 && !host.querySelector("textarea"); attempt++)
+      await new Promise((r) => setTimeout(r, 50));
     const s = host.querySelector(".overflow-auto");
     const input = host.querySelector("textarea");
     if (!input) throw new Error("Fixture thread did not render");

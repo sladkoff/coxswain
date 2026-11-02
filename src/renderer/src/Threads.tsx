@@ -60,6 +60,7 @@ export function ThreadRow(props: {
   return (
     <div className="guide-nav-item guide-thread-row flex items-center">
       <button
+        data-sidebar-nav="open"
         onClick={props.onClick}
         className={cn(
           "flex min-w-0 flex-1 flex-col items-start gap-1 px-2 py-2 text-left",

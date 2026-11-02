@@ -77,6 +77,8 @@ Large Files trees prepare ordering in a renderer Web Worker using Pierre’s pub
 - Because file watching, search and future language servers all live in the core, they work for a
   web version the same way they do for the app.
 
-Changes uses Pierre’s public model projection for hierarchy, natural ordering, flattened directories, expansion and keyboard focus, rendering file/thread groups with the same React SidebarFileThreads as Guide. This allows variable-height thread pills below their file; the full-repository Files pane retains Pierre’s virtualized renderer and worker preparation. Changes groups are not yet windowed by measured height; very large change lists may need that extension.
+Changes uses Pierre’s public model projection for hierarchy, natural ordering, flattened directories, expansion and keyboard focus, rendering file/thread groups with the same React SidebarFileThreads as Guide. This allows variable-height thread pills below their file; the full-repository Files pane retains Pierre’s virtualized renderer and worker preparation. Guide and Changes file/thread groups use measured-height shells to release offscreen React rows; directories and section headers remain mounted. Keyboard navigation mounts a distant group before focusing its row (ADR 0044).
 
 Files presents the existing Pierre File renderer edge-to-edge below a file-tab strip instead of wrapping whole files in review cards. Guide and Changes retain their card presentation. Shared file reads, syntax themes, Find and line-annotation interactions remain in Viewer; an editor presentation flag removes only card chrome and margins.
+
+Guide and Changes file cards also use measured-height shells. Diff metadata is prepared in a presentation worker with Pierre’s public parser, reused by rendering and Find, and passed to the public FileDiff component; code highlighting and row virtualization remain Pierre-owned (ADR 0044).

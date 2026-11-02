@@ -37,6 +37,7 @@ import { Button } from "./components/button";
 import { NativeToolbar, useNativeOcclusion } from "./components/NativeToolbar";
 import { TextArea } from "./components/field";
 import {
+  cancelScrollRestore,
   canvasElement,
   canvasScroller,
   restoreScroll,
@@ -60,7 +61,12 @@ import { Sections } from "./Sections";
 import { NewWorkspace } from "./NewWorkspace";
 import { Onboarding } from "./Onboarding";
 import { Projects } from "./Projects";
-import { defaultViewId, threadLocation, type CanvasSearch } from "./canvas-state";
+import {
+  defaultViewId,
+  reviewFileLocation,
+  threadLocation,
+  type CanvasSearch,
+} from "./canvas-state";
 import { core, markReviewed as mark, queryClient } from "./queries";
 import { Settings } from "./Settings";
 import { isComment, projectLabel, workspaceLabel, threadAuthor } from "./format";
@@ -403,6 +409,15 @@ export function App() {
     );
     return allEntries.filter((entry) => roots.has(entry.parentId ?? entry.id));
   }, [allEntries, canvasView?.id]);
+  const entriesByFile = useMemo(() => {
+    const roots = new Map(
+      entries.filter((entry) => !entry.parentId).map((entry) => [entry.id, entry.path]),
+    );
+    return Map.groupBy(
+      entries,
+      (entry) => entry.path ?? roots.get(entry.parentId ?? entry.id) ?? "",
+    );
+  }, [entries]);
   // Callbacks handed to the Viewers are stable (useCallback), so a memoised Viewer doesn't redraw its file diff.
   // Paths of the reviewed file diffs: the live diff's, reloaded with the changes, since a file diff that changed is no
   // longer reviewed (ADR 0014); or at a view's head, where they stay as they were.
@@ -849,31 +864,19 @@ export function App() {
     },
     [openFile, show],
   );
+  const [filePicks, setFilePicks] = useState(0);
   // An entry of its own, though the canvas still shows the file diffs.
   const openReviewFile = async (path: string, pane: "sections" | "diffs") => {
+    if (canvas.current) cancelScrollRestore(canvas.current);
     const file = canvasFiles.find((file) => openedPath(file) === path);
     setReviewReveal(
       file && isReviewed(file)
         ? disclosureKey(path, file.kind === "file" ? "file" : undefined)
         : null,
     );
-    setFileCollapsed(path, false);
-    // The first card shares its section's destination, including on narrow layouts
-    // where the explanation sits above the cards. Keep at to reveal reviewed files.
-    const section =
-      pane === "sections"
-        ? sections?.findIndex((item) =>
-            item.files[0] ? openedPath(item.files[0]) === path : false,
-          )
-        : undefined;
-    await show({
-      view: pane,
-      file: undefined,
-      fileAt: undefined,
-      ...(pane === "diffs" ? { viewId: null } : {}),
-      at: path,
-      section: section !== undefined && section >= 0 ? section : undefined,
-    });
+    setFileCollapsed(path, false, file?.kind === "file" ? "file" : undefined);
+    await show(reviewFileLocation(path, pane));
+    setFilePicks((picks) => picks + 1);
   };
   const showFile = view === "files" && opened;
   const editorTabs = fileTabsOf(s);
@@ -1022,7 +1025,16 @@ export function App() {
       anchor: target.id,
       offset: -(parseFloat(getComputedStyle(target).scrollMarginTop) || 0),
     });
-  }, [location.state.__TSR_key, s.at, s.codeLine, canvasReady, !!showFile]);
+  }, [
+    location.state.__TSR_key,
+    s.at,
+    s.thread,
+    s.section,
+    s.codeLine,
+    canvasReady,
+    !!showFile,
+    filePicks,
+  ]);
   // What holds the thread: its file diff, or on a view's prose its section (ADR 0036).
   const threadSection = allEntries?.find((e) => e.id === s.thread)?.section;
   const threadIn = match({ at: s.at, section: threadSection })
@@ -1308,11 +1320,16 @@ export function App() {
   };
   useEffect(() => window.coxswain.onAction(run), []);
 
-  const viewerProps = (workspace: Workspace, mergeBase: string, head?: string) => ({
+  const viewerProps = (
+    workspace: Workspace,
+    mergeBase: string,
+    head: string | undefined,
+    path: string,
+  ) => ({
     workspace,
     mergeBase,
     head,
-    entries,
+    entries: entriesByFile.get(path) ?? noEntries,
     onReviewedChange: markReviewed,
     turns,
     onAsk: ask,
@@ -1738,7 +1755,12 @@ export function App() {
                                 key={`${currentWorkspace.id}:${openedPath(opened)}:${s.fileAt ?? "live"}`}
                                 opened={opened}
                                 reviewed={false}
-                                {...viewerProps(currentWorkspace, pr.commits!.mergeBase, s.fileAt)}
+                                {...viewerProps(
+                                  currentWorkspace,
+                                  pr.commits!.mergeBase,
+                                  s.fileAt,
+                                  openedPath(opened),
+                                )}
                               />
                             )}
                             {view === "files" && !showFile && (
@@ -1897,6 +1919,7 @@ export function App() {
                                                         currentWorkspace,
                                                         range?.base ?? pr.commits!.mergeBase,
                                                         range?.head,
+                                                        openedPath(p.d),
                                                       )}
                                                     />
                                                   </div>

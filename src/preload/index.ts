@@ -1,3 +1,4 @@
+import type { FileReadPriority, FileReadTarget } from "../shared/file-reads";
 import type { DefaultPromptName, DefaultPrompts } from "../core/prompt-settings";
 import type { GuideSettings, GuideOverride, GuideRun } from "../core/guides";
 import { contextBridge, ipcRenderer, webFrame, webUtils } from "electron";
@@ -154,10 +155,23 @@ const api = {
     ipcRenderer.invoke("git:changed-files", workspaceId, mergeBase, head),
   listWorktreeFiles: (workspaceId: number): Promise<FileTreeResult> =>
     ipcRenderer.invoke("git:worktree-files", workspaceId),
-  readWorktreeFile: (workspaceId: number, path: string): Promise<FileText> =>
-    ipcRenderer.invoke("git:read-worktree-file", workspaceId, path),
-  readFileAt: (workspaceId: number, commit: string, path: string): Promise<FileText> =>
-    ipcRenderer.invoke("git:read-file-at", workspaceId, commit, path),
+  readWorktreeFile: (
+    workspaceId: number,
+    path: string,
+    priority?: FileReadPriority,
+  ): Promise<FileText> => ipcRenderer.invoke("git:read-worktree-file", workspaceId, path, priority),
+  readFileAt: (
+    workspaceId: number,
+    commit: string,
+    path: string,
+    priority?: FileReadPriority,
+  ): Promise<FileText> =>
+    ipcRenderer.invoke("git:read-file-at", workspaceId, commit, path, priority),
+  prioritizeFileReads: (
+    workspaceId: number,
+    files: FileReadTarget[],
+    priority: FileReadPriority,
+  ): Promise<void> => ipcRenderer.invoke("git:prioritize-file-reads", workspaceId, files, priority),
   // Go to Definition and Find Usages (ADR 0034): where a name clicked is defined or used, at the same revision.
   findDefinitions: (workspaceId: number, at: CodeAt): Promise<CodeLineList> =>
     ipcRenderer.invoke("lsp:definitions", workspaceId, at),

@@ -1,3 +1,4 @@
+import { sidebarKeyDown } from "./components/sidebar-keyboard";
 import { Button } from "./components/button";
 import { reviewCountLabel } from "./remaining-files";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -16,6 +17,7 @@ import { changeGroup, changeGroups, type ChangeGroup } from "./change-groups";
 
 export function ChangesNavigator(props: NavigatorProps) {
   const nav = useRef<HTMLElement>(null);
+  const reviewedPaths = useMemo(() => new Set(props.reviewed), [props.reviewed]);
   const theme = useFileTreeTheme();
   const [collapsedGroups, setCollapsedGroups] = useState<Set<ChangeGroup>>(new Set());
   const setGroupOpen = (id: ChangeGroup, open: boolean) =>
@@ -37,13 +39,12 @@ export function ChangesNavigator(props: NavigatorProps) {
   const byFile = useMemo(() => Map.groupBy(roots, (entry) => entry.path!), [roots]);
   const files = (props.pr.changed ?? []).filter(
     (file) =>
-      (props.showReviewed || !props.reviewed.includes(file.path)) &&
+      (props.showReviewed || !reviewedPaths.has(file.path)) &&
       (!props.options.onlyFilesWithThreads || byFile.has(file.path)),
   );
   if (!files.length) {
     const allReviewed =
-      !!props.pr.changed?.length &&
-      props.pr.changed.every((file) => props.reviewed.includes(file.path));
+      !!props.pr.changed?.length && props.pr.changed.every((file) => reviewedPaths.has(file.path));
     return (
       <div
         className={cn(
@@ -74,25 +75,7 @@ export function ChangesNavigator(props: NavigatorProps) {
       style={theme}
       aria-label="Changed files and threads"
       className="changes-navigation guide-navigation min-h-0 flex-1 overflow-y-auto py-2 pr-4 pl-2 text-xs [scrollbar-gutter:stable]"
-      onKeyDownCapture={(event) => {
-        if (!(event.target instanceof HTMLElement)) return;
-        const current = event.target.closest<HTMLButtonElement>("button.guide-section-link");
-        if (!current) return;
-        const buttons = [
-          ...(nav.current?.querySelectorAll<HTMLButtonElement>("button.guide-section-link") ?? []),
-        ].filter((button) => button.checkVisibility());
-        const index = buttons.indexOf(current);
-        const next = match(event.key)
-          .with("ArrowDown", () => Math.min(index + 1, buttons.length - 1))
-          .with("ArrowUp", () => Math.max(index - 1, 0))
-          .with("Home", () => 0)
-          .with("End", () => buttons.length - 1)
-          .otherwise(() => null);
-        if (next === null) return;
-        event.preventDefault();
-        event.stopPropagation();
-        buttons[next]?.focus();
-      }}
+      onKeyDownCapture={sidebarKeyDown}
     >
       {props.groupChanges
         ? changeGroups.map(({ id, label }) => {
@@ -101,7 +84,7 @@ export function ChangesNavigator(props: NavigatorProps) {
             const allFiles = (props.pr.changed ?? []).filter(
               (file) => changeGroup(file.path) === id,
             );
-            const reviewed = allFiles.filter((file) => props.reviewed.includes(file.path)).length;
+            const reviewed = allFiles.filter((file) => reviewedPaths.has(file.path)).length;
             const additions = groupFiles.reduce((sum, file) => sum + file.additions, 0);
             const deletions = groupFiles.reduce((sum, file) => sum + file.deletions, 0);
             const open = !collapsedGroups.has(id);
@@ -110,6 +93,7 @@ export function ChangesNavigator(props: NavigatorProps) {
                 <div className="guide-nav-item flex items-center" data-sidebar-row="true">
                   <Button
                     variant="ghost"
+                    data-sidebar-nav="disclosure"
                     aria-expanded={open}
                     className="guide-section-link flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left"
                     style={{ justifyContent: "flex-start" }}
@@ -150,7 +134,7 @@ export function ChangesNavigator(props: NavigatorProps) {
                     disabled={!allFiles.length}
                     onChange={(on) => {
                       for (const file of allFiles)
-                        if (props.reviewed.includes(file.path) !== on)
+                        if (reviewedPaths.has(file.path) !== on)
                           props.onReviewedChange(file.path, on);
                     }}
                   />
@@ -166,8 +150,7 @@ export function ChangesNavigator(props: NavigatorProps) {
   );
 }
 
-// ponytail: Changes renders its visible Pierre projection as shared variable-height file/thread groups.
-// Window these groups by measured height if very large change lists become common; the full Files tree stays virtualized.
+// Pierre retains hierarchy/expansion; shared file/thread groups window their content by measured height.
 function ChangesTree(
   props: NavigatorProps & {
     files: NonNullable<NavigatorProps["pr"]["changed"]>;
@@ -176,6 +159,8 @@ function ChangesTree(
   },
 ) {
   const nav = useRef<HTMLDivElement>(null);
+  const reviewedPaths = useMemo(() => new Set(props.reviewed), [props.reviewed]);
+  const changedPaths = useMemo(() => new Set(props.changedSinceReview), [props.changedSinceReview]);
   const rowPaths = useMemo(
     () =>
       changesRowPaths(
@@ -217,8 +202,8 @@ function ChangesTree(
         props.layout === "list" && (names.get(path.slice(path.lastIndexOf("/") + 1)) ?? 0) > 1
       }
       current={props.selected === path}
-      reviewed={props.reviewed.includes(path)}
-      changedSinceReview={props.changedSinceReview.includes(path)}
+      reviewed={reviewedPaths.has(path)}
+      changedSinceReview={changedPaths.has(path)}
       onReviewed={(on) => props.onReviewedChange(path, on)}
       onOpen={() => props.onOpen(path)}
       threads={props.byFile.get(path) ?? []}
@@ -243,7 +228,7 @@ function ChangesTree(
                   changeGroup(file.path) === changeGroup(props.files[0].path)),
             )
           : [];
-      const reviewedChildren = children.filter((file) => props.reviewed.includes(file.path)).length;
+      const reviewedChildren = children.filter((file) => reviewedPaths.has(file.path)).length;
       result.push(
         <div
           key={row.path}
@@ -258,6 +243,7 @@ function ChangesTree(
                   variant="ghost"
                   className="guide-section-link flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left"
                   style={{ justifyContent: "flex-start" }}
+                  data-sidebar-nav="disclosure"
                   aria-expanded={row.isExpanded}
                   title={row.path}
                   onClick={() => toggle(row.path)}
@@ -287,7 +273,7 @@ function ChangesTree(
                   disabled={!children.length}
                   onChange={(on) => {
                     for (const file of children)
-                      if (props.reviewed.includes(file.path) !== on)
+                      if (reviewedPaths.has(file.path) !== on)
                         props.onReviewedChange(file.path, on);
                   }}
                 />

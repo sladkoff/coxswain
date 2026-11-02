@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { defaultViewId, threadLocation } from "./canvas-state.ts";
+import { defaultViewId, reviewFileLocation, threadLocation } from "./canvas-state.ts";
 import type { View } from "../../core/views";
 import type { ReviewEntry } from "../../core/review";
 
@@ -78,4 +78,25 @@ test("a pinned saved Guide is readable before the live snapshot or network check
     "live Changes does not use the saved Guide",
   );
   assert.equal(defaultViewId({ scope: "unpushed" }, saved, null, false), null);
+});
+
+test("picking a sidebar file exits its thread and targets the file header in Guide or Changes", () => {
+  for (const pane of ["sections", "diffs"] as const) {
+    const previous = {
+      viewId: 7,
+      at: "same.py",
+      thread: 42,
+      section: 0,
+      line: 12,
+      codeLine: { path: "same.py", line: 12, side: "additions" as const },
+    };
+    const destination = { ...previous, ...reviewFileLocation("same.py", pane) };
+    assert.equal(destination.at, "same.py");
+    assert.equal(destination.view, pane);
+    assert.equal(destination.thread, undefined);
+    assert.equal(destination.section, undefined);
+    assert.equal(destination.line, undefined);
+    assert.equal(destination.codeLine, undefined);
+    assert.equal(destination.viewId, pane === "sections" ? 7 : null);
+  }
 });

@@ -1,4 +1,4 @@
-import { canvasElement, canvasScroller } from "./restore-scroll.ts";
+import { cancelScrollRestore, canvasElement, canvasScroller } from "./restore-scroll.ts";
 
 // Scrolls to a thread once it's drawn. The file diffs' Virtualizer draws only the lines near the viewport, so a thread
 // further away isn't there yet: go to its file (or view section), page down it until the thread is drawn, then keep it in place until it
@@ -6,15 +6,20 @@ import { canvasElement, canvasScroller } from "./restore-scroll.ts";
 // file while it loads; stops when the user scrolls, and is cancelled on navigation. ponytail: a screen per step, about
 // a second per thousand lines of a long file; ask the library for the line's position if that's too slow.
 export function scrollToThread(canvas: HTMLElement, containerId: string, threadId: number) {
+  // Thread navigation owns this scroll; earlier file/filter anchors must stop correcting it.
+  cancelScrollRestore(canvas);
   let timer: ReturnType<typeof setTimeout>;
   let steps = 200;
   let held = 0;
+  let stopped = false;
   const events = ["wheel", "keydown", "pointerdown", "review-scroll-cancel"] as const;
   const stop = () => {
+    stopped = true;
     clearTimeout(timer);
     events.forEach((e) => canvas.removeEventListener(e, stop));
   };
   const go = () => {
+    if (stopped) return;
     timer = setTimeout(go, 50);
     const scroller = canvasScroller(canvas);
     const file = canvasElement(canvas, containerId);

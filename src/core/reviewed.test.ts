@@ -1,3 +1,4 @@
+import childProcess from "node:child_process";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -61,6 +62,15 @@ test("Guide updates retain unchanged reviewed files across base moves, including
     git(worktree, "add", ".");
     git(worktree, "commit", "-m", "feature");
     const head = git(worktree, "rev-parse", "HEAD");
+    const batchReads = mock.method(childProcess, "spawn");
+    syncBuiltinESMExports();
+    try {
+      assert.deepEqual(await listChangedSinceReview(db, 1, base, head), []);
+      assert.equal(batchReads.mock.callCount(), 0, "no baselines or marks means no blob reads");
+    } finally {
+      batchReads.mock.restore();
+      syncBuiltinESMExports();
+    }
     await publishGuide(db, 1, base, head, [
       "## First\n```diff path=a.ts\n```\n```diff path=b.ts\n```",
     ]);
@@ -206,6 +216,14 @@ test("Guide updates retain unchanged reviewed files across base moves, including
       await listReviewed(db, 1, changedBase, changedHead, "file"),
       ["b.ts"],
       "whole-file review remains independent of the diff base",
+    );
+    writeFileSync(join(worktree, "same-size.ts"), "first\n");
+    await setReviewed(db, 1, base, "same-size.ts", true);
+    assert.ok((await listReviewed(db, 1, base)).includes("same-size.ts"));
+    writeFileSync(join(worktree, "same-size.ts"), "other\n");
+    assert.ok(
+      !(await listReviewed(db, 1, base)).includes("same-size.ts"),
+      "live edits are never hidden by immutable digest caches",
     );
   } finally {
     await db.destroy();

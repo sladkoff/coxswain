@@ -1,0 +1,335 @@
+{
+  "date": "2026-11-02",
+  "environment": {
+    "node": "v26.8.1",
+    "platform": "darwin-arm64",
+    "cpu": "Apple M5 Pro",
+    "renderer": "Electron 44.4.5, development React build",
+    "diffLibrary": "@pierre/diffs 1.4.3"
+  },
+  "core": {
+    "120_files_120_lines": [
+      {
+        "fixture": {
+          "files": 120,
+          "linesPerFile": 120,
+          "totalTextMiBPerSide": 2.1,
+          "note": "First-call is not cold disk; repository generation warms OS caches. RSS is whole process, not operation delta."
+        }
+      },
+      {
+        "name": "changed-file metadata",
+        "ms": 16.7,
+        "maxEventLoopDelayMs": 7.7,
+        "peakProcessRSSMiB": 111.8
+      },
+      {
+        "name": "visible file contents (10 files)",
+        "ms": 8.7,
+        "maxEventLoopDelayMs": 5.7,
+        "peakProcessRSSMiB": 112.1
+      },
+      {
+        "name": "fingerprint all files (first call)",
+        "ms": 24.6,
+        "maxEventLoopDelayMs": 6,
+        "peakProcessRSSMiB": 117.4
+      },
+      {
+        "name": "fingerprint all files (repeat)",
+        "ms": 26.5,
+        "maxEventLoopDelayMs": 5.7,
+        "peakProcessRSSMiB": 126.5
+      },
+      {
+        "name": "changed-since-review, no marks or baselines",
+        "ms": 35.2,
+        "maxEventLoopDelayMs": 5.7,
+        "peakProcessRSSMiB": 136
+      },
+      {
+        "name": "overlapping full and subset fingerprint requests",
+        "ms": 27.8,
+        "maxEventLoopDelayMs": 5.7,
+        "peakProcessRSSMiB": 147.1
+      },
+      {
+        "name": "live worktree fingerprint all files",
+        "ms": 16.1,
+        "maxEventLoopDelayMs": 5.8,
+        "peakProcessRSSMiB": 149.6
+      }
+    ],
+    "1200_files_120_lines": [
+      {
+        "fixture": {
+          "files": 1200,
+          "linesPerFile": 120,
+          "totalTextMiBPerSide": 20.8,
+          "note": "First-call is not cold disk; repository generation warms OS caches. RSS is whole process, not operation delta."
+        }
+      },
+      {
+        "name": "changed-file metadata",
+        "ms": 100.6,
+        "maxEventLoopDelayMs": 8.2,
+        "peakProcessRSSMiB": 111.5
+      },
+      {
+        "name": "visible file contents (10 files)",
+        "ms": 9.9,
+        "maxEventLoopDelayMs": 5.7,
+        "peakProcessRSSMiB": 111.8
+      },
+      {
+        "name": "fingerprint all files (first call)",
+        "ms": 222.7,
+        "maxEventLoopDelayMs": 20.1,
+        "peakProcessRSSMiB": 206
+      },
+      {
+        "name": "fingerprint all files (repeat)",
+        "ms": 213.2,
+        "maxEventLoopDelayMs": 19.1,
+        "peakProcessRSSMiB": 206.3
+      },
+      {
+        "name": "changed-since-review, no marks or baselines",
+        "ms": 253.5,
+        "maxEventLoopDelayMs": 19,
+        "peakProcessRSSMiB": 204.8
+      },
+      {
+        "name": "overlapping full and subset fingerprint requests",
+        "ms": 240.8,
+        "maxEventLoopDelayMs": 34.2,
+        "peakProcessRSSMiB": 220.5
+      },
+      {
+        "name": "live worktree fingerprint all files",
+        "ms": 147.8,
+        "maxEventLoopDelayMs": 20.4,
+        "peakProcessRSSMiB": 243.7
+      }
+    ],
+    "1200_files_400_lines": [
+      {
+        "fixture": {
+          "files": 1200,
+          "linesPerFile": 400,
+          "totalTextMiBPerSide": 69.5,
+          "note": "First-call is not cold disk; repository generation warms OS caches. RSS is whole process, not operation delta."
+        }
+      },
+      {
+        "name": "changed-file metadata",
+        "ms": 132.2,
+        "maxEventLoopDelayMs": 5.7,
+        "peakProcessRSSMiB": 128.6
+      },
+      {
+        "name": "visible file contents (10 files)",
+        "ms": 9.7,
+        "maxEventLoopDelayMs": 5.7,
+        "peakProcessRSSMiB": 128.8
+      },
+      {
+        "name": "fingerprint all files (first call)",
+        "ms": 286.1,
+        "maxEventLoopDelayMs": 52.9,
+        "peakProcessRSSMiB": 352.7
+      },
+      {
+        "name": "fingerprint all files (repeat)",
+        "ms": 279.2,
+        "maxEventLoopDelayMs": 48.4,
+        "peakProcessRSSMiB": 416.4
+      },
+      {
+        "name": "changed-since-review, no marks or baselines",
+        "ms": 366,
+        "maxEventLoopDelayMs": 49.1,
+        "peakProcessRSSMiB": 426.6
+      },
+      {
+        "name": "overlapping full and subset fingerprint requests",
+        "ms": 331.2,
+        "maxEventLoopDelayMs": 90.8,
+        "peakProcessRSSMiB": 474.4
+      },
+      {
+        "name": "live worktree fingerprint all files",
+        "ms": 191.5,
+        "maxEventLoopDelayMs": 48.7,
+        "peakProcessRSSMiB": 498.9
+      }
+    ]
+  },
+  "renderer": {
+    "1200_files_current": {
+      "count": 1200,
+      "mountRenderMs": 36.1,
+      "mountWallMs": 74.4,
+      "readsBeforeFirstResponse": 66,
+      "peakConcurrentFixtureReads": 66,
+      "totalQueryRecords": 2401,
+      "pendingPlaceholders": 1200,
+      "loadingHeights": [64, 64, 64, 64],
+      "initialScrollHeight": 4852800,
+      "duringLoadingScrollHeight": 4721460,
+      "note": "Development React build; 600px viewport; 2000ms synthetic read latency; sample at 800ms; no real git or IPC file reads."
+    },
+    "1200_files_stable_placeholder": {
+      "count": 1200,
+      "stablePlaceholder": true,
+      "mountRenderMs": 34.7,
+      "mountWallMs": 71.6,
+      "readsBeforeFirstResponse": 2,
+      "peakConcurrentFixtureReads": 2,
+      "totalQueryRecords": 2401,
+      "pendingPlaceholders": 1200,
+      "loadingHeights": [4044],
+      "initialScrollHeight": 4852800,
+      "duringLoadingScrollHeight": 4852800,
+      "note": "Development React build; 600px viewport; 2000ms synthetic read latency; sample at 800ms; no real git or IPC file reads."
+    },
+    "120_files_current": {
+      "count": 120,
+      "stablePlaceholder": false,
+      "mountRenderMs": 3.4,
+      "mountWallMs": 5.6,
+      "readsBeforeFirstResponse": 66,
+      "peakConcurrentFixtureReads": 66,
+      "totalQueryRecords": 241,
+      "pendingPlaceholders": 120,
+      "loadingHeights": [64, 64, 64, 64],
+      "initialScrollHeight": 485280,
+      "duringLoadingScrollHeight": 353940,
+      "note": "Development React build; 600px viewport; 2000ms synthetic read latency; sample at 800ms; no real git or IPC file reads."
+    }
+  },
+  "after": {
+    "core_1200_files_400_lines": [
+      {
+        "fixture": {
+          "files": 1200,
+          "linesPerFile": 400,
+          "totalTextMiBPerSide": 69.5,
+          "note": "First-call is not cold disk; repository generation warms OS caches. RSS is whole process, not operation delta."
+        }
+      },
+      {
+        "name": "changed-file metadata",
+        "ms": 136.9,
+        "maxEventLoopDelayMs": 10.8,
+        "peakProcessRSSMiB": 128.8
+      },
+      {
+        "name": "visible file contents (10 files)",
+        "ms": 10.4,
+        "maxEventLoopDelayMs": 6.2,
+        "peakProcessRSSMiB": 128.8
+      },
+      {
+        "name": "fingerprint all files (first call)",
+        "ms": 193.2,
+        "maxEventLoopDelayMs": 40.4,
+        "peakProcessRSSMiB": 411.8
+      },
+      {
+        "name": "fingerprint all files (repeat)",
+        "ms": 3,
+        "maxEventLoopDelayMs": 5.7,
+        "peakProcessRSSMiB": 412.2
+      },
+      {
+        "name": "changed-since-review, no marks or baselines",
+        "ms": 0.3,
+        "maxEventLoopDelayMs": 0,
+        "peakProcessRSSMiB": 412.2
+      },
+      {
+        "name": "overlapping full and subset fingerprint requests",
+        "ms": 6.2,
+        "maxEventLoopDelayMs": 5.7,
+        "peakProcessRSSMiB": 413.3
+      },
+      {
+        "name": "live worktree fingerprint all files",
+        "ms": 73.4,
+        "maxEventLoopDelayMs": 5.7,
+        "peakProcessRSSMiB": 429.3
+      }
+    ],
+    "renderer_1200_files": {
+      "count": 1200,
+      "stablePlaceholder": false,
+      "mountRenderMs": 36.7,
+      "mountWallMs": 73.5,
+      "readsBeforeFirstResponse": 2,
+      "peakConcurrentFixtureReads": 2,
+      "totalQueryRecords": 2401,
+      "pendingPlaceholders": 1200,
+      "loadingHeights": [4044],
+      "initialScrollHeight": 4852800,
+      "duringLoadingScrollHeight": 4852800,
+      "note": "Development React build; 600px viewport; 2000ms synthetic read latency; sample at 800ms; no real git or IPC file reads."
+    }
+  },
+  "windowing": {
+    "renderer_1200_files": {
+      "count": 1200,
+      "stablePlaceholder": false,
+      "mountRenderMs": 17.3,
+      "mountWallMs": 24.5,
+      "readsBeforeFirstResponse": 2,
+      "peakConcurrentFixtureReads": 2,
+      "totalQueryRecords": 4,
+      "pendingPlaceholders": 1200,
+      "loadingHeights": [4044],
+      "initialScrollHeight": 4852800,
+      "duringLoadingScrollHeight": 4852800,
+      "note": "Development React build; 600px viewport; 2000ms synthetic read latency; sample at 800ms; no real git or IPC file reads."
+    },
+    "running_app_200_file_checks": {
+      "rendererTicksDuringLargeParse": 11,
+      "initialViewers": 11,
+      "initialSidebar": 36,
+      "observedReadsAfterSweep": 12,
+      "fullSweep": true,
+      "sidebarDistantNavigation": true,
+      "offscreenCodeTarget": true,
+      "offscreenFind": true,
+      "workerCoalescing": true,
+      "draftRetained": true,
+      "workerRecovery": true
+    },
+    "renderer_1200_files_repeat": {
+      "count": 1200,
+      "stablePlaceholder": false,
+      "mountRenderMs": 17.6,
+      "mountWallMs": 24.7,
+      "readsBeforeFirstResponse": 2,
+      "peakConcurrentFixtureReads": 2,
+      "totalQueryRecords": 4,
+      "pendingPlaceholders": 1200,
+      "loadingHeights": [4044],
+      "initialScrollHeight": 4852800,
+      "duringLoadingScrollHeight": 4852800,
+      "note": "Development React build; 600px viewport; 2000ms synthetic read latency; sample at 800ms; no real git or IPC file reads."
+    },
+    "running_app_200_file_checks_repeat": {
+      "rendererTicksDuringLargeParse": 11,
+      "initialViewers": 11,
+      "initialSidebar": 36,
+      "observedReadsAfterSweep": 12,
+      "fullSweep": true,
+      "sidebarDistantNavigation": true,
+      "offscreenCodeTarget": true,
+      "offscreenFind": true,
+      "workerCoalescing": true,
+      "draftRetained": true,
+      "workerRecovery": true
+    }
+  }
+}
