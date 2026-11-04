@@ -8,6 +8,8 @@ listed at the end.
 
 ## Terms
 
+**Direct review request**: an open PR requesting the signed-in GitHub user individually as a reviewer. Team requests do not qualify. In added projects these create workspaces automatically, without selecting them.
+
 **Guide session**: the workspace’s dedicated, durable Chat session used to generate and update its Guide. Automatic updates continue that same session across restarts; manual updates select it in the right sidebar. It uses normal session history, permissions, queue and Stop controls, not a disposable background agent. Choosing a different agent explicitly starts a replacement Guide session because an agent session’s provider cannot change.
 
 **Changed-since-review indicator**: a small dot beside a file in Guide and Changes when an updated snapshot changes its old or new contents. It persists through further Guide updates and app restarts until the file is marked Reviewed. Opening the file alone does not clear it; an unrelated base commit or prose-only Guide regeneration does not add it.

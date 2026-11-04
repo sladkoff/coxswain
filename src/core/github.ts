@@ -721,3 +721,36 @@ function liveDeployments(
     s?.state === "SUCCESS" && s.environmentUrl ? [{ environment, url: s.environmentUrl }] : [],
   );
 }
+
+// The requested_reviewers field contains individual requests; requested_teams is deliberately ignored.
+export function listDirectReviewRequests(owner: string, repo: string): Promise<PullRequestList> {
+  return withGitHub(async (octokit) => {
+    const { data: user } = await octokit.request("GET /user");
+    const pulls: PullRequest[] = [];
+    for (let page = 1; ; page++) {
+      const { data } = await octokit.request("GET /repos/{owner}/{repo}/pulls", {
+        owner,
+        repo,
+        state: "open",
+        per_page: PER_PAGE,
+        page,
+      });
+      for (const p of data) {
+        if (
+          p.requested_reviewers?.some((r) => r.login.toLowerCase() === user.login.toLowerCase())
+        ) {
+          pulls.push({
+            number: p.number,
+            title: p.title,
+            author: p.user?.login ?? null,
+            headRef: p.head.ref,
+            draft: p.draft ?? false,
+            updatedAt: p.updated_at,
+          });
+        }
+      }
+      if (data.length < PER_PAGE) break;
+    }
+    return { status: "ok", pulls };
+  });
+}

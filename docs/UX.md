@@ -5,6 +5,10 @@ Direction for the main screen and navigation. Expected to change as we build; te
 
 Diff change markers are 1 px wide. Collapsed unmodified-line separators have no filled background: muted labels sit between fine divider lines, with the existing gutter expand arrows.
 
+Settings → Accounts and the main bar’s Settings dropdown share a saved “Auto-create Workspaces for Review Requests” checkbox, placed beside Auto-update from Remote in the dropdown (on by default). Disabling stops discovery and keeps existing workspaces.
+
+Direct review requests in added GitHub projects create workspace tabs automatically at startup and every minute. Team requests are excluded. Closed tabs stay closed; removed PR workspaces are dismissed from discovery until manually reopened. Automatically created tabs never become the fallback selection until explicitly opened. Guides follow updates in background workspaces too, using the saved Guide preferences. Discovery preserves the current workspace; worktrees are prepared when opened.
+
 ## Layout
 
 The app's Dock icon is an overhead glass rowing shell with three cyan/blue oar pairs on a midnight background.
@@ -704,3 +708,5 @@ Large file lists reserve each pending card’s estimated space while contents lo
 Large Guide and Changes canvases keep lightweight file anchors while mounting file contents only near the viewport. The last measured height remains while a file is offscreen. Explicit thread/declaration and Find targets mount before reveal. Unsent text, selections, expanded context and active thread editing remain intact when scrolled away. Guide explanations keep their layout.
 
 Guide and Changes sidebars load nearby file/thread groups while retaining their place in the list. Arrows, Home/End and Space also work across unloaded groups, including multiple threads on one file; Guide auto-follow still locates distant files. A failed or stalled diff preparation shows Retry in its card.
+
+When the displayed Guide’s saved base or head differs from the known current checkout range, a fixed banner above the Guide says it is out of date. Refresh Guide starts an update using saved instructions and agent defaults, without opening a dialog. During an update it shows Refreshing and disables duplicate refreshes. If Auto-update from Remote is off, Enable Auto-update from Remote enables that existing per-workspace setting and checks the remote immediately; Guide generation then follows the checkout through the normal background runner. Local edits/unpushed commits keep remote auto-update off and explain why. Failures remain visible in the banner for retry. The banner disappears when the Guide matches the current range and is absent in Changes, Files and the PR overview.

@@ -805,3 +805,9 @@ body {
   background: light-dark(#fff, #29292c);
   border: 1px solid light-dark(#ddd, #454548);
 }
+
+/* The fixed stale-Guide banner already clears the native toolbar above the scrollport. */
+.review-canvas:has([data-stale-guide-banner]) {
+  --review-top-clearance: var(--review-gutter);
+  --review-content-start: var(--review-gutter);
+}

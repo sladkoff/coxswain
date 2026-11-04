@@ -18,6 +18,8 @@ coxswain generates reading guides and summarizes agent threads as review comment
 4. Guide defaults and per-update model/effort overrides remain independent of comment-summary preferences. Explicit agent changes replace the Guide session; automatic updates retain its identity. Run metadata and session binding live in SQLite settings. See ADR 0023 for lifecycle and retry behavior.
 5. File-summary jobs, caches, tools and work-ahead controls are retired. Historical job rows and immutable schema migrations remain readable; no destructive schema migration is needed.
 
+6. Review-request discovery is a core remote watcher, like workspace GitHub watching: startup, project events and a one-minute cadence check added repositories. It creates workspace records only, preserving selection and deferring checkout until open. It does not use agent summary jobs, which require an existing workspace. Individual requested reviewers qualify; teams do not.
+
 ## Alternatives considered
 
 - **A timer in the UI** that asks the core for work a moment after something changes. A few lines, but the UI then

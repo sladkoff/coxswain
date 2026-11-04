@@ -179,6 +179,8 @@ const api = {
     ipcRenderer.invoke("lsp:usages", workspaceId, at),
   // The startup check: which of git, gh (signed in) and claude are missing.
   checkSetup: (): Promise<SetupCheck> => ipcRenderer.invoke("setup:check"),
+  setAutoUpdate: (workspaceId: number, enabled: boolean): Promise<void> =>
+    ipcRenderer.invoke("workspaces:set-auto-update", workspaceId, enabled),
   getAutoUpdate: (workspaceId: number): Promise<boolean> =>
     ipcRenderer.invoke("workspaces:auto-update", workspaceId),
   getClosedWorkspaceTabs: (): Promise<number[]> => ipcRenderer.invoke("workspaces:closed-tabs"),
@@ -384,6 +386,10 @@ const api = {
   getCodeTheme: (): Promise<CodeTheme> => ipcRenderer.invoke("settings:code-theme"),
   setCodeTheme: (value: CodeTheme): Promise<void> =>
     ipcRenderer.invoke("settings:set-code-theme", value),
+  getAutoReviewWorkspaces: (): Promise<boolean> =>
+    ipcRenderer.invoke("settings:auto-review-workspaces"),
+  setAutoReviewWorkspaces: (enabled: boolean): Promise<void> =>
+    ipcRenderer.invoke("settings:set-auto-review-workspaces", enabled),
   getSoftDark: (): Promise<boolean> => ipcRenderer.invoke("settings:soft-dark"),
   setSoftDark: (enabled: boolean): Promise<void> =>
     ipcRenderer.invoke("settings:set-soft-dark", enabled),

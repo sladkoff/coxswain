@@ -1,3 +1,4 @@
+import { getAutoReviewWorkspaces, setAutoReviewWorkspaces } from "../core/review-discovery";
 import type { FileReadPriority, FileReadTarget } from "../shared/file-reads";
 import { getUiPreferences, setUiPreferences } from "../core/ui-preferences";
 import type { UiPreferences } from "../shared/ui-preferences";
@@ -471,6 +472,10 @@ app.whenReady().then(async () => {
   ipcMain.handle("settings:set-code-theme", async (_, value: CodeTheme) => {
     await setCodeTheme(db, value);
   });
+  ipcMain.handle("settings:auto-review-workspaces", () => getAutoReviewWorkspaces(db));
+  ipcMain.handle("settings:set-auto-review-workspaces", (_, enabled: boolean) =>
+    setAutoReviewWorkspaces(db, enabled),
+  );
   ipcMain.handle("settings:soft-dark", () => getSoftDark(db));
   ipcMain.handle("settings:set-soft-dark", (_, enabled: boolean) => setSoftDark(db, enabled));
   ipcMain.handle("settings:appearance", () => getAppearance(db));
@@ -510,6 +515,16 @@ app.whenReady().then(async () => {
   ipcMain.handle("github:pull-titles", (_, owner: string, name: string, numbers: number[]) =>
     listPullRequestTitles(owner, name, numbers),
   );
+  ipcMain.handle("workspaces:set-auto-update", async (_, id: number, enabled: boolean) => {
+    await setAutoUpdate(db, id, enabled);
+    if (enabled) {
+      await checkGitHub(db, id);
+      if (!(await getAutoUpdate(db, id)))
+        throw new Error(
+          "Auto-update from Remote stays off while this workspace has local edits or unpushed commits.",
+        );
+    }
+  });
   ipcMain.handle("workspaces:auto-update", (_, id: number) => getAutoUpdate(db, id));
   ipcMain.handle("workspaces:closed-tabs", () => getClosedWorkspaceTabs(db));
   ipcMain.handle("workspaces:tab-open", (_, workspaceId: number, open: boolean) =>
@@ -866,6 +881,7 @@ app.whenReady().then(async () => {
       canUpdateGuide: boolean,
       workspaceId: number | null,
     ) => {
+      const autoReview = await getAutoReviewWorkspaces(db);
       const autoUpdate = workspaceId === null ? false : await getAutoUpdate(db, workspaceId);
       return new Promise<SettingsMenuResult>((resolve) => {
         const result = menuResult<SettingsMenuResult>(resolve, { kind: "dismissed" });
@@ -915,6 +931,15 @@ app.whenReady().then(async () => {
             click: () => result.pick({ kind: "update-guide" }),
           },
           { type: "separator" },
+          {
+            label: "Auto-create Workspaces for Review Requests",
+            type: "checkbox",
+            checked: autoReview,
+            click: async () => {
+              await setAutoReviewWorkspaces(db, !autoReview);
+              result.pick({ kind: "dismissed" });
+            },
+          },
           {
             label: "Auto-update from Remote",
             type: "checkbox",

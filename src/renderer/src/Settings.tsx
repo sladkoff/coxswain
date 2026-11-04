@@ -54,6 +54,7 @@ export function Settings({
     Accounts: (
       <>
         <h3 className={sectionHeading}>GitHub</h3>
+        <ReviewWorkspaces />
         <Card className="flex min-h-16 items-center gap-3">
           {!user ? (
             <span className={muted}>Checking…</span>
@@ -387,6 +388,41 @@ function DefaultPromptEditor({
           {saving ? "Saving…" : "Save"}
         </Button>
       </div>
+    </Card>
+  );
+}
+
+function ReviewWorkspaces() {
+  const query = useQuery(core("getAutoReviewWorkspaces"));
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  return (
+    <Card className="mb-3 flex flex-col gap-3">
+      <label className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          checked={query.data ?? false}
+          disabled={!query.isSuccess || saving}
+          onChange={async (event) => {
+            setSaving(true);
+            setError(null);
+            try {
+              await window.coxswain.setAutoReviewWorkspaces(event.target.checked);
+            } catch (e) {
+              setError((e as Error).message);
+            } finally {
+              setSaving(false);
+            }
+          }}
+        />
+        Auto-create Workspaces for Review Requests
+      </label>
+      <p className={helpText}>
+        Check added GitHub projects every minute for review requests made directly to your account.
+        Team requests are excluded. Existing workspaces remain when disabled.
+      </p>
+      {query.isError && <ErrorText>Couldn’t load review request preference.</ErrorText>}
+      {error && <ErrorText>{error}</ErrorText>}
     </Card>
   );
 }

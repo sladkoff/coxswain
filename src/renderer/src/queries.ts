@@ -32,6 +32,7 @@ const extra: Partial<Record<Reads, Extra>> = {
   // These reads have explicit core events. Remounting an observer is not a reason to repeat local work.
   getUiPreferences: { staleTime: Infinity },
   getAppearance: { staleTime: Infinity },
+  getAutoReviewWorkspaces: { staleTime: Infinity },
   getSoftDark: { staleTime: Infinity },
   getCodeTheme: { staleTime: Infinity },
   getGuideSettings: { staleTime: Infinity },
@@ -148,6 +149,7 @@ const affects: Record<Changed["what"], Reads[]> = {
     "getUiPreferences",
     "getAppearance",
     "getSoftDark",
+    "getAutoReviewWorkspaces",
     "getCodeTheme",
     "getGuideSettings",
     "getDefaultPrompts",

@@ -1,3 +1,5 @@
+import { StaleGuideBanner } from "./components/StaleGuideBanner";
+import { isGuideStale } from "./stale-guide";
 import { PreserveReviewScroll } from "./components/PreserveReviewScroll";
 import { reviewSourceDestination, type ReviewSurface } from "./source-destination";
 import { scrollToThread } from "./components/scroll-to-thread";
@@ -172,7 +174,12 @@ export function App() {
   };
   const openWorkspaces = closedTabQuery.data ? workspaces.filter((w) => !closedTabs.has(w.id)) : [];
   const latestWorkspace = openWorkspaces.reduce<Workspace | undefined>(
-    (latest, w) => (!latest || w.lastOpenedAt > latest.lastOpenedAt ? w : latest),
+    (latest, w) =>
+      w.lastOpenedAt === "1970-01-01T00:00:00.000Z"
+        ? latest
+        : !latest || w.lastOpenedAt > latest.lastOpenedAt
+          ? w
+          : latest,
     undefined,
   );
   const currentWorkspace = openWorkspaces.find((w) => w.id === search.ws) ?? latestWorkspace;
@@ -1769,13 +1776,12 @@ export function App() {
                             {view !== "files" && canvasView?.writing && !showFile && (
                               <WritingViewNotice />
                             )}
-                            {canvasView?.worktree &&
-                              view !== "files" &&
-                              pr.snapshot &&
-                              canvasView.head !== pr.snapshot &&
-                              !showFile && (
-                                <StaleViewNotice
-                                  onUpdate={() => setUpdatingGuide(currentWorkspace.id)}
+                            {view === "sections" &&
+                              !showFile &&
+                              isGuideStale(canvasView, pr.commits?.mergeBase, pr.snapshot) && (
+                                <GuideStaleNotice
+                                  key={currentWorkspace.id}
+                                  workspaceId={currentWorkspace.id}
                                 />
                               )}
                             {!canvasView && view !== "files" && shownDiffs?.length === 0 && (
@@ -1988,16 +1994,18 @@ function scrollOf(scroller: HTMLElement): Scroll {
     : { top: scroller.scrollTop, offset: 0 };
 }
 
-// Stale (ADR 0023, 0028): the worktree moved on since the view was made, by new commits or local changes. The view
-// stays as it was. Above the view, not in its scroll, so it stays in sight. Update View attaches a request to make it
-// again to the agent pane's composer, as New View does.
-function StaleViewNotice({ onUpdate }: { onUpdate: () => void }) {
+// A stale Guide stays readable; actions use core writes and their normal invalidation events.
+function GuideStaleNotice({ workspaceId }: { workspaceId: number }) {
+  const automatic = useQuery(core("getAutoUpdate", workspaceId));
+  const run = useQuery(core("getGuideRun", workspaceId)).data;
   return (
-    <div className="flex items-center gap-3 border-b border-amber-200 bg-amber-50 px-4 py-1 text-xs dark:border-amber-900 dark:bg-amber-950">
-      <span className="flex-1">The Guide is updating to match the latest changes.</span>
-      <Button className="py-0.5" onClick={onUpdate}>
-        Update Guide…
-      </Button>
+    <div data-stale-guide-banner className="shrink-0 pt-[var(--ui-toolbar-height)]">
+      <StaleGuideBanner
+        running={run?.state === "running"}
+        automatic={automatic.data !== false}
+        onRefresh={() => window.coxswain.regenerateGuide(workspaceId)}
+        onEnableAutomatic={() => window.coxswain.setAutoUpdate(workspaceId, true)}
+      />
     </div>
   );
 }

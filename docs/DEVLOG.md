@@ -3,6 +3,26 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-11-04 — Direct review request workspaces
+
+- Grouped the dropdown’s Auto-create Workspaces toggle with Auto-update from Remote.
+
+- Removing a PR workspace saves a persistent discovery dismissal; manually opening the PR clears it. Closed tabs already retain their workspace record and remain closed. Removals made before dismissal tracking cannot be reconstructed.
+
+- Automatic tabs are excluded from fallback selection until explicitly opened. Core startup and minute checks now include hidden workspaces, sequentially; their normal events refresh Guides using existing preferences and sessions without navigation.
+
+- Added a persisted enable/disable checkbox in Settings → Accounts and the main bar Settings dropdown. Both use core settings events; disabling is checked again before workspace creation. Existing workspaces remain.
+
+- Added core discovery at startup, on project changes and every minute for added GitHub repositories. All open-PR pages are checked for individual review requests; teams are excluded.
+- Existing PR/branch workspaces are preserved, inserts are idempotent and new tabs do not take selection. Checkout remains lazy. Discovery failures retry on the next check.
+
+## 2026-11-02 — Stale Guide banner with refresh actions
+
+- Guides with an older base or head now show a fixed banner above their scrollport. The previous notice only covered worktree-marked views and incorrectly claimed an update was always underway.
+- Refresh Guide uses saved instructions/defaults through the existing background update path, with pending/running feedback and surfaced errors. Enable Auto-update from Remote reuses the persisted per-workspace Auto-update from Remote setting and checks the remote immediately; local edits and unpushed commits retain their protection.
+- Known ranges are required before calling a Guide stale. No new preference, migration, dependency or generation runner is introduced.
+- Validation: all 119 tests, typecheck, lint, formatting and production build pass. Running-app checks cover toolbar clearance, fixed placement, pending actions, retries and automatic/running states; reply scrolling remains stable in unified, split, file and prose layouts.
+
 ## 2026-11-02 — Window review content and prepare diffs off-thread
 
 - Guide and Changes retain measured file anchors while releasing offscreen Viewer subscriptions. Sidebar file/thread groups also window their React content; directories, section headings and Guide prose remain mounted. Explicit navigation and offscreen Find mount their destination. Unsent text, selections, disclosure/editing state and expanded context pin their file to preserve work.

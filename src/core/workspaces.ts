@@ -53,6 +53,10 @@ export async function openPullRequestWorkspace(
   prNumber: number,
   headRef: string,
 ): Promise<Workspace> {
+  await db
+    .deleteFrom("settings")
+    .where("key", "=", dismissedPullRequestKey(projectId, prNumber))
+    .execute();
   const onBranch = await db
     .updateTable("workspaces")
     .set({ pr_number: prNumber, last_opened_at: now() })
@@ -151,7 +155,25 @@ export async function getWorkspaceRepo(db: Db, workspaceId: number) {
 
 // Takes the workspace out of the sidebar, with its entries, reviewed files and agent sessions (the cascade). The
 // worktree stays on disk; adding the PR or branch again adopts it (git.ts).
+export const dismissedPullRequestKey = (projectId: number, prNumber: number) =>
+  `review-request.dismissed.${projectId}.${prNumber}`;
+
 export async function removeWorkspace(db: Db, workspaceId: number): Promise<void> {
+  const workspace = await db
+    .selectFrom("workspaces")
+    .select(["project_id", "pr_number"])
+    .where("id", "=", workspaceId)
+    .executeTakeFirst();
+  if (workspace?.pr_number != null) {
+    await db
+      .insertInto("settings")
+      .values({
+        key: dismissedPullRequestKey(workspace.project_id, workspace.pr_number),
+        value: "true",
+      })
+      .onConflict((oc) => oc.column("key").doNothing())
+      .execute();
+  }
   await db.deleteFrom("settings").where("key", "=", tabKey(workspaceId)).execute();
   await db
     .deleteFrom("settings")

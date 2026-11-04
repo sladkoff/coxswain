@@ -33,7 +33,7 @@ saw fit, missed pushes made by an agent or a terminal for up to two minutes, and
    - Uncommitted edits aren't watched: they aren't summarised (ADR 0029), and refetching the diff on each would redraw
      it every few seconds while an agent edits. The worktree is reread when an agent turn ends and when the window gets
      focus (the main process's `focus` event), so edits made in an editor or a terminal show on coming back.
-2. **The core checks GitHub** for the workspace on screen: when it starts to show (unless checked in the last 10 s),
+2. **The core checks every workspace at startup and every minute**, sequentially to limit concurrent git/GitHub work. These checks emit the same opened/GitHub events that trigger automatic Guide updates, independently of tab visibility. The visible workspace additionally checks: when it starts to show (unless checked in the last 10 s),
    every minute, on a push (above), when the window gets focus (unless checked in the last 10 s), and right after
    coxswain changed something there (push, open a PR, post a review, a change in the PR panel). A check fetches and
    updates a clean worktree, including after force-pushes, when its Auto-update from remote option is on (ADR 0008), reads the PR and mirrors its review threads into entries. It keeps
