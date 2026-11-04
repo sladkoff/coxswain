@@ -3,6 +3,10 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-11-04 — Settings in the command palette
+
+- Every setting with a fixed set of values is now a command palette action: Colour Mode, Soft Dark, Code Theme, the auto-create and auto-update toggles, the comment composer defaults, and the display settings (diff style, Hide Reviewed Files, tree or list layout, Group Changes, Section Descriptions, and the Guide filters). Toggles are named "Turn On/Off …". When the core refuses a change, a native error sheet says why. Guide agent and model and the default prompts are not toggles, so they stay in Settings only.
+
 ## 2026-11-04 — Direct review request workspaces
 
 - Grouped the dropdown’s Auto-create Workspaces toggle with Auto-update from Remote.
