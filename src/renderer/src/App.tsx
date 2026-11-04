@@ -59,6 +59,7 @@ import { prepareGuide } from "./prepare-guide";
 import { RetainedCanvas } from "./components/RetainedCanvas";
 import { RetainedNavigator } from "./Navigator";
 import { botLogin } from "../../shared/guide-authors";
+import { codeThemeOptions } from "../../shared/code-themes";
 import { Sections } from "./Sections";
 import { NewWorkspace } from "./NewWorkspace";
 import { Onboarding } from "./Onboarding";
@@ -157,6 +158,13 @@ export function App() {
     paneOpen && historyOpen && history === t ? setHistoryOpen(false) : showHistory(t);
 
   const [viewSettings, setViewSettings] = preference("viewSettings");
+  // Settings the palette toggles; the Settings screen and menus change them too.
+  const appearance = useQuery(core("getAppearance")).data;
+  const softDark = useQuery(core("getSoftDark")).data;
+  const codeTheme = useQuery(core("getCodeTheme")).data;
+  const autoReview = useQuery(core("getAutoReviewWorkspaces")).data;
+  const commentToAgent = useQuery(core("getCommentToAgent")).data;
+  const postComments = useQuery(core("getPostComments")).data;
   const workspaces =
     useQuery({ ...core("listWorkspaces", current?.id ?? 0), enabled: !!current }).data ?? [];
   const closedTabQuery = useQuery(core("getClosedWorkspaceTabs"));
@@ -1106,6 +1114,99 @@ export function App() {
       setSendingReview(false);
     }
   };
+  const autoUpdate = useQuery({
+    ...core("getAutoUpdate", currentWorkspace?.id ?? 0),
+    enabled: !!currentWorkspace,
+  }).data;
+  // A setting's write, with a native sheet if the core refuses it.
+  const changeSetting = (name: string, write: () => unknown) => () =>
+    void Promise.resolve()
+      .then(write)
+      .catch((e: Error) =>
+        window.coxswain.showError({ message: `Couldn’t change ${name}`, detail: e.message }),
+      );
+  // "Turn On/Off <name>", left out while the current value is unknown.
+  const toggleSetting = (
+    id: string,
+    name: string,
+    on: boolean | undefined,
+    set: (on: boolean) => unknown,
+    enabled = true,
+  ): Action => ({
+    id: `setting:${id}`,
+    title: `Turn ${on ? "Off" : "On"} ${name}`,
+    enabled: enabled && on !== undefined,
+    run: changeSetting(name, () => set(!on)),
+  });
+  const settingActions: Action[] = [
+    ...(
+      [
+        ["system", "Colour Mode: System"],
+        ["light", "Colour Mode: Light"],
+        ["dark", "Colour Mode: Dark"],
+      ] as const
+    ).map(([value, title]) => ({
+      id: `setting:appearance:${value}`,
+      title,
+      enabled: !!appearance && appearance !== value,
+      run: changeSetting("Colour Mode", () => window.coxswain.setAppearance(value)),
+    })),
+    toggleSetting("soft-dark", "Soft Dark", softDark, (on) => window.coxswain.setSoftDark(on)),
+    ...codeThemeOptions.map((t) => ({
+      id: `setting:code-theme:${t.id}`,
+      title: `Code Theme: ${t.label}`,
+      enabled: !!codeTheme && codeTheme !== t.id,
+      run: changeSetting("Code Theme", () => window.coxswain.setCodeTheme(t.id)),
+    })),
+    toggleSetting(
+      "auto-review-workspaces",
+      "Auto-create Workspaces for Review Requests",
+      autoReview,
+      (on) => window.coxswain.setAutoReviewWorkspaces(on),
+    ),
+    toggleSetting(
+      "auto-update",
+      "Auto-update from Remote",
+      autoUpdate,
+      (on) => window.coxswain.setAutoUpdate(currentWorkspace!.id, on),
+      !!currentWorkspace,
+    ),
+    toggleSetting("comment-to-agent", "Send Comments to the Agent", commentToAgent, (on) =>
+      window.coxswain.setCommentToAgent(on),
+    ),
+    toggleSetting("post-comments", "Post Comments to GitHub at Once", postComments, (on) =>
+      window.coxswain.setPostComments(on),
+    ),
+    toggleSetting("hide-reviewed", "Hide Reviewed Files", !viewSettings.showReviewed, (hide) => {
+      if (hide) setReviewReveal(null);
+      setViewSettings((v) => ({ ...v, showReviewed: !hide }));
+    }),
+    ...(["tree", "list"] as const).map((layout) => ({
+      id: `setting:layout:${layout}`,
+      title: layout === "tree" ? "Show Files as a Tree" : "Show Files as a List",
+      enabled: viewSettings.layout !== layout,
+      run: () => setViewSettings((v) => ({ ...v, layout })),
+    })),
+    toggleSetting("group-changes", "Group Changes", groupChanges, setGroupChanges),
+    ...(["beside", "above"] as const).map((position) => ({
+      id: `setting:description-position:${position}`,
+      title: `Section Descriptions ${position === "beside" ? "Beside" : "Above"} Files`,
+      enabled: guideDescriptionPosition !== position,
+      run: () => setGuideDescriptionPosition(position),
+    })),
+    ...(
+      [
+        ["showResolved", "Resolved Threads"],
+        ["onlyFilesWithThreads", "Only Files with Threads"],
+        ["showAgentThreads", "Agent Threads"],
+        ["showComments", "Comments"],
+      ] as const
+    ).map(([key, name]) =>
+      toggleSetting(key, `Show ${name}`, guideOptions[key], (on) =>
+        setGuideOptions((o) => ({ ...o, [key]: on })),
+      ),
+    ),
+  ];
   const actions: Action[] = [
     {
       id: "submit-review",
@@ -1318,6 +1419,7 @@ export function App() {
     },
     { id: "new-project", title: "New Project…", run: () => setScreen("projects-create") },
     { id: "settings", title: "Settings…", shortcut: "⌘,", run: () => openAppSettings() },
+    ...settingActions,
   ];
   const latestActions = useRef(actions);
   latestActions.current = actions;
