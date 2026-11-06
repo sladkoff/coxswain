@@ -11,6 +11,8 @@ export const canvasScroller = (canvas: HTMLElement) =>
 // Anchored navigation follows later content resizes until user input or navigation cancels it.
 // Numeric restores retry up to two seconds while virtualized content arrives.
 export function restoreScroll(canvas: HTMLElement, saved: Scroll) {
+  // History, workspace and explicit file restores can overlap. Only the newest owns scrolling.
+  cancelScrollRestore(canvas);
   let tries = 40;
   let stopped = false;
   let timer: ReturnType<typeof setTimeout>;

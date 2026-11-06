@@ -29,11 +29,11 @@ drawn after they're read.
 3. **Scroll is ours, per entry.** A map from the entry's key to where the canvas was scrolled: a whole file by offset,
    the file diffs by the one at the top and how far into it. Restored on Back and Forward, then again until it holds,
    since Pierre's Virtualizer applies the fix-up it worked out for the old place after a jump. Workspace tab switches
-   also restore the workspace's last scroll. Pending restores are cancelled when navigation supersedes them or the reader uses the wheel, keyboard, pointer or touch input. Ready cached positions restore in a layout effect before paint. Guide, Changes and individual file surfaces keep separate scroll positions; returning from Settings restores the remounted canvas.
+   also restore the workspace's last scroll. When a saved reading position is restored, file/section/thread selection effects do not replay the original destination; a new explicit pick still takes over. Each new restoration cancels any previous restoration on the same canvas, including queued resize work. Pending restores are cancelled when navigation supersedes them or the reader uses the wheel, keyboard, pointer or touch input. Ready cached positions restore in a layout effect before paint. Guide, Changes and individual file surfaces keep separate scroll positions; returning from Settings restores the remounted canvas.
 4. **The file diffs stay mounted** (hidden) while a whole file shows, so they keep their scroll and the files they read.
 5. **A thread destination is a location too.** It selects the entry's view or recorded range and enables Show
    Reviewed Files before scrolling. Its Viewer loads even if offscreen and opens outdated threads when needed.
-   Navigation waits for the mounted annotation, and cancels the wait when superseded.
+   Navigation waits for the mounted annotation, and cancels the wait when superseded. The Guide navigator independently reads the workspace’s current saved Guide and its review/thread state, so opening a recorded thread range does not remove its sections. Guide section/file picks clear that recorded range and select the current Guide. Without a saved Guide, the navigator lists the displayed range’s workspace threads.
 6. **Section navigation is a location.** The Navigator defaults to Guide (`view: sections`) and also offers Changes and Files; `CanvasSearch.section` identifies a section anchor in the current view. Picks scroll below the toolbar; Back/Forward restores the saved position.
 7. **The main process takes ⌥⌘←/→** in `before-input-event`, before the page: the file tree takes them otherwise. The
    renderer tells it whether Back and Forward can go, to grey the menu items out.
