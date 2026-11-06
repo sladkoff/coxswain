@@ -3,6 +3,11 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-11-06 — Hotfix v1.10.2
+
+- Release includes stable workspace/history scroll restoration and persistent Guide navigation while opening older Other threads. Explicit file picks, Back navigation and Guide review controls retain their intended destinations and revisions.
+- No migration or dependency update. Release uses the existing macOS arm64/x64, Windows x64 and Linux x64 workflow.
+
 ## 2026-11-06 — Keep Guide sections when opening Other threads
 
 - Guide navigation now reads the workspace's current saved Guide independently of the canvas. Opening an Other thread at its recorded range no longer replaces the section list with No guide sections. Guide section/file picks return to that Guide and clear the historical range; Back still reopens the recorded thread.
