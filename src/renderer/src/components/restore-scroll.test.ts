@@ -152,3 +152,55 @@ test("anchor resize tracking survives slow loading and yields immediately to man
   assert.equal(scroller.scrollTop, 1000, "the observer cannot override manual scrolling");
   assert.equal(disconnected, true);
 });
+
+test("a new restoration cancels the previous destination and its queued resize callback", async (t) => {
+  const oldCSS = globalThis.CSS;
+  const oldObserver = globalThis.ResizeObserver;
+  Object.defineProperty(globalThis, "CSS", {
+    configurable: true,
+    value: { escape: (id: string) => id },
+  });
+  const callbacks: (() => void)[] = [];
+  const active = new Set<() => void>();
+  globalThis.ResizeObserver = class {
+    callback: () => void;
+    constructor(callback: () => void) {
+      this.callback = callback;
+      callbacks.push(callback);
+      active.add(callback);
+    }
+    observe() {}
+    disconnect() {
+      active.delete(this.callback);
+    }
+  } as unknown as typeof ResizeObserver;
+  t.after(() => {
+    if (oldCSS) Object.defineProperty(globalThis, "CSS", { configurable: true, value: oldCSS });
+    else Reflect.deleteProperty(globalThis, "CSS");
+    if (oldObserver) globalThis.ResizeObserver = oldObserver;
+    else Reflect.deleteProperty(globalThis, "ResizeObserver");
+  });
+  const scroller = {
+    scrollTop: 0,
+    scrollHeight: 4000,
+    clientHeight: 400,
+    getBoundingClientRect: () => ({ top: 0 }),
+  };
+  const anchor = (top: number) => ({
+    getBoundingClientRect: () => ({ top: top - scroller.scrollTop }),
+  });
+  const first = anchor(600);
+  const second = anchor(1200);
+  const canvas = Object.assign(new EventTarget(), {
+    querySelector: (selector: string) => {
+      if (selector.startsWith(":scope")) return scroller;
+      return selector.includes('"old"') ? first : second;
+    },
+  }) as unknown as HTMLElement;
+  t.after(restoreScroll(canvas, { top: 0, anchor: "old", offset: -80 }));
+  t.after(restoreScroll(canvas, { top: 0, anchor: "new", offset: -80 }));
+  assert.equal(scroller.scrollTop, 1120);
+  callbacks[0]();
+  assert.equal(scroller.scrollTop, 1120, "queued work from the old destination must not pull back");
+  assert.equal(active.size, 1, "only the current destination tracks deferred heights");
+});

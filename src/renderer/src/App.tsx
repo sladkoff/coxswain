@@ -1,3 +1,5 @@
+import { useGuideSidebar } from "./useGuideSidebar";
+import { viewSections, type SectionPart } from "./view-sections";
 import { StaleGuideBanner } from "./components/StaleGuideBanner";
 import { isGuideStale } from "./stale-guide";
 import { PreserveReviewScroll } from "./components/PreserveReviewScroll";
@@ -463,10 +465,10 @@ export function App() {
   // Review navigation follows the rendered file order in Changes and Guide.
   const [reviewReveal, setReviewReveal] = useState<string | null>(null);
   const [fileDisclosure, setFileDisclosure] = useState<Record<string, boolean>>({});
-  const disclosureKey = (path: string, kind?: "file") =>
-    `${currentWorkspace?.id}:${viewId ?? reviewedBase}:${range?.head ?? "live"}:${kind ?? "diff"}:${path}`;
-  const setFileCollapsed = (path: string, collapsed: boolean, kind?: "file") =>
-    setFileDisclosure((before) => ({ ...before, [disclosureKey(path, kind)]: collapsed }));
+  const disclosureKey = (path: string, kind?: "file", guide?: View) =>
+    `${currentWorkspace?.id}:${guide?.id ?? viewId ?? reviewedBase}:${guide?.head ?? range?.head ?? "live"}:${kind ?? "diff"}:${path}`;
+  const setFileCollapsed = (path: string, collapsed: boolean, kind?: "file", guide?: View) =>
+    setFileDisclosure((before) => ({ ...before, [disclosureKey(path, kind, guide)]: collapsed }));
   const markReviewed = useCallback(
     (path: string, on: boolean, kind?: "file") => {
       if (!currentWorkspace || !reviewedBase) return;
@@ -633,40 +635,38 @@ export function App() {
     () => diffDiffs?.filter(isShown),
     [diffDiffs, reviewed, viewSettings.showReviewed, reviewReveal, fileDisclosure],
   );
-  // With a view, its sections in order: prose and the file diffs it embeds; for a guide, then the files in none.
-  const sections = useMemo(() => {
-    if (!canvasView || !diffDiffs) return null;
-    const byPath = new Map(diffDiffs.map((d) => [d.file.path, d]));
-    // Muted (glossary): a section of only muted embeds is low-lighted whole; its heading says why.
-    const section = (title: string | null, parts: SectionPart[], allMuted: boolean) => {
-      const files = parts.flatMap((p) => (p.kind === "code" ? [p.d] : []));
-      return { title, parts, muted: allMuted, files };
-    };
-    const listed = new Set<string>();
-    const all = canvasView.sections.map((x) => {
-      const parts = x.parts.flatMap((p): SectionPart[] => {
-        if (p.kind === "prose") return [p];
-        const d: Opened | undefined =
-          p.kind === "file" ? { kind: "file", path: p.path } : byPath.get(p.path);
-        if (!d) return [];
-        if (p.kind === "diff") listed.add(p.path);
-        return [{ kind: "code", d, muted: p.muted }];
-      });
-      const embeds = parts.filter((p) => p.kind === "code");
-      return section(x.title, parts, embeds.length > 0 && embeds.every((p) => p.muted));
-    });
-    const rest = diffDiffs.filter((d) => !listed.has(d.file.path));
-    if (canvasView.guide && rest.length)
-      all.push(
-        section(
-          null,
-          rest.map((d) => ({ kind: "code", d, muted: false })),
-          false,
-        ),
-      );
-    return all;
-  }, [canvasView, diffDiffs]);
+  const sections = useMemo(
+    () => (canvasView && diffDiffs ? viewSections(canvasView, diffDiffs) : null),
+    [canvasView, diffDiffs],
+  );
+  const guideSidebar = useGuideSidebar(
+    currentWorkspace?.id,
+    view === "sections" ? views?.[0] : undefined,
+    mergeBase,
+  );
+  // Workspaces without a saved Guide still list their live/recorded-range threads.
+  const guideNavigation = guideSidebar.guide
+    ? guideSidebar
+    : {
+        guide: canvasView ?? undefined,
+        sections,
+        entries,
+        changed: diffPr.changed ?? [],
+        changedSinceReview,
+        isReviewed,
+      };
   const canvasFiles = sections?.flatMap((s) => s.files) ?? diffDiffs ?? [];
+  const markGuideFile = (file: Opened, on: boolean) => {
+    if (canvasView?.id === guideNavigation.guide?.id) {
+      markReviewed(openedPath(file), on, file.kind === "file" ? "file" : undefined);
+      return;
+    }
+    const guide = guideNavigation.guide;
+    if (!currentWorkspace || !guide) return;
+    const kind = file.kind === "file" ? "file" : undefined;
+    setFileCollapsed(openedPath(file), on, kind, guide);
+    mark(currentWorkspace.id, guide.base, openedPath(file), on, guide.head, kind);
+  };
   // Reading position is transient, separate from the router's click destination.
   const [readingPosition] = useState(createGuideReadingPosition);
   const guideReading = useRef(new Map<string, { section: number; file?: string }>());
@@ -883,14 +883,22 @@ export function App() {
   // An entry of its own, though the canvas still shows the file diffs.
   const openReviewFile = async (path: string, pane: "sections" | "diffs") => {
     if (canvas.current) cancelScrollRestore(canvas.current);
-    const file = canvasFiles.find((file) => openedPath(file) === path);
+    const guide = pane === "sections" ? guideNavigation.guide : undefined;
+    const files = guide
+      ? (guideNavigation.sections?.flatMap((section) => section.files) ?? [])
+      : canvasFiles;
+    const file = files.find((file) => openedPath(file) === path);
+    const reviewed = guide ? guideNavigation.isReviewed : isReviewed;
     setReviewReveal(
-      file && isReviewed(file)
-        ? disclosureKey(path, file.kind === "file" ? "file" : undefined)
+      file && reviewed(file)
+        ? disclosureKey(path, file.kind === "file" ? "file" : undefined, guide)
         : null,
     );
-    setFileCollapsed(path, false, file?.kind === "file" ? "file" : undefined);
-    await show(reviewFileLocation(path, pane));
+    setFileCollapsed(path, false, file?.kind === "file" ? "file" : undefined, guide);
+    await show({
+      ...reviewFileLocation(path, pane),
+      ...(guide ? { viewId: guide.id, commit: undefined, scope: undefined } : {}),
+    });
     setFilePicks((picks) => picks + 1);
   };
   const showFile = view === "files" && opened;
@@ -950,6 +958,20 @@ export function App() {
         (entriesQuery.data !== undefined || entriesQuery.isError) &&
         (reviewedQuery.data !== undefined || reviewedQuery.isError) &&
         (!canvasView || reviewedFilesQuery.data !== undefined || reviewedFilesQuery.isError);
+  const restoredPosition = useRef<{
+    key: string | undefined;
+    filePicks: number;
+    threadPicks: number;
+  } | null>(null);
+  // Returning to a location restores where it was read, rather than re-playing its original pick.
+  // A repeated explicit pick still takes over even when the router keeps the same location.
+  const positionWasRestored = () =>
+    restoredPosition.current?.key === location.state.__TSR_key &&
+    restoredPosition.current?.filePicks === filePicks &&
+    restoredPosition.current?.threadPicks === threadPicks;
+  const rememberRestoration = () => {
+    restoredPosition.current = { key: location.state.__TSR_key, filePicks, threadPicks };
+  };
   useEffect(() => {
     if (search.settings || s.pr || !canvasReady || !canvas.current?.isConnected) return;
     const scroller = canvasScroller(canvas.current);
@@ -989,6 +1011,7 @@ export function App() {
     const guideReturn = pendingGuideScroll.current;
     if (view === "sections" && canvasView && guideReturn?.workspaceId === currentWorkspace.id) {
       pendingGuideScroll.current = null;
+      rememberRestoration();
       return restoreScroll(canvas.current, guideReturn.position);
     }
     const saved = moved
@@ -997,7 +1020,10 @@ export function App() {
         ? paneScrolls.current.get(paneKey)
         : undefined;
     if (!remounted && (s.thread || (s.section !== undefined && !moved))) return; // explicit navigation owns its scroll
-    if (saved) return restoreScroll(canvas.current, saved);
+    if (saved) {
+      rememberRestoration();
+      return restoreScroll(canvas.current, saved);
+    }
     if (switched || paneChanged) {
       const scroller = canvasScroller(canvas.current);
       if (scroller) scroller.scrollTop = 0;
@@ -1011,6 +1037,7 @@ export function App() {
     screen,
   ]);
   useEffect(() => {
+    if (positionWasRestored()) return;
     if (s.thread || s.section === undefined || !canvasReady || !canvas.current || !sections) return;
     if (moved && scrolls.current.has(location.state.__TSR_key ?? "")) return;
     const target = canvasElement(canvas.current, `view-section-${s.section}`);
@@ -1022,6 +1049,7 @@ export function App() {
     });
   }, [location.state.__TSR_key, s.thread, s.section, canvasReady, sections?.length]);
   useEffect(() => {
+    if (positionWasRestored()) return;
     if (
       !s.at ||
       s.codeLine ||
@@ -1057,6 +1085,7 @@ export function App() {
     .with({ section: P.number.select() }, (section) => `view-section-${section}`)
     .otherwise(() => null);
   useEffect(() => {
+    if (positionWasRestored()) return;
     if (!s.thread || !threadIn || !canvasReady || !canvas.current) return;
     return scrollToThread(canvas.current, threadIn, s.thread);
   }, [location.state.__TSR_key, s.thread, threadIn, canvasReady, threadPicks]);
@@ -1672,32 +1701,39 @@ export function App() {
                               hasGuide={!!views?.some((item) => item.guide)}
                             />
                             <Sections
-                              follow={!s.pr}
-                              sections={sections}
+                              follow={!s.pr && canvasView?.id === guideNavigation.guide?.id}
+                              sections={guideNavigation.sections}
                               readingPosition={readingPosition}
-                              viewId={canvasView?.id}
-                              entries={entries}
+                              viewId={guideNavigation.guide?.id}
+                              entries={guideNavigation.entries}
                               turns={turns}
                               options={guideOptions}
                               showReviewed={viewSettings.showReviewed}
                               authors={guideAuthors}
-                              changed={diffPr.changed ?? []}
-                              changedSinceReview={changedSinceReview}
-                              isReviewed={isReviewed}
+                              changed={guideNavigation.changed}
+                              changedSinceReview={guideNavigation.changedSinceReview}
+                              isReviewed={guideNavigation.isReviewed}
                               onOpenFile={(path) => openReviewFile(path, "sections")}
-                              onFileReviewedChange={(file, on) =>
-                                markReviewed(
-                                  openedPath(file),
-                                  on,
-                                  file.kind === "file" ? "file" : undefined,
-                                )
-                              }
+                              onFileReviewedChange={markGuideFile}
                               onViewThread={viewThread}
                               notice={reviewNotice}
-                              onPick={(section) => void show({ section, file: undefined })}
-                              onReviewedChange={(index, on) =>
-                                markSection(sections?.[index]?.files ?? [], on)
+                              onPick={(section) =>
+                                void show({
+                                  view: "sections",
+                                  viewId: guideNavigation.guide?.id,
+                                  commit: undefined,
+                                  scope: undefined,
+                                  section,
+                                  at: undefined,
+                                  file: undefined,
+                                })
                               }
+                              onReviewedChange={(index, on) => {
+                                const files = guideNavigation.sections?.[index]?.files ?? [];
+                                if (canvasView?.id === guideNavigation.guide?.id)
+                                  markSection(files, on);
+                                else files.forEach((file) => markGuideFile(file, on));
+                              }}
                             />
                           </>
                         ) : null}
@@ -2081,9 +2117,6 @@ export function App() {
     </div>
   );
 }
-
-// A part of a view section on the canvas: its markdown, or a source file or file diff it embeds.
-type SectionPart = { kind: "prose"; text: string } | { kind: "code"; d: Opened; muted: boolean };
 
 // Where the canvas is scrolled: its offset, and the file diff at its top with how far it is scrolled past.
 function scrollOf(scroller: HTMLElement): Scroll {

@@ -3,6 +3,19 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-11-06 — Keep Guide sections when opening Other threads
+
+- Guide navigation now reads the workspace's current saved Guide independently of the canvas. Opening an Other thread at its recorded range no longer replaces the section list with No guide sections. Guide section/file picks return to that Guide and clear the historical range; Back still reopens the recorded thread.
+- Sidebar review controls and changed-since-review indicators keep the Guide's own range while another range is on the canvas. Workspaces without a saved Guide retain their existing thread list. Canvas and sidebar share the same section projection and normal query-cache reads; no schema or dependency changes.
+- `scripts/check-other-thread.cjs` reproduces the original failure (two Guide sections became zero) and checks retained sections, recorded-revision reads, Guide review writes, file/section navigation and Back. All 120 tests and required checks pass, as does the earlier running-app workspace-scroll regression.
+
+## 2026-11-06 — Restore the reading position without scroll flicker
+
+- Confirmed the November 6 recording: switching back to Changes repeatedly alternated between a file header and the saved position deep inside its conversation. Workspace/history restoration and the original file selection both started correction loops.
+- A restored location now keeps its saved reading position instead of replaying its original file, section or thread selection. Explicit repeated file/thread picks still take over. Starting any new restoration also cancels the previous restoration on that canvas, including timers and queued resize callbacks.
+- `scripts/check-workspace-scroll.cjs` replays this in the built app with synthetic workspaces and long inline conversations. The original code fails with alternating 1884/0 px positions; the fix preserves 1884 px in Changes and 3632 px in Guide, while subsequent file clicks still reveal the header. Unit coverage also checks queued resize callback cancellation.
+- Validation: all 120 tests, typecheck, lint, formatting and production build pass, plus the running-app workspace regression. No storage, dependency or layout changes.
+
 ## 2026-11-04 — Settings in the command palette
 
 - Every setting with a fixed set of values is now a command palette action: Colour Mode, Soft Dark, Code Theme, the auto-create and auto-update toggles, the comment composer defaults, and the display settings (diff style, Hide Reviewed Files, tree or list layout, Group Changes, Section Descriptions, and the Guide filters). Toggles are named "Turn On/Off …". When the core refuses a change, a native error sheet says why. Guide agent and model and the default prompts are not toggles, so they stay in Settings only.
