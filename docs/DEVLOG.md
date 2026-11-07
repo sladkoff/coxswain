@@ -3,6 +3,45 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-11-07 — Release v1.10.3
+
+- Release includes provider-neutral review-only instructions, optional Amp implementation connections, remote-thread handoffs with submission acknowledgment, and immediate/one-shot remote updates from the top Settings menu.
+- Review agents leave implementation to explicitly requested connected-tool handoffs. Claude’s native editing tools are disabled; shell access remains governed by review instructions, rather than a filesystem sandbox.
+- No database migration or dependency update. Release uses the existing macOS arm64/x64, Windows x64 and Linux x64 workflow.
+
+## 2026-11-07 — Immediate and one-shot remote updates
+
+- Re-enabling Auto-update from Remote now starts a fresh check after any existing check finishes. The top menu uses the same core action as the command palette and Guide banner, with errors surfaced instead of an async menu callback silently losing them.
+- While auto-update is off, the top Settings dropdown offers Update from Remote with pending feedback. It performs a one-shot update while keeping the preference off, preserves local edits/untracked files/unpushed commits, and rejects failed fetches. Both paths share the core watcher and normal events; no UI polling, schema change or additional runner.
+- Pre-fetch protection decisions are retained through the fetch, so enabling auto-update during an older off-mode check cannot authorize that older check to move HEAD. Tests gate an actual git fetch to cover this overlap and exercise one-shot updates plus local-work protection.
+- Validation: all 128 tests, typecheck, lint, formatting and production build pass. Running-app checks cover the manual menu action, busy feedback, duplicate protection, native error reporting and the shared automatic toggle. Disposable-repository checks cover failed fetches with stale cached refs as well.
+
+## 2026-11-07 — Deliver follow-ups to the existing remote executor
+
+- Amp’s log identifies the unexplained exit code 1: the selected thread already ran in an orb, while coxswain’s execute command tried to claim it as a local executor. Follow-ups now use `threads continue --orb-execute --execute=<message>` to submit to the thread’s own remote executor; local execution and takeover are never fallbacks.
+- Submission returns a structured `submitted` result with `completed: false` only after the CLI acknowledges the requested thread URL. The reviewer must read the thread for progress/results. Empty or mismatched acknowledgments report uncertain delivery, without an automatic resend. Error classification also recognizes an executor conflict when Amp exposes it.
+- A subprocess regression reproduces the original bare exit code 1 and passes for remote delivery. Added missing/wrong acknowledgment coverage. The real thread/task was not resent during diagnosis. The executor-conflict log was correlated with the selected thread. All 126 tests, typecheck, lint, formatting and production build pass; the running-app connection UI regression passes.
+
+## 2026-11-07 — Preserve delegated prompts through CLI startup
+
+- The failed Amp handoff initialized Linear MCP OAuth, which consumed the message from stdin; the CLI then timed out waiting for its prompt. Delegated messages now use one literal `--execute=<message>` argument and closed stdin, preserving quotes/newlines and leading flags without a shell. This makes the prompt visible in local process arguments while the call runs.
+- Errors now classify bounded diagnostics instead of treating every failure as an Amp sign-in/access problem. Interactive service authorization, incompatible CLI options, authentication, missing threads and unknown failures have distinct, sanitized messages. Unknown failures do not claim whether a message ran; callers still inspect the thread before retrying.
+- Removed the reviewer’s ambiguous “unless explicitly asked to edit” exception. Implementation requests now produce plans or explicit handoffs; local edits, reverts, commits and pushes are prohibited. Claude’s Edit/Write/NotebookEdit tools are disabled; shell inspection remains available, so this is not a filesystem sandbox.
+- Added subprocess regressions for a startup reader consuming stdin, literal prompt transport and sanitized failure classification. Tests never send a message to a real thread. All 124 tests, typecheck, lint, formatting and production build pass; the running-app connection UI regression passes, and the real-database dev app reloads the updated agent configuration.
+
+## 2026-11-06 — Optional implementation connections in Settings
+
+- Removed Amp from the shared review policy and generated review/check prompts. Review agents discover connected implementation tools instead of assuming a particular provider; without one, they prepare implementation instructions.
+- Added Settings → Connections, backed by app-wide SQLite preferences and core settings events. Connecting verifies read access through the installed provider CLI; disconnect blocks subsequent calls from existing review sessions. Amp is the first supported provider and keeps ownership of sign-in and transcripts.
+- Generic agent tools list connections, list/read existing threads and send explicitly requested follow-ups. Messages are passed over stdin without a shell, with validated IDs, bounded output and timeouts. No automatic forwarding, new thread creation, schema migration or SDK dependency. See ADR 0045.
+- Validation: all 122 tests, typecheck, lint, formatting and production build pass. Running-app Settings checks cover failed connection, connect and disconnect via core settings events. Core tests cover persistence, opt-in gating, disconnect of cached tools and literal message transport. Installed Amp thread-list syntax was checked read-only; no real messages were sent.
+
+## 2026-11-06 — Review-only agent instructions by default
+
+- The shared Claude Code/Codex agent-pane prompt now leaves files unchanged by default. Agents inspect code, answer questions and prepare findings or implementation instructions; file edits inside coxswain require an explicit user request. Guide, explanation and finding tools remain available.
+- Removed automatic implementation requests from sent reviews and failed-check analysis, so generated messages do not silently opt into file edits. ACP permissions are unchanged: this is prompt guidance, not a filesystem restriction, and implementation connections are optional (ADR 0045).
+- Validation: all 120 tests, typecheck, lint, formatting and production build pass; the app starts with a scratch database and the built-renderer Other thread regression passes.
+
 ## 2026-11-06 — Hotfix v1.10.2
 
 - Release includes stable workspace/history scroll restoration and persistent Guide navigation while opening older Other threads. Explicit file picks, Back navigation and Guide review controls retain their intended destinations and revisions.

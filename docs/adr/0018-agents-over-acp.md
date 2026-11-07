@@ -24,6 +24,11 @@ Claude Code (`@agentclientprotocol/claude-agent-acp`, built on the Claude Agent 
 
 ## Decision
 
+The shared agent-pane instructions default to review-only behavior: inspect code, answer questions and prepare findings
+or implementation instructions. Implementation requests become plans or explicitly requested handoffs to connected tools; the review agent never
+edits, reverts, commits or pushes files itself. Guide/explanation/finding tools remain
+available for review artifacts. Claude sessions disable the native Edit, Write and NotebookEdit tools. Shell inspection remains available, so this is not a filesystem sandbox; ACP permission modes are unchanged.
+
 1. **Every agent run is an ACP session.** The core is an ACP client (`@agentclientprotocol/sdk`) in
    `src/core/agents.ts`, and nothing else in the core starts an agent.
 2. **coxswain's tools come from a local MCP server.** The core serves them over HTTP on localhost, a path per

@@ -32,15 +32,18 @@ clones go (`~/coxswain/repos/<owner>/<name>/`) and that git runs with the user's
    Before fetching, compare HEAD to the previous remote ref to detect unpushed commits. Local edits,
    untracked files or unpushed commits disable the option for this workspace; it stays off until explicitly
    re-enabled. Check again for edits or commits made during the fetch before moving HEAD. Fetching PR metadata
-   continues while auto-update is off, but the checkout remains unchanged. No recovery branches are created.
+   continues while auto-update is off, but the checkout remains unchanged unless the user explicitly chooses Update from Remote.
+   That one-shot action applies the same local-work checks before and after the fetch, without changing the saved preference.
+   Re-enabling automatic updates always runs a fresh check after any older in-flight check. A pre-fetch protection decision
+   remains binding during that check, even if the preference is enabled during its fetch. No recovery branches are created.
 6. **The worktree is the source for the Navigator and Viewer.** _Changes_ compares the worktree,
    including uncommitted and untracked files, with the PR's merge base, so an agent's changes show up
    there. _Files_ lists the worktree; the Viewer reads the new side from the worktree and the old side
    with `git show`. PR metadata, the list of PRs and comments still come from the GitHub API.
 7. **Git never prompts.** It runs with `GIT_TERMINAL_PROMPT=0`, so missing credentials fail with a
    message instead of hanging.
-8. **Agents work in the workspace's worktree.** Agent sessions run there and may edit its files;
-   what they may do without asking is [ADR 0013](0013-auto-permission-mode.md)'s.
+8. **Agents work in the workspace's worktree.** Review sessions inspect it and write review artifacts (ADR 0018). Implementation runs through explicitly requested
+   external connections (ADR 0045); the core can update a clean checkout from its remote as described above.
 
 ## Alternatives considered
 

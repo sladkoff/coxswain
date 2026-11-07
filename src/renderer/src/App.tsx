@@ -1143,6 +1143,21 @@ export function App() {
       setSendingReview(false);
     }
   };
+  const [updatingRemote, setUpdatingRemote] = useState(false);
+  const updateRemote = async () => {
+    if (!currentWorkspace || updatingRemote) return;
+    setUpdatingRemote(true);
+    try {
+      await window.coxswain.updateFromRemote(currentWorkspace.id);
+    } catch (error) {
+      await window.coxswain.showError({
+        message: "Couldn’t update from Remote",
+        detail: (error as Error).message,
+      });
+    } finally {
+      setUpdatingRemote(false);
+    }
+  };
   const autoUpdate = useQuery({
     ...core("getAutoUpdate", currentWorkspace?.id ?? 0),
     enabled: !!currentWorkspace,
@@ -1534,6 +1549,7 @@ export function App() {
       guideDescriptionPosition,
       !!currentWorkspace,
       currentWorkspace?.id ?? null,
+      updatingRemote,
     );
     match(result)
       .with({ kind: "app" }, () => openAppSettings())
@@ -1544,7 +1560,13 @@ export function App() {
       .with({ kind: "description-position" }, ({ position }) =>
         setGuideDescriptionPosition(position),
       )
-      .with({ kind: "auto-update" }, () => {})
+      .with({ kind: "auto-update" }, ({ enabled }) => {
+        if (currentWorkspace)
+          changeSetting("Auto-update from Remote", () =>
+            window.coxswain.setAutoUpdate(currentWorkspace.id, enabled),
+          )();
+      })
+      .with({ kind: "update-remote" }, () => void updateRemote())
       .with({ kind: "update-guide" }, () => {
         if (currentWorkspace) setUpdatingGuide(currentWorkspace.id);
       })

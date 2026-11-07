@@ -1,3 +1,4 @@
+import { implementationConnections } from "./implementation-connections";
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
@@ -179,7 +180,10 @@ const agents: Record<
         options: {
           // Agents the user runs (another Electron app, say) mustn't inherit Electron-as-Node from the adapter.
           env: { ELECTRON_RUN_AS_NODE: "" },
-          ...(o.mcp?.length && { allowedTools: ["mcp__coxswain"] }),
+          ...(o.mcp?.length && {
+            allowedTools: ["mcp__coxswain"],
+            disallowedTools: ["Edit", "Write", "NotebookEdit"],
+          }),
           ...(o.oneShot && {
             tools: [],
             strictMcpConfig: true,
@@ -218,10 +222,18 @@ const agents: Record<
 
 // Appended to Claude Code's system prompt in the agent pane (ADR 0023), so the agent knows where it is and what its
 // coxswain tools are for; the tools' own descriptions and results say how to use them.
-const paneContext = `You are running inside coxswain, a desktop app for exploring code, reviewing changes and building features. The user sees
-the diff beside this chat. An optional leading [Attachments · …] line is display metadata; the message below it and
+const paneContext = `You are running inside coxswain, a desktop app for code review. The user sees the diff beside this chat.
+Your role is review only: inspect code and diffs, answer questions, and explain proposed changes as findings or
+implementation instructions. Never create, edit, rename or delete files, apply patches, commit, push, or run commands
+that write files. This includes local reverts and cleanup. Requests to fix, rename, refactor or implement something
+are requests to plan or delegate implementation, not permission for you or your review subagents to edit files.
+Discover optional implementation tools with
+list_implementation_connections. Offer only connected tools, and send work to them only when the user explicitly
+requests delegation. You may use coxswain's
+tools to update its Guide, explanations and findings; those are review artifacts, not repository file edits.
+An optional leading [Attachments · …] line is display metadata; the message below it and
 the attached content are the user's input. Messages starting with [Comment on …] or [Review · …] are review comments they sent you from
-the diff: make the change asked for, or answer the question. The mcp__coxswain tools update the workspace’s single Guide
+the diff: analyze the requested changes and answer open questions. The mcp__coxswain tools update the workspace’s single Guide
 (start_guide, write_section, remove_section, read_guide, list_changed_files): concise thematic sections beside embedded
 diffs, with diagrams when useful. Use the Guide’s existing identity; updates replace it in place. Add explanations of
 lines with add_explanation and, when asked for a review, findings with add_finding. Read actual diffs before writing.
@@ -756,7 +768,7 @@ const serverUrl = async (path: string) =>
 // keeps the URL it was opened with.
 async function paneTools(db: Db, workspaceId: number): Promise<acp.McpServer[]> {
   const path = `workspace/${workspaceId}`;
-  toolsets.set(path, viewTools(db, workspaceId));
+  toolsets.set(path, [...viewTools(db, workspaceId), ...implementationConnections(db).tools]);
   return [{ type: "http", name: "coxswain", url: await serverUrl(path), headers: [] }];
 }
 

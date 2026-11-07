@@ -53,10 +53,10 @@ test("remote updates follow rewritten history, but local work persistently disab
     assert.equal(git(repo, "rev-parse", "HEAD"), base);
 
     const local = commit("local commit");
-    await prepareRemoteUpdate(db, 1, repo, "origin/topic");
+    const protectedLocal = await prepareRemoteUpdate(db, 1, repo, "origin/topic");
     assert.equal(await getAutoUpdate(db, 1), false);
     assert.equal(await getAutoUpdate(db, 2), true);
-    await catchUp(db, 1, repo, "origin/topic", local);
+    await catchUp(db, 1, repo, "origin/topic", protectedLocal);
     assert.equal(git(repo, "rev-parse", "HEAD"), local);
 
     git(repo, "reset", "--keep", base);
@@ -88,6 +88,40 @@ test("remote updates follow rewritten history, but local work persistently disab
     await catchUp(db, 1, repo, "origin/topic", beforeCommit);
     assert.equal(await getAutoUpdate(db, 1), false);
     assert.equal(git(repo, "rev-parse", "HEAD"), duringFetch);
+
+    // Manual updates bypass only the saved off preference, not protection of local work.
+    git(repo, "reset", "--keep", base);
+    git(repo, "update-ref", "refs/remotes/origin/topic", base);
+    const manual = await prepareRemoteUpdate(db, 1, repo, "origin/topic", true);
+    git(repo, "update-ref", "refs/remotes/origin/topic", rewritten);
+    assert.equal(await catchUp(db, 1, repo, "origin/topic", manual, true), null);
+    assert.equal(git(repo, "rev-parse", "HEAD"), rewritten);
+    assert.equal(
+      await getAutoUpdate(db, 1),
+      false,
+      "a one-shot update leaves automatic updates off",
+    );
+
+    writeFileSync(join(repo, "file.txt"), "keep this local edit");
+    const dirtyManual = await prepareRemoteUpdate(db, 1, repo, "origin/topic", true);
+    git(repo, "update-ref", "refs/remotes/origin/topic", base);
+    assert.match(
+      (await catchUp(db, 1, repo, "origin/topic", dirtyManual, true)) ?? "",
+      /local edits/,
+    );
+    assert.ok(git(repo, "diff").includes("keep this local edit"));
+    assert.equal(git(repo, "rev-parse", "HEAD"), rewritten);
+    git(repo, "checkout", "--", "file.txt");
+    git(repo, "update-ref", "refs/remotes/origin/topic", rewritten);
+    const localManual = commit("keep this unpushed commit");
+    const unpushedManual = await prepareRemoteUpdate(db, 1, repo, "origin/topic", true);
+    git(repo, "update-ref", "refs/remotes/origin/topic", base);
+    assert.match(
+      (await catchUp(db, 1, repo, "origin/topic", unpushedManual, true)) ?? "",
+      /unpushed commits/,
+    );
+    assert.equal(git(repo, "rev-parse", "HEAD"), localManual);
+    assert.equal(await getAutoUpdate(db, 1), false);
   } finally {
     await db.destroy();
     rmSync(path, { recursive: true, force: true });
