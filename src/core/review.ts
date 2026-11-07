@@ -352,8 +352,8 @@ function reviewPrompt(
     return `${i + 1}. On ${describe(root)}${changed}\n${lines.join("\n")}`;
   });
   const prompt = `Here's my review of this worktree's changes so far: every thread, with where it points and the code as it was
-then, in order. "Me" is me, "@name" a reviewer on GitHub. Work through them: make the changes the comments ask for,
-answer what's still open, and tell me briefly what you did for each and what you left.\n\n${parts.join("\n\n")}`;
+then, in order. "Me" is me, "@name" a reviewer on GitHub. Work through them: analyze the changes the comments ask for,
+answer what's still open, and prepare implementation instructions. Summarize your conclusions for each thread.\n\n${parts.join("\n\n")}`;
   return { threads: roots.length, prompt };
 }
 
@@ -431,7 +431,7 @@ export async function setPostComments(db: Db, post: boolean) {
 }
 
 // A failed check, to the workspace's current agent session: its name and what it says, and for a GitHub Actions job
-// the end of its log, to find out why and fix it. handlers: made for the session it goes to, as sendReview's.
+// the end of its log, to diagnose it and propose a fix. handlers: made for the session it goes to, as sendReview's.
 export async function sendCheck(
   db: Db,
   workspaceId: number,
@@ -448,7 +448,7 @@ export async function sendCheck(
 
 ${ending}
 
-Find out why it fails, and fix it if the cause is in this branch's changes. Tell me briefly what you found and did.`;
+Find out why it fails and whether the cause is in this branch's changes. Explain the cause and prepare implementation instructions.`;
   const agentSessionId = await currentSession(db, workspaceId);
   return runTurn(db, agentSessionId, formatCheck(check.name, prompt), handlers(agentSessionId));
 }

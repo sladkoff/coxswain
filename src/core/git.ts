@@ -245,7 +245,11 @@ export async function openedBefore(db: Db, workspaceId: number): Promise<Worktre
 
 // Makes sure the workspace's worktree exists and is on its latest head on GitHub, then says what its diff is against.
 // Talks to GitHub and fetches, so it takes a second or more; show openedBefore meanwhile.
-export async function openWorktree(db: Db, workspaceId: number): Promise<WorktreeResult> {
+export async function openWorktree(
+  db: Db,
+  workspaceId: number,
+  manual = false,
+): Promise<WorktreeResult> {
   const w = await getWorkspaceRepo(db, workspaceId);
   const cloned = clone(w);
   let prNumber = w.prNumber;
@@ -262,7 +266,7 @@ export async function openWorktree(db: Db, workspaceId: number): Promise<Worktre
   }
   if (prNumber === null) {
     const c = await cloned;
-    return c.status === "ok" ? openBranch(db, workspaceId, w) : c;
+    return c.status === "ok" ? openBranch(db, workspaceId, w, manual) : c;
   }
   const { owner, name } = gitHubRepo(w);
   const [pr, c] = await Promise.all([getPullRequestHead(owner, name, prNumber), cloned]);
@@ -276,10 +280,10 @@ export async function openWorktree(db: Db, workspaceId: number): Promise<Worktre
     const path = worktreePath(w, w);
     const branch = pr.headRef;
     const upstream = `origin/${branch}`;
-    const expectedHead = await prepareRemoteUpdate(db, workspaceId, path, upstream);
+    const expectedHead = await prepareRemoteUpdate(db, workspaceId, path, upstream, manual);
     await git(repo, ["fetch", "origin", `+refs/heads/${branch}:refs/remotes/${upstream}`]);
     await addWorktree(repo, path, branch, upstream, true);
-    const notice = await catchUp(db, workspaceId, path, upstream, expectedHead);
+    const notice = await catchUp(db, workspaceId, path, upstream, expectedHead, manual);
     const opened = { head: pr.head, mergeBase: pr.mergeBase, prNumber, remote: true };
     lastOpened.set(workspaceId, opened);
     return { status: "ok" as const, ...opened, notice };
@@ -294,6 +298,7 @@ function openBranch(
   db: Db,
   workspaceId: number,
   w: ProjectRepo & { branch: string | null; baseBranch: string | null },
+  manual: boolean,
 ): Promise<WorktreeResult> {
   return withGit(async () => {
     const repo = repoPath(w);
@@ -306,8 +311,20 @@ function openBranch(
         () => false,
       );
     // Fetching a branch that was never pushed fails too, so only the base branch's failure says we're offline.
-    const expectedHead = await prepareRemoteUpdate(db, workspaceId, path, `origin/${branch}`);
-    const [fetched] = remote ? await Promise.all([fetch(base), fetch(branch)]) : [true];
+    const expectedHead = await prepareRemoteUpdate(
+      db,
+      workspaceId,
+      path,
+      `origin/${branch}`,
+      manual,
+    );
+    const [fetched, branchFetched] = remote
+      ? await Promise.all([fetch(base), fetch(branch)])
+      : [true, false];
+    if (manual && remote && !branchFetched)
+      throw new GitError(
+        "Could not fetch the workspace’s branch from remote; the workspace was not updated.",
+      );
     const pushed = remote && (await hasRef(repo, `refs/remotes/origin/${branch}`));
     const baseRef =
       w.path && (await hasRef(repo, `refs/heads/${base}`))
@@ -315,7 +332,7 @@ function openBranch(
         : `origin/${base}`;
     await addWorktree(repo, path, branch, pushed ? `origin/${branch}` : baseRef, pushed);
     const behind = pushed
-      ? await catchUp(db, workspaceId, path, `origin/${branch}`, expectedHead)
+      ? await catchUp(db, workspaceId, path, `origin/${branch}`, expectedHead, manual)
       : null;
     const mergeBase = (await gitText(path, ["merge-base", baseRef, "HEAD"])).trim();
     const head = pushed
@@ -390,20 +407,29 @@ async function pruneOurs(repo: string) {
       await git(repo, ["worktree", "remove", "--force", w.path]);
 }
 
+type RemoteUpdate = { head: string | null; notice: string | null };
+const automaticUpdateOff = "Auto-update from remote is off for this workspace";
+const localWorkNotice =
+  "The workspace was not updated because it has local edits or unpushed commits.";
+
 // Inspect before fetching: the old remote ref distinguishes local commits from a remote rewrite.
+// Preserve the decision through the fetch; enabling automatic updates cannot authorize an earlier check.
 export async function prepareRemoteUpdate(
   db: Db,
   workspaceId: number,
   path: string,
   upstream: string,
-): Promise<string | null> {
-  if (!existsSync(join(path, ".git"))) return null;
+  manual = false,
+): Promise<RemoteUpdate> {
+  if (!existsSync(join(path, ".git"))) return { head: null, notice: null };
   const head = (await gitText(path, ["rev-parse", "HEAD"])).trim();
-  if (!(await getAutoUpdate(db, workspaceId))) return head;
+  const automatic = await getAutoUpdate(db, workspaceId);
+  if (!automatic && !manual) return { head, notice: automaticUpdateOff };
   const dirty = (await gitText(path, ["status", "--porcelain"])).trim();
   const local = await gitText(path, ["rev-list", "--count", `${upstream}..HEAD`]).catch(() => "1");
-  if (dirty || Number(local.trim()) > 0) await setAutoUpdate(db, workspaceId, false);
-  return head;
+  const blocked = !!dirty || Number(local.trim()) > 0;
+  if (blocked && automatic) await setAutoUpdate(db, workspaceId, false);
+  return { head, notice: blocked ? localWorkNotice : null };
 }
 
 // The watcher also notices local edits while no remote check is running.
@@ -423,7 +449,8 @@ export async function catchUp(
   workspaceId: number,
   path: string,
   upstream: string,
-  expectedHead: string | null,
+  expected: RemoteUpdate,
+  manual = false,
 ): Promise<string | null> {
   const [head, remote, dirty] = await Promise.all([
     gitText(path, ["rev-parse", "HEAD"]),
@@ -431,10 +458,12 @@ export async function catchUp(
     gitText(path, ["status", "--porcelain"]),
   ]);
   // A commit or edit made during the fetch disables updating too.
-  if (dirty.trim() || (expectedHead !== null && head.trim() !== expectedHead))
-    await setAutoUpdate(db, workspaceId, false);
-  if (!(await getAutoUpdate(db, workspaceId)))
-    return "Auto-update from remote is off for this workspace";
+  if (dirty.trim() || (expected.head !== null && head.trim() !== expected.head)) {
+    if (await getAutoUpdate(db, workspaceId)) await setAutoUpdate(db, workspaceId, false);
+    return localWorkNotice;
+  }
+  if (expected.notice) return expected.notice;
+  if (!manual && !(await getAutoUpdate(db, workspaceId))) return automaticUpdateOff;
   if (head.trim() !== remote.trim()) await git(path, ["reset", "--keep", remote.trim()]);
   return null;
 }

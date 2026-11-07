@@ -1,3 +1,5 @@
+import { match, P } from "ts-pattern";
+import { getAutoUpdate, setAutoUpdate } from "./workspaces.ts";
 import type { Db } from "./db";
 import { emit } from "./events.ts";
 import {
@@ -33,12 +35,19 @@ const opening = new Map<number, Promise<WorktreeResult>>();
 
 // Checks GitHub for the workspace now, or joins the check already running: fetches and fast-forwards its worktree
 // (git.ts openWorktree) and reads its PR, mirroring its review threads (ADR 0037). Emits github when either changed.
-export function checkGitHub(db: Db, workspaceId: number): Promise<Checked> {
+export function checkGitHub(
+  db: Db,
+  workspaceId: number,
+  options: { fresh?: boolean; manual?: boolean } = {},
+): Promise<Checked> {
   let running = checking.get(workspaceId);
+  // An explicit update must not borrow a fetch prepared while updates were disabled.
+  if (running && options.fresh)
+    return running.catch(() => undefined).then(() => checkGitHub(db, workspaceId, options));
   if (!running) {
     let worktreeIn!: (w: WorktreeResult) => void;
     opening.set(workspaceId, new Promise((done) => (worktreeIn = done)));
-    running = check(db, workspaceId, worktreeIn).finally(() => {
+    running = check(db, workspaceId, worktreeIn, options.manual ?? false).finally(() => {
       checking.delete(workspaceId);
       opening.delete(workspaceId);
     });
@@ -51,9 +60,10 @@ async function check(
   db: Db,
   workspaceId: number,
   worktreeIn: (w: WorktreeResult) => void,
+  manual: boolean,
 ): Promise<Checked> {
   const before = checked.get(workspaceId);
-  const opened = await openWorktree(db, workspaceId);
+  const opened = await openWorktree(db, workspaceId, manual);
   const kept = before?.worktree.status === "ok" ? before.worktree : null;
   const worktree: WorktreeResult =
     opened.status !== "ok" && kept
@@ -74,6 +84,36 @@ async function check(
   if (before && JSON.stringify([before.worktree, before.pr]) !== JSON.stringify([worktree, pr]))
     emit({ workspaceId, what: "github" });
   return now;
+}
+
+// Explicit user actions share the watcher’s runner and emit its normal cache/Guide events.
+export async function changeAutoUpdate(db: Db, workspaceId: number, enabled: boolean) {
+  await setAutoUpdate(db, workspaceId, enabled);
+  if (!enabled) return;
+  const result = await checkGitHub(db, workspaceId, { fresh: true });
+  if (!(await getAutoUpdate(db, workspaceId)))
+    throw new Error(
+      "Auto-update from Remote stays off while this workspace has local edits or unpushed commits.",
+    );
+  checkedRemote(result.worktree);
+}
+export async function updateFromRemote(db: Db, workspaceId: number) {
+  const result = await checkGitHub(db, workspaceId, { fresh: true, manual: true });
+  checkedRemote(result.worktree);
+}
+function checkedRemote(worktree: WorktreeResult) {
+  return match(worktree)
+    .with({ status: "ok", remote: false }, () => {
+      throw new Error("This workspace has no remote to update from.");
+    })
+    .with({ status: "ok", notice: P.string.select() }, (notice) => {
+      throw new Error(notice);
+    })
+    .with({ status: "ok" }, () => {})
+    .with({ status: P.not("ok") }, () => {
+      throw new Error("Could not check the remote for this workspace.");
+    })
+    .exhaustive();
 }
 
 // What the UI shows: the last check's, at once, or the first one's as soon as its worktree is open.

@@ -1,3 +1,8 @@
+import { remoteUpdateMenu } from "./remote-update-menu";
+import {
+  listImplementationConnections,
+  setImplementationConnection,
+} from "../core/implementation-connections";
 import { getAutoReviewWorkspaces, setAutoReviewWorkspaces } from "../core/review-discovery";
 import type { FileReadPriority, FileReadTarget } from "../shared/file-reads";
 import { getUiPreferences, setUiPreferences } from "../core/ui-preferences";
@@ -100,6 +105,8 @@ import {
 import { type CodeAt, findDefinitions, findUsages, stopLanguageServers } from "../core/lsp";
 import {
   checkGitHub,
+  changeAutoUpdate,
+  updateFromRemote,
   checkedPullRequest,
   checkedWorktree,
   watchWorkspace,
@@ -169,7 +176,6 @@ import type {
 import {
   listWorkspaces,
   getAutoUpdate,
-  setAutoUpdate,
   getClosedWorkspaceTabs,
   setWorkspaceTabOpen,
   openBranchWorkspace,
@@ -515,16 +521,10 @@ app.whenReady().then(async () => {
   ipcMain.handle("github:pull-titles", (_, owner: string, name: string, numbers: number[]) =>
     listPullRequestTitles(owner, name, numbers),
   );
-  ipcMain.handle("workspaces:set-auto-update", async (_, id: number, enabled: boolean) => {
-    await setAutoUpdate(db, id, enabled);
-    if (enabled) {
-      await checkGitHub(db, id);
-      if (!(await getAutoUpdate(db, id)))
-        throw new Error(
-          "Auto-update from Remote stays off while this workspace has local edits or unpushed commits.",
-        );
-    }
-  });
+  ipcMain.handle("workspaces:set-auto-update", (_, id: number, enabled: boolean) =>
+    changeAutoUpdate(db, id, enabled),
+  );
+  ipcMain.handle("workspaces:update-remote", (_, id: number) => updateFromRemote(db, id));
   ipcMain.handle("workspaces:auto-update", (_, id: number) => getAutoUpdate(db, id));
   ipcMain.handle("workspaces:closed-tabs", () => getClosedWorkspaceTabs(db));
   ipcMain.handle("workspaces:tab-open", (_, workspaceId: number, open: boolean) =>
@@ -880,6 +880,7 @@ app.whenReady().then(async () => {
       descriptionPosition: GuideDescriptionPosition,
       canUpdateGuide: boolean,
       workspaceId: number | null,
+      updatingRemote = false,
     ) => {
       const autoReview = await getAutoReviewWorkspaces(db);
       const autoUpdate = workspaceId === null ? false : await getAutoUpdate(db, workspaceId);
@@ -940,18 +941,13 @@ app.whenReady().then(async () => {
               result.pick({ kind: "dismissed" });
             },
           },
-          {
-            label: "Auto-update from Remote",
-            type: "checkbox",
-            checked: autoUpdate,
-            enabled: workspaceId !== null,
-            click: async () => {
-              if (workspaceId === null) return;
-              await setAutoUpdate(db, workspaceId, !autoUpdate);
-              await checkGitHub(db, workspaceId);
-              result.pick({ kind: "auto-update", enabled: !autoUpdate });
-            },
-          },
+          ...remoteUpdateMenu({
+            workspace: workspaceId !== null,
+            automatic: autoUpdate,
+            busy: updatingRemote,
+            onAutomatic: (enabled) => result.pick({ kind: "auto-update", enabled }),
+            onManual: () => result.pick({ kind: "update-remote" }),
+          }),
         ]).popup({
           window: BrowserWindow.fromWebContents(e.sender) ?? undefined,
           callback: result.close,
@@ -1219,6 +1215,10 @@ app.whenReady().then(async () => {
   ipcMain.handle("jobs:stop", (_, id: number) => stopJob(id));
   ipcMain.handle("guides:instructions", (_, workspaceId: number) =>
     getGuideInstructions(db, workspaceId),
+  );
+  ipcMain.handle("implementation:list", () => listImplementationConnections(db));
+  ipcMain.handle("implementation:set", (_, id: string, enabled: boolean) =>
+    setImplementationConnection(db, id, enabled),
   );
   ipcMain.handle("prompts:get", () => getDefaultPrompts(db));
   ipcMain.handle("prompts:set", (_, name: DefaultPromptName, value: string | null) =>

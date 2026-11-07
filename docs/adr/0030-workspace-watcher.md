@@ -39,6 +39,12 @@ saw fit, missed pushes made by an agent or a terminal for up to two minutes, and
    updates a clean worktree, including after force-pushes, when its Auto-update from remote option is on (ADR 0008), reads the PR and mirrors its review threads into entries. It keeps
    what it found; when that differs from the check before, it emits `github`, and `entries` if threads changed.
    Offline or signed out, it keeps the last good result, with a notice saying GitHub couldn't be checked.
+   Explicit re-enabling and one-shot Update from Remote use the same check runner with a fresh-check request: an older
+   in-flight check finishes first, then a new fetch runs. One-shot updating bypasses only the saved off preference,
+   retaining all local-work protection and leaving automatic updates off. Normal core events refresh the UI and Guides;
+   the native top menu returns the selected action to the renderer, which invokes the same preload/core operation as
+   the palette and Guide banner. Failures are reported by the caller, and manual actions expose pending feedback.
+
 3. **The UI's reads of it are pure.** `openWorktree` and `readPullRequest` return what the last check found, at once,
    or wait for the first check when there's none yet. The UI refetches them on `github`. It holds no interval and no
    focus handler for the workspace's data.

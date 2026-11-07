@@ -1,3 +1,4 @@
+import type { ImplementationConnection } from "../core/implementation-connections";
 import type { FileReadPriority, FileReadTarget } from "../shared/file-reads";
 import type { DefaultPromptName, DefaultPrompts } from "../core/prompt-settings";
 import type { GuideSettings, GuideOverride, GuideRun } from "../core/guides";
@@ -69,6 +70,7 @@ export type SettingsMenuResult =
   | { kind: "description-position"; position: GuideDescriptionPosition }
   | { kind: "update-guide" }
   | { kind: "auto-update"; enabled: boolean }
+  | { kind: "update-remote" }
   | { kind: "app" }
   | { kind: "dismissed" };
 
@@ -181,6 +183,8 @@ const api = {
   checkSetup: (): Promise<SetupCheck> => ipcRenderer.invoke("setup:check"),
   setAutoUpdate: (workspaceId: number, enabled: boolean): Promise<void> =>
     ipcRenderer.invoke("workspaces:set-auto-update", workspaceId, enabled),
+  updateFromRemote: (workspaceId: number): Promise<void> =>
+    ipcRenderer.invoke("workspaces:update-remote", workspaceId),
   getAutoUpdate: (workspaceId: number): Promise<boolean> =>
     ipcRenderer.invoke("workspaces:auto-update", workspaceId),
   getClosedWorkspaceTabs: (): Promise<number[]> => ipcRenderer.invoke("workspaces:closed-tabs"),
@@ -403,6 +407,10 @@ const api = {
     instructions?: string,
     override?: GuideOverride,
   ): Promise<void> => ipcRenderer.invoke("guides:regenerate", workspaceId, instructions, override),
+  listImplementationConnections: (): Promise<ImplementationConnection[]> =>
+    ipcRenderer.invoke("implementation:list"),
+  setImplementationConnection: (id: string, enabled: boolean): Promise<void> =>
+    ipcRenderer.invoke("implementation:set", id, enabled),
   getDefaultPrompts: (): Promise<DefaultPrompts> => ipcRenderer.invoke("prompts:get"),
   setDefaultPrompt: (name: DefaultPromptName, value: string | null): Promise<void> =>
     ipcRenderer.invoke("prompts:set", name, value),
@@ -451,6 +459,7 @@ const api = {
     descriptionPosition: GuideDescriptionPosition,
     canUpdateGuide: boolean,
     workspaceId: number | null,
+    updatingRemote = false,
   ): Promise<SettingsMenuResult> =>
     ipcRenderer.invoke(
       "menus:settings",
@@ -458,6 +467,7 @@ const api = {
       descriptionPosition,
       canUpdateGuide,
       workspaceId,
+      updatingRemote,
     ),
   showGuideMenu: (options: GuideOptions, authors: GuideAuthor[]): Promise<GuideOptions | null> =>
     ipcRenderer.invoke("menus:guide", options, authors),

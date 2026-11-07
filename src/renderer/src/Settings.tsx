@@ -1,3 +1,4 @@
+import { match } from "ts-pattern";
 import { useCodeThemeType } from "./components/useCodeThemeType";
 import { AgentSelect } from "./components/AgentSelect";
 import { PreviewSelect } from "./components/PreviewSelect";
@@ -18,7 +19,7 @@ import { ErrorText, ProblemMessage } from "./components/text";
 import { core } from "./queries";
 import { GuideRunOptions } from "./components/GuideRunOptions";
 
-const settingsSections = ["Appearance", "Accounts", "Guides", "About"] as const;
+const settingsSections = ["Appearance", "Accounts", "Connections", "Guides", "About"] as const;
 type SettingsSection = (typeof settingsSections)[number];
 
 const sectionHeading = "mb-3 text-sm font-semibold leading-5";
@@ -77,6 +78,7 @@ export function Settings({
         </Card>
       </>
     ),
+    Connections: <ImplementationConnections />,
     Guides: (
       <>
         <h3 className={sectionHeading}>Generation</h3>
@@ -424,5 +426,58 @@ function ReviewWorkspaces() {
       {query.isError && <ErrorText>Couldn’t load review request preference.</ErrorText>}
       {error && <ErrorText>{error}</ErrorText>}
     </Card>
+  );
+}
+
+function ImplementationConnections() {
+  const query = useQuery(core("listImplementationConnections"));
+  const [pending, setPending] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const set = async (id: string, enabled: boolean) => {
+    setPending(id);
+    setError(null);
+    try {
+      await window.coxswain.setImplementationConnection(id, enabled);
+    } catch (error) {
+      setError((error as Error).message);
+    } finally {
+      setPending(null);
+    }
+  };
+  return (
+    <>
+      <h3 className={sectionHeading}>Implementation tools</h3>
+      <p className={cn(helpText, "mb-4")}>
+        Connect a tool to make its threads available to review agents. Follow-up messages are sent
+        only when you ask; they can trigger edits in that thread’s working directory. Reviews in
+        coxswain leave files unchanged by default.
+      </p>
+      <div className="flex flex-col gap-3">
+        {query.isPending && <Card className={muted}>Loading…</Card>}
+        {query.isError && <ErrorText>Couldn’t load connections.</ErrorText>}
+        {query.data?.map((connection) => (
+          <Card key={connection.id} className="flex items-center gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="font-medium">{connection.name}</div>
+              <p className={helpText}>
+                {connection.connected
+                  ? "Connected · thread lookup and follow-up messages available"
+                  : "Not connected · uses your installed, signed-in CLI"}
+              </p>
+            </div>
+            <Button
+              disabled={pending !== null}
+              onClick={() => void set(connection.id, !connection.connected)}
+            >
+              {match({ pending: pending === connection.id, connected: connection.connected })
+                .with({ pending: true }, () => "Checking…")
+                .with({ connected: true }, () => "Disconnect")
+                .otherwise(() => "Connect")}
+            </Button>
+          </Card>
+        ))}
+        {error && <ErrorText>{error}</ErrorText>}
+      </div>
+    </>
   );
 }

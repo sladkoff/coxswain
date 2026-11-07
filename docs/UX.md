@@ -3,6 +3,11 @@
 Direction for the main screen and navigation. Expected to change as we build; terms are defined in
 [the glossary](context/coxswain.md). Open questions are listed at the end.
 
+Chat, sent review comments and failed-check analysis are review-only by default. Agents inspect code, answer questions
+and prepare findings or implementation instructions while leaving files unchanged. Implementation requests produce a plan or an explicitly requested handoff to a connected tool; the review agent
+never edits, reverts, commits or pushes files itself. Agents can still update
+Guides, explanations and findings through coxswain’s review tools. Claude’s direct Edit, Write and NotebookEdit tools are disabled. Shell access remains available for inspection, so this is not a filesystem sandbox.
+
 Diff change markers are 1 px wide. Collapsed unmodified-line separators have no filled background: muted labels sit between fine divider lines, with the existing gutter expand arrows.
 
 Settings → Accounts and the main bar’s Settings dropdown share a saved “Auto-create Workspaces for Review Requests” checkbox, placed beside Auto-update from Remote in the dropdown (on by default). Disabling stops discovery and keeps existing workspaces.
@@ -338,8 +343,8 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   threads. Agent threads become one with Summarize as Comment._ At the bottom, with a PR, a summary for the review and
   _Comment_ · _Approve_ · _Request Changes_ (not on your own PR), then three buttons. _Copy as Prompt_ puts the picked
   threads on the clipboard as the message the agent would get (the bar says _Copied_). _Send to Agent_ sends them in
-  one message to the agent pane's session: where each points, the code and its comments, asking the agent to make the
-  changes and answer what's open; the chat shows it as a card (_Review sent to Agent · N threads_) and the bar says
+  one message to the agent pane's session: where each points, the code and its comments, asking the agent to analyze the
+  changes, answer what's open and prepare implementation instructions; the chat shows it as a card (_Review sent to Agent · N threads_) and the bar says
   _Agent working on N threads_ until the turn ends. _Post to GitHub…_ (only with a PR) asks, then posts the picked
   threads' comments as written: those on the PR's diff in one review, the others as comments in the PR's
   conversation, led by a permalink GitHub shows as the highlighted code. If the user has a review in progress on
@@ -601,7 +606,14 @@ Changes category diff totals align to the same right edge as file diff totals, j
 
 Sidebar ⋯ menus contain only sidebar filters, grouping and Tree/List controls. The top Settings dropdown contains canvas display controls, Section Descriptions, Hide Reviewed Files and Update Guide. Hide Reviewed Files is shared by the sidebars and canvas; it has no sidebar control or empty-state toggle.
 
-The bottom of the top Settings dropdown includes Auto-update from Remote for the current workspace, checked by default. It persists across restarts, follows force-pushes for clean workspaces, and switches off automatically on local edits, untracked files or unpushed commits. It stays off until explicitly re-enabled; enabling it with local work immediately switches it off again. Other workspaces are unaffected.
+When automatic updating is off, the remote controls in the top Settings menu are:
+
+```text
+☐ Auto-update from Remote
+  Update from Remote
+```
+
+The bottom of the top Settings dropdown includes Auto-update from Remote for the current workspace, checked by default. Re-enabling it immediately starts a fresh remote check, waiting for any older check to finish instead of reusing a check prepared while updating was off. While disabled, an Update from Remote action directly below the toggle performs one update without re-enabling the preference. It shows Updating from Remote while running and prevents duplicate picks. Manual updates preserve local edits, untracked files and unpushed commits, and surface failures in a native error sheet. It persists across restarts, follows force-pushes for clean workspaces, and switches off automatically on local edits, untracked files or unpushed commits. It stays off until explicitly re-enabled; enabling it with local work immediately switches it off again. Other workspaces are unaffected.
 
 Hide Reviewed Files removes all reviewed cards, including the previously selected card when the option is enabled. Selecting a reviewed file in the sidebar temporarily reveals only that card while keeping the option enabled. Selecting another file or marking the revealed card Reviewed again clears the exception.
 
@@ -639,7 +651,7 @@ Changes tab, category and folder counts follow sidebar visibility: when reviewed
 
 Settings → Guides → Default Prompts provides multiline Guide and Review Comment editors, each with Save and Restore Default. Saved prompts apply across workspaces to future generation, including automatic Guide regeneration and agent-authored Guides. Workspace Guide instructions retain precedence. Existing Guides and comments remain unchanged until updated. Output-format requirements remain app-owned.
 
-Settings uses two columns below the shared window header: an edge-to-edge left sidebar uses the app’s shared list rows and selection styling for Appearance, Accounts, Guides and About. The selected section fills the remaining right-hand width and scrolls independently. Appearance includes colour mode and Code Theme; Accounts contains GitHub; Guides contains agent/model/effort and Default Prompts. Content uses the shared cards, controls, spacing and muted text. Switching sections preserves unsaved prompt edits until Settings closes.
+Settings uses two columns below the shared window header: an edge-to-edge left sidebar uses the app’s shared list rows and selection styling for Appearance, Accounts, Connections, Guides and About. The selected section fills the remaining right-hand width and scrolls independently. Appearance includes colour mode and Code Theme; Accounts contains GitHub; Guides contains agent/model/effort and Default Prompts. Content uses the shared cards, controls, spacing and muted text. Switching sections preserves unsaved prompt edits until Settings closes.
 
 Settings opens as a closable Settings tab alongside workspace tabs in the normal top bar, retaining the project switcher and shared window controls. There is no separate Settings header or Done button in this tab. Selecting a workspace returns to its retained canvas; the Settings tab stays open with unsaved edits preserved. Closing it (including ⌘W while selected) returns to the workspace. ⌘, and Settings in the top dropdown open or select the single tab. Back/Forward include Settings via the router location. With no project, Settings remains accessible as a standalone screen.
 
@@ -710,3 +722,14 @@ Large Guide and Changes canvases keep lightweight file anchors while mounting fi
 Guide and Changes sidebars load nearby file/thread groups while retaining their place in the list. Arrows, Home/End and Space also work across unloaded groups, including multiple threads on one file; Guide auto-follow still locates distant files. A failed or stalled diff preparation shows Retry in its card.
 
 When the displayed Guide’s saved base or head differs from the known current checkout range, a fixed banner above the Guide says it is out of date. Refresh Guide starts an update using saved instructions and agent defaults, without opening a dialog. During an update it shows Refreshing and disables duplicate refreshes. If Auto-update from Remote is off, Enable Auto-update from Remote enables that existing per-workspace setting and checks the remote immediately; Guide generation then follows the checkout through the normal background runner. Local edits/unpushed commits keep remote auto-update off and explain why. Failures remain visible in the banner for retry. The banner disappears when the Guide matches the current range and is absent in Changes, Files and the PR overview.
+
+```text
+Settings
+├─ Appearance
+├─ Accounts
+├─ Connections → Implementation tools → Connect / Disconnect
+├─ Guides
+└─ About
+```
+
+Settings → Connections lists supported implementation tools, initially Amp, with Connect/Disconnect and connection/error feedback. Connecting verifies the installed CLI’s existing sign-in and saves the preference. No account token is stored in coxswain. Review agents discover only connected tools, can inspect their existing threads and send follow-up messages only when the user asks. The external thread can edit its own working directory. Follow-ups submit to the thread’s existing remote executor; submission is not task completion, so the reviewer checks the thread for results. Coxswain does not start a competing local executor or retry uncertain delivery automatically. Disconnect blocks future tool calls without requiring a review-session restart; work already sent can continue. With no connected tool, the review agent offers provider-neutral implementation instructions. The review-only default remains in force. Connections are separate from the Claude Code/Codex review-agent picker.

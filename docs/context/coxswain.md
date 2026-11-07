@@ -8,6 +8,8 @@ listed at the end.
 
 ## Terms
 
+**Implementation connection**: an optional external implementation tool enabled in Settings → Connections. The review agent discovers connected tools, reads their existing threads and sends a follow-up only when explicitly asked. The external tool owns its sign-in, conversation and working directory. Connecting one does not enable file edits by the review agent. Amp is the first provider; the review instructions and agent-facing tools are provider-neutral.
+
 **Direct review request**: an open PR requesting the signed-in GitHub user individually as a reviewer. Team requests do not qualify. In added projects these create workspaces automatically, without selecting them.
 
 **Guide session**: the workspace’s dedicated, durable Chat session used to generate and update its Guide. Automatic updates continue that same session across restarts; manual updates select it in the right sidebar. It uses normal session history, permissions, queue and Stop controls, not a disposable background agent. Choosing a different agent explicitly starts a replacement Guide session because an agent session’s provider cannot change.
@@ -15,6 +17,8 @@ listed at the end.
 **Changed-since-review indicator**: a small dot beside a file in Guide and Changes when an updated snapshot changes its old or new contents. It persists through further Guide updates and app restarts until the file is marked Reviewed. Opening the file alone does not clear it; an unrelated base commit or prose-only Guide regeneration does not add it.
 
 **Default prompt**: app-wide writing instructions for Guide generation or converting an agent thread into a review comment. Settings can replace or restore each built-in default. Workspace Guide instructions override the Guide default; output-format requirements remain app-owned.
+
+**Manual remote update**: a one-time check and update of the current workspace from its remote branch, available in the top Settings dropdown while Auto-update from Remote is off. It leaves that preference off and preserves local edits and unpushed commits.
 
 **Auto-update from remote**: a per-workspace option, on by default, that keeps a clean checkout on its remote branch, including rewritten history. Local edits, untracked files or unpushed commits turn it off for that workspace. It remains off until explicitly re-enabled; local work must be cleared or pushed before it can stay enabled.
 

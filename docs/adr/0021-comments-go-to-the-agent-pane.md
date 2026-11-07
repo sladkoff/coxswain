@@ -19,7 +19,7 @@ reply attached to the thread.
 1. **A comment sent to the agent is a turn in the workspace's current agent session**, the one the agent pane
    shows (the one last used: made, picked in the pane's header or sent a message, kept in `agent_sessions.used_at`,
    so also after a restart; a new one if it has none). It runs with that session's options: every tool, auto mode
-   (ADR 0013), so the agent may act on it.
+   (ADR 0013), so the agent can investigate it. Review comments default to analysis and implementation instructions; the review agent does not implement file edits itself.
 2. **The prompt starts with a header line**, `[Comment on <path:lines> · thread #<id>]`, then the comment, then
    what the agent hasn't seen of the thread after a `---`. A question records the session it went to
    (`entries.agent_session_id`): a follow-up in that session gets only the notes since, while any other session (the
@@ -41,7 +41,7 @@ reply attached to the thread.
 
 ## Consequences
 
-- One agent per workspace sees the whole review; it can change files when asked in a comment.
+- One agent per workspace sees the whole review; it analyzes comments and delegates explicitly requested implementation to a connected tool; it does not edit files itself.
 - A comment sent while the agent pane's turn runs fails with _A turn is already running_, shown in the thread.
 - A comment goes to the session the pane shows; to send one to another session, pick that one first.
 - The agent pane doesn't show _Working…_ for a comment's turn; it streams in, and the thread shows _Working…_.

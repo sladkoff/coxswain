@@ -235,7 +235,7 @@ function Checks({
       {c.state === "failure" && (
         <Button
           className="py-0.5 text-xs"
-          title="Send the check and the end of its log to the agent pane's session, to find out why it fails and fix it"
+          title="Send the check and the end of its log to the agent pane's session, to diagnose the failure and propose a fix"
           disabled={c.name in sent && sent[c.name] === null}
           onClick={() => void send(c)}
         >
