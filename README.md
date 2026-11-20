@@ -99,7 +99,8 @@ pnpm dev       # run with hot reload
 ```
 
 `pnpm start` builds and runs without hot reload, and adds _View › Rebuild and Reload_ (⇧⌘R) for working on coxswain in coxswain; `pnpm dist` packages the app into `dist/`. coxswain keeps its clones and worktrees in `~/coxswain/`, and its
-own data in a SQLite database in the app's data folder. It stores only what GitHub and git don't have: your notes, the
+own data in a SQLite database in the app's data folder. `COXSWAIN_HOME` and `COXSWAIN_USER_DATA` move them, e.g. to run
+a second coxswain beside the first. It stores only what GitHub and git don't have: your notes, the
 agent's answers and views, and which files you've reviewed.
 
 ## Docs
