@@ -3,6 +3,18 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-11-20 — Go to Definition and Find Usages for Go
+
+- Go files get Go to Definition and Find Usages through gopls, as installed (PATH, then `go env GOBIN`/`GOPATH`'s
+  `bin`), on both sides of a file diff. A module in a subfolder (`backend/go.mod`) is found by gopls itself. ADR 0034.
+- gopls doesn't watch files, so a server in the worktree is told, before each lookup, the files that differ between
+  the snapshot it last saw and the current one, and open documents among them are closed. Previously an edit or a
+  pull left it answering at stale lines, and a new file wasn't found. ADR 0034 decision 6.
+- CI installs Go and gopls for the Go tests.
+- Tech debt: definitions in the standard library or module cache are outside the checkout and not listed (the same
+  limit as a linked `node_modules`).
+- Validation: all 130 tests, typecheck, lint, formatting and production build pass.
+
 ## 2026-11-07 — Release v1.10.3
 
 - Release includes provider-neutral review-only instructions, optional Amp implementation connections, remote-thread handoffs with submission acknowledgment, and immediate/one-shot remote updates from the top Settings menu.

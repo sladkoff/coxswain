@@ -55,3 +55,14 @@ export async function snapshotOf(path: string): Promise<string> {
     rmSync(index, { force: true });
   }
 }
+
+// The files that differ between two snapshots (or commits) of the worktree at path: A(dded), D(eleted) or M(odified).
+export async function changesBetween(
+  path: string,
+  from: string,
+  to: string,
+): Promise<{ path: string; status: string }[]> {
+  const out = await git(path, ["diff", "--name-status", "--no-renames", "-z", from, to]);
+  const fields = out.split("\0").filter(Boolean);
+  return fields.flatMap((status, i) => (i % 2 ? [] : [{ path: fields[i + 1], status }]));
+}
