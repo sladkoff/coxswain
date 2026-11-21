@@ -6,9 +6,9 @@ import { execFile, spawn } from "node:child_process";
 import { match } from "ts-pattern";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync } from "node:fs";
-import { homedir } from "node:os";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import type { Db } from "./db";
+import { coxswainHome } from "./home.ts";
 import {
   createPullRequest,
   type CreatedPullRequest,
@@ -63,7 +63,7 @@ export type WorktreeResult =
   | GitProblem
   | GitHubProblem;
 
-const root = join(homedir(), "coxswain");
+const root = coxswainHome;
 type ProjectRepo = Pick<Project, "path" | "github">;
 // ADR 0040: a local repository is the user's own; a GitHub one is coxswain's clone.
 const repoPath = (p: ProjectRepo) => p.path ?? join(root, "repos", p.github!);

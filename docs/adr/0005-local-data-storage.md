@@ -45,6 +45,10 @@ agent sessions can finish and write at the same time.
    never in the database.
 5. **Worktrees coxswain creates go in `~/coxswain/worktrees/<owner>/<name>/pr-<number>/`** (or `branch-<branch>/`, [ADR 0028](0028-branch-workspaces-and-snapshots.md)), not next to the
    repository and not inside `.git`.
+6. **`COXSWAIN_HOME` moves `~/coxswain`**, with its clones, worktrees, checkouts and language servers
+   (`src/core/home.ts`), as `COXSWAIN_USER_DATA` moves the database. Together they run a second,
+   separate coxswain, e.g. one per git identity. coxswain makes the folder and takes it by its real
+   path, since git lists worktrees by theirs and coxswain knows its own by that folder.
 
 The library is `node:sqlite`, with Kysely on top ([ADR 0016](0016-typed-queries-with-kysely.md)).
 
@@ -63,6 +67,8 @@ The library is `node:sqlite`, with Kysely on top ([ADR 0016](0016-typed-queries-
 ## Consequences
 
 - Backing up or resetting coxswain is one file (plus the worktrees folder).
+- Two coxswains with different `COXSWAIN_HOME`s don't share clones or downloaded language servers,
+  so each fetches its own.
 - We depend on the agents' transcript formats and locations. If Claude Code or Codex change them,
   reading transcripts breaks, and we may have to start copying after all.
 - If a repository, worktree or agent session is deleted outside coxswain, the database points at

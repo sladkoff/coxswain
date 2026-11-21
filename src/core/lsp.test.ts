@@ -2,9 +2,10 @@
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
+import { coxswainHome } from "./home.ts";
 import { downloaded } from "./language-servers/download.ts";
 import { lookUp, stopLanguageServers } from "./lsp.ts";
 
@@ -68,7 +69,7 @@ test("a download that doesn't match its checksum is refused and not kept", async
   await assert.rejects(downloaded(release), /checksum/);
   server.close();
   assert.equal(
-    existsSync(join(homedir(), "coxswain", "language-servers", `coxswain-test-${release.version}`)),
+    existsSync(join(coxswainHome, "language-servers", `coxswain-test-${release.version}`)),
     false,
   );
 });

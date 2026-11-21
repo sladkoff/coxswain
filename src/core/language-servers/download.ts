@@ -9,9 +9,9 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { coxswainHome } from "../home.ts";
 
 // ADR 0034: a language server that isn't an npm package, fetched on first use from a pinned release: one archive per
 // platform, checked against its pinned sha256 before it's unpacked, then kept in
@@ -24,7 +24,7 @@ export type Release = {
   archives: Record<string, { url: string; sha256: string }>;
 };
 
-const root = join(homedir(), "coxswain", "language-servers");
+const root = join(coxswainHome, "language-servers");
 const fetching = new Map<string, Promise<string>>();
 
 // The executable's path, fetched first if it isn't here yet; once, however many ask at a time.
