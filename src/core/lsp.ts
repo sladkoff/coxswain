@@ -6,7 +6,10 @@ import {
   createMessageConnection,
   DefinitionRequest,
   DidChangeTextDocumentNotification,
+  DidChangeWatchedFilesNotification,
+  DidCloseTextDocumentNotification,
   DidOpenTextDocumentNotification,
+  FileChangeType,
   InitializedNotification,
   InitializeRequest,
   type Location,
@@ -19,6 +22,7 @@ import {
 import type { Db } from "./db";
 import { type Checkout, checkoutAt, pruneCheckouts } from "./git.ts";
 import { type LanguageServer, languageServers } from "./language-servers/index.ts";
+import { changesBetween, snapshotOf } from "./snapshot.ts";
 
 // ADR 0034: Go to Definition and Find Usages, answered by the file's language server in a checkout of the revision the
 // name was clicked in.
@@ -79,6 +83,7 @@ export async function lookUp(
     };
   try {
     const running = await serverIn(server, checkout);
+    await tellChanges(running, checkout.path);
     const file = join(checkout.path, at.path);
     const uri = pathToFileURL(file).href;
     // Sent as it is on disk each time: an open document is the server's to track, so it wouldn't see the file change.
@@ -136,6 +141,8 @@ type Running = {
   child: ChildProcess;
   connection: MessageConnection;
   versions: Map<string, number>; // each open document's
+  // In the worktree, the snapshot of it the server last saw (ADR 0028); null in a commit's checkout, which never changes.
+  seen: string | null;
 };
 const running = new Map<string, { root: string; server: Promise<Running>; used: number }>();
 
@@ -168,6 +175,10 @@ async function start(server: LanguageServer, checkout: Checkout): Promise<Runnin
       const to = join(checkout.path, d);
       if (existsSync(from) && !existsSync(to)) symlinkSync(from, to, "junction");
     }
+  // Before it starts, so a change made while it reads the files is told to it too. Not a repository (a test's folder):
+  // nothing to compare with, so nothing is told.
+  const seen =
+    checkout.path === checkout.worktree ? await snapshotOf(checkout.path).catch(() => null) : null;
   const { command, args } = await server.start();
   const child = spawn(command, args, { cwd: checkout.path, stdio: ["pipe", "pipe", "ignore"] });
   const connection = createMessageConnection(
@@ -194,7 +205,34 @@ async function start(server: LanguageServer, checkout: Checkout): Promise<Runnin
     }),
   ]);
   void connection.sendNotification(InitializedNotification.type, {});
-  return { child, connection, versions: new Map() };
+  return { child, connection, versions: new Map(), seen };
+}
+
+// What changed in the worktree since the server last looked (a commit, a pull, an agent's edit), told to it before it's
+// asked: gopls doesn't watch files itself, so it would answer from the files as they were. An open document that
+// changed is closed, so the server reads it from disk again and the next lookup opens it afresh.
+async function tellChanges(running: Running, root: string) {
+  if (running.seen === null) return;
+  const now = await snapshotOf(root);
+  if (now === running.seen) return;
+  const changes = await changesBetween(root, running.seen, now);
+  running.seen = now;
+  const c = running.connection;
+  const types: Record<string, FileChangeType> = {
+    A: FileChangeType.Created,
+    D: FileChangeType.Deleted,
+  };
+  for (const { path } of changes) {
+    const uri = pathToFileURL(join(root, path)).href;
+    if (running.versions.delete(uri))
+      void c.sendNotification(DidCloseTextDocumentNotification.type, { textDocument: { uri } });
+  }
+  void c.sendNotification(DidChangeWatchedFilesNotification.type, {
+    changes: changes.map(({ path, status }) => ({
+      uri: pathToFileURL(join(root, path)).href,
+      type: types[status] ?? FileChangeType.Changed,
+    })),
+  });
 }
 
 // On quit.

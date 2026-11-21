@@ -1,3 +1,4 @@
+import { go } from "./go.ts";
 import { python } from "./python.ts";
 import { typescript } from "./typescript.ts";
 
@@ -12,4 +13,4 @@ export type LanguageServer = {
   start: () => Promise<{ command: string; args: string[] }>; // may fetch it first (download.ts)
 };
 
-export const languageServers: LanguageServer[] = [typescript, python];
+export const languageServers: LanguageServer[] = [typescript, python, go];
