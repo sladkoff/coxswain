@@ -115,6 +115,26 @@ test("Guide generation uses one durable chat session, coalesces updates and publ
   assert.equal((await openWorktree(db, 1)).status, "ok");
   const worktree = await openedWorktree(db, 1);
   writeFileSync(join(worktree, "a.ts"), "export const value = 2;\n");
+  const thread = await db
+    .insertInto("entries")
+    .values({
+      workspace_id: 1,
+      kind: "note",
+      body: "Change the default value to 2",
+      parent_id: null,
+      view_id: null,
+      path: "a.ts",
+      side: "new",
+      start_line: 1,
+      end_line: 1,
+      code: "export const value = 1;",
+      base: null,
+      head: null,
+      revision: null,
+      created_at: "",
+    })
+    .returning("id")
+    .executeTakeFirstOrThrow();
   let created = 0;
   const turns: { session: string; prompt: string; model: string; effort: string }[] = [];
   let fail = false;
@@ -151,6 +171,10 @@ test("Guide generation uses one durable chat session, coalesces updates and publ
       await tool.call({
         request_id: request,
         sections: [{ title: "Behavior", body: "Changes the default value.", files: ["a.ts"] }],
+        resolutions:
+          turns.length === 1
+            ? [{ thread_id: thread.id, summary: "The exported default is now 2." }]
+            : [],
       } as never);
       return { status: "ok" };
     },
@@ -164,6 +188,17 @@ test("Guide generation uses one durable chat session, coalesces updates and publ
   await idle(db);
   const first = (await listViews(db, 1))[0];
   assert.equal(first.guide, true);
+  assert.match(
+    turns[0].prompt,
+    /an outdated anchor or a claim of completion alone is insufficient/,
+  );
+  const resolved = await db
+    .selectFrom("entries")
+    .select(["resolved_at", "resolution_summary"])
+    .where("id", "=", thread.id)
+    .executeTakeFirstOrThrow();
+  assert.ok(resolved.resolved_at);
+  assert.equal(resolved.resolution_summary, "The exported default is now 2.");
   assert.equal(created, 1);
   await ensureGuide(db, 1);
   await idle(db);

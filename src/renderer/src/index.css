@@ -6,6 +6,16 @@
 :root {
   color-scheme: light dark;
   --review-file-bg: var(--color-white);
+  --review-diff-text: light-dark(
+    var(--review-diff-text-light, #000),
+    var(--review-diff-text-dark, #fff)
+  );
+  --review-addition-light: #0dbe4e;
+  --review-addition-dark: #5ecc71;
+  --review-addition-bg: light-dark(
+    color-mix(in lab, var(--review-file-bg) 88%, var(--review-addition-light)),
+    color-mix(in lab, var(--review-file-bg) 80%, var(--review-addition-dark))
+  );
   --review-canvas-bg: var(--color-neutral-50);
   --review-file-border: color-mix(in srgb, var(--review-file-bg), black 10%);
   --review-border-width: 0.5px;
@@ -97,6 +107,7 @@ body {
 /* Soft Dark samples the reference's charcoal canvas, cards, text and dividers.
    Override the shared neutral ramp so every pane, control and dialog follows it. */
 :root[data-appearance="soft-dark"] {
+  --review-addition-bg: #2a332f;
   color-scheme: dark;
   --color-neutral-950: #1f2023;
   --color-neutral-900: #28292c;
@@ -810,4 +821,15 @@ body {
 .review-canvas:has([data-stale-guide-banner]) {
   --review-top-clearance: var(--review-gutter);
   --review-content-start: var(--review-gutter);
+}
+
+/* Resolved conversations share a green surface in both the canvas and navigation. */
+.review-comment-card[data-resolved="true"],
+.guide-thread-row[data-resolved="true"] {
+  background-color: var(--review-addition-bg);
+}
+
+.resolved-thread-summary,
+.guide-thread-row[data-resolved="true"] > button > span {
+  color: var(--review-diff-text);
 }

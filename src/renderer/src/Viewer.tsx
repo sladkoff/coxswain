@@ -144,7 +144,7 @@ const diffChromeCSS = `
   }
   [data-separator] [data-expand-both] [data-icon] use { visibility: hidden; }
   :host-context([data-appearance="soft-dark"]) :is([data-line], [data-column-number], [data-gutter-buffer], [data-no-newline])[data-line-type="change-addition"] {
-    --diffs-computed-diff-line-bg: #2a332f;
+    --diffs-computed-diff-line-bg: var(--review-addition-bg);
   }
   :host-context([data-appearance="soft-dark"]) :is([data-line], [data-column-number], [data-gutter-buffer], [data-no-newline])[data-line-type="change-deletion"] {
     --diffs-computed-diff-line-bg: #392d30;

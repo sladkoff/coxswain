@@ -3,6 +3,21 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-11-23 — Release v1.11.0
+
+- Includes verified thread resolutions during Guide updates, complete collapsed summaries with diff-matched colors, and PR creator labels in workspace tabs.
+- Adds a nullable resolution-summary column through an append-only database migration. Once opened with this version, the database cannot be opened by older releases.
+- Validation: all 129 tests, typecheck, lint, formatting, production build and the disposable running-app checks pass.
+
+## 2026-11-23 — Verify addressed threads during Guide updates
+
+- Guide sessions assess open code threads against their pinned code, including updates triggered by remote changes. Verified fixes publish with a short local resolution summary; uncertain concerns remain open. Candidate IDs, nonempty summaries and whole-conversation comparisons protect against invalid output and concurrent replies/edits. Existing snapshot/request validation rejects stale assessments.
+- Resolved threads use green canvas/sidebar surfaces; their fill matches added diff lines and summary text uses the diff’s default foreground for the selected code theme and appearance, including Soft Dark. Resolved conversations default to collapsed, including restored selections, with full wrapping summaries; expanding retains it with the original conversation. Reopening locally or on GitHub clears it. Automatic resolutions wait for Submit Review and never post the generated explanation as a comment.
+- Appended a nullable root-entry resolution-summary migration; no separate agent, job runner or polling. Scratch databases exercise the migration without touching installed app data. Automated coverage checks valid/invalid resolutions, concurrent edits/replies, local-only behavior and requested Guide publication. The built-renderer check covers both appearances, summary display, expansion and reopening.
+- PR workspace tabs now show the creator’s @login beside the PR number, in both native and fallback controls. The existing batched metadata query includes authors; the PR overview explicitly labels “Created by”. Missing authors retain the normal number/title fallback.
+
+- Validation: all 129 tests, typecheck, lint, formatting and production build pass. The disposable running-app check passes for creator labels, light/dark green thread surfaces, summaries, expansion and reopening.
+
 ## 2026-11-07 — Release v1.10.3
 
 - Release includes provider-neutral review-only instructions, optional Amp implementation connections, remote-thread handoffs with submission acknowledgment, and immediate/one-shot remote updates from the top Settings menu.

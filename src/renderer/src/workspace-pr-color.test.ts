@@ -7,6 +7,7 @@ test("workspace PR icon colors prioritize merge and failure states over approval
   const open: PullRequestTitle = {
     number: 1,
     title: "PR",
+    author: "review-author",
     state: "open",
     draft: false,
     approved: false,

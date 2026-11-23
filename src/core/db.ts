@@ -271,6 +271,7 @@ export const migrations = [
   create unique index projects_clones on projects (github) where path is null`,
   // Keep GitHub actor identity alongside mirrored comments for offline author filtering.
   `alter table entries add column author_is_bot integer`,
+  `alter table entries add column resolution_summary text`,
 ];
 
 // ADR 0016: the tables as the migrations above leave them. Change this with every migration that changes a table.
@@ -372,6 +373,7 @@ type Tables = {
     head: string | null;
     created_at: string;
     resolved_at: Generated<string | null>;
+    resolution_summary: Generated<string | null>;
     agent_session_id: Generated<string | null>;
     revision: string | null;
     section: Generated<number | null>;

@@ -40,6 +40,7 @@ export type ReviewEntry = {
   head: string | null;
   createdAt: string;
   resolvedAt: string | null; // on a thread's first entry: when it was resolved
+  resolutionSummary?: string | null; // the verified fix, on an automatically resolved root
   agentSessionId: string | null; // a question: the agent session it went to
   revision: string | null; // on prose: the section's version, a hash of its markdown (ADR 0036)
   section: number | null; // on prose: its section in the view; code is then the quote
@@ -83,6 +84,7 @@ export const columns = [
   "head",
   "created_at as createdAt",
   "resolved_at as resolvedAt",
+  "resolution_summary as resolutionSummary",
   "agent_session_id as agentSessionId",
   "revision",
   "section",

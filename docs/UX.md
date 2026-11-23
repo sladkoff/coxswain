@@ -38,7 +38,7 @@ Submit Review floats at bottom-right.
 │ Files     ⋯    │                                   │                        │
 │ Guide progress │ Files: file tabs                  │ Agent conversation     │
 │                │        edge-to-edge whole file    │                        │
-│ Nested threads │                                   │                        │
+│ Threads ✓ done │                                   │                        │
 │ File + threads │ PR: description / checks / people │                        │
 │                │                                   │                        │
 │ History:Changes│                                   │                        │
@@ -733,3 +733,7 @@ Settings
 ```
 
 Settings → Connections lists supported implementation tools, initially Amp, with Connect/Disconnect and connection/error feedback. Connecting verifies the installed CLI’s existing sign-in and saves the preference. No account token is stored in coxswain. Review agents discover only connected tools, can inspect their existing threads and send follow-up messages only when the user asks. The external thread can edit its own working directory. Follow-ups submit to the thread’s existing remote executor; submission is not task completion, so the reviewer checks the thread for results. Coxswain does not start a competing local executor or retry uncertain delivery automatically. Disconnect blocks future tool calls without requiring a review-session restart; work already sent can continue. With no connected tool, the review agent offers provider-neutral implementation instructions. The review-only default remains in force. Connections are separate from the Claude Code/Codex review-agent picker.
+
+Guide updates, including those triggered after Update from Remote, check open code threads against the pinned code. Verified addressed threads resolve locally and show a green background in the canvas and sidebar. The fill matches added diff lines and the summary text uses the diff’s default foreground for the selected code theme and appearance, including Soft Dark. Resolved conversations collapse by default, including when restored as the selected thread. Their collapsed canvas row shows “Resolved ·” and the complete resolution summary, wrapping to multiple lines without truncation; expanding preserves the summary above the original conversation. Sidebar metadata shows the same summary, with its full text available on hover. Uncertain, partial or concurrently changed threads stay open. Automatic resolutions wait for Submit Review before reaching GitHub. Reopen clears the summary. Existing manually/GitHub-resolved threads also use the green surface, retaining their original preview when no summary exists.
+
+Workspace PR tabs show the creator’s @login beside the PR number in native and fallback controls. Hover/accessibility text includes the author; missing/deleted authors omit that metadata. The PR overview labels its author explicitly as “Created by”.

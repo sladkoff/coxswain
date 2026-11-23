@@ -8,6 +8,8 @@ listed at the end.
 
 ## Terms
 
+**Resolution summary**: a short, local explanation of how the current code addresses a thread. During a Guide update, the Guide session checks open code threads against the pinned code and resolves only those it can verify as correctly addressed. Changed or uncertain threads stay open. Automatic resolutions wait for Submit Review before reaching GitHub. Reopening clears the summary.
+
 **Implementation connection**: an optional external implementation tool enabled in Settings → Connections. The review agent discovers connected tools, reads their existing threads and sends a follow-up only when explicitly asked. The external tool owns its sign-in, conversation and working directory. Connecting one does not enable file edits by the review agent. Amp is the first provider; the review instructions and agent-facing tools are provider-neutral.
 
 **Direct review request**: an open PR requesting the signed-in GitHub user individually as a reviewer. Team requests do not qualify. In added projects these create workspaces automatically, without selecting them.
