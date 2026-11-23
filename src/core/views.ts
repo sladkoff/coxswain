@@ -408,11 +408,22 @@ export function viewTools(db: Db, workspaceId: number): McpTool[] {
       name: "publish_guide",
       annotations: closedTool,
       description:
-        "Publish a complete Guide for a requested session update, keeping the preceding Guide intact until all sections are ready. Use the request_id supplied in that update and include every listed changed file exactly once.",
+        "Publish a complete Guide for a requested session update, keeping the preceding Guide intact until all sections are ready. Use the request_id supplied in that update and include every listed changed file exactly once. Optional resolutions mark verified addressed threads locally, with a short explanation of the fix; omit uncertain threads.",
       inputSchema: {
         type: "object",
         properties: {
           request_id: { type: "string" },
+          resolutions: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                thread_id: { type: "integer" },
+                summary: { type: "string", minLength: 1, maxLength: 1000 },
+              },
+              required: ["thread_id", "summary"],
+            },
+          },
           sections: {
             type: "array",
             items: {
@@ -428,12 +439,13 @@ export function viewTools(db: Db, workspaceId: number): McpTool[] {
         },
         required: ["request_id", "sections"],
       },
-      call: async (args: { request_id: string; sections: unknown }) =>
+      call: async (args: { request_id: string; sections: unknown; resolutions?: unknown }) =>
         (await import("./guides.ts")).publishRequestedGuide(
           db,
           workspaceId,
           args.request_id,
           args.sections,
+          args.resolutions,
         ),
     },
     {

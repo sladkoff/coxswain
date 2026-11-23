@@ -22,6 +22,8 @@ The canvas offers Guide, Changes, Files and the PR overview. There is no saved V
 
 Agent tools `publish_guide`, `start_guide`, `write_section`, `remove_section`, `read_guide`, `list_changed_files`, `add_explanation` and `add_finding` write to the same workspace Guide. `start_guide` resets it for interactive writing; requested session updates use publish_guide atomically. Findings remain opt-in. Source/diff embedding uses ADR 0026; immutable snapshots preserve code and review marks (ADR 0028, ADR 0014).
 
+Guide updates also assess open code comment/question/finding threads from the pinned snapshot. The request captures each full conversation. `publish_guide` accepts optional verified resolutions with a short summary; only captured, unchanged, still-open threads in that workspace qualify. Invalid/duplicate IDs and empty summaries reject publication, and stale snapshots cannot publish. Automatic resolutions remain local pending Submit Review, regardless of Post to GitHub; the generated explanation is never posted as a comment. Reopening clears it. The summary lives on the root entry in SQLite and follows existing entry invalidation events. This serves G3/G4 without an additional runner.
+
 ## Alternatives considered
 
 - Keep numbered Guide versions in the navigation: obscures which document is current.

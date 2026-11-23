@@ -58,7 +58,10 @@ export function ThreadRow(props: {
     .with({ t: { kind: "comment" } }, () => `@${t.author} on GitHub`)
     .otherwise(() => null);
   return (
-    <div className="guide-nav-item guide-thread-row flex items-center">
+    <div
+      className="guide-nav-item guide-thread-row flex items-center"
+      data-resolved={t.resolvedAt ? "true" : undefined}
+    >
       <button
         data-sidebar-nav="open"
         onClick={props.onClick}
@@ -86,12 +89,14 @@ export function ThreadRow(props: {
           <span className="min-w-0 truncate">{preview || "Thread"}</span>
         </span>
         <span
+          title={t.resolvedAt ? (t.resolutionSummary ?? undefined) : undefined}
           className={cn("flex w-full min-w-0 items-center gap-1.5 pl-[22px] text-[11px]", muted)}
         >
           <span className="min-w-0 flex-1 truncate">
             {[
               replies.length > 0 && count(replies.length, "reply", "replies"),
-              t.resolvedAt && "Resolved",
+              t.resolvedAt &&
+                (t.resolutionSummary ? `Resolved: ${t.resolutionSummary}` : "Resolved"),
               state,
             ]
               .filter(Boolean)

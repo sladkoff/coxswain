@@ -159,7 +159,8 @@ function Header({ pr }: { pr: PullRequestDetails }) {
       <div className={cn("flex flex-wrap items-center gap-2 text-xs", muted)}>
         <span className={cn("rounded-full px-2.5 py-1 font-medium", colour)}>{state}</span>
         <span>
-          {pr.author ?? "ghost"} · <code>{pr.headRef}</code> → <code>{pr.baseRef}</code>
+          Created by {pr.author ? `@${pr.author}` : "a deleted account"} · <code>{pr.headRef}</code>{" "}
+          → <code>{pr.baseRef}</code>
         </span>
         <a
           href={pr.url}

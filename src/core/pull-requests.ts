@@ -134,7 +134,7 @@ export async function syncThreads(
             author_is_bot: Number(!!first.authorIsBot),
             github_thread_id: t.id,
             github_resolved: Number(t.resolved),
-            ...(resolved && { resolved_at: t.resolved ? now() : null }),
+            ...(resolved && { resolved_at: t.resolved ? now() : null, resolution_summary: null }),
             ...(root.githubId === first.id && { body: first.body }),
             ...(mine && { kind: "note" as const }),
           })

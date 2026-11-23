@@ -37,7 +37,7 @@ PR; the branch, not the workspace, is what ties them. Writing to GitHub must alw
 4. **Resolving goes as comments do.** GitHub's resolve or reopen, seen in a read, is taken over (`github_resolved`
    records what GitHub had). A resolve or reopen here of a thread on GitHub goes there at once while _Post to GitHub_
    is on in the comment box (`resolveThread`; a failure there leaves the thread as it was), else with the next
-   _Submit Review_. A thread in the PR's conversation has no resolve on GitHub: resolving it is local.
+   _Submit Review_. Verified automatic resolutions from Guide updates always wait for Submit Review, keeping the generated assessment local for inspection. A thread in the PR's conversation has no resolve on GitHub: resolving it is local.
 5. **Posting is one review of comments as written, picked by thread** (`postReview`). _Submit Review_ lists every
    open comment thread (6), and with a PR every one with something to post: one of the workspace's not on GitHub yet,
    or one on GitHub with comments or a resolve since. The user picks threads, edits their comments if they like (which

@@ -36,3 +36,19 @@ export async function codeTreeStyles(theme: CodeTheme): Promise<Record<string, s
     }),
   );
 }
+
+// Share Pierre’s addition fills and default text colors outside its shadow DOM too.
+export async function codeAdditionStyles(theme: CodeTheme): Promise<Record<string, string>> {
+  const names = codeThemes(theme);
+  const [light, dark] = await Promise.all([resolveTheme(names.light), resolveTheme(names.dark)]);
+  const green = (resolved: typeof light, fallback: string) =>
+    resolved.colors?.["gitDecoration.addedResourceForeground"] ??
+    resolved.colors?.["terminal.ansiGreen"] ??
+    fallback;
+  return {
+    "--review-addition-light": green(light, "#0dbe4e"),
+    "--review-addition-dark": green(dark, "#5ecc71"),
+    "--review-diff-text-light": light.fg ?? "#000000",
+    "--review-diff-text-dark": dark.fg ?? "#ffffff",
+  };
+}

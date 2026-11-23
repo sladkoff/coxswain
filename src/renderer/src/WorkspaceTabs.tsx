@@ -331,7 +331,7 @@ function NativeWorkspaceBar(
     const pull = w.prNumber !== null ? props.pulls.get(w.prNumber) : undefined;
     const title = pull?.title ?? workspaceLabel(w);
     const status = props.statuses[w.id] ?? "idle";
-    return `${title}${pull ? ` #${w.prNumber}` : ""}${status !== "idle" ? ` · ${statusLabels[status]}` : ""}`;
+    return `${title}${pull ? ` #${w.prNumber}${pull.author ? ` · @${pull.author}` : ""}` : ""}${status !== "idle" ? ` · ${statusLabels[status]}` : ""}`;
   };
   const current = props.current;
   const layout = workspaceStripLayout(
@@ -392,7 +392,12 @@ function NativeWorkspaceBar(
             frame: { minWidth: 0, maxWidth: "infinity", alignment: "leading" },
           }),
           ...(w.prNumber !== null
-            ? [ui.text(`#${w.prNumber}`, { lineLimit: 1, font: { size: 10 } })]
+            ? [
+                ui.text(`#${w.prNumber}${pull?.author ? ` · @${pull.author}` : ""}`, {
+                  lineLimit: 1,
+                  font: { size: 10 },
+                }),
+              ]
             : []),
           ...(status !== "idle" && !(selected && status === "done")
             ? [ui.shape("circle", { fill: statusColor, frame: { width: 6, height: 6 } })]
@@ -622,7 +627,13 @@ function WorkspaceTab({
   onContextMenu: () => void;
 }) {
   const title = pull?.title ?? (w.prNumber !== null ? workspaceLabel(w) : w.branch!);
-  const meta = [w.prNumber !== null && `#${w.prNumber}`, w.branch].filter(Boolean).join(" · ");
+  const meta = [
+    w.prNumber !== null && `#${w.prNumber}`,
+    pull?.author && `Created by @${pull.author}`,
+    w.branch,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   const [icon, color, state] = match({
     prNumber: w.prNumber,
     state: pull?.state,
@@ -672,7 +683,13 @@ function WorkspaceTab({
         </span>
         <span className="min-w-0 flex-1 truncate">{title}</span>
         {w.prNumber !== null && pull && (
-          <span className={cn("shrink-0 text-[10px]", muted)}>#{w.prNumber}</span>
+          <span
+            className={cn("max-w-32 truncate text-[10px]", muted)}
+            title={pull.author ? `Created by @${pull.author}` : undefined}
+          >
+            #{w.prNumber}
+            {pull.author ? ` · @${pull.author}` : ""}
+          </span>
         )}
         {status !== "idle" && !(selected && status === "done") && (
           <span

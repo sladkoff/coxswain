@@ -8,7 +8,7 @@ import { createRoot } from "react-dom/client";
 import "./index.css";
 import { core, queryClient } from "./queries";
 import { router } from "./router";
-import { codeThemes } from "./components/code-theme";
+import { codeAdditionStyles, codeThemes } from "./components/code-theme";
 import { FileTypeIcons } from "./components/FileTypeIcon";
 import { uiMetrics } from "./components/styles";
 
@@ -33,6 +33,20 @@ function AppearanceSync() {
     if (codeTheme)
       void worker?.setRenderOptions({ theme: codeThemes(codeTheme) }).catch(console.error);
   }, [worker, codeTheme]);
+  useEffect(() => {
+    let current = true;
+    if (codeTheme)
+      void codeAdditionStyles(codeTheme)
+        .then((styles) => {
+          if (current)
+            for (const [key, value] of Object.entries(styles))
+              document.documentElement.style.setProperty(key, value);
+        })
+        .catch(console.error);
+    return () => {
+      current = false;
+    };
+  }, [codeTheme]);
   useLayoutEffect(() => {
     if (appearance && softDark !== undefined)
       document.documentElement.dataset.appearance = resolvedAppearance(appearance, softDark, dark);

@@ -31,10 +31,11 @@ export type PullRequest = {
 
 export type PullRequestList = { status: "ok"; pulls: PullRequest[] } | GitHubProblem;
 
-// What the workspace rail shows of a workspace's PR: its title and whether it's still open.
+// What workspace tabs show of a PR: its title, creator and status.
 export type PullRequestTitle = {
   number: number;
   title: string;
+  author: string | null;
   state: "open" | "merged" | "closed";
   draft: boolean;
   approved: boolean;
@@ -148,12 +149,13 @@ export function listPullRequestTitles(
     const fields = numbers
       .map(
         (n) =>
-          `pr${n}: pullRequest(number: ${Math.trunc(n)}) { number title state isDraft reviewDecision mergeable latestReviews(first: 100) { nodes { state } } commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } }`,
+          `pr${n}: pullRequest(number: ${Math.trunc(n)}) { number title author { login } state isDraft reviewDecision mergeable latestReviews(first: 100) { nodes { state } } commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } }`,
       )
       .join("\n");
     type Found = {
       number: number;
       title: string;
+      author: { login: string } | null;
       state: "OPEN" | "MERGED" | "CLOSED";
       isDraft: boolean;
       reviewDecision: "APPROVED" | "CHANGES_REQUESTED" | "REVIEW_REQUIRED" | null;
@@ -180,6 +182,7 @@ export function listPullRequestTitles(
               {
                 number: p.number,
                 title: p.title,
+                author: p.author?.login ?? null,
                 state: p.state.toLowerCase() as PullRequestTitle["state"],
                 draft: p.isDraft,
                 approved:

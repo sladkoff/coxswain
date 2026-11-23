@@ -228,9 +228,17 @@ export function ThreadBox({
     setResolvedAt(root.resolvedAt);
     setExpanded(false);
   }
+  const previousReveal = useRef({ revealed, revealVersion, resolvedAt: root.resolvedAt });
   useEffect(() => {
-    if (revealed) setExpanded(true);
-  }, [revealed, revealVersion]);
+    const previous = previousReveal.current;
+    previousReveal.current = { revealed, revealVersion, resolvedAt: root.resolvedAt };
+    if (root.resolvedAt !== previous.resolvedAt) {
+      setExpanded(false);
+      return;
+    }
+    const pickedAgain = !previous.revealed || revealVersion !== previous.revealVersion;
+    if (revealed && (!root.resolvedAt || pickedAgain)) setExpanded(true);
+  }, [revealed, revealVersion, root.resolvedAt]);
   const showResolved = expanded;
   const running = turn?.running ?? false;
   const agent = !isComment(root);
@@ -313,6 +321,7 @@ export function ThreadBox({
       id={`thread:${root.id}`}
       data-window-pin={expanded || summary !== false || error ? "true" : undefined}
       className={box}
+      data-resolved={root.resolvedAt ? "true" : undefined}
       aria-label={anchorLabel(root)}
     >
       {root.resolvedAt && !showResolved && (
@@ -320,12 +329,15 @@ export function ThreadBox({
           {disclosureControl}
           <Button
             variant="ghost"
-            className="min-w-0 flex-1 truncate text-left"
+            className="min-w-0 flex-1 text-left"
+            aria-label="Expand resolved thread"
             style={{ justifyContent: "flex-start" }}
-            title="Expand resolved thread"
+            title={root.resolutionSummary || "Expand resolved thread"}
             onClick={() => setExpanded(true)}
           >
-            Resolved · {root.body}
+            <span className="resolved-thread-summary min-w-0 whitespace-normal [overflow-wrap:anywhere]">
+              Resolved · {root.resolutionSummary || root.body}
+            </span>
           </Button>
           {resolveControl}
           <Button variant="ghost" className="px-1" title="Thread options" onClick={menu}>
@@ -335,6 +347,9 @@ export function ThreadBox({
       )}
       {(!root.resolvedAt || showResolved) && (
         <>
+          {root.resolvedAt && root.resolutionSummary && (
+            <p className="resolved-thread-summary text-xs">Resolved · {root.resolutionSummary}</p>
+          )}
           {/* The inset agent surface distinguishes speakers without a divider between messages. */}
           <div className="flex flex-col gap-3">
             {[root, ...replies].map((e) => (
