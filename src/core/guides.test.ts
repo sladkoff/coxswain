@@ -83,6 +83,21 @@ test("guide output covers every file once and keeps code out of prose", () => {
       ),
     /Keep code/,
   );
+  const diagram = "Shape:\n\n```mermaid\nflowchart LR\n  a --> b\n```\n\nThen more.";
+  const overview = { title: "Overview", body: diagram, files: [] };
+  assert.equal(
+    parseGuide(JSON.stringify({ sections: [overview, ...good.sections] }), ["a b.ts", "b.ts"])[0]
+      .body,
+    diagram,
+  );
+  assert.throws(
+    () =>
+      parseGuide(
+        JSON.stringify({ sections: [{ ...overview, body: `${diagram}\n\n\`\`\`ts\nx\n\`\`\`` }] }),
+        [],
+      ),
+    /Keep code/,
+  );
 });
 
 test("Guide generation uses one durable chat session, coalesces updates and publishes atomically", async (t) => {

@@ -3,6 +3,10 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-11-27 — Mermaid diagrams in Guide prose
+
+- `publish_guide` accepts ` ```mermaid ` blocks in a section's body again, so a Guide can open with a diff-free overview section that has a diagram. Other code fences are still rejected and belong in the file cards.
+
 ## 2026-11-23 — Release v1.11.0
 
 - Includes verified thread resolutions during Guide updates, complete collapsed summaries with diff-matched colors, and PR creator labels in workspace tabs.

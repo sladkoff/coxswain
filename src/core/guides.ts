@@ -198,6 +198,8 @@ export async function requestGuide(
 }
 
 export type GuideSection = { title: string; body: string; files: string[] };
+const mermaidFence = /^(```|~~~)mermaid[^\n]*\n[\s\S]*?^\1[ \t]*$/gm;
+
 export function parseGuide(text: string, paths: string[]): GuideSection[] {
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
@@ -217,8 +219,11 @@ export function parseGuide(text: string, paths: string[]): GuideSection[] {
       !Array.isArray(item.files)
     )
       throw new Error("Invalid guide section");
-    if (/[\r\n]/.test(item.title) || /```|~~~/.test(item.body))
-      throw new Error("Keep code in the embedded cards, not the guide prose");
+    // Mermaid diagrams belong in the prose; any other fence is code, which belongs in the cards.
+    if (/[\r\n]/.test(item.title) || /```|~~~/.test(item.body.replace(mermaidFence, "")))
+      throw new Error(
+        "Keep code in the embedded cards, not the guide prose (only ```mermaid diagrams are allowed)",
+      );
     const files: string[] = [];
     for (const path of item.files) {
       if (typeof path !== "string" || !expected.has(path) || seen.has(path))
